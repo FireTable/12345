@@ -49,10 +49,22 @@ function isSpecificMicroLocation(location: string): boolean {
  * 2. 【微观地点型多频】：同一具体微观物理空间（同一小区/门牌/具体路段）的群发共性民生治理事件。
  * 绝不允许跨主体、跨地点的乱绑定与乱拉郎配！
  */
+import { updateTaskProgress } from "@/lib/task-progress";
+
 export async function clusterNode(
   state: TicketRadarState
 ): Promise<Partial<TicketRadarState>> {
   const enrichedTickets = state.enrichedTickets || [];
+  const taskId = state.taskId;
+
+  if (taskId) {
+    updateTaskProgress(taskId, {
+      stage: "CLUSTERING",
+      stageText: `正在构建多频知识图谱连通子图 (输入 ${enrichedTickets.length} 条已富化工单)...`,
+      percent: 72,
+    });
+  }
+
   if (enrichedTickets.length === 0) {
     return { themes: [], status: "clustering" };
   }

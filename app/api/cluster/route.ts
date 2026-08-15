@@ -3,6 +3,7 @@ import { runTicketRadarPipeline } from "@/backend/agent";
 import { db } from "@/db/client";
 import { ticketsTable, themesTable, ticketThemesTable } from "@/db/schema";
 import { seedReviewQueue } from "@/lib/review-queue";
+import { initTaskProgress } from "@/lib/task-progress";
 import { sql, desc, eq } from "drizzle-orm";
 import type { RawTicket } from "@/backend/state";
 
@@ -58,8 +59,11 @@ export async function POST(req: Request) {
     const countRes = await db.select({ count: sql<number>`count(*)` }).from(ticketsTable);
     const totalTickets = Number(countRes[0]?.count || 0);
 
+    const taskId = body.taskId || threadId || `task-${Date.now()}`;
+    initTaskProgress(taskId, tickets.length);
+
     // 3. Run LangGraph JS Pipeline
-    const result = await runTicketRadarPipeline(tickets, threadId);
+    const result = await runTicketRadarPipeline(tickets, threadId, taskId);
 
     // 4. Persist computed themes & ticket_themes to PostgreSQL
     try {

@@ -139,6 +139,7 @@ async function runVerification() {
     stats: {} as any,
     graphData: { nodes: [], links: [] },
     status: "idle",
+    taskId: undefined,
   });
 
   const enriched = nodeRes.enrichedTickets || [];

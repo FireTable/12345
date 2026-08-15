@@ -164,6 +164,10 @@ export const TicketRadarStateAnnotation = Annotation.Root({
     reducer: (prev, next) => next || prev,
     default: () => "idle",
   }),
+  taskId: Annotation<string | undefined>({
+    reducer: (prev, next) => next || prev,
+    default: () => undefined,
+  }),
 });
 
 export type TicketRadarState = typeof TicketRadarStateAnnotation.State;

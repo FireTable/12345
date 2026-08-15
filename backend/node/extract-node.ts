@@ -160,30 +160,55 @@ function fallbackDynamicExtraction(ticket: RawTicket): ExtractedTicketItem {
   };
 }
 
+import PQueue from "p-queue";
+import { updateTaskProgress } from "@/lib/task-progress";
+
 /**
- * Extract Node: 全量采用 AI Agent 大模型语义抽取四要素与摘要标题
+ * Extract Node: 全量采用 AI Agent 大模型语义抽取四要素与摘要标题（P-Queue 受控并发与真实进度回报）
  */
 export async function extractNode(
   state: TicketRadarState
 ): Promise<Partial<TicketRadarState>> {
   const rawTickets = state.rawTickets || [];
+  const taskId = state.taskId;
   const CHUNK_SIZE = 15;
-  const chunkPromises: Array<Promise<Map<number, ExtractedTicketItem>>> = [];
+  const extractionMap = new Map<number, ExtractedTicketItem>();
+  const queue = new PQueue({ concurrency: 3 });
 
-  // 并发切片提交大模型抽取
-  for (let i = 0; i < rawTickets.length; i += CHUNK_SIZE) {
-    const chunk = rawTickets.slice(i, i + CHUNK_SIZE);
-    chunkPromises.push(extractBatchWithLLM(chunk, i));
+  if (taskId) {
+    updateTaskProgress(taskId, {
+      stage: "EXTRACTING",
+      stageText: `正在使用大模型并行提取工单要素与微观地点 (共 ${rawTickets.length} 条)...`,
+      total: rawTickets.length,
+      processed: 0,
+      percent: 5,
+    });
   }
 
-  const chunkResults = await Promise.allSettled(chunkPromises);
-  const extractionMap = new Map<number, ExtractedTicketItem>();
+  let processedCount = 0;
+  const chunkTasks: Array<() => Promise<void>> = [];
 
-  chunkResults.forEach((res) => {
-    if (res.status === "fulfilled") {
-      res.value.forEach((val, key) => extractionMap.set(key, val));
-    }
-  });
+  for (let i = 0; i < rawTickets.length; i += CHUNK_SIZE) {
+    const chunk = rawTickets.slice(i, i + CHUNK_SIZE);
+    const startIdx = i;
+    chunkTasks.push(async () => {
+      const res = await extractBatchWithLLM(chunk, startIdx);
+      res.forEach((val, key) => extractionMap.set(key, val));
+      processedCount += chunk.length;
+      if (taskId) {
+        const currentProcessed = Math.min(processedCount, rawTickets.length);
+        const percent = Math.min(65, 5 + Math.round((currentProcessed / Math.max(1, rawTickets.length)) * 60));
+        updateTaskProgress(taskId, {
+          processed: currentProcessed,
+          percent,
+          stageText: `AI 正在抽取工单实体与微观地点 (${currentProcessed} / ${rawTickets.length})...`,
+          extractedCount: extractionMap.size,
+        });
+      }
+    });
+  }
+
+  await queue.addAll(chunkTasks);
 
   const enrichedTickets: EnrichedTicket[] = rawTickets.map((ticket, index) => {
     const fallback = fallbackDynamicExtraction(ticket);
@@ -226,6 +251,14 @@ export async function extractNode(
       confidence: t.confidence ?? 0,
       reason: (t.confidence ?? 0) === 0 ? "EXTRACTION_FAILED" : "LOW_CONFIDENCE",
     }));
+
+  if (taskId) {
+    updateTaskProgress(taskId, {
+      percent: 68,
+      stageText: `要素抽取完成，识别低置信工单 ${lowConfidenceTickets.length} 条，准备执行图谱聚类...`,
+      reviewCount: lowConfidenceTickets.length,
+    });
+  }
 
   return {
     enrichedTickets,

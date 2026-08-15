@@ -78,6 +78,9 @@ async function enrichThemeWithLLM(theme: MultiFrequencyTheme): Promise<Partial<M
   return Promise.race([enrichTask(), timeoutPromise]);
 }
 
+import PQueue from "p-queue";
+import { updateTaskProgress } from "@/lib/task-progress";
+
 /**
  * Summary Node: Performs LLM deep synthesis for ALL themes, calculates metrics, and builds ForceGraph topology
  */
@@ -87,18 +90,29 @@ export async function summaryNode(
   const rawTickets = state.rawTickets || [];
   const initialThemes = state.themes || [];
   const enrichedThemes = [...initialThemes];
+  const taskId = state.taskId;
 
-  // 1. LLM deep synthesis for ALL themes concurrently
+  // 1. LLM deep synthesis for ALL themes with controlled P-Queue concurrency
   if (enrichedThemes.length > 0 && process.env.OPENAI_API_KEY) {
-    const promises = enrichedThemes.map((theme) => enrichThemeWithLLM(theme));
-    const results = await Promise.allSettled(promises);
+    if (taskId) {
+      updateTaskProgress(taskId, {
+        stage: "SYNTHESIZING",
+        stageText: `正在对 ${enrichedThemes.length} 个多频主题进行深度公文研判与协同处置建议生成...`,
+        percent: 78,
+        themeCount: enrichedThemes.length,
+      });
+    }
 
-    results.forEach((res, idx) => {
-      if (res.status === "fulfilled" && res.value) {
+    const queue = new PQueue({ concurrency: 3 });
+    let synthesizedCount = 0;
+
+    const tasks = enrichedThemes.map((theme, idx) => async () => {
+      const res = await enrichThemeWithLLM(theme);
+      if (res) {
         const local = enrichedThemes[idx];
         enrichedThemes[idx] = {
           ...local,
-          ...res.value,
+          ...res,
           // 红黄蓝与假闭环由本地规则裁定，LLM 只能补理由/摘要/处置建议
           riskLevel: local.riskLevel,
           patternType: local.patternType,
@@ -111,6 +125,27 @@ export async function summaryNode(
           recommendedAction: DEFAULT_RECOMMENDED_ACTION,
         };
       }
+
+      synthesizedCount++;
+      if (taskId) {
+        const percent = Math.min(96, 78 + Math.round((synthesizedCount / Math.max(1, enrichedThemes.length)) * 18));
+        updateTaskProgress(taskId, {
+          percent,
+          stageText: `AI 正在生成公文级处置建议 (${synthesizedCount} / ${enrichedThemes.length})...`,
+        });
+      }
+    });
+
+    await queue.addAll(tasks);
+  }
+
+  if (taskId) {
+    updateTaskProgress(taskId, {
+      stage: "COMPLETED",
+      status: "COMPLETED",
+      percent: 100,
+      stageText: `多频研判完成！已聚合 ${enrichedThemes.length} 个多频主题`,
+      themeCount: enrichedThemes.length,
     });
   }
 
