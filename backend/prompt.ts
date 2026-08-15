@@ -179,40 +179,25 @@ export function buildThemeEnrichmentPrompt(
   theme: MultiFrequencyTheme,
   sampleTickets: EnrichedTicket[]
 ): string {
-  return `你是一位政务热线智能研判与督办专家。请根据以下多频诉求数据（共 ${theme.ticketCount} 件工单，跨时 ${theme.timeSpanHours} 小时），深入分析并输出高度契合具体情境的专业政务研判结论。
+  return `你是政务热线智能研判与督办专家。请对以下多频诉求主题（共 ${theme.ticketCount} 件工单，跨度 ${theme.timeSpanHours}h）进行深度公文研判并输出处置建议。
 
-【诉求基本信息】
-- 被诉/涉及主体：${theme.canonicalSubject}
-- 发生区域/地点：${theme.canonicalLocation}
-- 核心问题类型：${theme.eventType}
-- 涉及工单列表：
+【诉求信息】
+- 涉及主体：${theme.canonicalSubject}
+- 发生地点：${theme.canonicalLocation}
+- 问题类型：${theme.eventType} (${theme.category})
+- 样例诉求：
 ${sampleTickets
   .map(
     (t, i) =>
-      `[${i + 1}] 区域: ${t.subdistrict || "本区"} | 登记时间: ${t.createTime}\n诉求正文（已脱敏）: ${ticketBodyForAI(t)}`
+      `  [${i + 1}] [${t.subdistrict || "本区"}] ${t.summarizeTitle || t.title}: ${ticketBodyForAI(t).slice(0, 90)}`
   )
-  .join("\n\n")}
+  .join("\n")}
 
-【专业研判与协同处置指引（按具体民生领域精准指定牵头部门、响应时限与办理路径）】：
-- 🚗 车辆违停/道路拥堵：由辖区交警中队联动综合行政执法队，1小时内到场劝离或电子抓拍处罚，保障主干道畅通；
-- 🍢 流动摊贩/占道经营：由属地综合行政执法办/队加强早晚高峰路面巡查，规范跨门槛经营，引导摊贩入市规范经营；
-- 🔊 商业噪音/夜间喧哗：由综合行政执法队联合辖区派出所开展夜间测噪联合巡查，责令涉事方加装降噪控音设施；
-- 💨 餐饮油烟/工业废气：由属地生态环境所联合综合执法办核查净化设施与清洗台账，限期达标排放并开展油烟浓度抽测；
-- 🏢 小区物业/电梯维保：由住建局物业科联合市场监管特种设备股下发督办单，限期排查安全隐患并张贴维保公示；
-- 💧 市政排水/管网堵塞：由市政水务/排水抢修工程队立即赶赴现场排查，2小时内核定抢修方案并于当日完成通水排污保障；
-- 💳 消费纠纷/虚假宣传：由属地市场监管所（消委会）于2个工作日内核查交易记录与凭证，组织调解并依法处置；
-- 💼 劳资纠纷/社保待遇：由人社局劳动保障监察大队/医保中心介入核实，核查合同台账或线上申报校验，依法保障权益；
-- 🎆 违规燃放/公共安全：由公安治安大队联动综合行政执法加强敏感时段路面巡查，制止违规行为并依法溯源；
-- 📚 校园教育/节假安排：由教育局基教科核实法定节假日安排合规性，协同校方做好政策解释与家长沟通。
-
-【负面险情词库（只用于写理由，最终红黄蓝由本地规则裁定）】：
-${formatNegativeTermsForPrompt()}。命中且为群体聚集型时按 HIGH 理解，但不要试图压低本地已定的 HIGH。
-
-【研判输出要求】：
-1. riskLevel: "HIGH"（紧急安全隐患/群体诉求/反复未决） | "MEDIUM"（重点关注/矛盾激化可能） | "LOW"（常规咨询与流转）
-2. riskReason: 简明扼要的风险诱因与态势研判（25-45字）
-3. aiSummary: 深度公文级全貌研判，清晰指出市民核心痛点与演化倾向（60-100字）
-4. recommendedAction: **高度贴合具体情境的针对性处置建议**（明确具体承办科室、响应时限与具体办理路径，拒绝千篇一律套用"现场核实"）（50-80字）`;
+【研判要求】：
+1. riskLevel: "HIGH"（紧急隐患/群访聚集/反复未决）| "MEDIUM"（重点关注/矛盾升级）| "LOW"（常规流转）
+2. riskReason: 风险诱因与态势研判（25-45字）
+3. aiSummary: 深度全貌研判综述，指出核心痛点与演化倾向（60-100字）
+4. recommendedAction: 针对性协同处置建议（必须明确牵头单位/科室、响应时限及具体办理路径，50-80字）`;
 }
 
 /**
@@ -233,45 +218,25 @@ export const BatchThemeEnrichmentSchema = z.object({
 export type BatchThemeEnrichmentResult = z.infer<typeof BatchThemeEnrichmentSchema>;
 
 /**
- * 批量多频主题研判 Prompt 生成器（最多 10 个主题打包）
+ * 批量多频主题研判 Prompt 生成器（最多 10 个主题打包，轻量高密度）
  */
 export function buildBatchThemeEnrichmentPrompt(
   themes: MultiFrequencyTheme[]
 ): string {
-  return `你是一位政务热线顶级智能研判与督办专家。请对以下 ${themes.length} 个多频诉求主题进行批量深度公文研判，输出各主题的风险评级、归因分析、全貌综述与精准协同处置建议。
+  return `你是政务热线智能研判与督办专家。请对以下 ${themes.length} 个多频诉求主题进行批量深度公文研判，输出各主题的风险评级、归因分析、全貌综述与精准处置建议（必须明确牵头部门/科室、响应时限及具体办理路径）。
 
-【专业研判与协同处置指引（按具体民生领域精准指定牵头部门、响应时限与办理路径）】：
-- 🚗 车辆违停/道路拥堵：由辖区交警中队联动综合行政执法队，1小时内到场劝离或电子抓拍处罚，保障主干道畅通；
-- 🍢 流动摊贩/占道经营：由属地综合行政执法办/队加强早晚高峰路面巡查，规范跨门槛经营，引导入市规范经营；
-- 🔊 商业噪音/夜间喧哗：由综合行政执法队联合辖区派出所开展夜间测噪联合巡查，责令涉事方加装降噪控音设施；
-- 💨 餐饮油烟/工业废气：由属地生态环境所联合综合执法办核查净化设施与清洗台账，限期达标排放并开展油烟浓度抽测；
-- 🏢 小区物业/电梯维保：由住建局物业科联合市场监管特种设备股下发督办单，限期排查安全隐患并张贴维保公示；
-- 💧 市政排水/管网堵塞：由市政水务/排水抢修工程队立即赶赴现场排查，2小时内核定抢修方案并于当日完成通水排污保障；
-- 💳 消费纠纷/虚假宣传：由属地市场监管所（消委会）于2个工作日内核查交易记录与凭证，组织调解并依法处置；
-- 💼 劳资纠纷/社保待遇：由人社局劳动保障监察大队/医保中心介入核实，核查合同台账或线上申报校验，依法保障权益；
-- 🎆 违规燃放/公共安全：由公安治安大队联动综合行政执法加强敏感时段路面巡查，制止违规行为并依法溯源；
-- 📚 校园教育/节假安排：由教育局基教科核实法定节假日安排合规性，协同校方做好政策解释与家长沟通。
-
-【待研判多频主题列表（共 ${themes.length} 个）】：
+【待研判主题列表（共 ${themes.length} 个）】：
 ${themes
   .map((theme, idx) => {
-    const sampleTickets = theme.tickets.slice(0, 3);
+    const sampleTickets = theme.tickets.slice(0, 2);
     return `=== [${idx + 1}] 主题 ID: ${theme.id} ===
-- 涉及主体: ${theme.canonicalSubject}
-- 发生区域/地点: ${theme.canonicalLocation}
-- 核心问题类型: ${theme.eventType} (${theme.category})
-- 涉及工单量: ${theme.ticketCount} 件，跨度: ${theme.timeSpanHours} 小时
-- 样例诉求正文:
-${sampleTickets
-  .map(
-    (t, i) =>
-      `  (${i + 1}) [${t.subdistrict || "本区"}] ${t.summarizeTitle || t.title}: ${ticketBodyForAI(t).slice(0, 90)}...`
-  )
-  .join("\n")}`;
+- 主体: ${theme.canonicalSubject} | 地点: ${theme.canonicalLocation}
+- 事件: ${theme.eventType} (${theme.category}) | 工单量: ${theme.ticketCount}件 | 跨度: ${theme.timeSpanHours}h
+- 样例: ${sampleTickets.map((t) => `(${t.subdistrict || "本区"}) ${t.summarizeTitle || t.title}`).join("；")}`;
   })
   .join("\n\n")}
 
-请严格按照 JSON 结构返回包含所有 ${themes.length} 个主题研判结论的 results 数组（themeIndex 必须与 [1]..[${themes.length}] 严格对应）。`;
+请返回包含 ${themes.length} 个主题研判结论的 results 数组（themeIndex 与 [1]..[${themes.length}] 一一对应）。`;
 }
 
 /**
@@ -285,24 +250,24 @@ export function buildCopilotPrompt(params: {
   mediumRiskCount: number;
 }): string {
   const { query, totalCount, currentThemes, highRiskCount, mediumRiskCount } = params;
-  return `你是由 LangGraph JS 图工作流驱动的 12345 政务热线智能研判副驾驶（LightCopilot）。
-当前大盘运行数据底座如下：
-- 工单总接入量：${totalCount} 件
-- 识别多频主题总数：${currentThemes.length} 个
-- 高危紧急事件：${highRiskCount} 项，重点跟进事件：${mediumRiskCount} 项
-- 重点多频主题摘要：
+  return `你是 12345 政务热线智能研判副驾驶（Copilot）。
+当前运行数据底座：
+- 工单总接入量：${totalCount} 件 | 多频主题总数：${currentThemes.length} 个
+- 高危紧急事件：${highRiskCount} 项 | 重点跟进事件：${mediumRiskCount} 项
+- 重点主题摘要：
 ${currentThemes
+  .slice(0, 8)
   .map(
     (t, idx) =>
-      `${idx + 1}. 【${t.riskLevel}】${t.title}（${t.ticketCount}件工单，位于${t.canonicalLocation}，处置科室建议：${t.recommendedAction}）`
+      `${idx + 1}. 【${t.riskLevel}】${t.title}（${t.ticketCount}单，${t.canonicalLocation}，建议：${t.recommendedAction}）`
   )
   .join("\n")}
 
 用户提问：「${desensitizeContent(query)}」
 
-请作为资深政务大数据研判专家，给出专业、严谨、有公文逻辑的回答：
+请给出专业严谨、有公文逻辑的回答：
 1. 观点明确，条理清晰，善用 Markdown 加粗和列表；
-2. 如果涉及具体主题或风险，请引用真实数据与建议；
-3. 如果用户要求生成交办单或督办公文，请提供标准政务公文格式（包含单号、发文单位、主送单位、案情摘要、处置时限与督办要求）；
+2. 涉及具体主题或风险时引用真实数据与建议；
+3. 若用户要求生成交办单或督办公文，请提供标准政务公文格式（单号、发文单位、主送单位、案情摘要、处置时限与督办要求）；
 4. 语言精炼有力，体现高效政务治理水准。`;
 }
