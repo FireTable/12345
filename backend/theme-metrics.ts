@@ -3,6 +3,9 @@ import { RULES, negativeTermsPattern } from "./rules";
 
 const NEGATIVE_RE = negativeTermsPattern();
 
+// ponytail: 顺德 10 镇街 inline，不引 @/lib 避免 backend 依赖反转
+const SHUNDE_TOWNSHIP_RE = /(大良|容桂|伦教|勒流|陈村|北滘|乐从|龙江|杏坛|均安)/;
+
 export const MODE_META: Record<
   CivicMode,
   {
@@ -116,7 +119,17 @@ export function deriveThemeMetrics(theme: Pick<
   const moodPct = Math.round((moodHits / n) * 100);
 
   const callers = new Set(tickets.map((t) => t.citizenPhone || t.citizenName || ""));
-  const repeatPct = Math.round((1 - Math.min(1, (callers.size - 1) / n)) * 100);
+  // ponytail: 原公式 (callers.size - 1)/n 反向，callers 越多 repeat 越低——这才是群体聚集的正确语义
+  const repeatPct = callers.size <= 1 ? 95 : Math.max(20, Math.round(80 * (1 - (callers.size - 1) / n)));
+
+  // 跨镇街惩罚：同一主体/地点型主题若覆盖多个镇街，研判置信度应当下调
+  const townships = new Set(
+    tickets
+      .map((t) => (t.subdistrict || t.district || "").trim())
+      .filter((s) => s && SHUNDE_TOWNSHIP_RE.test(s))
+  );
+  const townshipCount = townships.size;
+  const subject = tickets[0]?.canonicalSubject || "";
 
   const features = [
     { name: "关键词命中", pct: keywordPct, desc: event ? `主题「${event}」覆盖 ${keywordHits}/${n}` : "无统一事件类型" },
@@ -134,6 +147,8 @@ export function deriveThemeMetrics(theme: Pick<
   if (n >= RULES.minClusterSize) aiConfidence += 16;
   if (geoPct >= 70) aiConfidence += 5;
   if (keywordPct >= 50) aiConfidence += 5;
+  // ponytail: 跨镇街惩罚——同一主体若跨 N 个镇街，置信度按 (N-1)*8 扣减，避免「90% 高置信」掩盖跨区拼凑
+  if (townshipCount >= 2 && subject) aiConfidence -= 8 * (townshipCount - 1);
   aiConfidence = Math.max(0, Math.min(99, aiConfidence));
 
   let trendPct: number | null = null;

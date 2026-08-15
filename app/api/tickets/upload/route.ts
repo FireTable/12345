@@ -167,8 +167,9 @@ export async function POST(req: Request) {
       });
     }
 
-    // 3. Batch Chunking into PostgreSQL (3000 per batch)
-    const BATCH_SIZE = 3000;
+    // 3. Batch Chunking into PostgreSQL
+    // ponytail: 500/批，22 字段上限 ~11k 参数，PG max_params=32767 安全区
+    const BATCH_SIZE = 500;
     let insertedCount = 0;
     let duplicateCount = 0;
 
@@ -187,12 +188,18 @@ export async function POST(req: Request) {
         const newRecords = chunk.filter((c) => !existingSet.has(c.ticketNo));
 
         if (newRecords.length > 0) {
-          await db.insert(ticketsTable).values(newRecords).onConflictDoNothing();
-          insertedCount += newRecords.length;
+          // ponytail: 锁定 ticketNo 唯一约束去重，用 returning 拿到 DB 真插入数，
+          // 不再用 catch 静默累加避免「API 报成功 / DB 没进」的不一致
+          const inserted = await db
+            .insert(ticketsTable)
+            .values(newRecords)
+            .onConflictDoNothing({ target: ticketsTable.ticketNo })
+            .returning({ id: ticketsTable.id });
+          insertedCount += inserted.length;
         }
-      } catch (dbErr) {
-        // Fallback
-        insertedCount += chunk.length;
+      } catch (dbErr: any) {
+        console.error(`[upload] chunk ${i}-${i + BATCH_SIZE} 失败:`, dbErr?.message || dbErr);
+        failedCount += chunk.length;
       }
     }
 

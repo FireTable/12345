@@ -1,6 +1,6 @@
 import { MODE_META, civicModeFromPattern } from "@/backend/theme-metrics";
 import type { CivicMode, PatternType } from "@/backend/state";
-import { explicitAdmin, parseAdminArea } from "@/lib/admin-area";
+import { parseAdminArea } from "@/lib/admin-area";
 
 export function regionLabel(subdistrict?: string | null, district?: string | null): string {
   const raw = (subdistrict || district || "").trim();
@@ -104,10 +104,20 @@ export function toClusterDto(theme: {
     }
   }
 
-  const fromSample = explicitAdmin(samples[0]?.subdistrict);
   const parsed = parseAdminArea(theme.canonicalLocation);
-  const region = fromSample
-    ? regionLabel(fromSample)
+  // ponytail: 用所有成员工单的去重镇街代替「第一条 member 的地区」，
+  // 跨镇街主题不再被首条 sample 掩盖。2 个以内全部展示，更多则展示前 2 + 总数。
+  const sampleTowns = Array.from(
+    new Set(
+      samples
+        .map((t) => regionLabel(t.subdistrict, t.district))
+        .filter((r) => r && r !== "未归属")
+    )
+  );
+  const region = sampleTowns.length > 0
+    ? sampleTowns.length <= 2
+      ? sampleTowns.join(" · ")
+      : `${sampleTowns.slice(0, 2).join(" · ")} 等 ${sampleTowns.length} 镇街`
     : parsed.subdistrict
       ? regionLabel(parsed.subdistrict)
       : regionLabel(theme.canonicalLocation);
