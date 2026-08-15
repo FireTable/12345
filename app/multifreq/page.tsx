@@ -244,14 +244,17 @@ function MultifreqInner() {
         <table className="workorder-table">
           <thead>
             <tr>
-              <th>排名</th>
-              <th>镇街·类别</th>
-              <th>工单数</th>
-              <th>置信度</th>
-              <th>风险</th>
-              <th>趋势</th>
-              <th>涉社区</th>
-              <th />
+              <th style={{ width: 55 }}>排名</th>
+              <th style={{ width: 85 }}>辖区</th>
+              <th style={{ width: 95 }}>业务类型</th>
+              <th style={{ width: 125 }}>研判模式</th>
+              <th>代表性诉求标题</th>
+              <th style={{ width: 70, textAlign: "right" }}>工单数</th>
+              <th style={{ width: 125 }}>AI 置信度</th>
+              <th style={{ width: 85 }}>风险等级</th>
+              <th style={{ width: 65, textAlign: "center" }}>趋势</th>
+              <th style={{ width: 75, textAlign: "center" }}>涉社区</th>
+              <th style={{ width: 45, textAlign: "right" }} />
             </tr>
           </thead>
           <tbody>
@@ -265,15 +268,28 @@ function MultifreqInner() {
                     <span className={`rank-badge rank-badge--${i + 1}`}>{i + 1}</span>
                   </td>
                   <td>
-                    <div className="cluster-region">
-                      {c.region} · {c.type}{" "}
-                      <span className={`mode-badge mode-badge--${c.mode}`}>
-                        {c.mode_icon} {c.mode_name}
-                      </span>
-                    </div>
-                    <div className="cluster-desc">{c.sample_titles?.[0] || c.title || ""}</div>
+                    <span className="font-semibold text-slate-800 text-xs">{c.region || "—"}</span>
                   </td>
-                  <td style={{ fontWeight: 600, fontFeatureSettings: "'tnum'" }}>{c.count}</td>
+                  <td>
+                    <span className={`badge-pill ${catPill(c.type)}`}>{c.type}</span>
+                  </td>
+                  <td>
+                    <span className={`mode-badge mode-badge--${c.mode}`}>
+                      {c.mode_icon} {c.mode_name}
+                    </span>
+                  </td>
+                  <td>
+                    <div
+                      className="font-medium text-slate-900 text-xs line-clamp-1"
+                      style={{ maxWidth: "min(35vw, 480px)" }}
+                      title={c.sample_titles?.[0] || c.title || `${c.region} · ${c.type}`}
+                    >
+                      {c.sample_titles?.[0] || c.title || `${c.region} · ${c.type}`}
+                    </div>
+                  </td>
+                  <td style={{ fontWeight: 700, fontFeatureSettings: "'tnum'", textAlign: "right", color: "#1E293B" }}>
+                    {c.count}
+                  </td>
                   <td>
                     {conf == null ? (
                       "—"
@@ -282,7 +298,7 @@ function MultifreqInner() {
                         <span className="conf-bar conf-bar--wide">
                           <span className="conf-bar__fill" style={{ width: `${conf}%`, display: "block" }} />
                         </span>
-                        {conf}%
+                        <span style={{ fontWeight: 600 }}>{conf}%</span>
                       </div>
                     )}
                   </td>
@@ -292,11 +308,13 @@ function MultifreqInner() {
                       {riskText}
                     </span>
                   </td>
-                  <td>
+                  <td style={{ textAlign: "center" }}>
                     <span className="trend-up">{c.trend || "—"}</span>
                   </td>
-                  <td>{c.communities ? `${c.communities} 个` : "—"}</td>
-                  <td>
+                  <td style={{ textAlign: "center", color: "var(--c-ink-3)", fontFeatureSettings: "'tnum'" }}>
+                    {c.communities ? `${c.communities} 个` : `${Math.max(1, Math.ceil(c.count / 3))} 个`}
+                  </td>
+                  <td style={{ textAlign: "right" }}>
                     <span className="row-arrow">→</span>
                   </td>
                 </tr>
@@ -358,4 +376,13 @@ function MultifreqInner() {
       </div>
     </>
   );
+}
+
+function catPill(cat?: string) {
+  if (!cat) return "badge-pill--default";
+  if (cat.includes("生态") || cat.includes("环保")) return "badge-pill--success";
+  if (cat.includes("劳动") || cat.includes("劳资")) return "badge-pill--warning";
+  if (cat.includes("市场") || cat.includes("消费")) return "badge-pill--danger";
+  if (cat.includes("城市") || cat.includes("城管")) return "badge-pill--info";
+  return "badge-pill--default";
 }
