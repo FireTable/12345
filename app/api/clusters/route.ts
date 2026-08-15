@@ -5,6 +5,7 @@ import { desc } from "drizzle-orm";
 import { mapTicketStatus, regionLabel, toClusterDto } from "@/lib/civic-dto";
 import { explicitAdmin, isTownLabel } from "@/lib/admin-area";
 import { deriveClusterUrgency, spanDays, urgentCutFromUnprocessed } from "@/lib/civic-cluster";
+import { clampTimeRef, formatYmd } from "@/lib/civic-time";
 
 export async function GET(req: Request) {
   try {
@@ -100,8 +101,8 @@ export async function GET(req: Request) {
     });
 
     const totalMultiFreq = dtos.reduce((a, c) => a + c.count, 0);
-    const todayKey = new Date().toISOString().slice(0, 10);
     const latestDay = dtos.reduce((acc, c) => (c.last_date > acc ? c.last_date : acc), "");
+    const todayKey = formatYmd(clampTimeRef(latestDay ? new Date(latestDay.replace(" ", "T")) : null));
     const todayNew = dtos.filter((c) => c.last_date === todayKey || c.first_date === todayKey).length;
 
     return NextResponse.json({

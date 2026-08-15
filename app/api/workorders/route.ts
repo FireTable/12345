@@ -4,7 +4,7 @@ import { ticketsTable } from "@/db/schema";
 import { and, desc, eq, gte, ilike, isNotNull, lt, or, sql } from "drizzle-orm";
 import { mapTicketStatus, regionLabel, toWorkorderDto } from "@/lib/civic-dto";
 import { explicitAdmin, isTownLabel } from "@/lib/admin-area";
-import { timeWindow } from "@/lib/civic-time";
+import { clampTimeRef, timeWindow } from "@/lib/civic-time";
 import { CIVIC_CATEGORIES } from "@/lib/civic-cluster";
 
 export async function GET(req: Request) {
@@ -69,7 +69,7 @@ export async function GET(req: Request) {
       );
     }
     if (category) {
-      filters.push(or(eq(ticketsTable.sourceCategory, category), ilike(ticketsTable.title, `%${category}%`)));
+      filters.push(eq(ticketsTable.sourceCategory, category));
     }
 
     const effectiveStatus = status || (tab === "pending" || tab === "progress" || tab === "finished" ? tab : "");
@@ -105,7 +105,7 @@ export async function GET(req: Request) {
       );
     }
     if (time) {
-      const win = timeWindow(time, latest ? new Date(latest) : new Date());
+      const win = timeWindow(time, clampTimeRef(latest ? new Date(latest) : null));
       if (win.from) filters.push(gte(ticketsTable.createTime, win.from));
       if (win.to) filters.push(lt(ticketsTable.createTime, win.to));
     }

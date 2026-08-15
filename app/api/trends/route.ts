@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db/client";
 import { ticketsTable, themesTable } from "@/db/schema";
 import { buildTrends } from "@/lib/civic-stats";
+import { clampTimeRef, timeWindow } from "@/lib/civic-time";
 
 export async function GET(req: Request) {
   try {
@@ -14,10 +15,13 @@ export async function GET(req: Request) {
       const n = t.createTime ? t.createTime.getTime() : 0;
       return n > acc ? n : acc;
     }, 0);
-    const cut = (latest || Date.now()) - Math.max(1, days) * 86400000;
+    const win = timeWindow(`近${Math.max(1, days)}天`, clampTimeRef(latest || null));
     const recentTickets = tickets.filter((t) => {
       if (!t.createTime) return false;
-      return t.createTime.getTime() >= cut;
+      const n = t.createTime.getTime();
+      if (win.from && n < win.from.getTime()) return false;
+      if (win.to && n >= win.to.getTime()) return false;
+      return true;
     });
     const trends = buildTrends(
       recentTickets.map((t) => ({ createTime: t.createTime })),

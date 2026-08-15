@@ -1,4 +1,4 @@
-import { explicitAdmin } from "./admin-area";
+import { explicitAdmin, isTownLabel } from "./admin-area";
 import { regionLabel } from "./civic-dto";
 
 export type TicketStatRow = {
@@ -61,13 +61,13 @@ export function buildOverview(tickets: TicketStatRow[], themeCount: number) {
     const region = town ? regionLabel(town) : "";
     const cat = (t.sourceCategory || t.category || "").trim();
 
-    if (region) {
+    if (region && isTownLabel(region)) {
       regionDistribution[region] = (regionDistribution[region] || 0) + 1;
     }
     if (cat) {
       categoryDistribution[cat] = (categoryDistribution[cat] || 0) + 1;
     }
-    if (region && cat) {
+    if (region && isTownLabel(region) && cat) {
       if (!regionCategory[region]) regionCategory[region] = {};
       regionCategory[region][cat] = (regionCategory[region][cat] || 0) + 1;
     }

@@ -4,7 +4,7 @@ import { buildOverview, buildTrends, buildInsights } from "../lib/civic-stats";
 import { classifyDetailPayload } from "../lib/detail-load";
 import { parseAdminArea, explicitAdmin, isTownLabel } from "../lib/admin-area";
 import { deriveClusterUrgency, spanDays, urgentCutFromUnprocessed } from "../lib/civic-cluster";
-import { timeWindow, inTimeWindow } from "../lib/civic-time";
+import { timeWindow, inTimeWindow, clampTimeRef, formatYmd } from "../lib/civic-time";
 import { AGENT_TICKET_NULLS, buildTicketAgentPatch, buildThemePersistRow } from "../lib/civic-persist";
 import type { EnrichedTicket, MultiFrequencyTheme } from "../backend/state";
 
@@ -194,6 +194,24 @@ assert(
   inTimeWindow("2025-03-31", "近 7 天", new Date(2025, 2, 31)) &&
     !inTimeWindow("2025-03-01", "近7天", new Date(2025, 2, 31))
 );
+assert(
+  "近15天按天数切窗口",
+  inTimeWindow("2025-03-20", "近 15 天", new Date(2025, 2, 31)) &&
+    !inTimeWindow("2025-03-10", "近15天", new Date(2025, 2, 31))
+);
+const futureLatest = new Date(2026, 11, 31);
+const nowAug = new Date(2026, 7, 15, 12, 0, 0);
+assert("未来末日钳到今天", formatYmd(clampTimeRef(futureLatest, nowAug)) === "2026-08-15");
+assert("历史末日保持原值", formatYmd(clampTimeRef(new Date(2025, 2, 31), nowAug)) === "2025-03-31");
+const junkOv = buildOverview(
+  [
+    { createTime: "2026-08-01", subdistrict: "北滘镇", sourceCategory: "城管", confidence: 90 },
+    { createTime: "2026-08-01", subdistrict: "具体", sourceCategory: "城管", confidence: 90 },
+    { createTime: "2026-08-01", subdistrict: "未提供具体", sourceCategory: "城管", confidence: 90 },
+  ],
+  0
+);
+assert("overview 镇街丢掉碎片名", junkOv.regionDistribution["北滘"] === 1 && !junkOv.regionDistribution["具体"]);
 
 assert(
   "入库行 agent 列为空",

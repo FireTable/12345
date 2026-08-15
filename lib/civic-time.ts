@@ -1,35 +1,41 @@
 /** 时间筛选相对数据集最新一天，而不是墙钟“今天”，否则历史 Q1 数据会被近 7/30/90 天全部滤空。 */
+export function formatYmd(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** 数据集末日若在未来（混入了超前天的单），钳到今天，避免近 7/30/90 天只剩那几条。 */
+export function clampTimeRef(latest?: Date | number | null, now = new Date()): Date {
+  const ref =
+    latest instanceof Date ? new Date(latest.getTime()) : latest != null ? new Date(latest) : new Date(now);
+  if (Number.isNaN(ref.getTime())) return new Date(now);
+  return ref.getTime() > now.getTime() ? new Date(now) : ref;
+}
+
 export function timeWindow(
   time: string,
   ref: Date
 ): { from?: Date; to?: Date } {
+  const key = normalizeTimeLabel(time);
   const startOfRef = new Date(ref);
   startOfRef.setHours(0, 0, 0, 0);
   const endOfRef = new Date(startOfRef);
   endOfRef.setDate(endOfRef.getDate() + 1);
 
-  switch (time) {
+  const near = key.match(/^近(\d+)天$/);
+  if (near) {
+    const n = Math.max(1, Number(near[1]));
+    const from = new Date(startOfRef);
+    from.setDate(from.getDate() - (n - 1));
+    return { from, to: endOfRef };
+  }
+
+  switch (key) {
     case "今天":
       return { from: startOfRef, to: endOfRef };
     case "昨天": {
       const from = new Date(startOfRef);
       from.setDate(from.getDate() - 1);
       return { from, to: startOfRef };
-    }
-    case "近7天": {
-      const from = new Date(startOfRef);
-      from.setDate(from.getDate() - 6);
-      return { from, to: endOfRef };
-    }
-    case "近30天": {
-      const from = new Date(startOfRef);
-      from.setDate(from.getDate() - 29);
-      return { from, to: endOfRef };
-    }
-    case "近90天": {
-      const from = new Date(startOfRef);
-      from.setDate(from.getDate() - 89);
-      return { from, to: endOfRef };
     }
     case "本月":
       return {

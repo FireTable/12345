@@ -43,7 +43,10 @@ export default function DashboardPage() {
   const [tr, setTr] = useState<Trends | null>(null);
 
   function load() {
-    Promise.all([fetch("/api/overview").then((r) => r.json()), fetch(`/api/trends?days=${daysRange}`).then((r) => r.json())])
+    Promise.all([
+      fetch(`/api/overview?days=${daysRange}`).then((r) => r.json()),
+      fetch(`/api/trends?days=${daysRange}`).then((r) => r.json()),
+    ])
       .then(([a, b]) => {
         setOv(a);
         setTr(b);

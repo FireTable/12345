@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { ShundeMap } from "@/app/_components/civic/shunde-map";
 import { QuadrantBoard } from "@/app/_components/civic/quadrant";
 import type { ClusterUrgency } from "@/lib/civic-cluster";
-import { inTimeWindow } from "@/lib/civic-time";
+import { clampTimeRef, formatYmd, inTimeWindow } from "@/lib/civic-time";
 import { isTownLabel } from "@/lib/admin-area";
 import { Clock, TrendingUp, Flame, Layers } from "lucide-react";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
@@ -57,7 +57,7 @@ function MultifreqInner() {
   const [timeLabel, setTimeLabel] = useState("近 7 天");
   const [thresholdOpen, setThresholdOpen] = useState(false);
   const [confMin, setConfMin] = useState(85);
-  const [minCount, setMinCount] = useState(3);
+  const [minCount, setMinCount] = useState(2);
   const [windowDays, setWindowDays] = useState(7);
 
   function load() {
@@ -80,7 +80,7 @@ function MultifreqInner() {
       const d = r.last_date || r.first_date || "";
       return d > acc ? d : acc;
     }, "");
-    const ref = latestStr ? new Date(latestStr.replace(" ", "T")) : new Date();
+    const ref = clampTimeRef(latestStr ? new Date(latestStr.replace(" ", "T")) : null);
     return rows.filter((r) => {
       if (region && !r.region.includes(region)) return false;
       if ((r.ai_confidence ?? 100) < confMin) return false;
@@ -92,7 +92,11 @@ function MultifreqInner() {
 
   const pending = filtered.filter((r) => r.status.label === "未处理");
   const urgent = filtered.filter((r) => r.urgency === "urgent");
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const latestStr = rows.reduce((acc, r) => {
+    const d = r.last_date || r.first_date || "";
+    return d > acc ? d : acc;
+  }, "");
+  const todayKey = formatYmd(clampTimeRef(latestStr ? new Date(latestStr.replace(" ", "T")) : null));
   const todayNew = filtered.filter((r) => r.last_date === todayKey || r.first_date === todayKey).length;
 
   const clusterByRegion: Record<string, number> = {};
@@ -109,7 +113,12 @@ function MultifreqInner() {
 
   function cycleTime() {
     const times = ["近 7 天", "近 30 天", "近 90 天", "全部"];
-    setTimeLabel(times[(times.indexOf(timeLabel) + 1) % times.length]);
+    const idx = times.indexOf(timeLabel);
+    const next = times[idx === -1 ? 0 : (idx + 1) % times.length];
+    setTimeLabel(next);
+    if (next === "近 7 天") setWindowDays(7);
+    else if (next === "近 30 天") setWindowDays(30);
+    else if (next === "近 90 天") setWindowDays(90);
   }
 
   return (
@@ -319,7 +328,7 @@ function MultifreqInner() {
                 <span style={{ fontSize: 13 }}>时间窗口（天）</span>
                 <span style={{ fontSize: 13, fontWeight: 600, color: "var(--c-brand)" }}>{windowDays}</span>
               </div>
-              <input type="range" min={3} max={30} value={windowDays} onChange={(e) => setWindowDays(Number(e.target.value))} style={{ width: "100%" }} />
+              <input type="range" min={3} max={90} value={windowDays} onChange={(e) => setWindowDays(Number(e.target.value))} style={{ width: "100%" }} />
             </div>
           </div>
           <div className="modal__footer">
@@ -330,9 +339,7 @@ function MultifreqInner() {
               type="button"
               className="btn btn--primary"
               onClick={() => {
-                if (windowDays <= 7) setTimeLabel("近 7 天");
-                else if (windowDays <= 30) setTimeLabel("近 30 天");
-                else setTimeLabel("近 90 天");
+                setTimeLabel(`近 ${windowDays} 天`);
                 setThresholdOpen(false);
                 toast.success("阈值已保存，列表已按新阈值过滤");
               }}
