@@ -20,10 +20,11 @@ export default function TicketDetailPage() {
       .then((j) => {
         setRow(j);
         setLoad("done");
-        // 如果有对应群组，提示并可一键直达
-        if (j.cluster_info?.id) {
-          router.replace(`/themes/${j.cluster_info.id}?ticketId=${j.id || params.id}&highlight=${j.id || params.id}#ticket-${j.id || params.id}`);
-        }
+        const target = j.ticketId || j.id || params.id;
+        const groupId = j.cluster_info?.id || "unknown";
+        router.replace(
+          `/themes/${groupId}?ticketId=${encodeURIComponent(target)}&highlight=${encodeURIComponent(target)}#ticket-${encodeURIComponent(target)}`
+        );
       })
       .catch(() => {
         setRow(null);
@@ -57,7 +58,7 @@ export default function TicketDetailPage() {
     );
   }
 
-  const clusterId = row.cluster_info?.id || "THEME-1";
+  const clusterId = row.cluster_info?.id || "";
 
   return (
     <>
@@ -67,36 +68,37 @@ export default function TicketDetailPage() {
         <span>{row.id}</span>
       </div>
 
-      {/* 顶部强引导：跳转群组视图 */}
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4 flex items-center justify-between shadow-xs">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-blue-600 text-white flex items-center justify-center">
-            <Layers className="h-5 w-5" />
-          </div>
-          <div>
-            <div className="text-sm font-bold text-blue-950 flex items-center gap-2">
-              <span>该工单已关联至多频研判群组</span>
-              {row.cluster_info?.mode_name && (
-                <span className="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-medium">
-                  {row.cluster_info.mode_name}
-                </span>
-              )}
+      {clusterId ? (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4 flex items-center justify-between shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-blue-600 text-white flex items-center justify-center">
+              <Layers className="h-5 w-5" />
             </div>
-            <div className="text-xs text-blue-700 mt-0.5">
-              建议在多频群组视图中查看完整时空脉络、关联工单与 AI 协同处置建议
+            <div>
+              <div className="text-sm font-bold text-blue-950 flex items-center gap-2">
+                <span>该工单已关联至多频研判群组</span>
+                {row.cluster_info?.mode_name && (
+                  <span className="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-medium">
+                    {row.cluster_info.mode_name}
+                  </span>
+                )}
+              </div>
+              <div className="text-xs text-blue-700 mt-0.5">
+                建议在多频群组视图中查看完整时空脉络、关联工单与 AI 协同处置建议
+              </div>
             </div>
           </div>
-        </div>
 
-        <Link
-          href={`/themes/${clusterId}?ticketId=${row.id}&highlight=${row.id}#ticket-${row.id}`}
-          className="btn btn--primary flex items-center gap-1.5"
-        >
-          <Target className="h-4 w-4" />
-          进入群组全景并定位
-          <ArrowRight className="h-4 w-4" />
-        </Link>
-      </div>
+          <Link
+            href={`/themes/${clusterId}?ticketId=${row.id}&highlight=${row.id}#ticket-${row.id}`}
+            className="btn btn--primary flex items-center gap-1.5"
+          >
+            <Target className="h-4 w-4" />
+            进入群组全景并定位
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+      ) : null}
 
       <div className="page-hero">
         <div>

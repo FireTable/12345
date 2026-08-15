@@ -119,6 +119,7 @@ function MultifreqInner() {
     if (next === "近 7 天") setWindowDays(7);
     else if (next === "近 30 天") setWindowDays(30);
     else if (next === "近 90 天") setWindowDays(90);
+    load();
   }
 
   return (
@@ -137,7 +138,10 @@ function MultifreqInner() {
           </button>
           <Select
             value={region || "all"}
-            onValueChange={(val) => setRegion(val === "all" ? "" : val)}
+            onValueChange={(val) => {
+              setRegion(val === "all" ? "" : val);
+              load();
+            }}
           >
             <SelectTrigger className="w-[125px] h-[34px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
               <SelectValue placeholder="全部镇街" />
@@ -166,28 +170,28 @@ function MultifreqInner() {
           tone="blue"
           label="未处理"
           value={pending.length}
-          sub="多频群组"
+          sub="待派单协同处置"
         />
         <StatCard
           icon={TrendingUp}
           tone="orange"
           label="今日新增"
           value={todayNew}
-          sub="多频群组"
+          sub="24小时内新识别"
         />
         <StatCard
           icon={Flame}
           tone="red"
-          label="紧急"
+          label="紧急群组"
           value={urgent.length}
-          sub="需优先关注处置"
+          sub="高风险优先跟进"
         />
         <StatCard
           icon={Layers}
           tone="purple"
-          label="总量"
+          label="多频总量"
           value={filtered.length}
-          sub="多频群组"
+          sub="当前筛选主题总计"
         />
       </StatCardGrid>
 
@@ -202,7 +206,10 @@ function MultifreqInner() {
               counts={ov?.regionDistribution || {}}
               clusterCounts={clusterByRegion}
               selected={region}
-              onSelect={(name) => setRegion(name)}
+              onSelect={(name) => {
+                setRegion(name);
+                load();
+              }}
             />
           </div>
         </div>

@@ -61,12 +61,63 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
     setUploadOpen(true);
   }, []);
 
+  const openCopilot = useCallback(async () => {
+    try {
+      const [ov, cl] = await Promise.all([
+        fetch("/api/overview").then((r) => r.json()),
+        fetch("/api/clusters").then((r) => r.json()),
+      ]);
+      const list = cl.topClusters || [];
+      setStats({
+        ...emptyStats,
+        totalTickets: ov.totalWorkorders || 0,
+        multiFrequencyTickets: ov.multiFreqCount || 0,
+        themeCount: ov.multiFreqClusters || list.length,
+        highRiskCount: list.filter((c: { urgency?: string }) => c.urgency === "urgent").length,
+      });
+      setThemes(
+        list.map(
+          (c: {
+            id: string;
+            title?: string;
+            region?: string;
+            type?: string;
+            count?: number;
+            urgency?: string;
+          }) => ({
+            id: c.id,
+            title: c.title || `${c.region || ""} · ${c.type || ""}`,
+            canonicalSubject: c.title || "",
+            canonicalLocation: c.region || "",
+            eventType: c.type || "",
+            category: c.type || "",
+            riskLevel: c.urgency === "urgent" ? "HIGH" : "LOW",
+            riskReason: "",
+            ticketCount: c.count || 0,
+            timeSpanHours: 0,
+            firstOccurrence: "",
+            lastOccurrence: "",
+            aiSummary: "",
+            recommendedAction: "",
+            tickets: [],
+            relatedSubjects: [],
+            relatedLocations: [],
+            status: "UNCHECKED" as const,
+          })
+        )
+      );
+    } catch {
+      /* 打开助手仍可用，只是开场统计可能为空 */
+    }
+    setCopilotOpen(true);
+  }, []);
+
   return (
     <CivicWorkflowContext.Provider
       value={{
         analyzing,
         openUpload,
-        openCopilot: () => setCopilotOpen(true),
+        openCopilot,
         runCluster,
       }}
     >
@@ -91,16 +142,18 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
           refreshPages();
         }}
       />
-      <LightCopilot
-        isOpen={copilotOpen}
-        onClose={() => setCopilotOpen(false)}
-        themes={themes}
-        stats={stats}
-        onSelectTheme={(t) => {
-          setCopilotOpen(false);
-          router.push(`/themes/${t.id}`);
-        }}
-      />
+      {copilotOpen ? (
+        <LightCopilot
+          isOpen={copilotOpen}
+          onClose={() => setCopilotOpen(false)}
+          themes={themes}
+          stats={stats}
+          onSelectTheme={(t) => {
+            setCopilotOpen(false);
+            router.push(`/themes/${t.id}`);
+          }}
+        />
+      ) : null}
     </CivicWorkflowContext.Provider>
   );
 }

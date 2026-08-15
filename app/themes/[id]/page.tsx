@@ -62,7 +62,72 @@ type ClusterDetail = {
   radar: number[];
   status: { label: string; progress: number; owner: string; color: string; eta: string };
   members?: Member[];
+  ungrouped?: boolean;
 };
+
+function isUnknownGroup(id?: string) {
+  return (id || "").toLowerCase() === "unknown" || (id || "").toLowerCase() === "ungrouped";
+}
+
+function ticketToMember(j: {
+  id?: string;
+  ticketId?: string;
+  title?: string;
+  category?: string;
+  region?: string;
+  createdAt?: string;
+  content?: string;
+  rawContent?: string;
+  confidence?: number | null;
+  caller_name?: string;
+  caller_phone?: string;
+  address?: string;
+  urgency?: string;
+  status?: string;
+}): Member {
+  return {
+    id: j.id || j.ticketId || "",
+    ticketId: j.ticketId || j.id || "",
+    title: j.title || "市民诉求",
+    category: j.category || "",
+    region: j.region || "",
+    createdAt: j.createdAt || "",
+    content: j.content || j.rawContent || "",
+    confidence: j.confidence ?? null,
+    caller_name: j.caller_name,
+    caller_phone: j.caller_phone,
+    address: j.address,
+    urgency: j.urgency,
+    status: typeof j.status === "string" ? j.status : "",
+  };
+}
+
+function unknownClusterFromTicket(t: Member): ClusterDetail {
+  return {
+    success: true,
+    id: "unknown",
+    code: "UNKNOWN",
+    type: t.category || "未归组",
+    region: t.region || "unknown",
+    count: 1,
+    mode: "aggregate",
+    mode_name: "unknown",
+    mode_icon: "○",
+    mode_tagline: "尚未归入多频群组",
+    mode_risk: "",
+    mode_advice: "该工单尚未被 AI 聚类归入多频群组。以下仅展示本条工单原文，供工作人员查阅。",
+    title: t.title,
+    ai_confidence: t.confidence,
+    first_date: t.createdAt,
+    last_date: t.createdAt,
+    trend: "—",
+    features: [],
+    radar: [],
+    status: { label: "未归组", progress: 0, owner: "", color: "#86909C", eta: "" },
+    members: [t],
+    ungrouped: true,
+  };
+}
 
 function asMode(m?: string): CivicMode {
   if (m === "repeat" || m === "diverge" || m === "aggregate") return m;
@@ -113,9 +178,56 @@ function ThemeDetailInner() {
   }, [searchParams]);
 
   useEffect(() => {
+    const ticketKey = (
+      searchParams.get("ticketId") ||
+      searchParams.get("highlight") ||
+      targetTicketId ||
+      ""
+    ).trim();
+
     setLoad("pending");
     setRow(null);
     setExtraMember(null);
+
+    if (isUnknownGroup(params.id)) {
+      if (!ticketKey) {
+        setRow(unknownClusterFromTicket({
+          id: "",
+          ticketId: "",
+          title: "未指定工单",
+          category: "",
+          region: "unknown",
+          createdAt: "",
+          content: "",
+          confidence: null,
+        }));
+        setLoad("done");
+        return;
+      }
+      fetch(`/api/workorders/${encodeURIComponent(ticketKey)}`)
+        .then((r) => r.json())
+        .then((j) => {
+          if (!j.success) {
+            setRow(j);
+            setLoad("done");
+            return;
+          }
+          if (j.cluster_info?.id) {
+            const target = j.ticketId || j.id || ticketKey;
+            router.replace(
+              `/themes/${j.cluster_info.id}?ticketId=${encodeURIComponent(target)}&highlight=${encodeURIComponent(target)}#ticket-${encodeURIComponent(target)}`
+            );
+            return;
+          }
+          setRow(unknownClusterFromTicket(ticketToMember(j)));
+          setLoad("done");
+        })
+        .catch(() => {
+          setRow(null);
+          setLoad("error");
+        });
+      return;
+    }
 
     fetch(`/api/clusters/${params.id}`)
       .then((r) => r.json())
@@ -123,27 +235,14 @@ function ThemeDetailInner() {
         setRow(j);
         setLoad("done");
 
-        // 若当前群组列表中未包含指定的目标工单，动态补全该工单
-        if (targetTicketId) {
-          const exists = (j.members || []).some((m: Member) => checkIsTarget(m, targetTicketId));
+        if (ticketKey) {
+          const exists = (j.members || []).some((m: Member) => checkIsTarget(m, ticketKey));
           if (!exists) {
             try {
-              const singleRes = await fetch(`/api/workorders/${encodeURIComponent(targetTicketId)}`);
+              const singleRes = await fetch(`/api/workorders/${encodeURIComponent(ticketKey)}`);
               const singleData = await singleRes.json();
               if (singleData.success) {
-                setExtraMember({
-                  id: singleData.id,
-                  ticketId: singleData.ticketId || singleData.id,
-                  title: singleData.title,
-                  category: singleData.category,
-                  region: singleData.region,
-                  createdAt: singleData.createdAt,
-                  content: singleData.content,
-                  confidence: singleData.confidence,
-                  caller_name: singleData.caller_name,
-                  caller_phone: singleData.caller_phone,
-                  address: singleData.address,
-                });
+                setExtraMember(ticketToMember(singleData));
               }
             } catch (e) {}
           }
@@ -153,7 +252,7 @@ function ThemeDetailInner() {
         setRow(null);
         setLoad("error");
       });
-  }, [params.id, targetTicketId]);
+  }, [params.id, searchParams, targetTicketId, router]);
 
   const view = classifyDetailPayload(load, row);
   const mode = asMode(row?.mode);

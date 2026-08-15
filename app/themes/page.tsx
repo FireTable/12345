@@ -159,8 +159,11 @@ export default function ThemesPage() {
           tone="blue"
           label="总群组数"
           value={counts.all}
-          sub="多频群组"
-          onClick={() => setTab("all")}
+          sub="已识别多频主题"
+          onClick={() => {
+            setTab("all");
+            load();
+          }}
           className={tab === "all" ? "ring-2 ring-blue-500/30" : ""}
         />
         <StatCard
@@ -169,7 +172,10 @@ export default function ThemesPage() {
           label="未处理"
           value={counts.pending}
           sub="待处置群组"
-          onClick={() => setTab("pending")}
+          onClick={() => {
+            setTab("pending");
+            load();
+          }}
           className={tab === "pending" ? "ring-2 ring-rose-500/30" : ""}
         />
         <StatCard
@@ -178,7 +184,10 @@ export default function ThemesPage() {
           label="紧急"
           value={counts.urgent}
           sub="未处理工单较多"
-          onClick={() => setTab("urgent")}
+          onClick={() => {
+            setTab("urgent");
+            load();
+          }}
           className={tab === "urgent" ? "ring-2 ring-amber-500/30" : ""}
         />
         <StatCard
@@ -187,14 +196,25 @@ export default function ThemesPage() {
           label="已办结"
           value={counts.done}
           sub="处置完成"
-          onClick={() => setTab("done")}
+          onClick={() => {
+            setTab("done");
+            load();
+          }}
           className={tab === "done" ? "ring-2 ring-emerald-500/30" : ""}
         />
       </StatCardGrid>
 
       <div className="filter-tabs">
         {TABS.map((t) => (
-          <button key={t.key} type="button" className={`filter-tab${tab === t.key ? " is-active" : ""}`} onClick={() => setTab(t.key)}>
+          <button
+            key={t.key}
+            type="button"
+            className={`filter-tab${tab === t.key ? " is-active" : ""}`}
+            onClick={() => {
+              setTab(t.key);
+              load();
+            }}
+          >
             {t.label}
             <span className="filter-tab__count">{counts[t.key]}</span>
           </button>
@@ -207,7 +227,13 @@ export default function ThemesPage() {
           <input placeholder="搜索群组 · 镇街 / 类型 / 标题关键词" value={kw} onChange={(e) => setKw(e.target.value)} />
         </div>
         <div className="filter-bar__divider" />
-        <Select value={region || "all"} onValueChange={(val) => setRegion(val === "all" ? "" : val)}>
+        <Select
+          value={region || "all"}
+          onValueChange={(val) => {
+            setRegion(val === "all" ? "" : val);
+            load();
+          }}
+        >
           <SelectTrigger className="w-[130px] h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
             <SelectValue placeholder="镇街：全部" />
           </SelectTrigger>
@@ -220,7 +246,13 @@ export default function ThemesPage() {
             ))}
           </SelectContent>
         </Select>
-        <Select value={mode || "all"} onValueChange={(val) => setMode(val === "all" ? "" : val)}>
+        <Select
+          value={mode || "all"}
+          onValueChange={(val) => {
+            setMode(val === "all" ? "" : val);
+            load();
+          }}
+        >
           <SelectTrigger className="w-[135px] h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
             <SelectValue placeholder="模式：全部" />
           </SelectTrigger>
@@ -231,7 +263,13 @@ export default function ThemesPage() {
             <SelectItem value="diverge">同主体发散型</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={urgency || "all"} onValueChange={(val) => setUrgency(val === "all" ? "" : val)}>
+        <Select
+          value={urgency || "all"}
+          onValueChange={(val) => {
+            setUrgency(val === "all" ? "" : val);
+            load();
+          }}
+        >
           <SelectTrigger className="w-[125px] h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
             <SelectValue placeholder="紧急度：全部" />
           </SelectTrigger>

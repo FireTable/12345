@@ -53,9 +53,11 @@ export default function TicketsPage() {
   const [drawer, setDrawer] = useState<Row | null>(null);
 
   const handleViewInGroup = (r: Row) => {
-    const clusterId = r.cluster_id || "THEME-1";
     const targetId = r.ticketId || r.id;
-    router.push(`/themes/${clusterId}?ticketId=${encodeURIComponent(targetId)}&highlight=${encodeURIComponent(targetId)}#ticket-${encodeURIComponent(targetId)}`);
+    const groupId = r.cluster_id || "unknown";
+    router.push(
+      `/themes/${groupId}?ticketId=${encodeURIComponent(targetId)}&highlight=${encodeURIComponent(targetId)}#ticket-${encodeURIComponent(targetId)}`
+    );
   };
   const [data, setData] = useState<{
     total: number;
