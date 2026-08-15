@@ -166,6 +166,9 @@ export function donutOption(dist: Record<string, number>) {
       itemStyle: { color: categoryColor(name) },
     }));
   const total = data.reduce((s, d) => s + d.value, 0);
+  const topItem = data[0];
+  const topPct = total > 0 && topItem ? ((topItem.value / total) * 100).toFixed(1) : "0.0";
+
   return {
     tooltip: {
       trigger: "item",
@@ -173,7 +176,7 @@ export function donutOption(dist: Record<string, number>) {
       borderColor: "transparent",
       textStyle: { color: "#fff", fontSize: 12 },
       formatter: (p: { name: string; value: number; percent: number }) =>
-        `${p.name}<br/>${Number(p.value).toLocaleString("zh-CN")} 件 (${p.percent}%)`,
+        `<b>${p.name}</b><br/>${Number(p.value).toLocaleString("zh-CN")} 件 (${Number(p.percent).toFixed(1)}%)`,
     },
     legend: {
       bottom: 0,
@@ -183,28 +186,66 @@ export function donutOption(dist: Record<string, number>) {
       textStyle: { color: "#64748B", fontSize: 11 },
       formatter: (name: string) => {
         const d = data.find((x) => x.name === name);
-        return `${name} ${d && total ? Math.round((d.value / total) * 100) : 0}%`;
+        const pct = d && total ? ((d.value / total) * 100).toFixed(1) : "0.0";
+        return `${name} ${pct}%`;
       },
     },
     series: [
       {
         type: "pie",
-        radius: ["52%", "76%"],
-        center: ["50%", "44%"],
+        radius: ["54%", "78%"],
+        center: ["50%", "42%"],
         avoidLabelOverlap: false,
         label: {
           show: true,
           position: "center",
-          formatter: () => `{a|${total.toLocaleString("zh-CN")}}\n{b|工单总量}`,
+          formatter: () => `{val|${topPct}%}\n{name|${topItem?.name || "主要诉求"}}`,
           rich: {
-            a: { fontSize: 20, fontWeight: 700, color: "#1E5AFF", lineHeight: 24 },
-            b: { fontSize: 11, color: "#94A3B8", lineHeight: 18 },
+            val: {
+              fontSize: 26,
+              fontWeight: 800,
+              color: "#1E293B",
+              fontFamily: "ui-sans-serif, system-ui, -apple-system, sans-serif",
+              lineHeight: 34,
+            },
+            name: {
+              fontSize: 12,
+              color: "#64748B",
+              fontWeight: 500,
+              lineHeight: 18,
+            },
           },
         },
         labelLine: { show: false },
         data,
         itemStyle: { borderColor: "#fff", borderWidth: 2 },
-        emphasis: { scale: true, scaleSize: 6 },
+        emphasis: {
+          scale: true,
+          scaleSize: 6,
+          label: {
+            show: true,
+            position: "center",
+            formatter: (p: any) => {
+              const pct = p.percent != null ? Number(p.percent).toFixed(1) : ((p.value / total) * 100).toFixed(1);
+              return `{val|${pct}%}\n{name|${p.name}}`;
+            },
+            rich: {
+              val: {
+                fontSize: 28,
+                fontWeight: 800,
+                color: "#1E5AFF",
+                fontFamily: "ui-sans-serif, system-ui, -apple-system, sans-serif",
+                lineHeight: 36,
+              },
+              name: {
+                fontSize: 12,
+                color: "#1E293B",
+                fontWeight: 600,
+                lineHeight: 18,
+              },
+            },
+          },
+        },
       },
     ],
     animationDuration: 1000,
