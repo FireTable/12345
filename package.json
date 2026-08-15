@@ -9,7 +9,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "slice": "tsx scripts/slice-excel.ts"
+    "slice": "tsx scripts/slice-excel.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push",
+    "db:seed": "tsx scripts/db-seed.ts",
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
     "@langchain/core": "^0.3.40",
@@ -26,11 +30,13 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "drizzle-orm": "^0.45.2",
     "lucide-react": "^1.16.0",
     "motion": "^12.4.7",
     "next": "^15.2.1",
     "p-queue": "^8.1.0",
     "papaparse": "^5.5.2",
+    "postgres": "^3.4.9",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-force-graph-2d": "^1.26.1",
@@ -40,11 +46,13 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@next/env": "^16.3.1",
     "@tailwindcss/postcss": "^4.0.9",
     "@types/node": "^22.13.9",
     "@types/papaparse": "^5.3.15",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
+    "drizzle-kit": "^0.31.10",
     "postcss": "^8.5.3",
     "tailwindcss": "^4.0.9",
     "tsx": "^4.23.12",

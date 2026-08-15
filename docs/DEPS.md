@@ -30,6 +30,8 @@
 ### 3. 图谱可视化与数据导出
 | 依赖库名称 | 用途说明 | 开源许可证 | 官方/开源地址 |
 | :--- | :--- | :--- | :--- |
+| **`drizzle-orm`** / **`drizzle-kit`** | 现代化 TypeScript ORM 与数据库迁移工具 | **Apache-2.0** | [drizzle-team/drizzle-orm](https://github.com/drizzle-team/drizzle-orm) |
+| **`postgres`** *(postgres.js)* | 高性能 PostgreSQL 驱动与连接池管理 | **Unlicense** (自由开源/兼容 MIT) | [porsager/postgres](https://github.com/porsager/postgres) |
 | **`@tanstack/react-table`** | Shadcn 标准 Data Table 引擎（多列排序、过滤、分页、勾选） | **MIT** | [tanstack/table](https://github.com/tanstack/table) |
 | **`@tanstack/react-virtual`** | 海量工单虚拟列表滚动引擎（保障超长列表丝滑性能） | **MIT** | [tanstack/virtual](https://github.com/tanstack/virtual) |
 | **`react-force-graph-2d`** | 知识图谱网络拓扑可视化渲染（力导向图） | **MIT** | [vasturiano/react-force-graph](https://github.com/vasturiano/react-force-graph) |
