@@ -1,5 +1,11 @@
 import type { TicketRadarState, EnrichedTicket, RawTicket } from "../state";
-import { getChatModel, llmConcurrency } from "../model";
+import {
+  getChatModel,
+  isLocalLlm,
+  llmConcurrency,
+  markToolCallingUnsupported,
+  modelSupportsToolCalling,
+} from "../model";
 import {
   BatchExtractionSchema,
   buildBatchExtractionPrompt,
@@ -32,31 +38,33 @@ async function extractBatchWithLLM(
   try {
     const chat = getChatModel(0);
 
-    // 1. 优先采用 LangChain 原生 withStructuredOutput 结构化输出
-    try {
-      const structuredChat = chat.withStructuredOutput(BatchExtractionSchema);
-      const structuredRes = await structuredChat.invoke(prompt);
-      if (structuredRes && Array.isArray(structuredRes.items)) {
-        for (const item of structuredRes.items) {
-          if (item && typeof item.index === "number") {
-            result.set(startIndex + item.index - 1, {
-              index: item.index,
-              summarizeTitle: String(item.summarizeTitle || "").trim(),
-              subject: String(item.subject || "").trim(),
-              location: String(item.location || "").trim(),
-              eventType: String(item.eventType || "").trim(),
-              category: item.category || "城市管理",
-              confidence: Number(item.confidence || 85),
-            });
+    if (await modelSupportsToolCalling()) {
+      try {
+        const structuredChat = chat.withStructuredOutput(BatchExtractionSchema);
+        const structuredRes = await structuredChat.invoke(prompt);
+        if (structuredRes && Array.isArray(structuredRes.items)) {
+          for (const item of structuredRes.items) {
+            if (item && typeof item.index === "number") {
+              result.set(startIndex + item.index - 1, {
+                index: item.index,
+                summarizeTitle: String(item.summarizeTitle || "").trim(),
+                subject: String(item.subject || "").trim(),
+                location: String(item.location || "").trim(),
+                eventType: String(item.eventType || "").trim(),
+                category: item.category || "城市管理",
+                confidence: Number(item.confidence || 85),
+              });
+            }
           }
+          if (result.size > 0) return result;
         }
-        if (result.size > 0) return result;
+      } catch (structErr: unknown) {
+        const message = structErr instanceof Error ? structErr.message : String(structErr);
+        markToolCallingUnsupported(message);
       }
-    } catch (structErr) {
-      // 兼容非原生 function calling 的大模型端点
     }
 
-    // 2. 备用直接 JSON 解析
+    // 探测失败或不支持：JSON 解析
     const res = await chat.invoke(prompt);
     const text = typeof res.content === "string" ? res.content : JSON.stringify(res.content);
     const jsonMatch = text.match(/\[[\s\S]*\]/) || text.match(/\{[\s\S]*\}/);
@@ -191,14 +199,26 @@ export async function extractNode(
 ): Promise<Partial<TicketRadarState>> {
   const rawTickets = state.rawTickets || [];
   const taskId = state.taskId;
-  const CHUNK_SIZE = 1;
+  const CHUNK_SIZE = isLocalLlm() ? 4 : 1;
   const extractionMap = new Map<number, ExtractedTicketItem>();
   const queue = new PQueue({ concurrency: llmConcurrency() });
 
   if (taskId) {
     updateTaskProgress(taskId, {
       stage: "EXTRACTING",
-      stageText: `正在使用大模型逐条并行提取工单要素 (共 ${rawTickets.length} 条)...`,
+      stageText: "正在探测模型是否支持工具调用...",
+      total: rawTickets.length,
+      processed: 0,
+      percent: 0,
+    });
+  }
+  const toolsOk = await modelSupportsToolCalling();
+  if (taskId) {
+    updateTaskProgress(taskId, {
+      stage: "EXTRACTING",
+      stageText: toolsOk
+        ? `模型支持工具调用，开始抽取 (共 ${rawTickets.length} 条)...`
+        : `模型不支持工具调用，已回退 JSON 抽取 (共 ${rawTickets.length} 条)...`,
       total: rawTickets.length,
       processed: 0,
       percent: 0,
@@ -244,16 +264,20 @@ export async function extractNode(
     });
   }
 
-  // 1.2 对尚未抽取的工单加入并发队列
-  for (let i = 0; i < normalizedRawTickets.length; i += CHUNK_SIZE) {
-    if (extractionMap.has(i)) {
-      continue; // 历史已抽取，直接跳过！
-    }
-    const chunk = normalizedRawTickets.slice(i, i + CHUNK_SIZE);
-    const startIdx = i;
+  // 1.2 对尚未抽取的工单加入并发队列（按未抽取下标打包，避免 CHUNK>1 时把已抽取条目整批跳过）
+  const pendingIdx: number[] = [];
+  for (let i = 0; i < normalizedRawTickets.length; i++) {
+    if (!extractionMap.has(i)) pendingIdx.push(i);
+  }
+  for (let p = 0; p < pendingIdx.length; p += CHUNK_SIZE) {
+    const idxs = pendingIdx.slice(p, p + CHUNK_SIZE);
+    const chunk = idxs.map((i) => normalizedRawTickets[i]);
+    const indexMap = idxs;
     chunkTasks.push(async () => {
-      const res = await extractBatchWithLLM(chunk, startIdx);
-      res.forEach((val, key) => {
+      const packed = await extractBatchWithLLM(chunk, 0);
+      packed.forEach((val, packedIdx) => {
+        const key = indexMap[packedIdx];
+        if (key === undefined) return;
         extractionMap.set(key, val);
         // 单条实时持久化至 PostgreSQL 数据库，保证中途关闭或刷新永不丢失进度
         const orig = normalizedRawTickets[key];

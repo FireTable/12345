@@ -4,7 +4,7 @@
  * 触发二级仲裁专家模型进行深层消歧与事实纠偏。
  */
 
-import { getChatModel } from "../model";
+import { getChatModel, markToolCallingUnsupported, modelSupportsToolCalling } from "../model";
 import {
   ArbitrationSchema,
   buildArbitrationPrompt,
@@ -70,9 +70,15 @@ export async function arbitrateSingleTicket(
       let arbitrated: ArbitrationResult | null = null;
 
       try {
-        const structured = arbitratorChat.withStructuredOutput(ArbitrationSchema);
-        arbitrated = (await structured.invoke(prompt)) as ArbitrationResult;
-      } catch (e) {
+        if (await modelSupportsToolCalling()) {
+          const structured = arbitratorChat.withStructuredOutput(ArbitrationSchema);
+          arbitrated = (await structured.invoke(prompt)) as ArbitrationResult;
+        }
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
+        markToolCallingUnsupported(message);
+      }
+      if (!arbitrated) {
         const res = await arbitratorChat.invoke(prompt);
         const text = typeof res.content === "string" ? res.content : JSON.stringify(res.content);
         const match = text.match(/\{[\s\S]*\}/);

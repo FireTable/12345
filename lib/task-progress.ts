@@ -186,6 +186,11 @@ export async function getTaskProgress(taskId: string): Promise<TaskProgress | nu
  * 获取系统中最近一条执行的任务（用于页面初始化或断线重连）
  */
 export async function getLatestTaskProgress(): Promise<TaskProgress | null> {
+  let newestMem: TaskProgress | null = null;
+  for (const t of progressStore.values()) {
+    if (!newestMem || t.updatedAt > newestMem.updatedAt) newestMem = t;
+  }
+
   try {
     const rows = await db
       .select()
@@ -195,7 +200,7 @@ export async function getLatestTaskProgress(): Promise<TaskProgress | null> {
 
     if (rows && rows.length > 0) {
       const r = rows[0];
-      const latest: TaskProgress = {
+      const fromDb: TaskProgress = {
         taskId: r.taskId,
         status: (r.status as any) || "PENDING",
         stage: (r.stage as any) || "EXTRACTING",
@@ -210,14 +215,16 @@ export async function getLatestTaskProgress(): Promise<TaskProgress | null> {
         error: r.error || undefined,
         updatedAt: r.updatedAt ? r.updatedAt.getTime() : Date.now(),
       };
-      progressStore.set(r.taskId, latest);
-      return latest;
+      if (newestMem && newestMem.updatedAt >= fromDb.updatedAt) return newestMem;
+      const live = progressStore.get(fromDb.taskId);
+      if (live && live.updatedAt >= fromDb.updatedAt) return live;
+      return fromDb;
     }
   } catch (err: any) {
     console.warn("[task-progress] Failed to fetch latest task from DB:", err.message);
   }
 
-  return null;
+  return newestMem;
 }
 
 export function removeTaskProgress(taskId: string): void {

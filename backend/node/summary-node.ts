@@ -7,7 +7,7 @@ import type {
   MultiFrequencyTheme,
   RiskLevel,
 } from "../state";
-import { getChatModel, llmConcurrency } from "../model";
+import { getChatModel, llmConcurrency, markToolCallingUnsupported, modelSupportsToolCalling } from "../model";
 
 import {
   ThemeEnrichmentSchema,
@@ -34,32 +34,35 @@ async function enrichThemeBatchWithLLM(
       const chat = getChatModel(0.1);
       const prompt = buildBatchThemeEnrichmentPrompt(themeBatch);
 
-      // 1. 优先采用 Zod 批量结构化输出
-      try {
-        const structuredChat = chat.withStructuredOutput(BatchThemeEnrichmentSchema);
-        const structuredRes = await structuredChat.invoke(prompt);
-        if (structuredRes && Array.isArray(structuredRes.results) && structuredRes.results.length > 0) {
-          const resultMap = new Map<number, any>();
-          structuredRes.results.forEach((r) => {
-            resultMap.set(r.themeIndex, r);
-          });
+      // 1. 探测通过才走 tool-calling
+      if (await modelSupportsToolCalling()) {
+        try {
+          const structuredChat = chat.withStructuredOutput(BatchThemeEnrichmentSchema);
+          const structuredRes = await structuredChat.invoke(prompt);
+          if (structuredRes && Array.isArray(structuredRes.results) && structuredRes.results.length > 0) {
+            const resultMap = new Map<number, any>();
+            structuredRes.results.forEach((r) => {
+              resultMap.set(r.themeIndex, r);
+            });
 
-          return themeBatch.map((theme, i) => {
-            const r = resultMap.get(i + 1) || structuredRes.results[i];
-            if (!r) return { recommendedAction: DEFAULT_RECOMMENDED_ACTION };
+            return themeBatch.map((theme, i) => {
+              const r = resultMap.get(i + 1) || structuredRes.results[i];
+              if (!r) return { recommendedAction: DEFAULT_RECOMMENDED_ACTION };
 
-            const incoming = r.riskLevel as RiskLevel;
-            const finalRisk: RiskLevel = theme.riskLevel === "HIGH" ? "HIGH" : incoming;
-            return {
-              riskLevel: finalRisk,
-              riskReason: r.riskReason || theme.riskReason,
-              aiSummary: r.aiSummary || theme.aiSummary,
-              recommendedAction: r.recommendedAction || DEFAULT_RECOMMENDED_ACTION,
-            };
-          });
+              const incoming = r.riskLevel as RiskLevel;
+              const finalRisk: RiskLevel = theme.riskLevel === "HIGH" ? "HIGH" : incoming;
+              return {
+                riskLevel: finalRisk,
+                riskReason: r.riskReason || theme.riskReason,
+                aiSummary: r.aiSummary || theme.aiSummary,
+                recommendedAction: r.recommendedAction || DEFAULT_RECOMMENDED_ACTION,
+              };
+            });
+          }
+        } catch (structErr: unknown) {
+          const message = structErr instanceof Error ? structErr.message : String(structErr);
+          markToolCallingUnsupported(message);
         }
-      } catch (structErr) {
-        // Fallback to text invoke
       }
 
       // 2. 备用直接 Prompt + JSON 解析
