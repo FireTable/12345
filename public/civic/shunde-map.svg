@@ -30,9 +30,9 @@
     }
 
     .region.is-selected {
-      stroke: #0F172A !important;
+      stroke: #1E5AFF !important;
       stroke-width: 4.5 !important;
-      filter: brightness(1.08) drop-shadow(0 2px 8px rgba(0,0,0,0.25));
+      filter: brightness(1.06) drop-shadow(0 2px 8px rgba(30, 90, 255, 0.35));
     }
 
     .region-label {

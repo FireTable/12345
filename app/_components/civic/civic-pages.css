@@ -434,7 +434,7 @@
 
 .map-wrap { position: relative; width: 100%; height: 100%; }
 .map-svg { width: 100%; height: 100%; display: block; }
-.map-wrap .region.is-selected { stroke: #1F2329; stroke-width: 2; }
+.map-wrap .region.is-selected { stroke: #1E5AFF; stroke-width: 4px; }
 .map-empty {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   color: var(--c-ink-3); font-size: 13px; pointer-events: none;
