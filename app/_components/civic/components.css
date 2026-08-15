@@ -74,6 +74,18 @@
   cursor: pointer;
 }
 .icon-btn:hover { background: var(--c-brand-tint); color: var(--c-brand); }
+.chat-fab {
+  position: fixed; right: 24px; bottom: 24px;
+  width: 48px; height: 48px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--c-brand); color: #fff;
+  border: none; cursor: pointer;
+  box-shadow: 0 6px 18px rgba(30, 90, 255, 0.35);
+  transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+  z-index: 900;
+}
+.chat-fab:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(30, 90, 255, 0.45); }
+.chat-fab:active { transform: translateY(0); }
 .icon-btn .badge {
   position: absolute; top: 4px; right: 4px;
   min-width: 16px; height: 16px; padding: 0 4px;

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { classifyDetailPayload, type DetailLoadStatus } from "@/lib/detail-load";
 import { Layers, ArrowRight } from "lucide-react";
+import { SkTicketDetail } from "@/app/_components/civic/skeletons";
 
 export default function TicketDetailPage() {
   const params = useParams<{ id: string }>();
@@ -35,7 +36,7 @@ export default function TicketDetailPage() {
           <span>/</span>
           <span>详情</span>
         </div>
-        <div className="empty-hint">加载中…</div>
+        <SkTicketDetail />
       </>
     );
   }

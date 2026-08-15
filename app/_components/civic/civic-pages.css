@@ -264,6 +264,10 @@
 .map-wrap { position: relative; width: 100%; height: 460px; }
 .map-svg { width: 100%; height: 100%; display: block; }
 .map-wrap .region.is-selected { stroke: #1F2329; stroke-width: 2; }
+.map-empty {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  color: var(--c-ink-3); font-size: 13px; pointer-events: none;
+}
 .map-tooltip {
   position: absolute; background: rgba(31,35,41,0.95); color: #fff; padding: 10px 14px;
   border-radius: 8px; font-size: 12px; pointer-events: none; opacity: 0; z-index: 10; min-width: 140px;
@@ -366,6 +370,71 @@
 
 .chart-legend { display: flex; align-items: center; gap: 14px; font-size: 12px; color: var(--c-ink-3); }
 .chart-legend i { display: inline-block; width: 14px; height: 2px; border-radius: 1px; }
+
+/* Skeleton — same shells as live cards / tables / KPI */
+.sk-bone {
+  position: relative;
+  overflow: hidden;
+  display: inline-block;
+  vertical-align: middle;
+  background: var(--c-border-soft);
+  border-radius: 6px;
+}
+.sk-bone::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.7) 50%, transparent 100%);
+  animation: sk-shimmer 1.35s ease-in-out infinite;
+}
+@keyframes sk-shimmer {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+.sk-stat {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid var(--c-border-soft);
+  background: var(--c-surface);
+  box-shadow: var(--sh-1);
+}
+.sk-stat__icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  flex-shrink: 0;
+}
+.sk-stat__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sk-chart {
+  width: 100%;
+  border-radius: 10px;
+  background: linear-gradient(180deg, var(--c-surface-2) 0%, var(--c-border-soft) 100%);
+  position: relative;
+  overflow: hidden;
+}
+.sk-chart::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.55), transparent);
+  animation: sk-shimmer 1.6s ease-in-out infinite;
+}
+.sk-chart--map { border-radius: 12px; }
+.sk-heatmap { display: flex; flex-direction: column; gap: 6px; }
+.sk-heatmap__row { display: flex; align-items: center; gap: 6px; }
+.sk-heatmap__cell { width: 48px; height: 28px; border-radius: 6px; flex-shrink: 0; }
+.sk-hero { background: linear-gradient(135deg, #94b4ff 0%, #c5d4ff 100%) !important; }
+.sk-hero .sk-bone { background: rgba(255,255,255,0.35); }
+.sk-page { min-height: 40vh; }
 
 /* Wide tables / heatmaps scroll inside their own wrapper — never rely on body clip */
 .table-scroll,

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useRef, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -41,7 +42,7 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
     {
       id: "m-init",
       role: "assistant",
-      content: `您好！我是 **Ticket Radar 智能研判副驾驶**。\n\n当前已全量接入 **${stats.totalTickets.toLocaleString()}** 件工单，系统识别出 **${stats.themeCount}** 个多频治理主题，其中包含 **${stats.highRiskCount}** 项紧急督办事件。\n\n您可以随时让我生成研判简报、查找高危事件或分析特定街道的重点责任主体。`,
+      content: `您好！我是 **民声智理 12345 智能研判副驾驶**。\n\n当前已全量接入 **${stats.totalTickets.toLocaleString()}** 件工单，系统识别出 **${stats.themeCount}** 个多频治理主题，其中包含 **${stats.highRiskCount}** 项紧急督办事件。\n\n您可以随时让我生成研判简报、查找高危事件或分析特定街道的重点责任主体。`,
       timestamp: new Date().toLocaleTimeString(),
     },
   ]);
@@ -65,8 +66,6 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
       };
     }
   }, [isOpen]);
-
-  if (!isOpen) return null;
 
   const handleSend = async (customText?: string) => {
     const text = customText || input;
@@ -136,14 +135,25 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[250] flex justify-end bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-200 overscroll-contain"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-lg h-full bg-white border-l border-slate-200 shadow-2xl flex flex-col overflow-hidden text-slate-900 animate-in slide-in-from-right duration-250"
-        onClick={(e) => e.stopPropagation()}
+    <AnimatePresence>
+      {isOpen && (
+      <motion.div
+        key="copilot-backdrop"
+        className="fixed inset-0 z-[250] flex justify-end bg-slate-900/50 backdrop-blur-xs overscroll-contain"
+        onClick={onClose}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.2, ease: "easeOut" }}
       >
+        <motion.div
+          className="w-full max-w-lg h-full bg-white border-l border-slate-200 shadow-2xl flex flex-col overflow-hidden text-slate-900"
+          onClick={(e) => e.stopPropagation()}
+          initial={{ x: "100%" }}
+          animate={{ x: 0 }}
+          exit={{ x: "100%" }}
+          transition={{ duration: 0.28, ease: [0.32, 0.72, 0.18, 1] }}
+        >
         {/* Header */}
         <div className="p-4 border-b border-slate-200 flex items-center justify-between gap-2 bg-slate-50">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -262,7 +272,9 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
             </Button>
           </form>
         </div>
-      </div>
-    </div>
+        </motion.div>
+      </motion.div>
+      )}
+    </AnimatePresence>
   );
 };

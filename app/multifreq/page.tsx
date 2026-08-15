@@ -10,6 +10,7 @@ import { clampTimeRef, formatYmd, inTimeWindow } from "@/lib/civic-time";
 import { isTownLabel } from "@/lib/admin-area";
 import { Clock, TrendingUp, Flame, Layers } from "lucide-react";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
+import { SkMultifreq } from "@/app/_components/civic/skeletons";
 import {
   Select,
   SelectContent,
@@ -40,9 +41,23 @@ type Cluster = {
 
 type Overview = { regionDistribution?: Record<string, number> };
 
+function MultifreqChrome() {
+  return (
+    <>
+      <section className="page-hero">
+        <div>
+          <h1 className="page-hero__title">多频工单实时透视</h1>
+          <div className="page-hero__sub">实时识别 · AI 自动聚类</div>
+        </div>
+      </section>
+      <SkMultifreq />
+    </>
+  );
+}
+
 export default function MultifreqPage() {
   return (
-    <Suspense fallback={<div className="empty-hint">加载中…</div>}>
+    <Suspense fallback={<MultifreqChrome />}>
       <MultifreqInner />
     </Suspense>
   );
@@ -59,6 +74,7 @@ function MultifreqInner() {
   const [confMin, setConfMin] = useState(85);
   const [minCount, setMinCount] = useState(2);
   const [windowDays, setWindowDays] = useState(7);
+  const [ready, setReady] = useState(false);
 
   function load() {
     Promise.all([fetch("/api/clusters").then((r) => r.json()), fetch("/api/overview").then((r) => r.json())])
@@ -66,7 +82,8 @@ function MultifreqInner() {
         setRows(c.topClusters || []);
         setOv(o);
       })
-      .catch(() => setRows([]));
+      .catch(() => setRows([]))
+      .finally(() => setReady(true));
   }
 
   useEffect(() => {
@@ -163,6 +180,10 @@ function MultifreqInner() {
         </div>
       </section>
 
+      {!ready ? (
+        <SkMultifreq />
+      ) : (
+      <>
       <StatCardGrid columns={4}>
         <StatCard
           icon={Clock}
@@ -197,10 +218,10 @@ function MultifreqInner() {
       <section className="split-row split-row--map">
         <div className="card">
           <div className="card__header">
-            <div className="card__title">顺德区多频工单地理透视</div>
+            <div className="card__title">顺德区多频工单地理透势</div>
             <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>点击镇街筛选 · 悬停查看详情</div>
           </div>
-          <div className="card__body" style={{ padding: 8 }}>
+          <div className="card__body" style={{ padding: 8, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 460 }}>
             <ShundeMap
               counts={ov?.regionDistribution || {}}
               clusterCounts={clusterByRegion}
@@ -219,7 +240,7 @@ function MultifreqInner() {
               共 <b style={{ color: "#1E5AFF" }}>{pending.length}</b> 个未处理群组
             </div>
           </div>
-          <div className="card__body" style={{ padding: 8 }}>
+          <div className="card__body" style={{ padding: 8, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 460 }}>
             {pending.length === 0 ? (
               <div className="empty-hint">暂无未处理群组。请先启动 Agent 研判。</div>
             ) : (
@@ -325,6 +346,8 @@ function MultifreqInner() {
         </div>
         {top5.length === 0 && <div className="empty-hint">暂无多频群组。请先启动 Agent 研判。</div>}
       </section>
+      </>
+      )}
 
       <div className={`modal-mask${thresholdOpen ? " is-open" : ""}`} onClick={() => setThresholdOpen(false)}>
         <div className="modal" onClick={(e) => e.stopPropagation()}>

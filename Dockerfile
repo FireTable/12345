@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-# Next.js 15 + LangGraph JS 全栈应用 (ticket-radar)
+# Next.js 15 + LangGraph JS 全栈应用 (民声智理 · 顺德 12345 AI 智能研判系统)
 
 ARG NODE_VERSION=22
 
@@ -28,7 +28,7 @@ RUN pnpm build
 
 # ---------- migrate: drizzle migrator (one-off, not in final image) ----------
 # 用法: docker run --rm --network 12345_default --env-file .env.local \
-#        -e DATABASE_URL=... ticket-radar:migrate
+#        -e DATABASE_URL=... minsheng-zhili:migrate
 # 独立 stage: 不会污染 runtime 镜像 (standalone 不需要 tsx)
 FROM deps AS migrate
 WORKDIR /app

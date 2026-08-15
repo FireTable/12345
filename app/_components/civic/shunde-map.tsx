@@ -43,10 +43,11 @@ export function ShundeMap({ counts, clusterCounts = {}, selected = "", onSelect 
     const host = hostRef.current;
     if (!host || !ready) return;
     const max = Math.max(1, ...Object.values(counts));
+    const isEmpty = Object.values(counts).every((v) => !v);
     host.querySelectorAll<SVGElement>(".region").forEach((poly) => {
       const name = poly.dataset.name || "";
       const count = counts[name] || 0;
-      poly.style.fill = mapColorByShare(count, max);
+      poly.style.fill = isEmpty ? "#E5E7EB" : mapColorByShare(count, max);
       poly.classList.toggle("is-selected", Boolean(selected) && selected === name);
     });
   }, [counts, selected, ready]);
@@ -80,19 +81,22 @@ export function ShundeMap({ counts, clusterCounts = {}, selected = "", onSelect 
 
   const values = Object.values(counts);
   const max = values.length ? Math.max(...values) : 0;
-  const legend =
-    max <= 0
-      ? [{ color: "#D9F7BE", label: "暂无已研判工单" }]
-      : [
-          { color: "#F53F3F", label: `≥ ${Math.round(max * 0.8).toLocaleString("zh-CN")}` },
-          { color: "#FF7D00", label: `≥ ${Math.round(max * 0.55).toLocaleString("zh-CN")}` },
-          { color: "#FFB84D", label: `≥ ${Math.round(max * 0.3).toLocaleString("zh-CN")}` },
-          { color: "#52C41A", label: `< ${Math.round(max * 0.3).toLocaleString("zh-CN")}` },
-        ];
+  const isEmpty = max <= 0;
+  const legend = isEmpty
+    ? [{ color: "#E5E7EB", label: "暂无已研判工单" }]
+    : [
+        { color: "#F53F3F", label: `≥ ${Math.round(max * 0.8).toLocaleString("zh-CN")}` },
+        { color: "#FF7D00", label: `≥ ${Math.round(max * 0.55).toLocaleString("zh-CN")}` },
+        { color: "#FFB84D", label: `≥ ${Math.round(max * 0.3).toLocaleString("zh-CN")}` },
+        { color: "#52C41A", label: `< ${Math.round(max * 0.3).toLocaleString("zh-CN")}` },
+      ];
 
   return (
     <div className="map-wrap" onMouseMove={onMove} onMouseLeave={() => setTip(null)} onClick={onClick}>
       <div ref={hostRef} className="map-svg" style={{ width: "100%", height: "100%" }} />
+      {isEmpty && (
+        <div className="map-empty">暂无镇街研判数据</div>
+      )}
       {tip && (
         <div className="map-tooltip is-show" style={{ left: tip.x, top: tip.y }}>
           <div className="map-tooltip__title">{tip.name}</div>

@@ -9,6 +9,7 @@ import { CivicEChart, CivicHeatmap, donutOption, trendOption } from "@/app/_comp
 import { RANK_COLORS } from "@/lib/civic-cluster";
 import { FileText, Activity, Sparkles, FolderKanban } from "lucide-react";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
+import { SkDashboard } from "@/app/_components/civic/skeletons";
 import {
   Select,
   SelectContent,
@@ -36,11 +37,12 @@ type Overview = {
 type Trends = { daily: Record<string, number>; dailyNewClusters?: Record<string, number> };
 
 export default function DashboardPage() {
-  const { openUpload } = useCivicWorkflow();
+  const { openUpload, runCluster, analyzing, isAllAnalyzed, disabledReason } = useCivicWorkflow();
   const router = useRouter();
   const [daysRange, setDaysRange] = useState(0);
   const [ov, setOv] = useState<Overview | null>(null);
   const [tr, setTr] = useState<Trends | null>(null);
+  const [ready, setReady] = useState(false);
 
   function load() {
     Promise.all([
@@ -51,10 +53,12 @@ export default function DashboardPage() {
         setOv(a);
         setTr(b);
       })
-      .catch(() => setOv(null));
+      .catch(() => setOv(null))
+      .finally(() => setReady(true));
   }
 
   useEffect(() => {
+    setReady(false);
     load();
     const onRefresh = () => load();
     window.addEventListener("civic-data-refresh", onRefresh);
@@ -124,9 +128,23 @@ export default function DashboardPage() {
           <button type="button" className="btn btn--primary" onClick={openUpload}>
             更新工单数据
           </button>
+          <button
+            type="button"
+            className="btn btn--primary"
+            onClick={runCluster}
+            disabled={analyzing || isAllAnalyzed}
+            title={analyzing ? "AI 研判执行中..." : disabledReason || undefined}
+            style={isAllAnalyzed && !analyzing ? { opacity: 0.5, cursor: "not-allowed", filter: "grayscale(0.6)" } : undefined}
+          >
+            {analyzing ? "研判中…" : isAllAnalyzed ? "已全部研判" : "启动 Agent 研判"}
+          </button>
         </div>
       </section>
 
+      {!ready ? (
+        <SkDashboard />
+      ) : (
+      <>
       <StatCardGrid columns={4}>
         <StatCard
           icon={FileText}
@@ -260,6 +278,8 @@ export default function DashboardPage() {
           </div>
         </div>
       </section>
+      </>
+      )}
     </>
   );
 }

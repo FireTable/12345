@@ -14,6 +14,7 @@ import {
   BookOpen,
 } from "lucide-react";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
+import { SkDict } from "@/app/_components/civic/skeletons";
 import {
   Select,
   SelectTrigger,
@@ -225,6 +226,10 @@ export default function DictionaryManagementPage() {
         </div>
       </div>
 
+      {loading && aliases.length === 0 && townships.length === 0 ? (
+        <SkDict />
+      ) : (
+      <>
       {/* 统一指标卡片体系 (StatCardGrid) */}
       <StatCardGrid columns={4}>
         <StatCard
@@ -543,6 +548,8 @@ export default function DictionaryManagementPage() {
             </div>
           ))}
         </div>
+      )}
+      </>
       )}
 
       <ConfirmDialog

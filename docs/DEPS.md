@@ -1,6 +1,6 @@
 # 项目依赖与组件披露 (Dependencies & Component Disclosure)
 
-本项目（Ticket Radar 多频工单智能识别系统）采用的技术栈与依赖库均遵循宽松的开源协议（如 **MIT / ISC / Apache-2.0**），无任何 GPL/AGPL 等传染性协议，具备完全的合规性与商业友好度。
+本项目（民声智理 · 顺德 12345 AI 智能研判系统）采用的技术栈与依赖库均遵循宽松的开源协议（如 **MIT / ISC / Apache-2.0**），无任何 GPL/AGPL 等传染性协议，具备完全的合规性与商业友好度。
 
 ---
 

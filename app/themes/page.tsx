@@ -7,6 +7,7 @@ import { URGENCY_META, type ClusterUrgency } from "@/lib/civic-cluster";
 import { isTownLabel } from "@/lib/admin-area";
 import { FolderKanban, Clock, Flame, CheckCircle2 } from "lucide-react";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
+import { SkThemes } from "@/app/_components/civic/skeletons";
 import {
   Select,
   SelectContent,
@@ -53,6 +54,7 @@ export default function ThemesPage() {
   const [mode, setMode] = useState("");
   const [urgency, setUrgency] = useState("");
   const [page, setPage] = useState(1);
+  const [ready, setReady] = useState(false);
   const pageSize = 15;
 
   function load() {
@@ -62,7 +64,8 @@ export default function ThemesPage() {
         setRows(j.topClusters || []);
         setRegions((j.facets?.regions || []).filter((r: string) => isTownLabel(r)));
       })
-      .catch(() => setRows([]));
+      .catch(() => setRows([]))
+      .finally(() => setReady(true));
   }
 
   useEffect(() => {
@@ -147,6 +150,10 @@ export default function ThemesPage() {
         </div>
       </section>
 
+      {!ready ? (
+        <SkThemes />
+      ) : (
+      <>
       <StatCardGrid columns={4}>
         <StatCard
           icon={FolderKanban}
@@ -394,6 +401,8 @@ export default function ThemesPage() {
           </div>
         )}
       </div>
+      </>
+      )}
     </>
   );
 }

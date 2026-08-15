@@ -1,4 +1,4 @@
-# 顺德区 12345 热线智能工单管理平台 (Ticket Radar)
+# 民声智理 · 顺德 12345 AI 智能研判系统
 
 基于 **LangGraph JS 图工作流**、**PostgreSQL 权威知识库** 与 **轻量 GraphRAG** 的政务 12345 热线多频诉求智能识别、实体拓扑聚类、二级 AI 仲裁纠偏与全周期督办研判平台。
 
@@ -34,7 +34,7 @@
 - 告别“现场核实并处理”的千篇一律套话，根据具体民生领域精准指定**牵头部门/科室**、**响应时限**与**具体办理路径**（如交警+综合执法1小时到场排查、市监2个工作日核查账目等）。
 
 ### 7. 统一 Civic Light / Tailwind / shadcn 设计体系
-- 全站五大核心模块（工作面板、工单中心、多频透视、群组中心、字典管理）统一采用 **Civic Light Design System**，拥有统一的指标卡片（`StatCard`）、Radix 下拉选择器（`Select`）、抽屉与交互弹窗。
+- 全站五大核心模块（工作面板、工单中心、工单透势、群组中心、字典管理）统一采用 **Civic Light Design System**，拥有统一的指标卡片（`StatCard`）、Radix 下拉选择器（`Select`）、抽屉与交互弹窗。
 
 ---
 
@@ -70,7 +70,7 @@
 │   │   ├── tickets/                  # 工单检索与分页接口
 │   │   └── workorders/               # 工单中心数据服务
 │   ├── dict/                         # 字典与别名知识库管理页面 (/dict)
-│   ├── multifreq/                    # 多频透视全景研判页面 (/multifreq)
+│   ├── multifreq/                    # 工单透势全景研判页面 (/multifreq)
 │   ├── themes/                       # 群组中心看板页面 (/themes)
 │   ├── tickets/                      # 工单中心下钻核查页面 (/tickets)
 │   ├── globals.css                   # 全局 Tailwind CSS + Civic Light 样式

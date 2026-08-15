@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { useCivicWorkflow } from "@/app/_components/civic/civic-workflow";
 import { FileText, Clock, CheckCircle2, Flame, ExternalLink, Layers } from "lucide-react";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
+import { SkTickets } from "@/app/_components/civic/skeletons";
 import { isTownLabel } from "@/lib/admin-area";
 import {
   Select,
@@ -37,13 +38,13 @@ const TABS = [
   { key: "pending", label: "待处理" },
   { key: "progress", label: "处理中" },
   { key: "finished", label: "已办结" },
-  { key: "urgent", label: "🚨 紧急" },
+  { key: "urgent", label: "紧急" },
   { key: "multifreq", label: "多频聚类" },
 ] as const;
 
 export default function TicketsPage() {
   const router = useRouter();
-  const { openUpload } = useCivicWorkflow();
+  const { openUpload, runCluster, analyzing, isAllAnalyzed, disabledReason } = useCivicWorkflow();
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(10);
   const [keyword, setKeyword] = useState("");
@@ -64,6 +65,7 @@ export default function TicketsPage() {
     stats: { total: 0, pending: 0, progress: 0, finished: 0, urgent: 0, multifreq: 0 },
     facets: { regions: [], categories: [] },
   });
+  const [ready, setReady] = useState(false);
 
   function load() {
     const q = new URLSearchParams({ page: String(page), size: String(size) });
@@ -85,7 +87,8 @@ export default function TicketsPage() {
           },
         })
       )
-      .catch(() => setData((prev) => ({ ...prev, total: 0, data: [] })));
+      .catch(() => setData((prev) => ({ ...prev, total: 0, data: [] })))
+      .finally(() => setReady(true));
   }
 
   useEffect(() => {
@@ -145,9 +148,23 @@ export default function TicketsPage() {
           <button type="button" className="btn btn--primary" onClick={openUpload}>
             新增工单
           </button>
+          <button
+            type="button"
+            className="btn btn--primary"
+            onClick={runCluster}
+            disabled={analyzing || isAllAnalyzed}
+            title={analyzing ? "AI 研判执行中..." : disabledReason || undefined}
+            style={isAllAnalyzed && !analyzing ? { opacity: 0.5, cursor: "not-allowed", filter: "grayscale(0.6)" } : undefined}
+          >
+            {analyzing ? "研判中…" : isAllAnalyzed ? "已全部研判" : "启动 Agent 研判"}
+          </button>
         </div>
       </div>
 
+      {!ready ? (
+        <SkTickets />
+      ) : (
+      <>
       <StatCardGrid columns={4}>
         <StatCard
           icon={FileText}
@@ -393,6 +410,8 @@ export default function TicketsPage() {
           </div>
         </div>
       </div>
+      </>
+      )}
 
       <div className={`drawer-mask${drawer ? " is-open" : ""}`} onClick={() => setDrawer(null)} />
       <div className={`drawer${drawer ? " is-open" : ""}`}>

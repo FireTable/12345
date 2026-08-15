@@ -1,4 +1,4 @@
-# docker compose for ticket-radar (VPS deployment, 由小蠢改造)
+# docker compose for 民声智理 · 顺德 12345 AI 智能研判系统 (VPS deployment, 由小蠢改造)
 # ============================================================
 # 改动 vs 原版 (老大确认的方案):
 #   - 删除 caddy service (复用 langgraph-app-caddy-1)
@@ -40,7 +40,7 @@ services:
 
   app:
     # Service renamed: ticket-radar-app (避免 DNS clash with langgraph-app 的 `app`)
-    image: ticket-radar:v0.1.0
+    image: minsheng-zhili:v0.1.0
     build:
       context: .
       dockerfile: Dockerfile

@@ -44,7 +44,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-sm font-bold tracking-tight text-foreground">
-                Ticket Radar
+                民声智理
               </h1>
               <Badge variant="outline" className="font-mono text-[10px] py-0 px-1.5 text-primary bg-primary/10 border-primary/20">
                 Agent

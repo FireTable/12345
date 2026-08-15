@@ -27,6 +27,7 @@ type CivicWorkflow = {
   runCluster: () => void;
   isAllAnalyzed: boolean;
   disabledReason: string;
+  copilotOpen: boolean;
 };
 
 const CivicWorkflowContext = createContext<CivicWorkflow | null>(null);
@@ -168,6 +169,7 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
         runCluster,
         isAllAnalyzed,
         disabledReason,
+        copilotOpen,
       }}
     >
       {children}
@@ -191,18 +193,16 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
           refreshPages();
         }}
       />
-      {copilotOpen ? (
-        <LightCopilot
-          isOpen={copilotOpen}
-          onClose={() => setCopilotOpen(false)}
-          themes={themes}
-          stats={stats}
-          onSelectTheme={(t) => {
-            setCopilotOpen(false);
-            router.push(`/themes/${t.id}`);
-          }}
-        />
-      ) : null}
+      <LightCopilot
+        isOpen={copilotOpen}
+        onClose={() => setCopilotOpen(false)}
+        themes={themes}
+        stats={stats}
+        onSelectTheme={(t) => {
+          setCopilotOpen(false);
+          router.push(`/themes/${t.id}`);
+        }}
+      />
     </CivicWorkflowContext.Provider>
   );
 }

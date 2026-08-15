@@ -9,6 +9,7 @@ import { MODE_META } from "@/backend/theme-metrics";
 import type { CivicMode } from "@/backend/state";
 import { spanDays } from "@/lib/civic-cluster";
 import { CivicEChart, radarOption } from "@/app/_components/civic/civic-charts";
+import { SkThemeDetail } from "@/app/_components/civic/skeletons";
 import {
   FileText,
   MapPin,
@@ -258,7 +259,7 @@ function ThemeDetailInner() {
           <span>/</span>
           <span>详情</span>
         </div>
-        <div className="empty-hint">正在加载多频群组研判数据…</div>
+        <SkThemeDetail />
       </>
     );
   }
@@ -291,7 +292,7 @@ function ThemeDetailInner() {
       <div className="breadcrumb">
         <Link href="/themes">多频工单</Link>
         <span>/</span>
-        <Link href="/multifreq">多频透视</Link>
+        <Link href="/multifreq">工单透势</Link>
         <span>/</span>
         <span>{cluster.region} · {cluster.type}</span>
       </div>
@@ -673,7 +674,7 @@ function ThemeDetailInner() {
 
 export default function ThemeDetailPage() {
   return (
-    <Suspense fallback={<div className="empty-hint">加载群组视图中…</div>}>
+    <Suspense fallback={<SkThemeDetail />}>
       <ThemeDetailInner />
     </Suspense>
   );

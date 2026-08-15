@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { MessageCircle } from "lucide-react";
 import { useCivicWorkflow } from "./civic-workflow";
 import { NAV_ITEMS } from "./nav-items";
 
@@ -10,7 +11,7 @@ export { NAV_ITEMS };
 
 export function CivicNav() {
   const pathname = usePathname();
-  const { analyzing, openUpload, openCopilot, runCluster, isAllAnalyzed, disabledReason } = useCivicWorkflow();
+  const { openCopilot, copilotOpen } = useCivicWorkflow();
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -27,6 +28,7 @@ export function CivicNav() {
   }, [menuOpen]);
 
   return (
+    <>
     <nav className="navbar">
       <div className="navbar__brand">
         <div className="brand-logo">民声智理</div>
@@ -66,50 +68,20 @@ export function CivicNav() {
             );
           })}
         </div>
-        <div className="navbar__user">
-          <button
-            type="button"
-            className="btn btn--default"
-            onClick={() => {
-              setMenuOpen(false);
-              openUpload();
-            }}
-          >
-            上传工单
-          </button>
-          <button
-            type="button"
-            className="btn btn--primary"
-            onClick={() => {
-              setMenuOpen(false);
-              runCluster();
-            }}
-            disabled={analyzing || isAllAnalyzed}
-            title={analyzing ? "AI 研判执行中..." : disabledReason || undefined}
-            style={
-              isAllAnalyzed && !analyzing
-                ? {
-                    opacity: 0.5,
-                    cursor: "not-allowed",
-                    filter: "grayscale(0.6)",
-                  }
-                : undefined
-            }
-          >
-            {analyzing ? "研判中…" : isAllAnalyzed ? "已全部研判" : "启动 Agent 研判"}
-          </button>
-          <button
-            type="button"
-            className="btn btn--default"
-            onClick={() => {
-              setMenuOpen(false);
-              openCopilot();
-            }}
-          >
-            研判助手
-          </button>
-        </div>
+        <div className="navbar__user" />
       </div>
     </nav>
+    {!copilotOpen && (
+      <button
+        type="button"
+        className="chat-fab"
+        aria-label="打开研判助手"
+        title="研判助手"
+        onClick={openCopilot}
+      >
+        <MessageCircle size={22} strokeWidth={2} />
+      </button>
+    )}
+    </>
   );
 }

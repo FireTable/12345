@@ -114,8 +114,6 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
     }
   }, [isOpen, autoStartCluster]);
 
-  if (!isOpen) return null;
-
   const handleFileSelect = (selectedFile: File) => {
     if (!selectedFile) return;
     const name = selectedFile.name.toLowerCase();
@@ -296,18 +294,29 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[250] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-in fade-in duration-150"
-      onClick={() => {
-        if (step !== "INGESTING" && step !== "CLUSTERING") {
-          onClose();
-        }
-      }}
-    >
-      <div
-        className="w-full max-w-xl bg-card border border-border rounded-xl shadow-xl overflow-hidden flex flex-col text-foreground"
-        onClick={(e) => e.stopPropagation()}
+    <AnimatePresence>
+      {isOpen && (
+      <motion.div
+        key="upload-backdrop"
+        className="fixed inset-0 z-[250] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4"
+        onClick={() => {
+          if (step !== "INGESTING" && step !== "CLUSTERING") {
+            onClose();
+          }
+        }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.18, ease: "easeOut" }}
       >
+        <motion.div
+          className="w-full max-w-xl bg-card border border-border rounded-xl shadow-xl overflow-hidden flex flex-col text-foreground"
+          onClick={(e) => e.stopPropagation()}
+          initial={{ opacity: 0, scale: 0.96, y: 8 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.96, y: 8 }}
+          transition={{ duration: 0.2, ease: [0.32, 0.72, 0.18, 1] }}
+        >
         {/* Modal Header */}
         <div className="px-5 py-4 border-b border-border flex items-center justify-between bg-muted/20">
           <div className="flex items-center gap-2.5">
@@ -920,7 +929,9 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
             </>
           )}
         </div>
-      </div>
-    </div>
+        </motion.div>
+      </motion.div>
+      )}
+    </AnimatePresence>
   );
 };
