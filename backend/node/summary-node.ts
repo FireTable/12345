@@ -7,7 +7,7 @@ import type {
   MultiFrequencyTheme,
   RiskLevel,
 } from "../state";
-import { getChatModel } from "../model";
+import { getChatModel, llmConcurrency } from "../model";
 
 import {
   ThemeEnrichmentSchema,
@@ -132,7 +132,7 @@ export async function summaryNode(
       });
     }
 
-    const queue = new PQueue({ concurrency: 4 });
+    const queue = new PQueue({ concurrency: Math.min(4, llmConcurrency()) });
     let synthesizedCount = 0;
 
     const chunkTasks: Array<() => Promise<void>> = [];

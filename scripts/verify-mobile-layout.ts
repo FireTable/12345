@@ -70,7 +70,9 @@ assert(
 );
 
 const requiredHrefs = ["/", "/tickets", "/multifreq", "/themes", "/dict"];
-const shippedHrefs = NAV_ITEMS.map((it) => it.href);
+// NAV_ITEMS is `as const` → .map(href) is a narrow literal tuple.
+// `as readonly string[]` widens so .includes(string) accepts `h: string`.
+const shippedHrefs = NAV_ITEMS.map((it) => it.href) as readonly string[];
 assert(
   "nav ships the five primary routes",
   requiredHrefs.every((h) => shippedHrefs.includes(h)) && shippedHrefs.length === requiredHrefs.length,

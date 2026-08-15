@@ -51,9 +51,9 @@ export async function POST(req: Request) {
       mediumRiskCount,
     });
 
-    const apiKey = process.env.OPENAI_API_KEY || "ollama";
-    const baseURL = (process.env.OPENAI_BASE_URL || "http://localhost:11434/v1").replace(/\/$/, "");
-    const model = process.env.OPENAI_MODEL || "hoangquan456/qwen3-nothink:8b";
+    const apiKey = process.env.OPENAI_API_KEY || "mlx";
+    const baseURL = (process.env.OPENAI_BASE_URL || "http://127.0.0.1:8080/v1").replace(/\/$/, "");
+    const model = process.env.OPENAI_MODEL || "mlx-community/MiniCPM4.1-8B-4bit";
 
     const abort = new AbortController();
     const killer = setTimeout(() => abort.abort(), 60000);

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { classifyDetailPayload, type DetailLoadStatus } from "@/lib/detail-load";
-import { Layers, ArrowRight } from "lucide-react";
+import { Layers, ArrowRight, MessageSquareQuote } from "lucide-react";
 import { SkTicketDetail } from "@/app/_components/civic/skeletons";
 
 export default function TicketDetailPage() {
@@ -105,10 +105,31 @@ export default function TicketDetailPage() {
       <div className="split-row">
         <div className="card">
           <div className="card__header">
-            <div className="card__title">诉求正文</div>
+            <div className="card__title flex items-center gap-2">
+              <MessageSquareQuote className="w-4 h-4 text-blue-600" />
+              市民原始诉求
+            </div>
+            <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>
+              共 {(row.content || "").length} 字 · 受理渠道:{row.channel || "市民服务热线"}
+            </div>
           </div>
-          <div className="card__body" style={{ whiteSpace: "pre-wrap", fontSize: 14, lineHeight: 1.7 }}>
-            {row.content}
+          <div className="card__body" style={{ padding: 0 }}>
+            <div
+              style={{
+                padding: "20px 24px",
+                fontSize: 15,
+                lineHeight: 1.85,
+                color: "var(--c-ink)",
+                whiteSpace: "pre-wrap",
+                background:
+                  "linear-gradient(to right, rgba(30,90,255,0.05) 0%, rgba(30,90,255,0.01) 60%, transparent 100%)",
+                borderLeft: "3px solid #1E5AFF",
+                borderRadius: "0 8px 8px 0",
+                position: "relative",
+              }}
+            >
+              {row.content || <span style={{ color: "var(--c-ink-3)" }}>暂无正文内容</span>}
+            </div>
           </div>
         </div>
 

@@ -46,7 +46,7 @@ function MultifreqChrome() {
     <>
       <section className="page-hero">
         <div>
-          <h1 className="page-hero__title">多频工单实时透视</h1>
+          <h1 className="page-hero__title">多频工单实时透势</h1>
           <div className="page-hero__sub">实时识别 · AI 自动聚类</div>
         </div>
       </section>
@@ -144,7 +144,7 @@ function MultifreqInner() {
       <section className="page-hero">
         <div>
           <h1 className="page-hero__title">
-            多频工单实时透视
+            多频工单实时透势
           </h1>
           <div className="page-hero__sub">实时识别 · AI 自动聚类 · 置信度 ≥ {confMin}%</div>
         </div>

@@ -1,14 +1,13 @@
 # 12345 工单平台 - VPS 部署文档
 
-完整部署路径在 `~/.openclaw/workspace/skills/12345-deploy/SKILL.md`(小蠢下次自动调)。
-本文档给人看。
+完整部署路径在 `~/.openclaw/workspace/skills/12345-maintain/SKILL.md`。
 
 ## 架构速览
 
 ```
-Mac (开发)                          VPS (生产)
-=========                           =========
-12345 项目源码                    /opt/12345-stack/
+本地开发机                            VPS (生产)
+===========                           =========
+12345 项目源码                       /opt/12345-stack/
   ↓ rsync                             ├── Dockerfile         (pnpm@9 + standalone output)
   + db/dumps/*                        ├── docker-compose.yml  (postgres + app, no caddy)
   + .env.vps                          ├── .env.vps           (POSTGRES_PASSWORD + API keys)
@@ -71,14 +70,15 @@ RERANK_MODEL=bge-reranker-v2-m3
 ## 更新代码后
 
 ```bash
-cd ~/OpenClaw/Code/12345
+# 从项目根目录执行
+cd <项目根目录>
 
 # 1. 本地 build 自测
 pnpm build
 
 # 2. rsync 到 VPS
 rsync -avz --exclude={node_modules,.next,.git,*.tsbuildinfo,.env.local,db/dumps} \
-  ./ root@185.99.135.72:/opt/12345-stack/
+  ./ root@<VPS_IP>:/opt/12345-stack/
 
 # 3. VPS 重新 build + 重启
 ssh root@VPS 'cd /opt/12345-stack && \

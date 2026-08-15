@@ -35,22 +35,52 @@ export class PatchedChatOpenAI extends ChatOpenAI {
 /**
  * 78Code / OpenAI-compatible Chat LLM (gpt-5.6-terra)
  */
+export function isLocalLlm(): boolean {
+  const base = (process.env.OPENAI_BASE_URL || "http://127.0.0.1:8080/v1").toLowerCase();
+  return /localhost|127\.0\.0\.1|0\.0\.0\.0|::1/.test(base);
+}
+
+export function isOllamaLlm(): boolean {
+  return /:11434\b/.test(process.env.OPENAI_BASE_URL || "");
+}
+
+/** Cloud APIs can take 10; local MLX/Ollama is sequential — keep it at 1 unless overridden. */
+export function llmConcurrency(): number {
+  const raw = Number(process.env.LLM_CONCURRENCY);
+  if (Number.isFinite(raw) && raw >= 1) return Math.trunc(raw);
+  return isLocalLlm() ? 1 : 10;
+}
+
 export function getChatModel(temperature: number = 0.2): ChatOpenAI {
-  const apiKey = process.env.OPENAI_API_KEY || "ollama";
-  const baseURL = process.env.OPENAI_BASE_URL || "http://localhost:11434/v1";
-  const model = process.env.OPENAI_MODEL || "hoangquan456/qwen3-nothink:8b";
+  const apiKey = process.env.OPENAI_API_KEY || "mlx";
+  const baseURL = process.env.OPENAI_BASE_URL || "http://127.0.0.1:8080/v1";
+  const model = process.env.OPENAI_MODEL || "mlx-community/MiniCPM4.1-8B-4bit";
+  const local = isLocalLlm();
+  const ollama = isOllamaLlm();
+  const ctx = Number(process.env.OLLAMA_NUM_CTX);
+  const numCtx = Number.isFinite(ctx) && ctx >= 512 ? Math.trunc(ctx) : 4096;
 
   return new PatchedChatOpenAI({
     model,
     apiKey,
     temperature,
-    streaming: true,
+    streaming: !local,
+    maxTokens: local ? 512 : undefined,
     configuration: {
       baseURL,
       defaultHeaders: DEFAULT_HEADERS,
     },
     maxRetries: 2,
     timeout: 120000,
+    // Ollama OpenAI-compat only: cap KV cache + disable thinking
+    ...(ollama
+      ? {
+          modelKwargs: {
+            think: false,
+            options: { num_ctx: numCtx, num_predict: 256 },
+          },
+        }
+      : {}),
   });
 }
 

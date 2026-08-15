@@ -1,5 +1,5 @@
 import type { TicketRadarState, EnrichedTicket, RawTicket } from "../state";
-import { getChatModel } from "../model";
+import { getChatModel, llmConcurrency } from "../model";
 import {
   BatchExtractionSchema,
   buildBatchExtractionPrompt,
@@ -193,7 +193,7 @@ export async function extractNode(
   const taskId = state.taskId;
   const CHUNK_SIZE = 1;
   const extractionMap = new Map<number, ExtractedTicketItem>();
-  const queue = new PQueue({ concurrency: 10 });
+  const queue = new PQueue({ concurrency: llmConcurrency() });
 
   if (taskId) {
     updateTaskProgress(taskId, {

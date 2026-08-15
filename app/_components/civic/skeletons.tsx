@@ -209,7 +209,7 @@ export function SkThemes() {
 
 export function SkMultifreq() {
   return (
-    <div className="sk-page" aria-busy="true" aria-label="加载多频透视">
+    <div className="sk-page" aria-busy="true" aria-label="加载多频透势">
       <SkStatCards />
       <section className="split-row split-row--map">
         <SkCard height={300}>

@@ -186,6 +186,7 @@ export function toWorkorderDto(row: {
   address?: string | null;
   primaryThemeId?: string | null;
   confidence?: number | null;
+  channel?: string | null;
 }) {
   const created =
     row.createTime instanceof Date
@@ -203,6 +204,7 @@ export function toWorkorderDto(row: {
     createdAt: created,
     content: row.maskedContent || row.content || "",
     rawContent: row.content || "",
+    channel: row.channel || "市民服务热线",
     caller_name: row.citizenName || "",
     caller_phone: row.citizenPhone || "",
     address: row.address || "",
