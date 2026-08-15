@@ -1,8 +1,6 @@
 "use client";
 
 import React, { useState, useRef } from "react";
-import * as XLSX from "xlsx";
-import Papa from "papaparse";
 import {
   Upload,
   FileSpreadsheet,
@@ -12,7 +10,6 @@ import {
   Loader2,
   Sparkles,
   ArrowRight,
-  Clock,
   ShieldCheck,
   Database,
   Bot,
@@ -20,7 +17,7 @@ import {
 import { Button } from "@/app/_components/ui/button";
 import { Card } from "@/app/_components/ui/card";
 import { toast } from "sonner";
-import type { RawTicket, MultiFrequencyTheme, OverallStats, GraphData } from "@/backend/state";
+import type { MultiFrequencyTheme, OverallStats, GraphData } from "@/backend/state";
 
 interface UploadDialogProps {
   isOpen: boolean;
@@ -41,27 +38,6 @@ interface IngestionReport {
   durationMs: number;
 }
 
-const HEADER_MAP: Record<string, string> = {
-  序号: "index",
-  工单编号: "ticketNo",
-  单号: "ticketNo",
-  标题: "title",
-  工单标题: "title",
-  内容: "content",
-  工单内容: "content",
-  诉求内容: "content",
-  诉求人: "citizenName",
-  联系电话: "citizenPhone",
-  电话: "citizenPhone",
-  登记时间: "createTime",
-  所属区域: "district",
-  区: "district",
-  所属镇街: "subdistrict",
-  街道: "subdistrict",
-  镇街: "subdistrict",
-  诉求渠道: "channel",
-};
-
 export const UploadDialog: React.FC<UploadDialogProps> = ({
   isOpen,
   onClose,
@@ -71,90 +47,20 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
   const [step, setStep] = useState<"SELECT" | "INGESTING" | "REPORT" | "CLUSTERING">("SELECT");
   const [isDragging, setIsDragging] = useState(false);
   const [file, setFile] = useState<File | null>(null);
-  const [parsedTickets, setParsedTickets] = useState<RawTicket[]>([]);
   const [report, setReport] = useState<IngestionReport | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
 
-  const processRowsToTickets = (rows: Record<string, any>[]): RawTicket[] => {
-    return rows.map((r, idx) => {
-      const normalized: Record<string, any> = {};
-      for (const [k, v] of Object.entries(r)) {
-        const trimmedKey = k.trim();
-        const mappedKey = HEADER_MAP[trimmedKey] || trimmedKey;
-        normalized[mappedKey] = typeof v === "string" ? v.replace(/12345/g, "市民服务热线") : v;
-      }
-
-      const content = String(normalized.content || normalized.title || "").trim();
-      const title = String(normalized.title || "").trim();
-      const ticketNo = String(normalized.ticketNo || `GD-UPLOAD-${String(idx + 1).padStart(4, "0")}`);
-
-      let subdistrict = normalized.subdistrict || "大良街道";
-      const towns = ["大良", "容桂", "伦教", "勒流", "陈村", "北滘", "乐从", "龙江", "杏坛", "均安"];
-      for (const t of towns) {
-        if (content.includes(t) || title.includes(t)) {
-          subdistrict = t.endsWith("街道") || t.endsWith("镇") ? t : `${t}街道`;
-          break;
-        }
-      }
-
-      let channel = normalized.channel || "市民服务热线";
-      if (title.includes("小程序")) channel = "微信小程序";
-      else if (title.includes("公众号")) channel = "微信公众号";
-
-      return {
-        id: `upload-${Date.now()}-${idx + 1}`,
-        ticketNo,
-        title,
-        content,
-        citizenName: normalized.citizenName || `市民*`,
-        citizenPhone: normalized.citizenPhone || `138****${String((idx * 137) % 10000).padStart(4, "0")}`,
-        district: normalized.district || "顺德区",
-        subdistrict,
-        channel,
-        status: "PENDING",
-        createTime: normalized.createTime || new Date().toISOString().slice(0, 19).replace("T", " "),
-      };
-    });
-  };
-
-  const handleFileChange = async (selectedFile: File) => {
+  // 1. Instant file selection: No browser parsing, no UI freezing!
+  const handleFileSelect = (selectedFile: File) => {
     if (!selectedFile) return;
     const name = selectedFile.name.toLowerCase();
     if (!name.endsWith(".xlsx") && !name.endsWith(".xls") && !name.endsWith(".csv")) {
       toast.error("请上传 .xlsx, .xls 或 .csv 格式的工单文件");
       return;
     }
-
     setFile(selectedFile);
-
-    try {
-      if (name.endsWith(".csv")) {
-        Papa.parse(selectedFile, {
-          header: true,
-          skipEmptyLines: true,
-          complete: (results) => {
-            const tickets = processRowsToTickets(results.data as any[]);
-            setParsedTickets(tickets);
-            toast.success(`成功解析 CSV 文件，共识别 ${tickets.length} 条工单`);
-          },
-          error: (err) => {
-            toast.error(`CSV 解析失败: ${err.message}`);
-          },
-        });
-      } else {
-        const buffer = await selectedFile.arrayBuffer();
-        const workbook = XLSX.read(buffer, { cellDates: true });
-        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json<Record<string, any>>(firstSheet, { defval: "" });
-        const tickets = processRowsToTickets(rows);
-        setParsedTickets(tickets);
-        toast.success(`成功解析 Excel 文件，共识别 ${tickets.length} 条工单`);
-      }
-    } catch (err: any) {
-      toast.error(`文件解析失败: ${err.message}`);
-    }
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -170,63 +76,52 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
     e.preventDefault();
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFileChange(e.dataTransfer.files[0]);
+      handleFileSelect(e.dataTransfer.files[0]);
     }
   };
 
-  // 阶段 1：只执行数据入库（按钮 1）
-  const handleOnlyIngestToDB = async () => {
-    if (parsedTickets.length === 0) return;
+  // 阶段 1：流式直传后端解析并批量入库（按钮 1）
+  const handleUploadAndIngest = async () => {
+    if (!file) return;
 
     setStep("INGESTING");
-    const startTime = Date.now();
+    toast.info("正在上传至后端服务器流式解析并入库...");
+
+    const formData = new FormData();
+    formData.append("file", file);
 
     try {
-      const ticketsRes = await fetch("/api/tickets", {
+      const res = await fetch("/api/tickets/upload", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(parsedTickets),
+        body: formData,
       });
-      const ticketsJson = await ticketsRes.json();
+      const json = await res.json();
 
-      const durationMs = Date.now() - startTime;
-      const statsInfo = ticketsJson.data || {
-        totalParsed: parsedTickets.length,
-        insertedCount: parsedTickets.length,
-        duplicateCount: 0,
-        failedCount: 0,
-      };
-
-      setReport({
-        totalParsed: statsInfo.totalParsed,
-        insertedCount: statsInfo.insertedCount,
-        duplicateCount: statsInfo.duplicateCount,
-        failedCount: statsInfo.failedCount,
-        durationMs,
-      });
-
-      setStep("REPORT");
-      if (onDatabaseUpdated) onDatabaseUpdated();
-      toast.success("工单数据已成功入库！");
+      if (json.success && json.data) {
+        setReport(json.data);
+        setStep("REPORT");
+        if (onDatabaseUpdated) onDatabaseUpdated();
+        toast.success(`后端解析入库完成！共处理 ${json.data.totalParsed} 条工单`);
+      } else {
+        toast.error(`上传入库失败: ${json.error || "未知错误"}`);
+        setStep("SELECT");
+      }
     } catch (err: any) {
-      toast.error(`入库失败: ${err.message}`);
+      toast.error(`网络或处理异常: ${err.message}`);
       setStep("SELECT");
     }
   };
 
-  // 阶段 2：执行 Agent 智能聚类研判（按钮 2）
+  // 阶段 2：启动 LangGraph Agent 智能聚类（按钮 2）
   const handleStartAgentClustering = async () => {
-    if (parsedTickets.length === 0) return;
-
     setStep("CLUSTERING");
-    toast.info("正在调用 LangGraph Agent 进行四要素抽取与图谱聚类...");
+    toast.info("正在唤起 LangGraph JS 引擎进行知识图谱聚类...");
 
     try {
       const clusterRes = await fetch("/api/cluster", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          tickets: parsedTickets,
           threadId: `upload-session-${Date.now()}`,
         }),
       });
@@ -248,7 +143,6 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
 
   const handleReset = () => {
     setFile(null);
-    setParsedTickets([]);
     setReport(null);
     setStep("SELECT");
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -274,13 +168,13 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
             <div>
               <h2 className="text-sm font-bold text-foreground">
                 {step === "REPORT"
-                  ? "第一阶段：工单数据入库检验报告"
-                  : "工单数据文件上传与入库"}
+                  ? "第一阶段：后端入库与防重校验报告"
+                  : "工单表格上传与后端入库"}
               </h2>
               <p className="text-[11px] text-muted-foreground">
                 {step === "REPORT"
-                  ? "已完成数据库写入与防重校验，可按需启动 AI Agent 研判"
-                  : "支持 .xlsx / .xls / .csv 格式，先入库存储，后按需启动 Agent 分析"}
+                  ? "数据已安全写入 PostgreSQL，可按需启动 Agent 研判"
+                  : "文件直接交付后端流式解析入库，前端 0 卡顿、0 内存占用"}
               </p>
             </div>
           </div>
@@ -318,7 +212,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                     className="hidden"
                     onChange={(e) => {
                       if (e.target.files && e.target.files[0]) {
-                        handleFileChange(e.target.files[0]);
+                        handleFileSelect(e.target.files[0]);
                       }
                     }}
                   />
@@ -330,7 +224,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                       点击选择文件 或 将表格拖拽至此区域
                     </p>
                     <p className="text-[11px] text-muted-foreground mt-1">
-                      支持政数局热线工单导出表格 (.xlsx / .csv)
+                      支持政数局热线工单导出表格 (.xlsx / .csv)，支持百兆海量大文件
                     </p>
                   </div>
                 </div>
@@ -345,8 +239,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                           {file.name}
                         </p>
                         <p className="text-[11px] text-muted-foreground">
-                          {(file.size / 1024).toFixed(1)} KB · 已解析{" "}
-                          <strong className="text-foreground">{parsedTickets.length}</strong> 条工单
+                          文件大小：{(file.size / (1024 * 1024)).toFixed(2)} MB · 准备上传至后端解析
                         </p>
                       </div>
                     </div>
@@ -361,33 +254,12 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                     </Button>
                   </div>
 
-                  {/* Parsed Sample Preview */}
-                  {parsedTickets.length > 0 && (
-                    <div className="space-y-1.5">
-                      <div className="text-[11px] font-semibold text-muted-foreground flex items-center justify-between">
-                        <span>解析数据样例预览 (前 2 条)：</span>
-                        <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded text-[10px] font-mono">
-                          格式有效
-                        </span>
-                      </div>
-                      <div className="max-h-36 overflow-y-auto space-y-2 pr-1">
-                        {parsedTickets.slice(0, 2).map((t, idx) => (
-                          <div
-                            key={idx}
-                            className="p-2.5 rounded-lg border border-border bg-card text-[11px] space-y-1"
-                          >
-                            <div className="flex items-center justify-between font-mono text-muted-foreground">
-                              <span className="font-bold text-foreground">{t.ticketNo}</span>
-                              <span>{t.subdistrict} · {t.channel}</span>
-                            </div>
-                            <p className="text-foreground/80 line-clamp-2 leading-relaxed">
-                              {t.content}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                  <div className="p-3.5 rounded-lg border border-blue-100 bg-blue-50/50 text-[11.5px] text-blue-900 flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span>
+                      文件将直接交由后端高性能 Node 引擎流式解析入库，前端不执行内存解压，保持极致流畅。
+                    </span>
+                  </div>
                 </div>
               )}
             </>
@@ -397,14 +269,14 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
           {step === "INGESTING" && (
             <div className="py-12 flex flex-col items-center justify-center gap-4 text-center">
               <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
-                <Database className="w-7 h-7 animate-pulse text-primary" />
+                <Loader2 className="w-7 h-7 animate-spin text-primary" />
               </div>
               <div className="space-y-1">
                 <p className="text-xs font-bold text-foreground">
-                  正在批量写入 PostgreSQL 数据库...
+                  后端正在流式解析表格并写入 PostgreSQL...
                 </p>
                 <p className="text-[11px] text-muted-foreground">
-                  执行单号防重校验与字段结构化存储
+                  执行单号防重校验、镇街与发生地实体标准化、批量入库
                 </p>
               </div>
             </div>
@@ -435,9 +307,9 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                 <div className="flex items-center gap-2.5">
                   <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
                   <div>
-                    <h3 className="text-xs font-bold">工单数据入库成功</h3>
+                    <h3 className="text-xs font-bold">工单数据后端入库成功</h3>
                     <p className="text-[11px] text-emerald-700">
-                      本次检验 {report.totalParsed} 条数据，入库耗时 {report.durationMs}ms
+                      成功解析 {report.totalParsed} 条数据，耗时 {(report.durationMs / 1000).toFixed(2)} 秒
                     </p>
                   </div>
                 </div>
@@ -458,12 +330,12 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                   </div>
                   <div className="flex items-baseline gap-1 mt-1">
                     <span className="text-xl font-bold font-mono text-emerald-700">
-                      {report.insertedCount}
+                      {report.insertedCount.toLocaleString()}
                     </span>
                     <span className="text-[10px] text-emerald-600">条</span>
                   </div>
                   <div className="text-[10px] text-emerald-600/80">
-                    新写入数据库
+                    写入数据库
                   </div>
                 </Card>
 
@@ -477,7 +349,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                   </div>
                   <div className="flex items-baseline gap-1 mt-1">
                     <span className="text-xl font-bold font-mono text-amber-700">
-                      {report.duplicateCount}
+                      {report.duplicateCount.toLocaleString()}
                     </span>
                     <span className="text-[10px] text-amber-600">条</span>
                   </div>
@@ -511,10 +383,10 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                 <Sparkles className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                 <div className="space-y-1">
                   <h4 className="text-xs font-bold text-blue-900">
-                    第二阶段：是否立即对这批数据进行 AI Agent 智能聚类研判？
+                    第二阶段：是否立即启动 AI Agent 进行多频图谱聚类？
                   </h4>
                   <p className="text-[11px] text-blue-700 leading-relaxed">
-                    点击下方「启动 Agent 智能聚类研判」按钮，Agent 将自动提取商户主体、地点与多频风险，生成治理主题看板；您也可以选择先仅入库，稍后再统一研判。
+                    点击「启动 Agent 智能聚类研判」，系统将自动对库内工单进行多频归因并刷新看板；您也可以选择仅完成入库，稍后随时在顶部导航栏启动。
                   </p>
                 </div>
               </div>
@@ -564,12 +436,12 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
               <Button
                 variant="default"
                 size="sm"
-                onClick={handleOnlyIngestToDB}
-                disabled={parsedTickets.length === 0 || step === "INGESTING" || step === "CLUSTERING"}
+                onClick={handleUploadAndIngest}
+                disabled={!file || step === "INGESTING" || step === "CLUSTERING"}
                 className="text-xs bg-primary text-primary-foreground hover:bg-primary/90 font-semibold shadow-xs"
               >
                 <Database className="w-3.5 h-3.5 mr-1.5" />
-                第 1 步：导入入库并核验 ({parsedTickets.length}条)
+                第 1 步：上传至后端流式入库
               </Button>
             </>
           )}
