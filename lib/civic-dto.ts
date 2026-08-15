@@ -5,7 +5,19 @@ import { explicitAdmin, parseAdminArea } from "@/lib/admin-area";
 export function regionLabel(subdistrict?: string | null, district?: string | null): string {
   const raw = (subdistrict || district || "").trim();
   if (!raw) return "未归属";
-  return raw.replace(/(街道|镇|区)$/g, "") || raw;
+  const parsed = parseAdminArea(raw);
+  if (parsed.subdistrict) {
+    return parsed.subdistrict.replace(/(街道|镇)$/g, "");
+  }
+  if (parsed.district) {
+    return parsed.district;
+  }
+  for (const t of ["大良", "容桂", "伦教", "勒流", "陈村", "北滘", "乐从", "龙江", "杏坛", "均安"]) {
+    if (raw.includes(t)) return t;
+  }
+  if (raw.includes("顺德")) return "顺德区";
+  if (raw.length > 6) return "顺德区";
+  return raw.replace(/(街道|镇|区)$/g, "") || "未归属";
 }
 
 export function mapTicketStatus(status?: string | null): "PENDING" | "IN_PROGRESS" | "RESOLVED" {
