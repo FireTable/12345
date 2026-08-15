@@ -1,0 +1,122 @@
+/* ==================================================================
+   _shared/css/tokens.css — 全局设计令牌
+   4 个页面共用，颜色 / 间距 / 字号 / 阴影 / 动画
+   ================================================================== */
+
+:root {
+  /* 品牌色 */
+  --c-brand:        #1677FF;
+  --c-brand-dark:   #0958D9;
+  --c-brand-soft:   #E6F4FF;
+  --c-brand-tint:   #F0F7FF;
+
+  /* 中性色 */
+  --c-bg:           #F5F7FA;
+  --c-surface:      #FFFFFF;
+  --c-surface-2:    #FAFBFC;
+  --c-border:       #E5E7EB;
+  --c-border-soft:  #F0F1F3;
+  --c-ink:          #1F2329;
+  --c-ink-2:        #4E5969;
+  --c-ink-3:        #86909C;
+  --c-ink-4:        #C9CDD4;
+
+  /* 状态色 */
+  --c-success:      #00B42A;
+  --c-success-bg:   #E8FFEA;
+  --c-warning:      #FF7D00;
+  --c-warning-bg:   #FFF3E0;
+  --c-danger:       #F53F3F;
+  --c-danger-bg:    #FFECE8;
+  --c-info:         #1677FF;
+  --c-info-bg:      #E6F4FF;
+
+  /* KPI 卡片图标背景色 */
+  --c-kpi-blue:     #E6F4FF;
+  --c-kpi-green:    #E8FFEA;
+  --c-kpi-purple:   #F2E9FF;
+  --c-kpi-orange:   #FFF3E0;
+
+  /* 三模式专用色（multifreq/detail/analysis 用） */
+  --c-mode-crowd:      #F53F3F;
+  --c-mode-crowd-bg:   #FFECE8;
+  --c-mode-repeat:     #FF7D00;
+  --c-mode-repeat-bg:  #FFF3E0;
+  --c-mode-hotspot:    #1677FF;
+  --c-mode-hotspot-bg: #E6F4FF;
+
+  /* 间距 8px 栅格 */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-10: 40px;
+  --s-12: 48px;
+
+  /* 圆角 */
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+
+  /* 阴影 */
+  --sh-1: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --sh-2: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --sh-3: 0 6px 16px rgba(0, 0, 0, 0.08);
+
+  /* 字号 */
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-base: 14px;
+  --fs-md: 16px;
+  --fs-lg: 20px;
+  --fs-xl: 24px;
+  --fs-2xl: 30px;
+  --fs-3xl: 36px;
+
+  /* 顶栏 */
+  --nav-h: 60px;
+
+  /* 动效曲线 */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 0.15s;
+  --dur-base: 0.25s;
+  --dur-slow: 0.4s;
+}
+
+/* ============== Reset ============== */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+               "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue",
+               Helvetica, Arial, sans-serif;
+  font-size: var(--fs-base);
+  color: var(--c-ink);
+  background: var(--c-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.5;
+}
+a { color: var(--c-brand); text-decoration: none; transition: color var(--dur-fast); }
+a:hover { color: var(--c-brand-dark); }
+button { font-family: inherit; cursor: pointer; border: none; background: none; }
+ul, ol { list-style: none; }
+
+/* ============== 工具类 ============== */
+.flex { display: flex; }
+.flex-1 { flex: 1; }
+.items-center { align-items: center; }
+.justify-between { justify-content: space-between; }
+.gap-1 { gap: var(--s-1); }
+.gap-2 { gap: var(--s-2); }
+.gap-3 { gap: var(--s-3); }
+.gap-4 { gap: var(--s-4); }
+.text-muted { color: var(--c-ink-3); }
+.text-success { color: var(--c-success); }
+.text-warning { color: var(--c-warning); }
+.text-danger { color: var(--c-danger); }

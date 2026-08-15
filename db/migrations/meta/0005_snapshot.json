@@ -1,9 +1,124 @@
 {
-  "id": "02d9d917-b016-44dc-97c8-063c1112f2fb",
-  "prevId": "417ccbff-1748-4bb0-9836-822be4423adf",
+  "id": "bd9cf8db-6f40-4dc4-9745-ba48be877886",
+  "prevId": "02d9d917-b016-44dc-97c8-063c1112f2fb",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
+    "public.review_queue": {
+      "name": "review_queue",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(64)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "ticket_id": {
+          "name": "ticket_id",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'LOW_CONFIDENCE'"
+        },
+        "confidence": {
+          "name": "confidence",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'PENDING'"
+        },
+        "operator": {
+          "name": "operator",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "reviewed_at": {
+          "name": "reviewed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_review_queue_status": {
+          "name": "idx_review_queue_status",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_review_queue_ticket_id": {
+          "name": "idx_review_queue_ticket_id",
+          "columns": [
+            {
+              "expression": "ticket_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "review_queue_ticket_id_tickets_id_fk": {
+          "name": "review_queue_ticket_id_tickets_id_fk",
+          "tableFrom": "review_queue",
+          "tableTo": "tickets",
+          "columnsFrom": [
+            "ticket_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.themes": {
       "name": "themes",
       "schema": "",
@@ -43,7 +158,7 @@
           "type": "varchar(64)",
           "primaryKey": false,
           "notNull": false,
-          "default": "'综合民生'"
+          "default": "'城市管理'"
         },
         "risk_level": {
           "name": "risk_level",
@@ -84,6 +199,74 @@
           "primaryKey": false,
           "notNull": false
         },
+        "pattern_type": {
+          "name": "pattern_type",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ai_confidence": {
+          "name": "ai_confidence",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "first_at": {
+          "name": "first_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_at": {
+          "name": "last_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "handling_status": {
+          "name": "handling_status",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'未处理'"
+        },
+        "handling_progress": {
+          "name": "handling_progress",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "handling_owner": {
+          "name": "handling_owner",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "handling_eta": {
+          "name": "handling_eta",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "features_json": {
+          "name": "features_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "radar_json": {
+          "name": "radar_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "trend_pct": {
+          "name": "trend_pct",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -113,6 +296,21 @@
           "columns": [
             {
               "expression": "canonical_subject",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_themes_pattern_type": {
+          "name": "idx_themes_pattern_type",
+          "columns": [
+            {
+              "expression": "pattern_type",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -289,6 +487,37 @@
         },
         "subdistrict": {
           "name": "subdistrict",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_category": {
+          "name": "source_category",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "urgency": {
+          "name": "urgency",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'NORMAL'"
+        },
+        "address": {
+          "name": "address",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "confidence": {
+          "name": "confidence",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "primary_theme_id": {
+          "name": "primary_theme_id",
           "type": "varchar(64)",
           "primaryKey": false,
           "notNull": false

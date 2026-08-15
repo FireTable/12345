@@ -8,6 +8,7 @@ import type {
 import { markFakeClosures } from "./fake-closure";
 import { deriveRiskLevel, scanNegativeSentiment } from "./risk-rules";
 import { RULES } from "../rules";
+import { civicModeFromPattern, deriveThemeMetrics, inferPatternType } from "../theme-metrics";
 
 function safeParseDate(dateStr: string): Date {
   if (!dateStr) return new Date();
@@ -112,13 +113,19 @@ export async function clusterNode(
       });
 
       const { reopenCount, reopenTicketIds } = markFakeClosures(tickets);
-      const patternType = "INDIVIDUAL_REPEAT" as const;
+      const patternType = inferPatternType(tickets);
       const hitNegative = scanNegativeSentiment(tickets);
       const riskLevel = deriveRiskLevel({
         ticketCount: tickets.length,
         patternType,
         hitNegative,
         reopenCount,
+      });
+      const metrics = deriveThemeMetrics({
+        eventType,
+        canonicalLocation,
+        tickets,
+        patternType,
       });
 
       themes.push({
@@ -130,6 +137,7 @@ export async function clusterNode(
         category: (tickets[0].themes && tickets[0].themes[0]) || RULES.defaultCategory,
         riskLevel,
         patternType,
+        civicMode: civicModeFromPattern(patternType),
         riskReason:
           reopenCount > 0
             ? `疑似假闭环：办结 ${RULES.fakeClosure.windowDays} 天内同主体再次投诉 ${reopenCount} 次`
@@ -146,6 +154,12 @@ export async function clusterNode(
         status: "UNCHECKED",
         reopenCount,
         reopenTicketIds,
+        aiConfidence: metrics.aiConfidence,
+        features: metrics.features,
+        radar: metrics.radar,
+        trendPct: metrics.trendPct,
+        handlingStatus: "未处理",
+        handlingProgress: 0,
       });
     }
   }
@@ -160,24 +174,19 @@ export async function clusterNode(
     const loc = (ticket.canonicalLocation || "").trim();
     if (!isSpecificMicroLocation(loc)) continue;
 
-    const cat = (ticket.themes && ticket.themes[0]) || RULES.defaultCategory;
-    // 以微观具体地点 + 业务大类为聚集维度
-    const key = `${loc}::${cat}`;
-
-    if (!locationEventMap.has(key)) {
-      locationEventMap.set(key, []);
+    if (!locationEventMap.has(loc)) {
+      locationEventMap.set(loc, []);
     }
-    locationEventMap.get(key)!.push(ticket);
+    locationEventMap.get(loc)!.push(ticket);
   }
 
-  for (const [key, tickets] of locationEventMap.entries()) {
+  for (const [microLocation, tickets] of locationEventMap.entries()) {
     if (tickets.length >= RULES.minClusterSize) {
       tickets.forEach((t) => assignedTicketIds.add(t.id));
       tickets.sort(
         (a, b) => safeParseDate(a.createTime).getTime() - safeParseDate(b.createTime).getTime()
       );
 
-      const [microLocation, category] = key.split("::");
       const firstTime = tickets[0].createTime;
       const lastTime = tickets[tickets.length - 1].createTime;
       const timeSpanHours = Math.max(
@@ -197,7 +206,7 @@ export async function clusterNode(
       });
 
       const { reopenCount, reopenTicketIds } = markFakeClosures(tickets);
-      const patternType = "GROUP_GATHERING" as const;
+      const patternType = inferPatternType(tickets);
       const hitNegative = scanNegativeSentiment(tickets);
       const riskLevel = deriveRiskLevel({
         ticketCount: tickets.length,
@@ -205,6 +214,13 @@ export async function clusterNode(
         hitNegative,
         reopenCount,
       });
+      const metrics = deriveThemeMetrics({
+        eventType,
+        canonicalLocation: microLocation,
+        tickets,
+        patternType,
+      });
+      const category = (tickets[0].themes && tickets[0].themes[0]) || RULES.defaultCategory;
 
       themes.push({
         id: themeId,
@@ -215,6 +231,7 @@ export async function clusterNode(
         category,
         riskLevel,
         patternType,
+        civicMode: civicModeFromPattern(patternType),
         riskReason:
           reopenCount > 0
             ? `疑似假闭环：办结 ${RULES.fakeClosure.windowDays} 天内同地点再次投诉 ${reopenCount} 次`
@@ -231,6 +248,12 @@ export async function clusterNode(
         status: "UNCHECKED",
         reopenCount,
         reopenTicketIds,
+        aiConfidence: metrics.aiConfidence,
+        features: metrics.features,
+        radar: metrics.radar,
+        trendPct: metrics.trendPct,
+        handlingStatus: "未处理",
+        handlingProgress: 0,
       });
     }
   }

@@ -2,7 +2,8 @@ import { Annotation, messagesStateReducer } from "@langchain/langgraph";
 import type { BaseMessage } from "@langchain/core/messages";
 
 export type RiskLevel = "HIGH" | "MEDIUM" | "LOW";
-export type PatternType = "GROUP_GATHERING" | "INDIVIDUAL_REPEAT";
+export type PatternType = "GROUP_GATHERING" | "INDIVIDUAL_REPEAT" | "DIVERGE";
+export type CivicMode = "aggregate" | "repeat" | "diverge";
 export type EntityType = "SUBJECT" | "LOCATION" | "EVENT_TYPE" | "CORE_DEMAND";
 
 export interface ExtractedEntity {
@@ -35,6 +36,11 @@ export interface RawTicket {
   closedAt?: string;
   closureStatus?: "RESOLVED" | "REOPENED" | null;
   isFakeClosure?: boolean;
+  sourceCategory?: string;
+  urgency?: "NORMAL" | "MEDIUM" | "URGENT";
+  address?: string;
+  confidence?: number;
+  primaryThemeId?: string;
 }
 
 export interface EnrichedTicket extends RawTicket {
@@ -78,6 +84,14 @@ export interface MultiFrequencyTheme {
   status: "UNCHECKED" | "CHECKING" | "CONFIRMED" | "DISMISSED";
   reopenCount?: number;
   reopenTicketIds?: string[];
+  civicMode?: CivicMode;
+  aiConfidence?: number;
+  features?: Array<{ name: string; pct: number; desc: string }>;
+  radar?: number[];
+  trendPct?: number | null;
+  handlingStatus?: string;
+  handlingProgress?: number;
+  handlingOwner?: string;
 }
 
 export interface GraphNode {

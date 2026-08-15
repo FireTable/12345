@@ -83,6 +83,16 @@ export async function POST(req: Request) {
         timeSpanHours: t.timeSpanHours,
         aiSummary: t.aiSummary,
         recommendedAction: t.recommendedAction,
+        patternType: t.patternType || null,
+        aiConfidence: t.aiConfidence ?? null,
+        firstAt: t.firstOccurrence ? new Date(t.firstOccurrence.replace(" ", "T")) : null,
+        lastAt: t.lastOccurrence ? new Date(t.lastOccurrence.replace(" ", "T")) : null,
+        handlingStatus: t.handlingStatus || "未处理",
+        handlingProgress: t.handlingProgress ?? 0,
+        handlingOwner: t.handlingOwner || null,
+        featuresJson: t.features ? JSON.stringify(t.features) : null,
+        radarJson: t.radar ? JSON.stringify(t.radar) : null,
+        trendPct: t.trendPct ?? null,
       }));
 
       if (themeRecords.length > 0) {
@@ -111,10 +121,16 @@ export async function POST(req: Request) {
 
         for (const theme of result.themes) {
           for (const t of theme.tickets || []) {
-            if (!t.isFakeClosure) continue;
             await db
               .update(ticketsTable)
-              .set({ isFakeClosure: true, closureStatus: "REOPENED" })
+              .set({
+                primaryThemeId: theme.id,
+                address: t.canonicalLocation || t.address || null,
+                confidence: t.confidence ?? null,
+                ...(t.isFakeClosure
+                  ? { isFakeClosure: true, closureStatus: "REOPENED" as const }
+                  : {}),
+              })
               .where(eq(ticketsTable.id, t.id));
           }
         }
