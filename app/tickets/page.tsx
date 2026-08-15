@@ -334,7 +334,6 @@ export default function TicketsPage() {
                 <td>{r.createdAt}</td>
                 <td>
                   <span className={`status-tag status-tag--${statusTag(r.status)}`}>
-                    <span className={`status-dot status-dot--${statusDot(r.status)}`} />
                     {statusLabel(r.status)}
                   </span>
                 </td>
