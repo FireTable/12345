@@ -254,7 +254,7 @@ function ThemeDetailInner() {
     return (
       <>
         <div className="breadcrumb">
-          <Link href="/themes">群组中心</Link>
+          <Link href="/themes">多频工单</Link>
           <span>/</span>
           <span>详情</span>
         </div>
@@ -266,7 +266,7 @@ function ThemeDetailInner() {
     return (
       <>
         <div className="breadcrumb">
-          <Link href="/themes">群组中心</Link>
+          <Link href="/themes">多频工单</Link>
           <span>/</span>
           <span>详情</span>
         </div>
@@ -289,7 +289,7 @@ function ThemeDetailInner() {
   return (
     <>
       <div className="breadcrumb">
-        <Link href="/themes">群组中心</Link>
+        <Link href="/themes">多频工单</Link>
         <span>/</span>
         <Link href="/multifreq">多频透视</Link>
         <span>/</span>
