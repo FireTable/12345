@@ -3,20 +3,52 @@
 import React from "react";
 import { ThemeCard } from "./theme-card";
 import type { MultiFrequencyTheme } from "@/backend/state";
-import { AlertCircle, Clock, CheckCircle2 } from "lucide-react";
+import { AlertCircle, Clock, CheckCircle2, Inbox, Upload } from "lucide-react";
+import { Button } from "@/app/_components/ui/button";
 
 interface ThemeKanbanProps {
   themes: MultiFrequencyTheme[];
   onSelectTheme: (theme: MultiFrequencyTheme) => void;
+  onOpenUpload?: () => void;
 }
 
 export const ThemeKanban: React.FC<ThemeKanbanProps> = ({
   themes,
   onSelectTheme,
+  onOpenUpload,
 }) => {
   const highRiskThemes = themes.filter((t) => t.riskLevel === "HIGH");
   const mediumRiskThemes = themes.filter((t) => t.riskLevel === "MEDIUM");
   const lowRiskThemes = themes.filter((t) => t.riskLevel === "LOW");
+
+  if (themes.length === 0) {
+    return (
+      <div className="max-w-7xl mx-auto px-6 py-12">
+        <div className="border border-dashed border-border rounded-2xl p-12 bg-card text-center flex flex-col items-center justify-center gap-3">
+          <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center text-muted-foreground">
+            <Inbox className="w-6 h-6" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-sm font-bold text-foreground">暂无工单数据与多频主题</h3>
+            <p className="text-xs text-muted-foreground max-w-md">
+              当前数据库处于初始干净状态。请点击右上角「上传入库」按钮导入工单文件 (.xlsx / .csv) 开始分析。
+            </p>
+          </div>
+          {onOpenUpload && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onOpenUpload}
+              className="mt-2 text-xs border-border bg-card hover:bg-muted"
+            >
+              <Upload className="w-3.5 h-3.5 mr-1" />
+              立即上传工单表格
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-4">
@@ -40,7 +72,7 @@ export const ThemeKanban: React.FC<ThemeKanbanProps> = ({
               <ThemeCard key={theme.id} theme={theme} onClick={onSelectTheme} />
             ))}
             {highRiskThemes.length === 0 && (
-              <div className="p-8 text-center text-xs text-slate-400 border border-dashed border-slate-200 rounded-lg bg-white">
+              <div className="p-8 text-center text-xs text-muted-foreground border border-dashed border-border rounded-lg bg-card">
                 暂无紧急督办事件
               </div>
             )}
@@ -66,7 +98,7 @@ export const ThemeKanban: React.FC<ThemeKanbanProps> = ({
               <ThemeCard key={theme.id} theme={theme} onClick={onSelectTheme} />
             ))}
             {mediumRiskThemes.length === 0 && (
-              <div className="p-8 text-center text-xs text-slate-400 border border-dashed border-slate-200 rounded-lg bg-white">
+              <div className="p-8 text-center text-xs text-muted-foreground border border-dashed border-border rounded-lg bg-card">
                 暂无重点跟进事件
               </div>
             )}
@@ -75,14 +107,14 @@ export const ThemeKanban: React.FC<ThemeKanbanProps> = ({
 
         {/* Column 3: Low Risk */}
         <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+          <div className="flex items-center justify-between pb-2 border-b border-border">
             <div className="flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 text-slate-600" />
-              <h2 className="text-xs font-bold text-slate-800 tracking-tight">
+              <h2 className="text-xs font-bold text-foreground tracking-tight">
                 常规流转 (日常多频)
               </h2>
             </div>
-            <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
+            <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-muted text-muted-foreground border border-border">
               {lowRiskThemes.length}
             </span>
           </div>
@@ -92,7 +124,7 @@ export const ThemeKanban: React.FC<ThemeKanbanProps> = ({
               <ThemeCard key={theme.id} theme={theme} onClick={onSelectTheme} />
             ))}
             {lowRiskThemes.length === 0 && (
-              <div className="p-8 text-center text-xs text-slate-400 border border-dashed border-slate-200 rounded-lg bg-white">
+              <div className="p-8 text-center text-xs text-muted-foreground border border-dashed border-border rounded-lg bg-card">
                 暂无常规多频事件
               </div>
             )}

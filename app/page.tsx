@@ -39,16 +39,16 @@ export default function HomePage() {
   // State from Decoupled APIs
   const [themes, setThemes] = useState<MultiFrequencyTheme[]>([]);
   const [stats, setStats] = useState<OverallStats>({
-    totalTickets: 128278,
-    multiFrequencyTickets: 7964,
-    multiFrequencyRate: 38,
-    themeCount: 48,
-    highRiskCount: 6,
-    mediumRiskCount: 24,
-    lowRiskCount: 18,
-    compressionRatio: 99,
-    topSubject: "大良街道重点诉求责任主体",
-    avgResponseTimeSavedHours: 5.2,
+    totalTickets: 0,
+    multiFrequencyTickets: 0,
+    multiFrequencyRate: 0,
+    themeCount: 0,
+    highRiskCount: 0,
+    mediumRiskCount: 0,
+    lowRiskCount: 0,
+    compressionRatio: 0,
+    topSubject: "暂无数据",
+    avgResponseTimeSavedHours: 0,
   });
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] });
 
@@ -220,6 +220,7 @@ export default function HomePage() {
               <ThemeKanban
                 themes={filteredThemes}
                 onSelectTheme={handleSelectTheme}
+                onOpenUpload={() => setIsUploadOpen(true)}
               />
             )}
 
