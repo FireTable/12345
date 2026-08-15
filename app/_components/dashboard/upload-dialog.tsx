@@ -8,15 +8,14 @@ import {
   FileSpreadsheet,
   CheckCircle2,
   AlertTriangle,
-  XCircle,
   X,
   Loader2,
   Sparkles,
-  Layers,
   ArrowRight,
-  TrendingDown,
   Clock,
   ShieldCheck,
+  Database,
+  Bot,
 } from "lucide-react";
 import { Button } from "@/app/_components/ui/button";
 import { Card } from "@/app/_components/ui/card";
@@ -31,6 +30,7 @@ interface UploadDialogProps {
     stats: OverallStats;
     graphData: GraphData;
   }) => void;
+  onDatabaseUpdated?: () => void;
 }
 
 interface IngestionReport {
@@ -39,9 +39,6 @@ interface IngestionReport {
   duplicateCount: number;
   failedCount: number;
   durationMs: number;
-  themesGenerated: number;
-  highRiskCount: number;
-  compressionRatio: number;
 }
 
 const HEADER_MAP: Record<string, string> = {
@@ -69,13 +66,13 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
   isOpen,
   onClose,
   onUploadSuccess,
+  onDatabaseUpdated,
 }) => {
-  const [step, setStep] = useState<"SELECT" | "PROCESSING" | "REPORT">("SELECT");
+  const [step, setStep] = useState<"SELECT" | "INGESTING" | "REPORT" | "CLUSTERING">("SELECT");
   const [isDragging, setIsDragging] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [parsedTickets, setParsedTickets] = useState<RawTicket[]>([]);
   const [report, setReport] = useState<IngestionReport | null>(null);
-  const [processingStatus, setProcessingStatus] = useState("正在解析表格...");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
@@ -177,16 +174,14 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
     }
   };
 
-  const handleStartIngestion = async () => {
+  // 阶段 1：只执行数据入库（按钮 1）
+  const handleOnlyIngestToDB = async () => {
     if (parsedTickets.length === 0) return;
 
-    setStep("PROCESSING");
-    setProcessingStatus("1/3 正在执行数据库查重与增量入库...");
-
+    setStep("INGESTING");
     const startTime = Date.now();
 
     try {
-      // 1. Post to tickets ingestion endpoint
       const ticketsRes = await fetch("/api/tickets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -194,6 +189,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
       });
       const ticketsJson = await ticketsRes.json();
 
+      const durationMs = Date.now() - startTime;
       const statsInfo = ticketsJson.data || {
         totalParsed: parsedTickets.length,
         insertedCount: parsedTickets.length,
@@ -201,9 +197,31 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
         failedCount: 0,
       };
 
-      setProcessingStatus("2/3 正在调用 LangGraph JS 引擎执行实体抽取与图聚类...");
+      setReport({
+        totalParsed: statsInfo.totalParsed,
+        insertedCount: statsInfo.insertedCount,
+        duplicateCount: statsInfo.duplicateCount,
+        failedCount: statsInfo.failedCount,
+        durationMs,
+      });
 
-      // 2. Run LangGraph pipeline on the tickets
+      setStep("REPORT");
+      if (onDatabaseUpdated) onDatabaseUpdated();
+      toast.success("工单数据已成功入库！");
+    } catch (err: any) {
+      toast.error(`入库失败: ${err.message}`);
+      setStep("SELECT");
+    }
+  };
+
+  // 阶段 2：执行 Agent 智能聚类研判（按钮 2）
+  const handleStartAgentClustering = async () => {
+    if (parsedTickets.length === 0) return;
+
+    setStep("CLUSTERING");
+    toast.info("正在调用 LangGraph Agent 进行四要素抽取与图谱聚类...");
+
+    try {
       const clusterRes = await fetch("/api/cluster", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -214,34 +232,17 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
       });
       const clusterJson = await clusterRes.json();
 
-      setProcessingStatus("3/3 正在组装多频核查报告与拓扑大盘...");
-
       if (clusterJson.success) {
-        const durationMs = Date.now() - startTime;
-        const themes = clusterJson.data.themes || [];
-        const highRisk = themes.filter((t: any) => t.riskLevel === "HIGH").length;
-
-        const reportData: IngestionReport = {
-          totalParsed: statsInfo.totalParsed,
-          insertedCount: statsInfo.insertedCount,
-          duplicateCount: statsInfo.duplicateCount,
-          failedCount: statsInfo.failedCount,
-          durationMs,
-          themesGenerated: themes.length,
-          highRiskCount: highRisk,
-          compressionRatio: clusterJson.data.stats?.compressionRatio || 95,
-        };
-
-        setReport(reportData);
-        setStep("REPORT");
+        toast.success(`Agent 研判完成！已聚类生成 ${clusterJson.data.themes.length} 个多频治理主题！`);
         onUploadSuccess(clusterJson.data);
+        handleFinishAndClose();
       } else {
-        toast.error("智能聚类计算失败");
-        setStep("SELECT");
+        toast.error("智能聚类失败，请重试");
+        setStep("REPORT");
       }
     } catch (err: any) {
-      toast.error(`处理失败: ${err.message}`);
-      setStep("SELECT");
+      toast.error(`Agent 研判异常: ${err.message}`);
+      setStep("REPORT");
     }
   };
 
@@ -256,7 +257,6 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
   const handleFinishAndClose = () => {
     handleReset();
     onClose();
-    toast.success("已切换至最新多频工单看板！");
   };
 
   return (
@@ -269,23 +269,25 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
         <div className="p-5 border-b border-border flex items-center justify-between bg-muted/30">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
-              <Upload className="w-4 h-4" />
+              <Database className="w-4 h-4" />
             </div>
             <div>
               <h2 className="text-sm font-bold text-foreground">
-                {step === "REPORT" ? "工单入库与智能聚类处理报告" : "上传工单表格并即时重聚类"}
+                {step === "REPORT"
+                  ? "第一阶段：工单数据入库检验报告"
+                  : "工单数据文件上传与入库"}
               </h2>
               <p className="text-[11px] text-muted-foreground">
                 {step === "REPORT"
-                  ? "入库统计核验 · 防重去重结果 · 多频主题收益"
-                  : "支持 .xlsx / .xls / .csv 格式，自动识别字段并由 Agent 执行图聚类"}
+                  ? "已完成数据库写入与防重校验，可按需启动 AI Agent 研判"
+                  : "支持 .xlsx / .xls / .csv 格式，先入库存储，后按需启动 Agent 分析"}
               </p>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            disabled={step === "PROCESSING"}
+            disabled={step === "INGESTING" || step === "CLUSTERING"}
             className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
@@ -391,27 +393,41 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
             </>
           )}
 
-          {/* STEP 2: PROCESSING ANIMATION */}
-          {step === "PROCESSING" && (
+          {/* STEP 2: INGESTING ANIMATION */}
+          {step === "INGESTING" && (
             <div className="py-12 flex flex-col items-center justify-center gap-4 text-center">
-              <div className="relative">
-                <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
-                  <Sparkles className="w-8 h-8 animate-pulse text-primary" />
-                </div>
-                <Loader2 className="w-6 h-6 text-primary animate-spin absolute -top-1 -right-1" />
+              <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
+                <Database className="w-7 h-7 animate-pulse text-primary" />
               </div>
               <div className="space-y-1">
                 <p className="text-xs font-bold text-foreground">
-                  {processingStatus}
+                  正在批量写入 PostgreSQL 数据库...
                 </p>
                 <p className="text-[11px] text-muted-foreground">
-                  LangGraph Agent 正在遍历实体图谱并进行多频聚类归因...
+                  执行单号防重校验与字段结构化存储
                 </p>
               </div>
             </div>
           )}
 
-          {/* STEP 3: RICH INGESTION REPORT UI */}
+          {/* STEP 3: CLUSTERING ANIMATION */}
+          {step === "CLUSTERING" && (
+            <div className="py-12 flex flex-col items-center justify-center gap-4 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-purple-50 border border-purple-200 flex items-center justify-center text-purple-600">
+                <Bot className="w-7 h-7 animate-bounce text-purple-600" />
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs font-bold text-foreground">
+                  LangGraph Agent 正在执行多频实体抽取与图谱聚类...
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  构建连通子图 · 识别多频高危警报 · 生成处置摘要
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 4: INGESTION REPORT (TWO-STAGE DASHBOARD) */}
           {step === "REPORT" && report && (
             <div className="space-y-4 animate-in fade-in zoom-in-95 duration-200">
               {/* Top Banner */}
@@ -419,9 +435,9 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                 <div className="flex items-center gap-2.5">
                   <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
                   <div>
-                    <h3 className="text-xs font-bold">工单数据处理与图谱聚类已就绪</h3>
+                    <h3 className="text-xs font-bold">工单数据入库成功</h3>
                     <p className="text-[11px] text-emerald-700">
-                      本次解析 {report.totalParsed} 条诉求，总耗时 {report.durationMs}ms
+                      本次检验 {report.totalParsed} 条数据，入库耗时 {report.durationMs}ms
                     </p>
                   </div>
                 </div>
@@ -430,7 +446,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                 </span>
               </div>
 
-              {/* 3 Core Status Breakdown Cards */}
+              {/* 3 Core Ingestion Badges */}
               <div className="grid grid-cols-3 gap-3">
                 {/* 1. Inserted */}
                 <Card className="p-3.5 border-emerald-200 bg-emerald-50/40 space-y-1">
@@ -447,7 +463,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                     <span className="text-[10px] text-emerald-600">条</span>
                   </div>
                   <div className="text-[10px] text-emerald-600/80">
-                    增量写入数据库
+                    新写入数据库
                   </div>
                 </Card>
 
@@ -466,7 +482,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                     <span className="text-[10px] text-amber-600">条</span>
                   </div>
                   <div className="text-[10px] text-amber-600/80">
-                    单号已存在，安全跳过
+                    单号已存在/跳过
                   </div>
                 </Card>
 
@@ -485,72 +501,50 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                     <span className="text-[10px] text-slate-500">条</span>
                   </div>
                   <div className="text-[10px] text-slate-400">
-                    空诉求或字段缺损
+                    空诉求或缺损
                   </div>
                 </Card>
               </div>
 
-              {/* LangGraph Agent Clustering Value Insights */}
-              <div className="p-4 rounded-xl border border-border bg-card space-y-2.5 shadow-2xs">
-                <div className="flex items-center justify-between text-xs pb-2 border-b border-border">
-                  <span className="font-bold text-foreground flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-primary" />
-                    LangGraph 知识图谱聚类成效
-                  </span>
-                  <span className="font-mono text-[11px] text-muted-foreground flex items-center gap-1">
-                    <Clock className="w-3 h-3" />
-                    Agent 耗时 {report.durationMs}ms
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-3 gap-2 text-center text-xs pt-1">
-                  <div className="p-2 rounded-lg bg-muted/50 border border-border">
-                    <div className="text-[11px] text-muted-foreground">聚合多频主题</div>
-                    <div className="text-base font-bold font-mono text-primary mt-0.5">
-                      {report.themesGenerated} 个
-                    </div>
-                  </div>
-
-                  <div className="p-2 rounded-lg bg-rose-50/60 border border-rose-100">
-                    <div className="text-[11px] text-rose-700">紧急督办警报</div>
-                    <div className="text-base font-bold font-mono text-rose-700 mt-0.5">
-                      🔴 {report.highRiskCount} 项
-                    </div>
-                  </div>
-
-                  <div className="p-2 rounded-lg bg-emerald-50/60 border border-emerald-100">
-                    <div className="text-[11px] text-emerald-700">决策降载压缩率</div>
-                    <div className="text-base font-bold font-mono text-emerald-700 mt-0.5 flex items-center justify-center gap-0.5">
-                      <TrendingDown className="w-3.5 h-3.5" />
-                      {report.compressionRatio}%
-                    </div>
-                  </div>
+              {/* Next Step Callout */}
+              <div className="p-4 rounded-xl border border-blue-100 bg-blue-50/60 flex items-start gap-3">
+                <Sparkles className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <h4 className="text-xs font-bold text-blue-900">
+                    第二阶段：是否立即对这批数据进行 AI Agent 智能聚类研判？
+                  </h4>
+                  <p className="text-[11px] text-blue-700 leading-relaxed">
+                    点击下方「启动 Agent 智能聚类研判」按钮，Agent 将自动提取商户主体、地点与多频风险，生成治理主题看板；您也可以选择先仅入库，稍后再统一研判。
+                  </p>
                 </div>
               </div>
             </div>
           )}
         </div>
 
-        {/* Modal Footer */}
+        {/* Modal Footer (Distinct Dual Buttons) */}
         <div className="p-4 border-t border-border bg-muted/20 flex items-center justify-between">
           {step === "REPORT" ? (
             <>
+              {/* 仅完成入库按钮 */}
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleReset}
+                onClick={handleFinishAndClose}
                 className="text-xs border-border bg-card text-foreground hover:bg-muted"
               >
-                继续上传其他表格
+                仅完成入库 (稍后研判)
               </Button>
 
+              {/* 启动 Agent 处理按钮 (按钮 2) */}
               <Button
                 variant="default"
                 size="sm"
-                onClick={handleFinishAndClose}
-                className="text-xs bg-primary text-primary-foreground hover:bg-primary/90 font-semibold shadow-xs"
+                onClick={handleStartAgentClustering}
+                className="text-xs bg-purple-600 text-white hover:bg-purple-700 font-semibold shadow-xs"
               >
-                完成并查看大盘看板
+                <Bot className="w-3.5 h-3.5 mr-1.5" />
+                启动 Agent 智能聚类研判
                 <ArrowRight className="w-3.5 h-3.5 ml-1" />
               </Button>
             </>
@@ -560,21 +554,22 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                 variant="outline"
                 size="sm"
                 onClick={onClose}
-                disabled={step === "PROCESSING"}
+                disabled={step === "INGESTING" || step === "CLUSTERING"}
                 className="text-xs border-border bg-card text-foreground hover:bg-muted"
               >
                 取消
               </Button>
 
+              {/* 仅导入入库按钮 (按钮 1) */}
               <Button
                 variant="default"
                 size="sm"
-                onClick={handleStartIngestion}
-                disabled={parsedTickets.length === 0 || step === "PROCESSING"}
+                onClick={handleOnlyIngestToDB}
+                disabled={parsedTickets.length === 0 || step === "INGESTING" || step === "CLUSTERING"}
                 className="text-xs bg-primary text-primary-foreground hover:bg-primary/90 font-semibold shadow-xs"
               >
-                <Sparkles className="w-3.5 h-3.5 mr-1.5" />
-                确认并启动智能重聚类 ({parsedTickets.length}条)
+                <Database className="w-3.5 h-3.5 mr-1.5" />
+                第 1 步：导入入库并核验 ({parsedTickets.length}条)
               </Button>
             </>
           )}

@@ -9,6 +9,7 @@ import {
   Network,
   LayoutGrid,
   Upload,
+  Bot,
 } from "lucide-react";
 import { Button } from "@/app/_components/ui/button";
 import { Badge } from "@/app/_components/ui/badge";
@@ -92,8 +93,9 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         </div>
 
-        {/* Right Action Tools */}
+        {/* Right Action Tools (Distinct 2 Workflows) */}
         <div className="flex items-center gap-2">
+          {/* Button 1: Data Ingestion */}
           <Button
             variant="outline"
             size="sm"
@@ -101,20 +103,22 @@ export const Header: React.FC<HeaderProps> = ({
             className="text-xs h-8 border-border bg-card text-foreground hover:bg-muted font-medium"
           >
             <Upload className="w-3.5 h-3.5 mr-1" />
-            上传表格
+            上传入库
           </Button>
 
+          {/* Button 2: Agent AI Intelligence Analysis */}
           <Button
             variant="outline"
             size="sm"
             onClick={onRefresh}
             disabled={isAnalyzing}
-            className="text-xs h-8 border-border bg-card text-foreground hover:bg-muted"
+            className="text-xs h-8 border-purple-200 bg-purple-50/50 text-purple-700 hover:bg-purple-100 font-semibold"
           >
-            <RefreshCw className={`w-3.5 h-3.5 mr-1 ${isAnalyzing ? "animate-spin text-primary" : ""}`} />
-            {isAnalyzing ? "聚类中..." : "重新聚类"}
+            <Bot className={`w-3.5 h-3.5 mr-1 ${isAnalyzing ? "animate-spin text-purple-600" : ""}`} />
+            {isAnalyzing ? "研判中..." : "启动 AI 聚类"}
           </Button>
 
+          {/* Button 3: CSV Export */}
           <Button
             variant="outline"
             size="sm"
@@ -125,6 +129,7 @@ export const Header: React.FC<HeaderProps> = ({
             导出报表
           </Button>
 
+          {/* Button 4: AI Copilot Drawer */}
           <Button
             variant="default"
             size="sm"

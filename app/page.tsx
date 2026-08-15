@@ -269,6 +269,14 @@ export default function HomePage() {
         isOpen={isUploadOpen}
         onClose={() => setIsUploadOpen(false)}
         onUploadSuccess={handleUploadSuccess}
+        onDatabaseUpdated={() => {
+          fetch("/api/stats")
+            .then((r) => r.json())
+            .then((json) => {
+              if (json.success) setStats(json.data);
+            })
+            .catch(console.warn);
+        }}
       />
     </div>
   );
