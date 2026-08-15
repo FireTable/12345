@@ -1,9 +1,12 @@
 import { ChatOpenAI } from "@langchain/openai";
 import { Embeddings, type EmbeddingsParams } from "@langchain/core/embeddings";
-import { loadEnvConfig } from "@next/env";
+import nextEnvPkg from "@next/env";
 
 try {
-  loadEnvConfig(process.cwd());
+  const loadEnvConfig = (nextEnvPkg as any)?.loadEnvConfig || (nextEnvPkg as any)?.default?.loadEnvConfig;
+  if (typeof loadEnvConfig === "function") {
+    loadEnvConfig(process.cwd());
+  }
 } catch (e) {}
 
 const DEFAULT_HEADERS = {
