@@ -318,7 +318,9 @@ export default function TicketsPage() {
                 <td className="col-id">{r.id}</td>
                 <td>
                   <div className="col-title__text">{r.title}</div>
-                  <div className="col-title__id">{r.ticketId}</div>
+                  <div className="col-title__desc" title={r.content || ""}>
+                    {r.content || "暂无诉求正文"}
+                  </div>
                 </td>
                 <td>{r.region || "—"}</td>
                 <td>
