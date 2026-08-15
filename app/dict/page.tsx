@@ -200,7 +200,7 @@ export default function DictionaryManagementPage() {
         <div>
           <div className="page-hero__title">
             <span>📚</span>
-            政务标准词典与别名知识库
+            标准字典与知识库
           </div>
           <div className="page-hero__desc">
             顺德区 10 大法定镇街区划、7 大民生诉求分类标准及 AI 自学习别名沉淀知识库统一管理平台
