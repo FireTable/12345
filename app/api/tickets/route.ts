@@ -4,6 +4,7 @@ import { db } from "@/db/client";
 import { ticketsTable } from "@/db/schema";
 import { sql, inArray } from "drizzle-orm";
 import type { RawTicket } from "@/backend/state";
+import { desensitizeContent } from "@/backend/anonymizer";
 
 export async function GET() {
   try {
@@ -65,6 +66,7 @@ export async function POST(req: Request) {
         ticketNo: t.ticketNo || `GD-${Date.now()}-${i}`,
         title: t.title || "市民诉求",
         content,
+        maskedContent: desensitizeContent(content),
         citizenName: t.citizenName || "市民*",
         citizenPhone: t.citizenPhone || "138****0000",
         district: t.district || "所属辖区",

@@ -39,6 +39,7 @@ export async function POST(req: Request) {
         ? r.createTime.toISOString().slice(0, 19).replace("T", " ")
         : "2025-01-01 00:00:00",
       content: r.content,
+      maskedContent: r.maskedContent || undefined,
       citizenName: r.citizenName || "市民*",
       citizenPhone: r.citizenPhone || "138****0000",
       district: r.district || "所属辖区",

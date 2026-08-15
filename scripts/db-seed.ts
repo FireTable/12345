@@ -9,6 +9,7 @@ loadEnvConfig(process.cwd());
 import { db } from "../db/client";
 import { ticketsTable } from "../db/schema";
 import { MOCK_RAW_TICKETS } from "../lib/mock-data";
+import { desensitizeContent } from "../backend/anonymizer";
 
 async function seedDatabase() {
   console.log("==================================================");
@@ -37,6 +38,7 @@ async function seedDatabase() {
       ticketNo: t.ticketNo,
       title: (t as any).title || "市民诉求",
       content: t.content,
+      maskedContent: desensitizeContent(t.content),
       citizenName: t.citizenName,
       citizenPhone: t.citizenPhone,
       district: t.district,

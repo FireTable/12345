@@ -10,6 +10,7 @@ if (loadEnvConfig) {
 
 import { db } from "../db/client";
 import { ticketsTable } from "../db/schema";
+import { desensitizeContent } from "../backend/anonymizer";
 
 const XLSX: typeof xlsxModule = (xlsxModule as any).default || xlsxModule;
 if ((XLSX as any).set_fs) {
@@ -130,6 +131,7 @@ async function main() {
         ticketNo,
         title,
         content,
+        maskedContent: desensitizeContent(content),
         citizenName: `市民*`,
         citizenPhone: `13${(globalIdx % 9) + 1}****${String((globalIdx * 137) % 10000).padStart(4, "0")}`,
         district: "顺德区",
