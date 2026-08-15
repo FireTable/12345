@@ -7,7 +7,7 @@ try {
   if (typeof loadEnvConfig === "function") {
     loadEnvConfig(process.cwd());
   }
-} catch (e) {}
+} catch (e) { }
 
 const DEFAULT_HEADERS = {
   "User-Agent":
@@ -48,13 +48,13 @@ export function isOllamaLlm(): boolean {
 export function llmConcurrency(): number {
   const raw = Number(process.env.LLM_CONCURRENCY);
   if (Number.isFinite(raw) && raw >= 1) return Math.trunc(raw);
-  return isLocalLlm() ? 1 : 10;
+  return isLocalLlm() ? 5 : 10;
 }
 
 export function getChatModel(temperature: number = 0.2): ChatOpenAI {
   const apiKey = process.env.OPENAI_API_KEY || "mlx";
   const baseURL = process.env.OPENAI_BASE_URL || "http://127.0.0.1:8080/v1";
-  const model = process.env.OPENAI_MODEL || "mlx-community/MiniCPM4.1-8B-4bit";
+  const model = process.env.OPENAI_MODEL || "MiniCPM4.1-8B-MLX";
   const local = isLocalLlm();
   const ollama = isOllamaLlm();
   const ctx = Number(process.env.OLLAMA_NUM_CTX);
@@ -75,11 +75,11 @@ export function getChatModel(temperature: number = 0.2): ChatOpenAI {
     // Ollama OpenAI-compat only: cap KV cache + disable thinking
     ...(ollama
       ? {
-          modelKwargs: {
-            think: false,
-            options: { num_ctx: numCtx, num_predict: 256 },
-          },
-        }
+        modelKwargs: {
+          think: false,
+          options: { num_ctx: numCtx, num_predict: 256 },
+        },
+      }
       : {}),
   });
 }
@@ -158,7 +158,7 @@ export class RerankModel {
       modelName: string;
       apiKey: string;
     }
-  ) {}
+  ) { }
 
   async rerank(
     query: string,

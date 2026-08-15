@@ -15,7 +15,7 @@
 #   1. rsync 代码到 VPS /opt/12345-stack/
 #   2. cp .env.vps.example .env.vps && 编辑填入密钥
 #   3. ssh root@VPS 'cd /opt/12345-stack && docker compose --env-file .env.vps up -d --build'
-#   4. Caddyfile 加 vhost: 12345.firetable.tech → ticket-radar-app:3100
+#   4. Caddyfile 加 vhost: <your-domain> → ticket-radar-app:3100
 #   5. docker exec langgraph-app-caddy-1 caddy reload --config /etc/caddy/Caddyfile
 # ============================================================
 

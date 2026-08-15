@@ -8,7 +8,17 @@
 > - **P2** = 演示件/路演前单独开(需 human-in-the-loop 批准)
 > - **P3+** = Sidecar(需 human-in-the-loop 批准,且 P2+ 启动前必须明确指令)
 >
-> **当前工作分支**:`main`(`e311b48`,本机,未推送 remote)
+> **当前工作分支**:`main`(`1759b74`,本机,未推送 remote)
+>
+> **2026-08-16 现状快照**:
+> - P0 #1–#5 全部交付并已 merge to main(详见下方历史段)
+> - **品牌**:统一为 `民声智理 · 顺德 12345 AI 智能研判系统`(header、README、Copilot greeting、package name、Docker image `minsheng-zhili:v0.1.0`、Dockerfile、compose、docs 都已对齐)
+> - **命名**:关键洞察 → 工单透势;多频透视 → 工单透势
+> - **菜单**(按当前 `nav-items.ts`):数据总览 `/` · 多频工单 `/themes` · 工单透势 `/multifreq` · 工单中心 `/tickets` · 标准字典 `/dict`
+> - **UI 整合**:右下角 Chat FAB、Drawer/Modal 动效、ticket 详情 citizen-letter 卡片样式、TOP 5 辖区列 2.5x 宽、Quadrant `width:100%`、ShundeMap `paddingTop:40` 视觉下移
+> - **VPS**:已同步新代码 + rebuild + 起 stack + 刷 caddy DNS,4 端点全 200(`https://<your-domain>`)
+> - **文档**:DEPLOY.md 脱个人化(给 agent 用);README 菜单段已对齐;IMPROVE.md 新增 2026-08-16 段
+> - **历史 commit**:8 条带中文的 commit message 已 filter-branch 改写为英文(保留时间 + 作者)
 
 ---
 

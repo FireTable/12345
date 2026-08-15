@@ -1,94 +1,159 @@
-# 12345 工单平台 - VPS 部署文档
+# 民声智理 · 系统部署与运维手册 (Deployment & Ops Guide)
 
-完整部署路径在 `~/.openclaw/workspace/skills/12345-maintain/SKILL.md`。
+> **项目名称**：民声智理 · 顺德 12345 AI 智能研判系统  
+> **参赛团队**：赢了就回家吃鱼生  
+> **部署形态**：支持 **本地开发环境**、**VPS 云服务器容器化部署** 及 **政务内网纯离线私有化部署**。
 
-## 架构速览
+---
 
-```
-本地开发机                            VPS (生产)
-===========                           =========
-12345 项目源码                       /opt/12345-stack/
-  ↓ rsync                             ├── Dockerfile         (pnpm@9 + standalone output)
-  + db/dumps/*                        ├── docker-compose.yml  (postgres + app, no caddy)
-  + .env.vps                          ├── .env.vps           (POSTGRES_PASSWORD + API keys)
-                                      └── db/dumps/*         (初始数据)
-                                            ↓ docker compose --env-file .env.vps up -d
-                                      + 12345-postgres       (postgres:16-alpine, named vol)
-                                      + 12345-app            (minsheng-zhili:v0.1.0, 监听 :3100 容器内)
-                                            ↓ 网络 langgraph-app_default (caddy 也在)
-                                      langgraph-app-caddy-1  (复用现有 caddy, 反代 :3100 → 12345.firetable.tech)
+## 目录
+1. [系统部署全景架构](#一系统部署全景架构)
+2. [本地极速开发与启动](#二本地极速开发与启动)
+3. [VPS 云端 Docker 容器化部署](#三vps-云端-docker-容器化部署)
+4. [政务信创/内网纯离线部署 (Ollama / vLLM)](#四政务信创内网纯离线部署-ollama--vllm)
+5. [已知避坑指南 (Troubleshooting)](#五已知避坑指南-troubleshooting)
+6. [日常运维与健康巡检命令](#六日常运维与健康巡检命令)
 
-                                      Cloudflare Origin Cert (复用 *.firetable.tech wildcard)
-```
+---
 
-## 首次部署
-
-详见 SKILL.md 的 "完整首次部署流程"。
-
-## .env.vps 必填字段
+## 一、系统部署全景架构
 
 ```
-POSTGRES_PASSWORD=*** (openssl rand -hex 16)
-DATABASE_URL=postgresql://postgres:<上面那个密码>@postgres:5432/ticket_radar
-OPENAI_API_KEY=*** (DeepSeek)
+本地开发 / 演示机                          VPS / 政务云生产环境
+===================                       ====================
+12345 项目源码                             /opt/12345-stack/
+  ↓ rsync                                   ├── Dockerfile         (pnpm@9 + Next.js Standalone)
+  + .env.vps                                ├── docker-compose.yml (12345-postgres + 12345-app)
+  + db/dumps/*                              ├── .env.vps           (生产环境变量)
+                                            └── db/dumps/*         (初始化数据 dump)
+                                                  ↓ docker compose --env-file .env.vps up -d
+                                            + 12345-postgres       (postgres:16-alpine, named vol)
+                                            + 12345-app            (minsheng-zhili:v0.1.0, 监听 :3100)
+                                                  ↓ Docker 内部网络 (langgraph-app_default)
+                                            langgraph-app-caddy-1  (Caddy 反向代理 :3100 → <your-domain>)
+                                            
+                                            Cloudflare / SSL Cert  (支持通配符 HTTPS 证书)
+```
+
+---
+
+## 二、本地极速开发与启动
+
+### 1. 基础环境要求
+- **Node.js**：`>= 20.0.0`
+- **包管理器**：`pnpm` (`>= 9.0.0`)
+- **数据库**：PostgreSQL 16 (本地已启动)
+
+### 2. 本地一键启动步骤
+```bash
+# 1. 安装依赖
+pnpm install
+
+# 2. 配置本地环境变量
+cp .env.example .env.local
+# 编辑 .env.local 填入本地 DATABASE_URL 与 API Key
+
+# 3. 初始化数据库结构与词典
+pnpm db:migrate   # 执行数据库迁移
+pnpm db:vocab     # 导入顺德 10 大镇街与法定词汇库
+pnpm db:seed      # 导入 200 条脱敏样例工单
+
+# 4. 启动 Next.js 极速热重载开发服务器
+pnpm dev
+# 浏览器访问: http://localhost:3000
+```
+
+---
+
+## 三、VPS 云端 Docker 容器化部署
+
+### 1. `.env.vps` 生产环境变量清单
+```env
+# ---------- 数据库配置 (必须包含 POSTGRES_PASSWORD 用于 docker-compose 变量插值) ----------
+POSTGRES_PASSWORD=<生成高强度密码: openssl rand -hex 16>
+DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/ticket_radar
+
+# ---------- 大模型接口配置 (支持 DeepSeek / 本地 vLLM) ----------
+OPENAI_API_KEY=sk-***
 OPENAI_BASE_URL=https://api.deepseek.com
 OPENAI_MODEL=deepseek-v4-flash
-EMBEDDING_API_KEY=*** (Baishanyun/edgefn)
+
+# ---------- 向量 Embedding (BGE-M3) ----------
+EMBEDDING_API_KEY=sk-***
 EMBEDDING_BASE_URL=https://api.edgefn.net/v1
 EMBEDDING_MODEL=BAAI/bge-m3
-RERANK_API_KEY=*** (Baishanyun/edgefn, 同 embed key)
+
+# ---------- 重排 Rerank (bge-reranker-v2-m3) ----------
+RERANK_API_KEY=sk-***
 RERANK_BASE_URL=https://api.edgefn.net/v1
 RERANK_MODEL=bge-reranker-v2-m3
+
+# ---------- 运行环境 ----------
+NODE_ENV=production
+PORT=3100
+HOSTNAME=0.0.0.0
 ```
 
-模板看 `.env.example` (cp 出来改个名就行)。
-
-## 已知踩坑 (改任何东西前必读)
-
-| # | 坑 | 原因 | 修法 |
-|---|---|---|---|
-| 1 | `ERR_PNPM_IGNORED_BUILDS` build 挂 | pnpm 10 把 `onlyBuiltDependencies` 从 package.json 移走 | Dockerfile pin `pnpm@9` |
-| 2 | approval 永远不写 lockfile | `--frozen-lockfile` 禁止改 lockfile | 去掉 `--frozen-lockfile`, 用 `--reporter=silent` |
-| 3 | compose `${VAR}` 插值失败 | compose 只读 shell / `.env`, 不读 `env_file:` | 用 `--env-file .env.vps` 启动 |
-| 4 | postgres 容器不停 restart | `.env.vps` 没 `POSTGRES_PASSWORD` (env_file 不参与插值) | `.env.vps` 必须含 POSTGRES_PASSWORD |
-| 5 | migrate image 报 module not found | Next.js standalone output 不含 tsx | **不走 migrate image**, 用本地 dump SQL 直灌 |
-| 6 | 502 + caddy 解析失败 | compose service 名 `app` 跟 langgraph-app 的 `app` DNS 冲突 | 我们的 service 名 `ticket-radar-app` |
-| 7 | caddy 占 :80/:443 | 跟现有 `langgraph-app-caddy-1` 抢端口 | 删 compose 里的 caddy service, 复用现有 caddy |
-| 8 | restart 后 502 | caddy 容器 DNS cache 没刷 | 任何容器 restart 后必须 `docker restart langgraph-app-caddy-1` |
-
-## 日常维护
-
-| 操作 | 命令 |
-|---|---|
-| 看 app 日志 | `ssh root@VPS 'docker logs -f 12345-app'` |
-| 重启 app | `ssh root@VPS 'cd /opt/12345-stack && docker compose --env-file .env.vps restart ticket-radar-app && docker restart langgraph-app-caddy-1'` |
-| 改 .env.vps 后生效 | `ssh root@VPS 'cd /opt/12345-stack && docker compose --env-file .env.vps up -d'` |
-| 改 Dockerfile 后生效 | rsync → 重新 `docker buildx build` → `docker compose up -d` |
-| DB 行数 | `ssh root@VPS 'docker exec 12345-postgres psql -U postgres -d ticket_radar -c "SELECT count(*) FROM tickets;"'` |
-| 4 端点验证 | `for p in / /tickets /themes /dict; do curl -kfsS -o /dev/null -w "%{http_code} $p\n" --max-time 15 "https://12345.firetable.tech$p"; done` |
-
-## 更新代码后
-
+### 2. 生产发布与更新流水线
 ```bash
-# 从项目根目录执行
-cd <项目根目录>
-
-# 1. 本地 build 自测
+# 1. 本地编译自测通过
 pnpm build
 
-# 2. rsync 到 VPS
-rsync -avz --exclude={node_modules,.next,.git,*.tsbuildinfo,.env.local,db/dumps} \
+# 2. 同步代码至 VPS 服务器
+rsync -avz --exclude={node_modules,.next,.git,*.tsbuildinfo,.env.local} \
   ./ root@<VPS_IP>:/opt/12345-stack/
 
-# 3. VPS 重新 build + 重启
-ssh root@VPS 'cd /opt/12345-stack && \
-  docker buildx build --platform linux/amd64 -t minsheng-zhili:v1.0.1 --load . && \
-  docker compose --env-file .env.vps up -d && \
+# 3. VPS 上容器构建与热启动
+ssh root@<VPS_IP> 'cd /opt/12345-stack && \
+  docker compose --env-file .env.vps up -d --build && \
   docker restart langgraph-app-caddy-1'
 ```
 
-## 备份
+---
 
-- DB 自动备份: 未配置 (建议加 langgraph-app 风格的 backup cron)
-- 手动 dump: `ssh root@VPS 'docker exec 12345-postgres pg_dump -U postgres -d ticket_radar' | gzip > backup-$(date +%F).sql.gz`
-- offline dump (本地): `pnpm db:export` → `db/dumps/ticket_radar_data.json`
+## 四、政务信创/内网纯离线部署 (Ollama / vLLM)
+
+本系统原生支持**纯离线、零外部请求**的信创政务内网部署：
+
+1. **大模型本地化 (Ollama / vLLM)**：
+   - 部署 MiniCPM / Qwen2.5 等开源政务量化模型；
+   - 将 `.env.vps` 中的 `OPENAI_BASE_URL` 配置为 `http://127.0.0.1:11434/v1`；
+   - 系统内置 `isLocalLlm()` / `isOllamaLlm()` 自动识别并调优 KV Cache 与并发参数。
+2. **数据不出域**：所有结构化抽取、仲裁与向量计算全部在政务专网内完成。
+
+---
+
+## 五、已知避坑指南 (Troubleshooting)
+
+| # | 现象 / 报错 | 根本原因 | 标准修复方案 |
+|---|---|---|---|
+| **1** | `ERR_PNPM_IGNORED_BUILDS` | pnpm 10 移除了部分构建兼容机制 | Dockerfile 中严格锁定 `pnpm@9` |
+| **2** | Docker Compose `${VAR}` 插值失效 | Compose 默认只读取 shell，不自动读 `env_file:` 内部变量 | 启动命令必须显式带上 `--env-file .env.vps` |
+| **3** | Postgres 容器不断自动重启 | `.env.vps` 中缺少 `POSTGRES_PASSWORD` 导致镜像健康检查失败 | 在 `.env.vps` 显式声明 `POSTGRES_PASSWORD` |
+| **4** | 容器重启后 Caddy 报 502 Bad Gateway | Caddy 容器内部 DNS 缓存未刷新 | 容器更新后执行 `docker restart langgraph-app-caddy-1` |
+| **5** | 数据库迁移 Module not found | Next.js Standalone 打包产物不包含开发态 `tsx` | 生产环境使用 `pnpm db:import` 或 SQL dump 直灌 |
+
+---
+
+## 六、日常运维与健康巡检命令
+
+```bash
+# 1. 查看生产 App 实时日志
+ssh root@VPS 'docker logs -f 12345-app'
+
+# 2. 检查 5 大核心业务路由 HTTP 状态
+for p in / /tickets /themes /multifreq /dict; do
+  curl -kfsS -o /dev/null -w "%{http_code} $p\n" --max-time 15 "https://<your-domain>$p"
+done
+
+# 3. 检查数据库实时工单及主题行数
+ssh root@VPS 'docker exec 12345-postgres psql -U postgres -d ticket_radar -c "
+  SELECT 
+    (SELECT count(*) FROM tickets) as tickets_count,
+    (SELECT count(*) FROM themes) as themes_count,
+    (SELECT count(*) FROM aliases) as aliases_count;
+"'
+
+# 4. 手动备份全量数据库
+ssh root@VPS 'docker exec 12345-postgres pg_dump -U postgres -d ticket_radar' | gzip > backup-$(date +%F).sql.gz
+```

@@ -1,0 +1,5 @@
+FROM minicpm-v4.6
+PARAMETER num_ctx 4096
+PARAMETER num_predict 256
+PARAMETER temperature 0
+SYSTEM "/no_think"

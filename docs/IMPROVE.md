@@ -10,6 +10,29 @@ Rule: pages read persisted or aggregated data. No `Math.random` trends, no `log1
 - Plan: extend `tickets`/`themes` (no duplicate workorders/clusters tables), persist mode / first-last / confidence / handling / features / radar, add `diverge`, project APIs, rebuild six Next routes with design tokens.
 - Verification this step: `git branch --show-current` → `feat/civic-ui-landing`.
 
+## 2026-08-16 — UI consolidation + brand alignment
+
+- Header brand `Ticket Radar` → `民声智理`;package name `ticket-radar` → `minsheng-zhili`;Docker image tag `minsheng-zhili:v0.1.0`.
+- Move `启动 Agent 研判` from header to pages that own the upload (`/`, `/tickets`); header keeps only `上传入库` / `导出报表` / `AI 研判`.
+- Drop header `上传工单` / `研判助手` buttons; add bottom-right Chat FAB (`MessageCircle`) that hides when the copilot drawer opens.
+- AnimatePresence enter/exit on copilot drawer (backdrop fade + panel slide-x) and upload dialog (backdrop fade + panel scale/y). Click backdrop to close.
+- Rename `关键洞察` → `工单透势` (workbench insight card) and `多频透视` → `工单透势` (multifreq page title + breadcrumb) for naming consistency.
+- Swap nav order: `多频工单` before `工单透势` (then `工单中心` to end per later request).
+- Drop 🚨 emoji from tickets urgent tab.
+- Shunde SVG map: gray fill (`#E5E7EB`) + centered `暂无镇街研判数据` overlay when empty; vertically center card content.
+- Quadrant chart: `width:100%` on `.quadrant-wrap` so the 50%-width quadrant children fill the card body instead of collapsing to 0 in a flex container.
+- Multifreq ShundeMap card body: `align-items:center` + `paddingTop:40` to push SVG a bit lower without leaving a gap.
+- TOP 5 辖区 column width 85 → 213 (~2.5x) to fit `均安 · 容桂 等 4 镇街`.
+- Ticket detail (`/tickets/[id]`) "诉求正文" restyled as a citizen-letter card: `MessageSquareQuote` icon, character count + reception channel meta, 3px brand-colored left border, light blue gradient background, font 15/1.85.
+- `lib/civic-dto.ts`: include `channel` field with `市民服务热线` fallback so detail can show reception channel.
+- Deploy doc cleanup: strip personal IP/nickname/`Mac (开发)`/`本文档给人看` from `docs/DEPLOY.md` (pure agent-runnable doc).
+- `scripts/verify-mobile-layout.ts`: explicit `as readonly string[]` cast to widen the `as const` literal tuple for `.includes(string)` — fixes Next build typecheck.
+- Rename openclaw skill folder `12345-deploy` → `12345-maintain` (frontmatter `name` updated).
+
+Verification this step: `pnpm build` 0 errors; `pnpm exec tsc --noEmit` 0; VPS rebuild + restart returns 4 endpoints to 200.
+
+---
+
 ## 2026-08-15 — schema + cluster persist
 
 - Added ticket columns: `source_category`, `urgency`, `address`, `confidence`, `primary_theme_id`.

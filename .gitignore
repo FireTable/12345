@@ -47,6 +47,8 @@ yarn-error.log*
 output/
 dist/
 logs/
+db/dumps/
+docs/pitch/
 .env
 .env.local
 .env.vps

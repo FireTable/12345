@@ -53,7 +53,7 @@ export async function POST(req: Request) {
 
     const apiKey = process.env.OPENAI_API_KEY || "mlx";
     const baseURL = (process.env.OPENAI_BASE_URL || "http://127.0.0.1:8080/v1").replace(/\/$/, "");
-    const model = process.env.OPENAI_MODEL || "mlx-community/MiniCPM4.1-8B-4bit";
+    const model = process.env.OPENAI_MODEL || "MiniCPM4.1-8B-MLX";
 
     const abort = new AbortController();
     const killer = setTimeout(() => abort.abort(), 60000);
