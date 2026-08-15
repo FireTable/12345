@@ -1,0 +1,8 @@
+{
+  "node_version": "22",
+  "dependencies": ["."],
+  "graphs": {
+    "ticketRadarAgent": "./backend/agent/ticket-agent.ts:graph"
+  },
+  "env": ".env.local"
+}
