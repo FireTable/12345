@@ -241,50 +241,76 @@ function ThemeDetailInner() {
       </div>
 
       <div className="cluster-hero">
-        <div className="cluster-hero__header">
-          <div className="cluster-hero__icon">{meta.icon}</div>
-          <div className="cluster-hero__info">
-            <div className="cluster-hero__title-row">
-              <span className="cluster-hero__title">
-                {cluster.region} · {cluster.type}
-              </span>
-              <span className={`cluster-hero__badge mode-badge--${cluster.mode}`}>
-                {meta.name}
-              </span>
-              <span className="cluster-hero__tabs">
-                <span className="is-active">多频群组全景视图</span>
-              </span>
+        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6 mb-3">
+          {/* 左侧：标题、分类、形态与 KPI 指标 */}
+          <div className="flex-1 min-w-0">
+            <div className="cluster-hero__header">
+              <div className="cluster-hero__icon">{meta.icon}</div>
+              <div className="cluster-hero__info">
+                <div className="cluster-hero__title-row">
+                  <span className="cluster-hero__title">
+                    {cluster.region} · {cluster.type}
+                  </span>
+                  <span className={`cluster-hero__badge mode-badge--${cluster.mode}`}>
+                    {meta.name}
+                  </span>
+                  <span className="cluster-hero__tabs">
+                    <span className="is-active">多频群组全景视图</span>
+                  </span>
+                </div>
+                <div className="cluster-hero__sub">
+                  {meta.tagline}
+                  {row.title ? ` · ${row.title}` : ""}
+                </div>
+              </div>
             </div>
-            <div className="cluster-hero__sub">
-              {meta.tagline}
-              {row.title ? ` · ${row.title}` : ""}
+
+            <div className="cluster-hero__stats">
+              <div className="cluster-hero__stat">
+                <div className="cluster-hero__stat-val">{(row.count || 0).toLocaleString("zh-CN")}</div>
+                <div className="cluster-hero__stat-label">整合工单数（件）</div>
+              </div>
+              <div className="cluster-hero__stat">
+                <div className="cluster-hero__stat-val">{days}</div>
+                <div className="cluster-hero__stat-label">持续天数（天）</div>
+              </div>
+              <div className="cluster-hero__stat">
+                <div className="cluster-hero__stat-val">{row.ai_confidence == null ? "—" : `${row.ai_confidence}%`}</div>
+                <div className="cluster-hero__stat-label">AI 聚类置信度</div>
+              </div>
+              <div className="cluster-hero__stat">
+                <div className="cluster-hero__stat-val">{row.trend || "—"}</div>
+                <div className="cluster-hero__stat-label">近 7 天趋势</div>
+              </div>
             </div>
+          </div>
+
+          {/* 右侧专属卡片：AI 协同处置建议（独立卡片） */}
+          <div className="w-full lg:w-[400px] shrink-0 bg-white/12 backdrop-blur-md rounded-xl p-4 border border-white/20 shadow-xs flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-1.5 font-bold text-xs text-white">
+                  <Sparkles className="h-4 w-4 text-amber-300 fill-amber-300" />
+                  <span>AI 协同处置建议</span>
+                </div>
+                <span className="text-[10px] text-white/90 bg-white/20 px-2 py-0.5 rounded font-medium">
+                  智能派单策略
+                </span>
+              </div>
+              <div className="text-xs text-white/95 leading-relaxed">
+                {row.mode_advice || meta.rule}
+              </div>
+            </div>
+            {row.status?.owner && (
+              <div className="mt-3 pt-2 border-t border-white/15 flex items-center justify-between text-[11px] text-white/80">
+                <span>建议牵头：{row.status.owner}</span>
+                <span>响应时限：2个工作日内</span>
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="cluster-hero__stats">
-          <div className="cluster-hero__stat">
-            <div className="cluster-hero__stat-val">{(row.count || 0).toLocaleString("zh-CN")}</div>
-            <div className="cluster-hero__stat-label">整合工单数（件）</div>
-          </div>
-          <div className="cluster-hero__stat">
-            <div className="cluster-hero__stat-val">{days}</div>
-            <div className="cluster-hero__stat-label">持续天数（天）</div>
-          </div>
-          <div className="cluster-hero__stat">
-            <div className="cluster-hero__stat-val">{row.ai_confidence == null ? "—" : `${row.ai_confidence}%`}</div>
-            <div className="cluster-hero__stat-label">AI 聚类置信度</div>
-          </div>
-          <div className="cluster-hero__stat">
-            <div className="cluster-hero__stat-val">{row.trend || "—"}</div>
-            <div className="cluster-hero__stat-label">近 7 天趋势</div>
-          </div>
-        </div>
-
-        <div className="cluster-hero__advice">
-          <b>✨ 协同处置建议：</b>
-          {row.mode_advice || meta.rule}
-        </div>
+        {/* 底部：研判规则与触发依据 */}
         <div className="mode-explainer">
           <b>研判规则：</b>
           {meta.icon} {meta.name}（{meta.tagline}） · <b>触发依据：</b>
