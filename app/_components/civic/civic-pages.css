@@ -187,7 +187,8 @@
 }
 .workorder-table tbody tr, .group-table tbody tr { cursor: pointer; }
 .workorder-table tbody tr:hover, .group-table tbody tr:hover { background: var(--c-brand-tint); }
-.col-title__text { font-weight: 600; font-size: 13px; color: var(--c-ink); max-width: min(50vw, 680px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.col-title__text { font-weight: 600; font-size: 13px; color: var(--c-ink); max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.col-content__text { font-size: 12px; color: var(--c-ink-3); max-width: min(35vw, 520px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.5; }
 .col-title__desc { font-size: 12px; color: var(--c-ink-3); margin-top: 3px; max-width: min(50vw, 680px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .col-title__id { font-size: 11px; color: var(--c-ink-3); margin-top: 2px; font-feature-settings: "tnum"; font-family: ui-monospace, monospace; }
 

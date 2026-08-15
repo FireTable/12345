@@ -302,14 +302,15 @@ export default function TicketsPage() {
         <table className="workorder-table">
           <thead>
             <tr>
-              <th style={{ width: 160, minWidth: 150 }}>工单号</th>
-              <th>标题 / 内容</th>
-              <th style={{ width: 90 }}>镇街</th>
-              <th style={{ width: 100, minWidth: 95 }}>类型</th>
-              <th style={{ width: 85 }}>紧急度</th>
-              <th style={{ width: 120 }}>时间</th>
-              <th style={{ width: 90 }}>状态</th>
-              <th style={{ width: 80, textAlign: "right" }}>操作</th>
+              <th style={{ width: 150, minWidth: 140 }}>工单号</th>
+              <th style={{ width: 260, minWidth: 220 }}>诉求标题</th>
+              <th>诉求正文内容</th>
+              <th style={{ width: 85 }}>镇街</th>
+              <th style={{ width: 95, minWidth: 90 }}>类型</th>
+              <th style={{ width: 80 }}>紧急度</th>
+              <th style={{ width: 110 }}>时间</th>
+              <th style={{ width: 85 }}>状态</th>
+              <th style={{ width: 75, textAlign: "right" }}>操作</th>
             </tr>
           </thead>
           <tbody>
@@ -317,8 +318,10 @@ export default function TicketsPage() {
               <tr key={r.ticketId} onClick={() => setDrawer(r)}>
                 <td className="col-id">{r.id}</td>
                 <td>
-                  <div className="col-title__text">{r.title}</div>
-                  <div className="col-title__desc" title={r.content || ""}>
+                  <div className="col-title__text" title={r.title}>{r.title}</div>
+                </td>
+                <td>
+                  <div className="col-content__text" title={r.content || ""}>
                     {r.content || "暂无诉求正文"}
                   </div>
                 </td>
