@@ -14,7 +14,7 @@ const ITEMS = [
 
 export function CivicNav() {
   const pathname = usePathname();
-  const { analyzing, openUpload, openCopilot, runCluster } = useCivicWorkflow();
+  const { analyzing, openUpload, openCopilot, runCluster, isAllAnalyzed, disabledReason } = useCivicWorkflow();
   return (
     <nav className="navbar">
       <div className="navbar__brand">
@@ -38,8 +38,23 @@ export function CivicNav() {
         <button type="button" className="btn btn--default" onClick={openUpload}>
           上传工单
         </button>
-        <button type="button" className="btn btn--primary" onClick={runCluster} disabled={analyzing}>
-          {analyzing ? "研判中…" : "启动 Agent 研判"}
+        <button
+          type="button"
+          className="btn btn--primary"
+          onClick={runCluster}
+          disabled={analyzing || isAllAnalyzed}
+          title={analyzing ? "AI 研判执行中..." : disabledReason || undefined}
+          style={
+            isAllAnalyzed && !analyzing
+              ? {
+                  opacity: 0.5,
+                  cursor: "not-allowed",
+                  filter: "grayscale(0.6)",
+                }
+              : undefined
+          }
+        >
+          {analyzing ? "研判中…" : isAllAnalyzed ? "已全部研判" : "启动 Agent 研判"}
         </button>
         <button type="button" className="btn btn--default" onClick={openCopilot}>
           研判助手

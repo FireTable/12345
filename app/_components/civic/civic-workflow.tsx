@@ -25,6 +25,8 @@ type CivicWorkflow = {
   openUpload: () => void;
   openCopilot: () => void;
   runCluster: () => void;
+  isAllAnalyzed: boolean;
+  disabledReason: string;
 };
 
 const CivicWorkflowContext = createContext<CivicWorkflow | null>(null);
@@ -43,13 +45,54 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
   const [analyzing, setAnalyzing] = useState(false);
   const [themes, setThemes] = useState<MultiFrequencyTheme[]>([]);
   const [stats, setStats] = useState<OverallStats>(emptyStats);
+  const [ticketStatus, setTicketStatus] = useState<{
+    total: number;
+    analyzed: number;
+    loaded: boolean;
+  }>({ total: 0, analyzed: 0, loaded: false });
+
+  const loadTicketStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/overview");
+      const data = await res.json();
+      if (data.success) {
+        setTicketStatus({
+          total: data.totalWorkorders || 0,
+          analyzed: data.analyzedCount || 0,
+          loaded: true,
+        });
+      }
+    } catch {
+      // silent
+    }
+  }, []);
+
+  React.useEffect(() => {
+    loadTicketStatus();
+    const handleRefresh = () => loadTicketStatus();
+    window.addEventListener("civic-data-refresh", handleRefresh);
+    return () => window.removeEventListener("civic-data-refresh", handleRefresh);
+  }, [loadTicketStatus]);
+
+  const isAllAnalyzed =
+    ticketStatus.loaded &&
+    ticketStatus.total > 0 &&
+    ticketStatus.analyzed >= ticketStatus.total;
+
+  const disabledReason =
+    ticketStatus.loaded && ticketStatus.total === 0
+      ? "暂无工单数据，请先上传工单表格"
+      : isAllAnalyzed
+      ? `当前 ${ticketStatus.total} 条工单已全部研判完毕，无需重复执行`
+      : "";
 
   const refreshPages = useCallback(() => {
     router.refresh();
+    loadTicketStatus();
     if (typeof window !== "undefined") {
       window.dispatchEvent(new Event("civic-data-refresh"));
     }
-  }, [router]);
+  }, [router, loadTicketStatus]);
 
   const openUpload = useCallback(() => {
     setClusterOnly(false);
@@ -57,9 +100,13 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
   }, []);
 
   const runCluster = useCallback(() => {
+    if (isAllAnalyzed) {
+      toast.info(`当前 ${ticketStatus.total} 条工单已全部研判完毕，无需重复执行`);
+      return;
+    }
     setClusterOnly(true);
     setUploadOpen(true);
-  }, []);
+  }, [isAllAnalyzed, ticketStatus.total]);
 
   const openCopilot = useCallback(async () => {
     try {
@@ -119,6 +166,8 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
         openUpload,
         openCopilot,
         runCluster,
+        isAllAnalyzed,
+        disabledReason,
       }}
     >
       {children}
