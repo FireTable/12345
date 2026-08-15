@@ -1,6 +1,7 @@
 import { inferPatternType, civicModeFromPattern, deriveThemeMetrics } from "../backend/theme-metrics";
 import { toClusterDto, toWorkorderDto, regionLabel } from "../lib/civic-dto";
 import { buildOverview, buildTrends, buildInsights } from "../lib/civic-stats";
+import { classifyDetailPayload } from "../lib/detail-load";
 import type { EnrichedTicket } from "../backend/state";
 
 function assert(name: string, ok: boolean, detail?: string) {
@@ -41,6 +42,20 @@ const oneCaller = [
   ticket({ id: "e", citizenPhone: "138****1111", createTime: "2026-08-08 10:00:00" }),
 ];
 assert("同一反映人 → repeat", civicModeFromPattern(inferPatternType(oneCaller)) === "repeat");
+
+const twoCallers = [
+  ticket({ id: "t1", citizenPhone: "138****2001", citizenName: "甲" }),
+  ticket({ id: "t2", citizenPhone: "138****2002", citizenName: "乙", createTime: "2026-08-09 10:00:00" }),
+];
+assert(
+  "两个不同反映人同事件 → aggregate 不是 repeat",
+  inferPatternType(twoCallers) === "GROUP_GATHERING" &&
+    civicModeFromPattern(inferPatternType(twoCallers)) === "aggregate"
+);
+
+assert("详情首屏 pending 是加载不是 404", classifyDetailPayload("pending", null) === "loading");
+assert("详情 success:false 才是 missing", classifyDetailPayload("done", { success: false }) === "missing");
+assert("详情成功载荷是 ready", classifyDetailPayload("done", { success: true }) === "ready");
 
 const mixed = [
   ticket({ id: "f", themes: ["生态环境"] }),

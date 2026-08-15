@@ -47,7 +47,7 @@ export function inferPatternType(tickets: EnrichedTicket[]): PatternType {
       .map((t) => (t.citizenPhone || t.citizenName || "").trim())
       .filter((s) => s && s !== "市民*" && s !== "热线市民")
   );
-  if (callers.size > 0 && callers.size <= 2) return "INDIVIDUAL_REPEAT";
+  if (callers.size === 1) return "INDIVIDUAL_REPEAT";
   return "GROUP_GATHERING";
 }
 

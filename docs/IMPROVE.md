@@ -39,4 +39,10 @@ Rule: pages read persisted or aggregated data. No `Math.random` trends, no `log1
 - Dashboard KPI/insights/trend/ranking/heatmap; list pages paginate via APIs.
 - Verification: `tsc --noEmit` 0; `pnpm build` 0; `next start -p 3011` GET `/` `/tickets` `/themes` `/multifreq` all HTTP 200 and HTML contains the four nav labels.
 
+## 2026-08-15 — skeptic fixes
+
+- `inferPatternType`: 个体重复只在唯一反映人 === 1；两个不同市民同事件改为群体聚集。
+- 工单/群组详情用 `classifyDetailPayload` 拆 loading / missing / ready，首屏不再闪「未找到」。
+- Verification: `pnpm exec tsx scripts/verify-civic-map.ts` 增加「两市民 → aggregate」和详情三态断言。
+
 ---

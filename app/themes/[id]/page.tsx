@@ -3,19 +3,42 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { classifyDetailPayload, type DetailLoadStatus } from "@/lib/detail-load";
 
 export default function ThemeDetailPage() {
   const params = useParams<{ id: string }>();
   const [row, setRow] = useState<any>(null);
+  const [load, setLoad] = useState<DetailLoadStatus>("pending");
 
   useEffect(() => {
+    setLoad("pending");
+    setRow(null);
     fetch(`/api/clusters/${params.id}`)
       .then((r) => r.json())
-      .then(setRow)
-      .catch(() => setRow(null));
+      .then((j) => {
+        setRow(j);
+        setLoad("done");
+      })
+      .catch(() => {
+        setRow(null);
+        setLoad("error");
+      });
   }, [params.id]);
 
-  if (!row || row.success === false) {
+  const view = classifyDetailPayload(load, row);
+  if (view === "loading") {
+    return (
+      <>
+        <div className="breadcrumb">
+          <Link href="/themes">群组中心</Link>
+          <span>/</span>
+          <span>详情</span>
+        </div>
+        <div className="empty-hint">加载中…</div>
+      </>
+    );
+  }
+  if (view === "missing") {
     return (
       <>
         <div className="breadcrumb">
