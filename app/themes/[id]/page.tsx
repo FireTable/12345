@@ -77,6 +77,18 @@ function ThemeDetailInner() {
   const [row, setRow] = useState<ClusterDetail | null>(null);
   const [load, setLoad] = useState<DetailLoadStatus>("pending");
   const [expandedMap, setExpandedMap] = useState<Record<string, boolean>>({});
+  const [isPulsing, setIsPulsing] = useState(true);
+
+  useEffect(() => {
+    if (targetTicketId) {
+      setIsPulsing(true);
+      // 高亮强力呼吸闪烁保持至少 6 秒（满足 >= 5s 诉求）
+      const pulseTimer = setTimeout(() => {
+        setIsPulsing(false);
+      }, 6000);
+      return () => clearTimeout(pulseTimer);
+    }
+  }, [targetTicketId]);
 
   useEffect(() => {
     setLoad("pending");
@@ -285,16 +297,22 @@ function ThemeDetailInner() {
                   id={`ticket-${m.ticketId || m.id}`}
                   className={`member-item transition-all duration-300 relative rounded-xl border p-4 mb-3 cursor-pointer ${
                     isTarget
-                      ? "ticket-highlight-pulse border-blue-500 bg-blue-50/40"
+                      ? isPulsing
+                        ? "ticket-highlight-pulse border-blue-500 bg-blue-50/50 shadow-md"
+                        : "ticket-highlight-settled border-blue-500 bg-blue-50/30"
                       : "border-slate-200/90 bg-white hover:border-slate-300"
                   }`}
                   onClick={() => toggleExpand(m.ticketId || m.id)}
                 >
                   {/* 目标工单呼吸动画徽标 */}
                   {isTarget && (
-                    <div className="absolute -top-3 right-4 z-10 flex items-center gap-1.5 bg-blue-600 text-white text-[11px] font-bold px-3 py-0.5 rounded-full shadow-md animate-bounce">
-                      <Target className="h-3 w-3" />
-                      🎯 当前定位工单 (Target)
+                    <div
+                      className={`absolute -top-3 right-4 z-10 flex items-center gap-1.5 bg-blue-600 text-white text-[11px] font-bold px-3 py-0.5 rounded-full shadow-md ${
+                        isPulsing ? "animate-bounce" : ""
+                      }`}
+                    >
+                      <Target className={`h-3 w-3 ${isPulsing ? "animate-spin" : ""}`} />
+                      🎯 当前定位工单 {isPulsing ? "• 聚焦中" : ""}
                     </div>
                   )}
 

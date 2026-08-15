@@ -88,20 +88,33 @@
 }
 
 @keyframes ticketBorderPulse {
-  0%, 100% {
-    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.9), 0 0 20px 4px rgba(37, 99, 235, 0.35);
+  0% {
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.9), 0 0 15px 3px rgba(37, 99, 235, 0.35);
     border-color: #2563eb;
     background-color: rgba(239, 246, 255, 0.85);
   }
   50% {
-    box-shadow: 0 0 0 4px rgba(59, 130, 246, 1), 0 0 30px 8px rgba(59, 130, 246, 0.6);
+    box-shadow: 0 0 0 5px rgba(59, 130, 246, 1), 0 0 35px 10px rgba(59, 130, 246, 0.65);
     border-color: #3b82f6;
-    background-color: rgba(219, 234, 254, 0.95);
+    background-color: rgba(219, 234, 254, 0.98);
+  }
+  100% {
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.9), 0 0 15px 3px rgba(37, 99, 235, 0.35);
+    border-color: #2563eb;
+    background-color: rgba(239, 246, 255, 0.85);
   }
 }
 
 .ticket-highlight-pulse {
-  animation: ticketBorderPulse 1.8s ease-in-out infinite !important;
+  animation: ticketBorderPulse 1.4s ease-in-out infinite !important;
   scroll-margin-top: 100px;
+}
+
+.ticket-highlight-settled {
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.85), 0 4px 16px rgba(37, 99, 235, 0.2) !important;
+  border-color: #2563eb !important;
+  background-color: rgba(239, 246, 255, 0.5) !important;
+  scroll-margin-top: 100px;
+  transition: all 0.6s ease;
 }
 

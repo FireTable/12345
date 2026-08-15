@@ -22,6 +22,7 @@ import {
   SelectItem,
 } from "@/app/_components/ui/select";
 import { toast } from "sonner";
+import { ConfirmDialog } from "@/app/_components/ui/confirm-dialog";
 
 interface TownshipItem {
   name: string;
@@ -76,6 +77,8 @@ export default function DictionaryManagementPage() {
   const [newAlias, setNewAlias] = useState("");
   const [newCanonical, setNewCanonical] = useState("");
   const [newType, setNewType] = useState("LOCATION");
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; alias: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // 实时别名测试工具
   const [testText, setTestText] = useState("市民在容奇大桥附近反映容桂区某商户违规经营，希望德胜新区的执法队介入。");
@@ -161,25 +164,27 @@ export default function DictionaryManagementPage() {
     }
   };
 
-  // 删除别名
-  const handleDeleteAlias = async (id: string, aliasName: string) => {
-    if (!confirm(`确定要删除别名映射【${aliasName}】吗？`)) return;
-
+  const handleDeleteAlias = async () => {
+    if (!pendingDelete) return;
+    setDeleting(true);
     try {
       const res = await fetch("/api/dict", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "delete_alias", id, alias: aliasName }),
+        body: JSON.stringify({ action: "delete_alias", id: pendingDelete.id, alias: pendingDelete.alias }),
       });
       const data = await res.json();
       if (data.success) {
         toast.success("别名已删除");
+        setPendingDelete(null);
         fetchData();
       } else {
         toast.error("删除失败");
       }
     } catch (e) {
       toast.error("删除异常");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -412,7 +417,7 @@ export default function DictionaryManagementPage() {
                       <td className="px-4 py-3 text-right">
                         <button
                           type="button"
-                          onClick={() => handleDeleteAlias(item.id, item.alias)}
+                          onClick={() => setPendingDelete({ id: item.id, alias: item.alias })}
                           className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
                           title="删除别名"
                         >
@@ -540,6 +545,25 @@ export default function DictionaryManagementPage() {
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={pendingDelete != null}
+        title="删除别名映射"
+        description={
+          pendingDelete ? (
+            <>
+              确定删除别名「<b className="text-slate-800">{pendingDelete.alias}</b>」吗？删除后口语归一化将不再替换该词。
+            </>
+          ) : null
+        }
+        confirmLabel="删除"
+        destructive
+        pending={deleting}
+        onConfirm={() => void handleDeleteAlias()}
+        onOpenChange={(open) => {
+          if (!open && !deleting) setPendingDelete(null);
+        }}
+      />
 
       {/* 新增别名弹窗 Modal */}
       {showAddModal && (
