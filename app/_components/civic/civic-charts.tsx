@@ -199,6 +199,7 @@ export function donutOption(dist: Record<string, number>) {
   const total = data.reduce((s, d) => s + d.value, 0);
   const topItem = data[0];
   const topPct = total > 0 && topItem ? ((topItem.value / total) * 100).toFixed(1) : "0.0";
+  const topColor = topItem ? categoryColor(topItem.name) : "#1E5AFF";
 
   return {
     title: {
@@ -211,14 +212,14 @@ export function donutOption(dist: Record<string, number>) {
       textStyle: {
         fontSize: 28,
         fontWeight: "bold",
-        color: "#1E293B",
+        color: topColor,
         fontFamily: "ui-sans-serif, system-ui, -apple-system, sans-serif",
         lineHeight: 32,
       },
       subtextStyle: {
         fontSize: 12,
-        color: "#64748B",
-        fontWeight: "500",
+        color: "#334155",
+        fontWeight: "600",
         lineHeight: 16,
       },
     },
