@@ -15,14 +15,17 @@ export async function GET(req: Request) {
       const n = t.createTime ? t.createTime.getTime() : 0;
       return n > acc ? n : acc;
     }, 0);
-    const win = timeWindow(`近${Math.max(1, days)}天`, clampTimeRef(latest || null));
-    const recentTickets = tickets.filter((t) => {
-      if (!t.createTime) return false;
-      const n = t.createTime.getTime();
-      if (win.from && n < win.from.getTime()) return false;
-      if (win.to && n >= win.to.getTime()) return false;
-      return true;
-    });
+    const win = days > 0 ? timeWindow(`近${days}天`, clampTimeRef(latest || null)) : {};
+    const recentTickets =
+      days > 0
+        ? tickets.filter((t) => {
+            if (!t.createTime) return false;
+            const n = t.createTime.getTime();
+            if (win.from && n < win.from.getTime()) return false;
+            if (win.to && n >= win.to.getTime()) return false;
+            return true;
+          })
+        : tickets;
     const trends = buildTrends(
       recentTickets.map((t) => ({ createTime: t.createTime })),
       themes

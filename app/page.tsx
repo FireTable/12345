@@ -112,6 +112,7 @@ export default function DashboardPage() {
               <SelectValue placeholder="统计区间" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="0">全部</SelectItem>
               <SelectItem value="7">近7天</SelectItem>
               <SelectItem value="30">近30天</SelectItem>
               <SelectItem value="90">近90天</SelectItem>
@@ -190,7 +191,7 @@ export default function DashboardPage() {
       <section className="split-row split-row--main">
         <div className="card">
           <div className="card__header">
-            <div className="card__title">{daysRange} 天工单量与多频群组新增趋势</div>
+            <div className="card__title">{daysRange === 0 ? "全周期" : `${daysRange} 天`}工单量与多频群组新增趋势</div>
             <div className="chart-legend">
               <span>
                 <i style={{ background: "#1677FF" }} /> 每日工单量
