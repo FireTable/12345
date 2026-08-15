@@ -247,11 +247,19 @@ function ThemeDetailInner() {
             <div className="cluster-hero__header">
               <div className="cluster-hero__icon">{meta.icon}</div>
               <div className="cluster-hero__info">
-                <div className="cluster-hero__title-row">
-                  <span className="cluster-hero__title">
+                <div className="cluster-hero__title-row flex items-center flex-wrap gap-2 mb-1">
+                  <span className="cluster-hero__title mr-1">
                     {cluster.region} · {cluster.type}
                   </span>
-                  <span className={`cluster-hero__badge mode-badge--${cluster.mode}`}>
+                  <span
+                    className={`inline-flex items-center px-3 py-0.5 rounded-full text-xs font-semibold shadow-xs mr-3 ${
+                      cluster.mode === "aggregate"
+                        ? "bg-rose-500/90 text-white"
+                        : cluster.mode === "repeat"
+                        ? "bg-amber-500/90 text-white"
+                        : "bg-blue-600/90 text-white"
+                    }`}
+                  >
                     {meta.name}
                   </span>
                   <span className="cluster-hero__tabs">
