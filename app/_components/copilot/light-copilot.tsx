@@ -10,9 +10,9 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import type { MultiFrequencyTheme, OverallStats } from "@/backend/state";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+import { Button } from "@/app/_components/ui/button";
+import { Input } from "@/app/_components/ui/input";
+import { Badge } from "@/app/_components/ui/badge";
 
 interface LightCopilotProps {
   isOpen: boolean;

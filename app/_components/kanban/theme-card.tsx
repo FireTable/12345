@@ -13,8 +13,8 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import type { MultiFrequencyTheme } from "@/backend/state";
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card } from "@/app/_components/ui/card";
+import { Badge } from "@/app/_components/ui/badge";
 
 interface ThemeCardProps {
   theme: MultiFrequencyTheme;

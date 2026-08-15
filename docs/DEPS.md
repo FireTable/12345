@@ -39,14 +39,14 @@
 
 | 组件名称 | 路径 / 模块 | 核心职责 |
 | :--- | :--- | :--- |
-| **`HeaderStats`** | `components/HeaderStats.tsx` | 宏观指标大盘（工单总量、多频主题数、高风险事件数、压缩率） |
-| **`ThemeKanban`** | `components/ThemeKanban.tsx` | 核心主题卡片墙（按高/中/低风险分栏，展示涉及件数、核心主体、AI 摘要） |
-| **`ThemeCard`** | `components/ThemeCard.tsx` | 单个多频主题卡片交互与动效封装 |
-| **`TicketDetailDrawer`** | `components/TicketDetailDrawer.tsx` | 卡片下钻核查明细抽屉（展示工单详情、实体对齐理由、批量核查） |
-| **`GraphVisualizer`** | `components/GraphVisualizer.tsx` | 知识图谱关联网络浮窗（工单 ↔ 主体 ↔ 地点 ↔ Theme 拓扑） |
-| **`FilterToolbar`** | `components/FilterToolbar.tsx` | 时间、风险、主体类别多维筛选与搜索栏 |
-| **`ReportExporter`** | `components/ReportExporter.tsx` | 满足企业要求的一键批量核查报表导出模块 |
-| **`LightCopilot`** | `components/LightCopilot.tsx` | 轻量级 AI 智能问答副驾驶抽屉（自然语言统计与处置建议） |
+| **`HeaderStats`** | `app/_components/dashboard/header-stats.tsx` | 宏观指标大盘（工单总量、多频主题数、高风险事件数、压缩率） |
+| **`ThemeKanban`** | `app/_components/kanban/theme-kanban.tsx` | 核心主题卡片墙（按高/中/低风险分栏，展示涉及件数、核心主体、AI 摘要） |
+| **`ThemeCard`** | `app/_components/kanban/theme-card.tsx` | 单个多频主题卡片交互与动效封装 |
+| **`TicketDetailSheet`** | `app/_components/table/ticket-detail-sheet.tsx` | 卡片下钻核查明细抽屉（展示工单详情、实体对齐理由、批量核查） |
+| **`GraphVisualizer`** | `app/_components/graph/graph-visualizer.tsx` | 知识图谱关联网络浮窗（工单 ↔ 主体 ↔ 地点 ↔ Theme 拓扑） |
+| **`FilterToolbar`** | `app/_components/dashboard/filter-toolbar.tsx` | 时间、风险、主体类别多维筛选与搜索栏 |
+| **`MasterTable`** | `app/_components/table/master-table.tsx` | 满足企业要求的一键批量核查报表总表组件 |
+| **`LightCopilot`** | `app/_components/copilot/light-copilot.tsx` | 轻量级 AI 智能问答副驾驶抽屉（自然语言统计与处置建议） |
 
 ---
 

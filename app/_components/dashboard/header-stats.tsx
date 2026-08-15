@@ -9,8 +9,8 @@ import {
   Activity,
 } from "lucide-react";
 import type { OverallStats } from "@/backend/state";
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card } from "@/app/_components/ui/card";
+import { Badge } from "@/app/_components/ui/badge";
 
 interface HeaderStatsProps {
   stats: OverallStats;

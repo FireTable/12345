@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-import { Toaster } from "@/components/ui/sonner";
+import { Toaster } from "@/app/_components/ui/sonner";
 
 const plusJakartaSans = Plus_Jakarta_Sans({
   subsets: ["latin"],

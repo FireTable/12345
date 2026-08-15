@@ -21,10 +21,10 @@ import {
   SheetContent,
   SheetHeader,
   SheetTitle,
-} from "@/components/ui/sheet";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
+} from "@/app/_components/ui/sheet";
+import { Button } from "@/app/_components/ui/button";
+import { Badge } from "@/app/_components/ui/badge";
+import { Input } from "@/app/_components/ui/input";
 import {
   Table,
   TableBody,
@@ -32,7 +32,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
+} from "@/app/_components/ui/table";
 import { toast } from "sonner";
 
 interface TicketDetailSheetProps {

@@ -1,14 +1,14 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { Header } from "@/components/dashboard/header";
-import { HeaderStats } from "@/components/dashboard/header-stats";
-import { FilterToolbar } from "@/components/dashboard/filter-toolbar";
-import { ThemeKanban } from "@/components/kanban/theme-kanban";
-import { GraphVisualizer } from "@/components/graph/graph-visualizer";
-import { MasterTable } from "@/components/table/master-table";
-import { TicketDetailSheet } from "@/components/table/ticket-detail-sheet";
-import { LightCopilot } from "@/components/copilot/light-copilot";
+import { Header } from "@/app/_components/dashboard/header";
+import { HeaderStats } from "@/app/_components/dashboard/header-stats";
+import { FilterToolbar } from "@/app/_components/dashboard/filter-toolbar";
+import { ThemeKanban } from "@/app/_components/kanban/theme-kanban";
+import { GraphVisualizer } from "@/app/_components/graph/graph-visualizer";
+import { MasterTable } from "@/app/_components/table/master-table";
+import { TicketDetailSheet } from "@/app/_components/table/ticket-detail-sheet";
+import { LightCopilot } from "@/app/_components/copilot/light-copilot";
 import { exportThemesToCSV } from "@/lib/export-csv";
 import type {
   MultiFrequencyTheme,

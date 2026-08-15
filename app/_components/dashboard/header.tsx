@@ -9,8 +9,8 @@ import {
   RefreshCw,
   Layers,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Button } from "@/app/_components/ui/button";
+import { Badge } from "@/app/_components/ui/badge";
 
 interface HeaderProps {
   activeView: "KANBAN" | "GRAPH" | "TABLE";

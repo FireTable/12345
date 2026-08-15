@@ -3,7 +3,7 @@
 import React from "react";
 import { ThemeCard } from "./theme-card";
 import type { MultiFrequencyTheme } from "@/backend/state";
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@/app/_components/ui/badge";
 import { AnimatePresence } from "motion/react";
 
 interface ThemeKanbanProps {

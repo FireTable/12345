@@ -4,9 +4,9 @@ import React, { useRef, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import type { GraphData, GraphNode } from "@/backend/state";
 import { RefreshCw, Layers } from "lucide-react";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Card } from "@/app/_components/ui/card";
+import { Button } from "@/app/_components/ui/button";
+import { Badge } from "@/app/_components/ui/badge";
 
 // Dynamically import ForceGraph2D with ssr: false for Next.js
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {

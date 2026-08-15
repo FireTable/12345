@@ -3,8 +3,8 @@
 import React from "react";
 import { Search, SlidersHorizontal } from "lucide-react";
 import type { RiskLevel } from "@/backend/state";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { Input } from "@/app/_components/ui/input";
+import { Button } from "@/app/_components/ui/button";
 
 interface FilterToolbarProps {
   searchQuery: string;
