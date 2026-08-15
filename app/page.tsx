@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, Suspense } from "react";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Header } from "@/app/_components/dashboard/header";
 import { HeaderStats } from "@/app/_components/dashboard/header-stats";
 import { FilterToolbar } from "@/app/_components/dashboard/filter-toolbar";
@@ -16,14 +17,28 @@ import type {
   RiskLevel,
   OverallStats,
   GraphData,
-  RawTicket,
 } from "@/backend/state";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
-export default function HomePage() {
-  // Active View State
-  const [activeView, setActiveView] = useState<"KANBAN" | "GRAPH" | "TABLE">("KANBAN");
+function HomePageContent() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  // Active View derived directly from URL Query Param ?view=kanban|graph|table
+  const rawView = (searchParams.get("view") || "kanban").toUpperCase();
+  const activeView: "KANBAN" | "GRAPH" | "TABLE" =
+    rawView === "GRAPH" || rawView === "TABLE" || rawView === "KANBAN"
+      ? (rawView as any)
+      : "KANBAN";
+
+  const handleViewChange = (newView: "KANBAN" | "GRAPH" | "TABLE") => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("view", newView.toLowerCase());
+    router.push(`${pathname}?${params.toString()}`);
+  };
+
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
@@ -58,7 +73,6 @@ export default function HomePage() {
       try {
         setIsLoading(true);
 
-        // Fetch stats and themes in parallel (fast <15ms)
         const [statsRes, themesRes] = await Promise.all([
           fetch("/api/stats").then((r) => r.json()).catch(() => null),
           fetch("/api/themes").then((r) => r.json()).catch(() => null),
@@ -183,7 +197,7 @@ export default function HomePage() {
       {/* 1. Header */}
       <Header
         activeView={activeView}
-        onViewChange={setActiveView}
+        onViewChange={handleViewChange}
         onExportMaster={handleExportMaster}
         onOpenCopilot={() => setIsCopilotOpen(true)}
         onOpenUpload={() => setIsUploadOpen(true)}
@@ -280,5 +294,20 @@ export default function HomePage() {
         }}
       />
     </div>
+  );
+}
+
+export default function HomePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-3 text-muted-foreground">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <p className="text-xs font-medium">正在初始化 Ticket Radar 控制台...</p>
+        </div>
+      }
+    >
+      <HomePageContent />
+    </Suspense>
   );
 }
