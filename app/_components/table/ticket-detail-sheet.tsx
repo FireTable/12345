@@ -271,11 +271,11 @@ export const TicketDetailSheet: React.FC<TicketDetailSheetProps> = ({
                       <div className="flex items-center gap-3">
                         <span className="flex items-center gap-1">
                           <User className="w-3.5 h-3.5 text-muted-foreground/70" />
-                          诉求人: <strong className="font-medium text-foreground/80">{ticket.citizenName || "市民*"}</strong>
+                          诉求人: <strong className="font-medium text-foreground/80">{ticket.citizenName && ticket.citizenName !== "市民*" ? ticket.citizenName : "热线市民"}</strong>
                         </span>
-                        <span className="flex items-center gap-1 font-mono">
+                        <span className="flex items-center gap-1 font-mono text-[11px]">
                           <Phone className="w-3.5 h-3.5 text-muted-foreground/70" />
-                          {ticket.citizenPhone || "138****0000"}
+                          {ticket.citizenPhone && !ticket.citizenPhone.includes("****") ? ticket.citizenPhone : "未预留电话"}
                         </span>
                       </div>
                       <span className="text-muted-foreground/80 flex items-center gap-1">

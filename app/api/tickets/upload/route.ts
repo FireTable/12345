@@ -157,9 +157,9 @@ export async function POST(req: Request) {
         title: title || "", // 保留原始表格标题列
         summarizeTitle: normalized.summarizeTitle || null, // AI提炼标题
         content,
-        maskedContent: desensitizeContent(content),
-        citizenName: normalized.citizenName || "市民*",
-        citizenPhone: normalized.citizenPhone || `138****${String((idx * 137) % 10000).padStart(4, "0")}`,
+        maskedContent: content,
+        citizenName: normalized.citizenName || "热线市民",
+        citizenPhone: normalized.citizenPhone || "",
         district: normalized.district || "所属辖区",
         subdistrict,
         channel,
