@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
+import { useCivicWorkflow } from "@/app/_components/civic/civic-workflow";
 
 type Overview = {
   totalWorkorders: number;
@@ -21,17 +23,49 @@ type Overview = {
 type Trends = { daily: Record<string, number>; dailyNewClusters?: Record<string, number> };
 
 export default function DashboardPage() {
+  const { openUpload } = useCivicWorkflow();
+  const [daysRange, setDaysRange] = useState(90);
   const [ov, setOv] = useState<Overview | null>(null);
   const [tr, setTr] = useState<Trends | null>(null);
 
-  useEffect(() => {
-    Promise.all([fetch("/api/overview").then((r) => r.json()), fetch("/api/trends?days=90").then((r) => r.json())])
+  function load() {
+    Promise.all([
+      fetch("/api/overview").then((r) => r.json()),
+      fetch(`/api/trends?days=${daysRange}`).then((r) => r.json()),
+    ])
       .then(([a, b]) => {
         setOv(a);
         setTr(b);
       })
       .catch(() => setOv(null));
-  }, []);
+  }
+
+  useEffect(() => {
+    load();
+    const onRefresh = () => load();
+    window.addEventListener("civic-data-refresh", onRefresh);
+    return () => window.removeEventListener("civic-data-refresh", onRefresh);
+  }, [daysRange]);
+
+  async function exportOverview() {
+    const res = await fetch("/api/clusters");
+    const json = await res.json();
+    const list = json.topClusters || [];
+    const header = ["id", "region", "type", "count", "mode", "confidence", "status"];
+    const lines = [header.join(",")].concat(
+      list.map((c: any) =>
+        [c.id, c.region, c.type, c.count, c.mode, c.ai_confidence ?? "", c.status?.label ?? ""].join(",")
+      )
+    );
+    const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "ticket_radar_clusters.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`已导出 ${list.length} 个群组`);
+  }
 
   const regions = Object.entries(ov?.regionDistribution || {}).sort((a, b) => b[1] - a[1]);
   const cats = Object.entries(ov?.categoryDistribution || {}).sort((a, b) => b[1] - a[1]).slice(0, 8);
@@ -48,6 +82,24 @@ export default function DashboardPage() {
             <span className="status-dot" />
             <span>{ov?.dateRange || "等待数据"} · 接口运行正常</span>
           </div>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <select
+            className="btn btn--default"
+            value={daysRange}
+            onChange={(e) => setDaysRange(Number(e.target.value))}
+            aria-label="统计区间"
+          >
+            <option value={7}>近7天</option>
+            <option value={30}>近30天</option>
+            <option value={90}>近90天</option>
+          </select>
+          <button type="button" className="btn btn--default" onClick={() => void exportOverview()}>
+            导出
+          </button>
+          <button type="button" className="btn btn--primary" onClick={openUpload}>
+            更新工单数据
+          </button>
         </div>
       </section>
 

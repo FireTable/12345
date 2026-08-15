@@ -5,6 +5,7 @@ import "@/app/_components/civic/components.css";
 import "@/app/_components/civic/layout.css";
 import "@/app/_components/civic/civic-pages.css";
 import { CivicNav } from "@/app/_components/civic/civic-nav";
+import { CivicWorkflowProvider } from "@/app/_components/civic/civic-workflow";
 import { Toaster } from "@/app/_components/ui/sonner";
 
 export const metadata: Metadata = {
@@ -20,9 +21,11 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <body>
-        <CivicNav />
-        <main className="main">{children}</main>
-        <Toaster />
+        <CivicWorkflowProvider>
+          <CivicNav />
+          <main className="main">{children}</main>
+          <Toaster />
+        </CivicWorkflowProvider>
       </body>
     </html>
   );

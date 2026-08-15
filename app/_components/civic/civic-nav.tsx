@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useCivicWorkflow } from "./civic-workflow";
 
 const ITEMS = [
   { href: "/", key: "dashboard", label: "工作面板" },
@@ -12,6 +13,7 @@ const ITEMS = [
 
 export function CivicNav() {
   const pathname = usePathname();
+  const { analyzing, openUpload, openCopilot, runCluster } = useCivicWorkflow();
   return (
     <nav className="navbar">
       <div className="navbar__brand">
@@ -32,9 +34,15 @@ export function CivicNav() {
         })}
       </div>
       <div className="navbar__user">
-        <span className="user-name" style={{ color: "var(--c-ink-3)", fontSize: 12 }}>
-          研判工作台
-        </span>
+        <button type="button" className="btn btn--default" onClick={openUpload}>
+          上传工单
+        </button>
+        <button type="button" className="btn btn--primary" onClick={() => void runCluster()} disabled={analyzing}>
+          {analyzing ? "研判中…" : "启动 AI 聚类"}
+        </button>
+        <button type="button" className="btn btn--default" onClick={openCopilot}>
+          研判助手
+        </button>
       </div>
     </nav>
   );

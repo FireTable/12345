@@ -22,13 +22,18 @@ export default function TicketsPage() {
   const [data, setData] = useState<{ total: number; data: Row[] }>({ total: 0, data: [] });
 
   useEffect(() => {
-    const q = new URLSearchParams({ page: String(page), size: "15" });
-    if (keyword) q.set("keyword", keyword);
-    if (status) q.set("status", status);
-    fetch(`/api/workorders?${q}`)
-      .then((r) => r.json())
-      .then((j) => setData({ total: j.total || 0, data: j.data || [] }))
-      .catch(() => setData({ total: 0, data: [] }));
+    const load = () => {
+      const q = new URLSearchParams({ page: String(page), size: "15" });
+      if (keyword) q.set("keyword", keyword);
+      if (status) q.set("status", status);
+      fetch(`/api/workorders?${q}`)
+        .then((r) => r.json())
+        .then((j) => setData({ total: j.total || 0, data: j.data || [] }))
+        .catch(() => setData({ total: 0, data: [] }));
+    };
+    load();
+    window.addEventListener("civic-data-refresh", load);
+    return () => window.removeEventListener("civic-data-refresh", load);
   }, [page, keyword, status]);
 
   return (

@@ -45,4 +45,10 @@ Rule: pages read persisted or aggregated data. No `Math.random` trends, no `log1
 - 工单/群组详情用 `classifyDetailPayload` 拆 loading / missing / ready，首屏不再闪「未找到」。
 - Verification: `pnpm exec tsx scripts/verify-civic-map.ts` 增加「两市民 → aggregate」和详情三态断言。
 
+## 2026-08-15 — restore upload / cluster / copilot
+
+- Civic shell had dropped the previous header actions. Wired `UploadDialog` (POST `/api/tickets/upload` then LangGraph cluster), standalone `POST /api/cluster`, Copilot, and dashboard 导出/近7-90天/更新工单数据.
+- Nav now always shows 上传工单 / 启动 AI 聚类 / 研判助手 on every route.
+- Verification: `tsc --noEmit`; grep nav labels + upload/cluster handlers in civic-workflow.
+
 ---

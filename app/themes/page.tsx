@@ -26,10 +26,14 @@ export default function ThemesPage() {
   const [kw, setKw] = useState("");
 
   useEffect(() => {
-    fetch("/api/clusters")
-      .then((r) => r.json())
-      .then((j) => setRows(j.topClusters || []))
-      .catch(() => setRows([]));
+    const load = () =>
+      fetch("/api/clusters")
+        .then((r) => r.json())
+        .then((j) => setRows(j.topClusters || []))
+        .catch(() => setRows([]));
+    load();
+    window.addEventListener("civic-data-refresh", load);
+    return () => window.removeEventListener("civic-data-refresh", load);
   }, []);
 
   const filtered = useMemo(() => {
