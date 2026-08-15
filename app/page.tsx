@@ -9,6 +9,7 @@ import { GraphVisualizer } from "@/app/_components/graph/graph-visualizer";
 import { MasterTable } from "@/app/_components/table/master-table";
 import { TicketDetailSheet } from "@/app/_components/table/ticket-detail-sheet";
 import { LightCopilot } from "@/app/_components/copilot/light-copilot";
+import { UploadDialog } from "@/app/_components/dashboard/upload-dialog";
 import { exportThemesToCSV } from "@/lib/export-csv";
 import type {
   MultiFrequencyTheme,
@@ -26,6 +27,7 @@ export default function HomePage() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
+  const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [selectedTheme, setSelectedTheme] = useState<MultiFrequencyTheme | null>(null);
   const [isLoadingThemeTickets, setIsLoadingThemeTickets] = useState(false);
 
@@ -159,6 +161,17 @@ export default function HomePage() {
     }
   };
 
+  // Handle successful file upload and instant re-clustering
+  const handleUploadSuccess = (data: {
+    themes: MultiFrequencyTheme[];
+    stats: OverallStats;
+    graphData: GraphData;
+  }) => {
+    setThemes(data.themes);
+    setStats(data.stats);
+    setGraphData(data.graphData);
+  };
+
   // Export Master Verification Table
   const handleExportMaster = () => {
     exportThemesToCSV(themes);
@@ -172,7 +185,8 @@ export default function HomePage() {
         activeView={activeView}
         onViewChange={setActiveView}
         onExportMaster={handleExportMaster}
-        onOpenCopilot={() => setIsCopilotOpen(false)}
+        onOpenCopilot={() => setIsCopilotOpen(true)}
+        onOpenUpload={() => setIsUploadOpen(true)}
         onRefresh={handleRefreshClustering}
         isAnalyzing={isAnalyzing}
       />
@@ -248,6 +262,13 @@ export default function HomePage() {
           handleSelectTheme(t);
           setIsCopilotOpen(false);
         }}
+      />
+
+      {/* 7. Upload Excel/CSV Modal Dialog */}
+      <UploadDialog
+        isOpen={isUploadOpen}
+        onClose={() => setIsUploadOpen(false)}
+        onUploadSuccess={handleUploadSuccess}
       />
     </div>
   );

@@ -8,6 +8,7 @@ import {
   Layers,
   Network,
   LayoutGrid,
+  Upload,
 } from "lucide-react";
 import { Button } from "@/app/_components/ui/button";
 import { Badge } from "@/app/_components/ui/badge";
@@ -17,6 +18,7 @@ interface HeaderProps {
   onViewChange: (view: "KANBAN" | "GRAPH" | "TABLE") => void;
   onExportMaster: () => void;
   onOpenCopilot: () => void;
+  onOpenUpload: () => void;
   onRefresh: () => void;
   isAnalyzing: boolean;
 }
@@ -26,6 +28,7 @@ export const Header: React.FC<HeaderProps> = ({
   onViewChange,
   onExportMaster,
   onOpenCopilot,
+  onOpenUpload,
   onRefresh,
   isAnalyzing,
 }) => {
@@ -91,6 +94,16 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right Action Tools */}
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onOpenUpload}
+            className="text-xs h-8 border-border bg-card text-foreground hover:bg-muted font-medium"
+          >
+            <Upload className="w-3.5 h-3.5 mr-1" />
+            上传表格
+          </Button>
+
           <Button
             variant="outline"
             size="sm"
