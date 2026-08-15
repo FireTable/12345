@@ -1,18 +1,23 @@
 import fs from "fs";
 import path from "path";
-import * as XLSX from "xlsx";
+import * as xlsxModule from "xlsx";
+
+const XLSX: typeof xlsxModule = (xlsxModule as any).default || xlsxModule;
+
+// Ensure fs is set for xlsx in Node ESM
+if ((XLSX as any).set_fs) {
+  (XLSX as any).set_fs(fs);
+}
 
 /**
  * 裁剪 Excel 文件前 N 条记录脚本
- * 使用方式:
- *   pnpm tsx scripts/slice-excel.ts [文件路径] [裁剪行数, 默认 200]
  */
 async function main() {
-  const defaultPath =
+  const inputFilePath =
+    process.argv[2] ||
     process.env.EXCEL_INPUT_PATH ||
     path.resolve(process.cwd(), "input", "tickets.xlsx");
 
-  const inputFilePath = process.argv[2] || defaultPath;
   const limit = parseInt(process.argv[3], 10) || 200;
 
   console.log(`\n========================================`);
@@ -23,8 +28,6 @@ async function main() {
 
   if (!fs.existsSync(inputFilePath)) {
     console.error(`❌ 文件不存在: ${inputFilePath}`);
-    console.error(`请传入有效的文件路径作为参数，例如:`);
-    console.error(`pnpm tsx scripts/slice-excel.ts "/path/to/file.xlsx" 200\n`);
     process.exit(1);
   }
 
@@ -32,7 +35,7 @@ async function main() {
   console.log(`⏳ 正在读取 Excel 工作簿...`);
   const workbook = XLSX.readFile(inputFilePath, {
     cellDates: true,
-    sheetRows: limit + 10, // 仅读取前 limit+10 行提升解析速度与节省内存
+    sheetRows: limit + 50,
   });
 
   const firstSheetName = workbook.SheetNames[0];
@@ -51,9 +54,21 @@ async function main() {
 
   console.log(`📊 成功读取行数: ${allRows.length} 行`);
 
-  // 3. 截取前 N 行
-  const slicedRows = allRows.slice(0, limit);
-  console.log(`✂️ 已裁剪前 ${slicedRows.length} 条数据`);
+  // 3. 截取前 N 行并脱敏敏感字符
+  const slicedRows = allRows.slice(0, limit).map((row) => {
+    const cleanRow: Record<string, any> = {};
+    for (const [k, v] of Object.entries(row)) {
+      if (typeof v === "string") {
+        // 脱敏 12345 字符
+        cleanRow[k] = v.replace(/12345/g, "市民服务热线");
+      } else {
+        cleanRow[k] = v;
+      }
+    }
+    return cleanRow;
+  });
+
+  console.log(`✂️ 已裁剪前 ${slicedRows.length} 条数据并完成脱敏`);
 
   // 4. 确保输出目录存在
   const outputDir = path.resolve(process.cwd(), "output");
