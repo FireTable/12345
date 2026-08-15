@@ -5,7 +5,7 @@
 
 import { db } from "@/db/client";
 import { taskProgressTable } from "@/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, lt, and } from "drizzle-orm";
 
 export interface TaskProgress {
   taskId: string;
@@ -96,6 +96,9 @@ export function initTaskProgress(taskId: string, total: number = 0): TaskProgres
   progressStore.set(taskId, initial);
   // 异步写入 DB
   persistTaskToDb(initial);
+
+  // 顺手清扫卡死任务(容器 OOM / 重启 / SIGKILL 残留),不阻塞初始化
+  sweepStaleTasks().catch(() => {});
 
   return initial;
 }
@@ -219,4 +222,42 @@ export async function getLatestTaskProgress(): Promise<TaskProgress | null> {
 
 export function removeTaskProgress(taskId: string): void {
   progressStore.delete(taskId);
+}
+
+/**
+ * Sweep stale RUNNING tasks: a task is considered dead if its updated_at is older than the
+ * threshold (default 30 min). This catches cases where the container was killed / OOM /
+ * SIGKILL'd mid-flight and the in-memory progress never reached a terminal state.
+ *
+ * Called lazily from initTaskProgress() so cleanup piggybacks on real cluster activity
+ * — no cron, no timer, no second source of truth.
+ */
+const STALE_RUNNING_THRESHOLD_MS = 30 * 60 * 1000;
+
+export async function sweepStaleTasks(): Promise<number> {
+  const cutoff = new Date(Date.now() - STALE_RUNNING_THRESHOLD_MS);
+  try {
+    const result = await db
+      .update(taskProgressTable)
+      .set({
+        status: "FAILED",
+        error: `任务卡死自动清扫(${STALE_RUNNING_THRESHOLD_MS / 60_000} 分钟无更新,容器可能异常退出)`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(taskProgressTable.status, "RUNNING"),
+          lt(taskProgressTable.updatedAt, cutoff)
+        )
+      )
+      .returning({ taskId: taskProgressTable.taskId });
+
+    if (result.length > 0) {
+      console.warn(`[task-progress] sweepStaleTasks: marked ${result.length} stale RUNNING tasks as FAILED`);
+    }
+    return result.length;
+  } catch (err: any) {
+    console.warn("[task-progress] sweepStaleTasks failed:", err?.message);
+    return 0;
+  }
 }
