@@ -254,15 +254,12 @@ export function canonicalizeTownship(name?: string | null): string | null {
 }
 
 /**
- * 生成供 Prompt 使用的高密度标准词汇表注入文本
+ * 生成供 Prompt 使用的轻量标准词汇表注入文本（精简版，大幅节省 Token 消耗）
  */
 export function buildVocabularyPromptConstraint(): string {
-  const townsList = SHUNDE_TOWNSHIPS.map((t) => `${t.fullName}（简称：${t.name}，代表社区：${t.communities.slice(0, 5).join("、")}）`).join("\n");
-  const catList = STANDARD_CATEGORIES.map((c) => `- 【${c.category}】（牵头部门：${c.leadDepartment}）包含：${c.subItems.join("、")}`).join("\n");
+  const townNames = SHUNDE_TOWNSHIPS.map((t) => t.fullName).join("、");
+  const catNames = STANDARD_CATEGORIES.map((c) => c.category).join("、");
 
-  return `【佛山市顺德区法定行政区划词汇表（严禁凭空捏造不存在的镇街/区县）】：
-${townsList}
-
-【法定民生业务分类词汇表（必须严格归入以下 7 大标准分类之一）】：
-${catList}`;
+  return `【顺德区法定镇街】：${townNames}
+【法定民生分类】：${catNames}`;
 }
