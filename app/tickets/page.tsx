@@ -302,11 +302,11 @@ export default function TicketsPage() {
         <table className="workorder-table">
           <thead>
             <tr>
-              <th style={{ width: 90 }}>工单号</th>
+              <th style={{ width: 160, minWidth: 150 }}>工单号</th>
               <th>标题 / 内容</th>
-              <th style={{ width: 80 }}>镇街</th>
-              <th style={{ width: 90 }}>类型</th>
-              <th style={{ width: 80 }}>紧急度</th>
+              <th style={{ width: 90 }}>镇街</th>
+              <th style={{ width: 100, minWidth: 95 }}>类型</th>
+              <th style={{ width: 85 }}>紧急度</th>
               <th style={{ width: 120 }}>时间</th>
               <th style={{ width: 90 }}>状态</th>
               <th style={{ width: 80, textAlign: "right" }}>操作</th>
