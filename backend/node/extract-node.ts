@@ -3,6 +3,7 @@ import { getChatModel } from "../model";
 
 interface ExtractedTicketItem {
   index: number;
+  summarizeTitle: string;
   subject: string;
   location: string;
   eventType: string;
@@ -10,7 +11,7 @@ interface ExtractedTicketItem {
 }
 
 /**
- * 批次调用大模型进行纯 AI 语义四要素抽取（完全基于 LLM 理解，零硬编码）
+ * 批次调用大模型进行纯 AI 语义四要素抽取与核心诉求标题提炼（完全基于 LLM 理解）
  */
 async function extractBatchWithLLM(
   tickets: RawTicket[],
@@ -21,15 +22,16 @@ async function extractBatchWithLLM(
 
   try {
     const chat = getChatModel(0);
-    const prompt = `你是一位政务热线智能工单研判 Agent。请对以下 ${tickets.length} 条市民热线工单进行结构化要素抽取。完全依靠语义理解提取被诉主体、发生地点、事件核心特征与类别。
+    const prompt = `你是一位政务热线智能工单研判 Agent。请对以下 ${tickets.length} 条市民热线工单进行结构化要素抽取与核心诉求标题提炼。完全依靠语义理解提取被诉主体、发生地点、事件核心特征、民生类别并生成一句话标准摘要标题。
 
 工单列表：
-${tickets.map((t, idx) => `[${idx + 1}] 工单号: ${t.ticketNo} | 所属辖区: ${t.subdistrict || "未指定"}\n诉求正文: ${t.content || ""}`).join("\n\n")}
+${tickets.map((t, idx) => `[${idx + 1}] 工单号: ${t.ticketNo} | 原始标题: ${t.title || "无"} | 所属辖区: ${t.subdistrict || "未指定"}\n诉求正文: ${t.content || ""}`).join("\n\n")}
 
 请严格输出纯 JSON 数组（不要有 markdown 代码块以外的任何文字）：
 [
   {
     "index": 1,
+    "summarizeTitle": "提炼的一句话标准诉求标题（12-25字，如：关于xx街道xx路夜间餐饮油烟排放扰民诉求）",
     "subject": "被诉主体/责任单位名称（如商家名/物业公司/项目部/经营者/职能部门）",
     "location": "标准发生地点（包含行政区/镇街/道路/小区/地标）",
     "eventType": "事件类型核心提炼（6-15字）",
@@ -46,6 +48,7 @@ ${tickets.map((t, idx) => `[${idx + 1}] 工单号: ${t.ticketNo} | 所属辖区:
         if (item && typeof item.index === "number") {
           result.set(startIndex + item.index - 1, {
             index: item.index,
+            summarizeTitle: String(item.summarizeTitle || "").trim(),
             subject: String(item.subject || "").trim(),
             location: String(item.location || "").trim(),
             eventType: String(item.eventType || "").trim(),
@@ -104,6 +107,7 @@ function fallbackDynamicExtraction(ticket: RawTicket): ExtractedTicketItem {
 
   return {
     index: 0,
+    summarizeTitle: `关于${location}${subject}${eventType}的诉求`,
     subject,
     location,
     eventType,
@@ -112,7 +116,7 @@ function fallbackDynamicExtraction(ticket: RawTicket): ExtractedTicketItem {
 }
 
 /**
- * Extract Node: 全量采用 AI Agent 大模型语义抽取四要素
+ * Extract Node: 全量采用 AI Agent 大模型语义抽取四要素与摘要标题
  */
 export async function extractNode(
   state: TicketRadarState
@@ -139,6 +143,7 @@ export async function extractNode(
   const enrichedTickets: EnrichedTicket[] = rawTickets.map((ticket, index) => {
     const fallback = fallbackDynamicExtraction(ticket);
     const aiExtracted = extractionMap.get(index);
+    const summarizeTitle = aiExtracted?.summarizeTitle || ticket.summarizeTitle || fallback.summarizeTitle;
     const canonicalSubject = aiExtracted?.subject || fallback.subject;
     const canonicalLocation = aiExtracted?.location || fallback.location;
     const eventType = aiExtracted?.eventType || fallback.eventType;
@@ -146,6 +151,7 @@ export async function extractNode(
 
     return {
       ...ticket,
+      summarizeTitle,
       canonicalSubject,
       canonicalLocation,
       eventType,

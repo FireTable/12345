@@ -135,7 +135,8 @@ export async function POST(req: Request) {
       validRecords.push({
         id: `tk-${Date.now()}-${idx + 1}`,
         ticketNo,
-        title: title || "市民诉求",
+        title: title || "", // 保留原始表格标题列
+        summarizeTitle: normalized.summarizeTitle || null, // AI提炼标题
         content,
         citizenName: normalized.citizenName || "市民*",
         citizenPhone: normalized.citizenPhone || `138****${String((idx * 137) % 10000).padStart(4, "0")}`,

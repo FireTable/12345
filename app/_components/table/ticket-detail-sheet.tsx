@@ -142,15 +142,17 @@ export const TicketDetailSheet: React.FC<TicketDetailSheetProps> = ({
           </div>
 
           {/* AI Risk Reason Card */}
-          <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-100 text-xs text-slate-700 space-y-2">
-            <div className="flex items-center gap-1.5 font-bold text-blue-900">
+          <div className="p-4 rounded-xl bg-blue-50/70 border border-blue-100 text-xs text-slate-700 space-y-2.5">
+            <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
               <Sparkles className="w-4 h-4 text-blue-600 shrink-0" />
-              LangGraph AI 智能研判与协同处置方案
+              <span>LangGraph AI 智能研判与协同处置方案</span>
             </div>
-            <p className="text-slate-600 leading-relaxed pl-5">{theme.riskReason}</p>
-            <div className="pt-2 border-t border-blue-100/90 pl-5 text-[12px] text-blue-950 font-medium leading-relaxed">
-              <span className="font-bold text-blue-700">📌 处置建议：</span>
-              {theme.recommendedAction}
+            <p className="text-slate-700 leading-relaxed text-xs text-left">
+              {theme.riskReason}
+            </p>
+            <div className="pt-2.5 border-t border-blue-100/90 text-xs text-left leading-relaxed">
+              <span className="font-bold text-blue-800">📌 处置建议：</span>
+              <span className="text-slate-800 font-medium">{theme.recommendedAction}</span>
             </div>
           </div>
 
@@ -240,8 +242,27 @@ export const TicketDetailSheet: React.FC<TicketDetailSheetProps> = ({
                       </div>
                     </div>
 
+                    {/* Title / AI Summarize Title Banner */}
+                    {(ticket.summarizeTitle || ticket.title) && (
+                      <div className="pt-2.5 pb-1">
+                        {ticket.summarizeTitle ? (
+                          <div className="flex items-start gap-1.5 text-xs font-semibold text-foreground">
+                            <span className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium shrink-0">
+                              <Sparkles className="w-3 h-3" />
+                              AI 提炼
+                            </span>
+                            <span>{ticket.summarizeTitle}</span>
+                          </div>
+                        ) : (
+                          <div className="text-xs font-semibold text-foreground">
+                            {ticket.title}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {/* Ticket Content Full Body */}
-                    <div className="pt-3 text-xs text-foreground/90 leading-relaxed font-normal whitespace-pre-wrap">
+                    <div className="pt-2 text-xs text-foreground/90 leading-relaxed font-normal whitespace-pre-wrap">
                       {ticket.content}
                     </div>
 

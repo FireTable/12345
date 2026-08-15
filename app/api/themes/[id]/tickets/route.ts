@@ -21,6 +21,7 @@ export async function GET(
         id: ticketsTable.id,
         ticketNo: ticketsTable.ticketNo,
         title: ticketsTable.title,
+        summarizeTitle: ticketsTable.summarizeTitle,
         content: ticketsTable.content,
         citizenName: ticketsTable.citizenName,
         citizenPhone: ticketsTable.citizenPhone,
@@ -39,9 +40,12 @@ export async function GET(
       const tickets: RawTicket[] = junctionRows.map((r) => ({
         id: r.id,
         ticketNo: r.ticketNo,
+        title: r.title || undefined,
+        summarizeTitle: r.summarizeTitle || undefined,
         createTime: r.createTime
           ? r.createTime.toISOString().slice(0, 19).replace("T", " ")
           : "2025-01-01 00:00:00",
+        citizenPhone: r.citizenPhone || "",
         content: r.content,
         citizenName: r.citizenName || "市民*",
         district: r.district || "所属辖区",
@@ -77,9 +81,12 @@ export async function GET(
         const tickets: RawTicket[] = rows.map((r) => ({
           id: r.id,
           ticketNo: r.ticketNo,
+          title: r.title || undefined,
+          summarizeTitle: r.summarizeTitle || undefined,
           createTime: r.createTime
             ? r.createTime.toISOString().slice(0, 19).replace("T", " ")
             : "2025-01-01 00:00:00",
+          citizenPhone: r.citizenPhone || "",
           content: r.content,
           citizenName: r.citizenName || "市民*",
           district: r.district || "所属辖区",

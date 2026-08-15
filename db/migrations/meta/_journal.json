@@ -8,6 +8,13 @@
       "when": 1786760091381,
       "tag": "0000_dark_white_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1786772006269,
+      "tag": "0001_yellow_doctor_spectrum",
+      "breakpoints": true
     }
   ]
 }

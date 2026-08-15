@@ -12,7 +12,10 @@ export async function GET() {
       const tickets: RawTicket[] = dbRows.map((r) => ({
         id: r.id,
         ticketNo: r.ticketNo,
+        title: r.title || undefined,
+        summarizeTitle: r.summarizeTitle || undefined,
         createTime: r.createTime ? r.createTime.toISOString().slice(0, 19).replace("T", " ") : "2025-01-01 00:00:00",
+        citizenPhone: r.citizenPhone || "",
         content: r.content,
         citizenName: r.citizenName || "市民*",
         district: r.district || "所属辖区",

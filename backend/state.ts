@@ -20,6 +20,8 @@ export interface ExtractedRelation {
 export interface RawTicket {
   id: string;
   ticketNo: string;
+  title?: string;
+  summarizeTitle?: string;
   createTime: string;
   citizenName: string;
   citizenPhone: string;
@@ -31,6 +33,7 @@ export interface RawTicket {
 }
 
 export interface EnrichedTicket extends RawTicket {
+  summarizeTitle?: string;
   entities: ExtractedEntity[];
   relations: ExtractedRelation[];
   themes: string[];

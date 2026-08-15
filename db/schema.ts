@@ -17,6 +17,7 @@ export const ticketsTable = pgTable(
     id: varchar("id", { length: 64 }).primaryKey(),
     ticketNo: varchar("ticket_no", { length: 64 }).notNull().unique(),
     title: text("title"),
+    summarizeTitle: text("summarize_title"),
     content: text("content").notNull(),
     citizenName: varchar("citizen_name", { length: 64 }),
     citizenPhone: varchar("citizen_phone", { length: 64 }),
