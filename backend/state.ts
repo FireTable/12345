@@ -2,6 +2,7 @@ import { Annotation, messagesStateReducer } from "@langchain/langgraph";
 import type { BaseMessage } from "@langchain/core/messages";
 
 export type RiskLevel = "HIGH" | "MEDIUM" | "LOW";
+export type PatternType = "GROUP_GATHERING" | "INDIVIDUAL_REPEAT";
 export type EntityType = "SUBJECT" | "LOCATION" | "EVENT_TYPE" | "CORE_DEMAND";
 
 export interface ExtractedEntity {
@@ -31,10 +32,14 @@ export interface RawTicket {
   maskedContent?: string;
   channel: string;
   status: "PENDING" | "VERIFIED" | "DISPATCHED" | "RESOLVED";
+  closedAt?: string;
+  closureStatus?: "RESOLVED" | "REOPENED" | null;
+  isFakeClosure?: boolean;
 }
 
 export interface EnrichedTicket extends RawTicket {
   summarizeTitle?: string;
+  confidence?: number;
   entities: ExtractedEntity[];
   relations: ExtractedRelation[];
   themes: string[];
@@ -43,6 +48,12 @@ export interface EnrichedTicket extends RawTicket {
   eventType: string;
   clusterId?: string;
   similarityScore?: number;
+}
+
+export interface LowConfidenceTicketItem {
+  ticketId: string;
+  confidence: number;
+  reason: string;
 }
 
 export interface MultiFrequencyTheme {
@@ -54,6 +65,7 @@ export interface MultiFrequencyTheme {
   category: string;
   riskLevel: RiskLevel;
   riskReason: string;
+  patternType?: PatternType;
   ticketCount: number;
   timeSpanHours: number;
   firstOccurrence: string;
@@ -64,6 +76,8 @@ export interface MultiFrequencyTheme {
   relatedSubjects: string[];
   relatedLocations: string[];
   status: "UNCHECKED" | "CHECKING" | "CONFIRMED" | "DISMISSED";
+  reopenCount?: number;
+  reopenTicketIds?: string[];
 }
 
 export interface GraphNode {
@@ -100,6 +114,7 @@ export interface OverallStats {
   compressionRatio: number;
   topSubject: string;
   avgResponseTimeSavedHours: number;
+  fakeClosureCount?: number;
 }
 
 /**
@@ -136,6 +151,10 @@ export const TicketRadarStateAnnotation = Annotation.Root({
       topSubject: "",
       avgResponseTimeSavedHours: 0,
     }),
+  }),
+  lowConfidenceTickets: Annotation<LowConfidenceTicketItem[]>({
+    reducer: (prev, next) => (next && next.length > 0 ? next : prev),
+    default: () => [],
   }),
   graphData: Annotation<GraphData>({
     reducer: (prev, next) => (next && next.nodes?.length > 0 ? next : prev),

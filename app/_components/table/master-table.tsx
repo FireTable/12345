@@ -89,6 +89,15 @@ export const MasterTable: React.FC<MasterTableProps> = ({
         ),
       },
       {
+        accessorKey: "eventType",
+        header: "核心事件类型",
+        cell: ({ row }) => (
+          <span className="text-[12px] text-slate-600 line-clamp-2">
+            {row.original.eventType}
+          </span>
+        ),
+      },
+      {
         accessorKey: "canonicalLocation",
         header: "发生地点",
         cell: ({ row }) => (
@@ -109,8 +118,15 @@ export const MasterTable: React.FC<MasterTableProps> = ({
           </Button>
         ),
         cell: ({ row }) => (
-          <span className="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-            {row.original.ticketCount} 单
+          <span className="inline-flex items-center gap-1.5">
+            <span className="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+              {row.original.ticketCount} 单
+            </span>
+            {(row.original.reopenCount || 0) > 0 && (
+              <span className="text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200 px-1.5 py-0.5 rounded">
+                疑似假闭环 ×{row.original.reopenCount}
+              </span>
+            )}
           </span>
         ),
       },
@@ -130,6 +146,15 @@ export const MasterTable: React.FC<MasterTableProps> = ({
         cell: ({ row }) => (
           <span className="font-mono text-slate-600 text-xs">
             {row.original.timeSpanHours} 小时
+          </span>
+        ),
+      },
+      {
+        accessorKey: "recommendedAction",
+        header: "建议处置",
+        cell: ({ row }) => (
+          <span className="text-[11.5px] text-slate-500 line-clamp-2">
+            {row.original.recommendedAction}
           </span>
         ),
       },

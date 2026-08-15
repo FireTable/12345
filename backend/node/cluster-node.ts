@@ -5,6 +5,9 @@ import type {
   MultiFrequencyTheme,
   RiskLevel,
 } from "../state";
+import { markFakeClosures } from "./fake-closure";
+import { deriveRiskLevel, scanNegativeSentiment } from "./risk-rules";
+import { RULES } from "../rules";
 
 function safeParseDate(dateStr: string): Date {
   if (!dateStr) return new Date();
@@ -22,19 +25,9 @@ function isValidSpecificSubject(subject: string): boolean {
   if (!subject) return false;
   const s = subject.trim();
   if (s.length < 2) return false;
-  const invalidGenericList = [
-    "公共诉求涉事方",
-    "公共诉求责任对象",
-    "重点诉求责任主体",
-    "所属辖区涉事方",
-    "顺德区重点涉事方",
-    "某单位",
-    "当事人",
-    "市民",
-    "车主",
-    "商家",
-  ];
-  return !invalidGenericList.some((g) => s === g || s.endsWith("公共诉求涉事方"));
+  if ((RULES.genericSubjects as readonly string[]).includes(s)) return false;
+  if (RULES.genericSubjectSuffix.test(s)) return false;
+  return true;
 }
 
 /**
@@ -44,12 +37,9 @@ function isSpecificMicroLocation(location: string): boolean {
   if (!location) return false;
   const loc = location.trim();
   if (loc.length < 5) return false;
-  const badWords = ["部门", "希望", "反映", "致电", "要求", "执法", "诉求", "我是", "电话", "综合执法", "居委会", "村委", "所属辖区", "事发地"];
-  if (badWords.some((w) => loc.includes(w))) return false;
-  // 排除单纯行政区或镇街
-  const genericTowns = ["顺德区", "容桂街道", "北滘镇", "大良街道", "伦教街道", "勒流街道", "陈村镇", "乐从镇", "杏坛镇", "龙江镇", "均安镇", "所属辖区所在地", "辖区"];
-  if (genericTowns.includes(loc)) return false;
-  return /(?:路|街|巷|大道|广场|公园|城|大厦|小区|苑|自建房|号|新村|花园|公寓)/.test(loc);
+  if (RULES.locationNoise.test(loc)) return false;
+  if (RULES.adminOnlyLocation.test(loc)) return false;
+  return RULES.microLocationHint.test(loc);
 }
 
 /**
@@ -85,7 +75,7 @@ export async function clusterNode(
   }
 
   for (const [subj, tickets] of subjectGroupMap.entries()) {
-    if (tickets.length >= 2) {
+    if (tickets.length >= RULES.minClusterSize) {
       tickets.forEach((t) => assignedTicketIds.add(t.id));
       tickets.sort(
         (a, b) => safeParseDate(a.createTime).getTime() - safeParseDate(b.createTime).getTime()
@@ -98,7 +88,6 @@ export async function clusterNode(
         differenceInHours(safeParseDate(lastTime), safeParseDate(firstTime))
       );
 
-      // 提取核心事件类型（优先取最高频或代表性的事件类型）
       const eventType = tickets[0].eventType || "多频诉求跟进";
       const distinctLocations = Array.from(new Set(tickets.map((t) => t.canonicalLocation).filter(Boolean)));
       const canonicalLocation = distinctLocations.length === 1 ? distinctLocations[0] : `${distinctLocations[0]} 等多处`;
@@ -110,15 +99,29 @@ export async function clusterNode(
         t.clusterId = themeId;
       });
 
+      const { reopenCount, reopenTicketIds } = markFakeClosures(tickets);
+      const patternType = "INDIVIDUAL_REPEAT" as const;
+      const hitNegative = scanNegativeSentiment(tickets);
+      const riskLevel = deriveRiskLevel({
+        ticketCount: tickets.length,
+        patternType,
+        hitNegative,
+        reopenCount,
+      });
+
       themes.push({
         id: themeId,
         title,
         canonicalSubject: subj,
         canonicalLocation,
         eventType,
-        category: (tickets[0].themes && tickets[0].themes[0]) || "综合民生",
-        riskLevel: tickets.length >= 5 ? "HIGH" : tickets.length >= 3 ? "MEDIUM" : "LOW",
-        riskReason: `重点主体多频诉求：同一涉事主体在 ${timeSpanHours} 小时内集中被市民反映 ${tickets.length} 次`,
+        category: (tickets[0].themes && tickets[0].themes[0]) || RULES.defaultCategory,
+        riskLevel,
+        patternType,
+        riskReason:
+          reopenCount > 0
+            ? `疑似假闭环：办结 ${RULES.fakeClosure.windowDays} 天内同主体再次投诉 ${reopenCount} 次`
+            : `重点主体多频诉求：同一涉事主体在 ${timeSpanHours} 小时内集中被市民反映 ${tickets.length} 次`,
         ticketCount: tickets.length,
         timeSpanHours,
         firstOccurrence: firstTime,
@@ -129,6 +132,8 @@ export async function clusterNode(
         relatedSubjects: [subj],
         relatedLocations: distinctLocations,
         status: "UNCHECKED",
+        reopenCount,
+        reopenTicketIds,
       });
     }
   }
@@ -143,7 +148,7 @@ export async function clusterNode(
     const loc = (ticket.canonicalLocation || "").trim();
     if (!isSpecificMicroLocation(loc)) continue;
 
-    const cat = (ticket.themes && ticket.themes[0]) || "综合民生";
+    const cat = (ticket.themes && ticket.themes[0]) || RULES.defaultCategory;
     // 以微观具体地点 + 业务大类为聚集维度
     const key = `${loc}::${cat}`;
 
@@ -154,7 +159,7 @@ export async function clusterNode(
   }
 
   for (const [key, tickets] of locationEventMap.entries()) {
-    if (tickets.length >= 2) {
+    if (tickets.length >= RULES.minClusterSize) {
       tickets.forEach((t) => assignedTicketIds.add(t.id));
       tickets.sort(
         (a, b) => safeParseDate(a.createTime).getTime() - safeParseDate(b.createTime).getTime()
@@ -179,6 +184,16 @@ export async function clusterNode(
         t.clusterId = themeId;
       });
 
+      const { reopenCount, reopenTicketIds } = markFakeClosures(tickets);
+      const patternType = "GROUP_GATHERING" as const;
+      const hitNegative = scanNegativeSentiment(tickets);
+      const riskLevel = deriveRiskLevel({
+        ticketCount: tickets.length,
+        patternType,
+        hitNegative,
+        reopenCount,
+      });
+
       themes.push({
         id: themeId,
         title,
@@ -186,8 +201,12 @@ export async function clusterNode(
         canonicalLocation: microLocation,
         eventType,
         category,
-        riskLevel: tickets.length >= 5 ? "HIGH" : tickets.length >= 3 ? "MEDIUM" : "LOW",
-        riskReason: `区域微观点位群发：位于【${microLocation}】在 ${timeSpanHours} 小时内集中出现 ${tickets.length} 件同类诉求`,
+        riskLevel,
+        patternType,
+        riskReason:
+          reopenCount > 0
+            ? `疑似假闭环：办结 ${RULES.fakeClosure.windowDays} 天内同地点再次投诉 ${reopenCount} 次`
+            : `区域微观点位群发：位于【${microLocation}】在 ${timeSpanHours} 小时内集中出现 ${tickets.length} 件同类诉求`,
         ticketCount: tickets.length,
         timeSpanHours,
         firstOccurrence: firstTime,
@@ -198,6 +217,8 @@ export async function clusterNode(
         relatedSubjects: distinctSubjects.length > 0 ? distinctSubjects : [canonicalSubject],
         relatedLocations: [microLocation],
         status: "UNCHECKED",
+        reopenCount,
+        reopenTicketIds,
       });
     }
   }

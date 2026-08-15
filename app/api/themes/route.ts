@@ -24,7 +24,7 @@ export async function GET() {
       canonicalSubject: t.canonicalSubject,
       canonicalLocation: t.canonicalLocation,
       eventType: t.eventType,
-      category: t.category || "综合民生",
+      category: t.category || "城市管理",
       riskLevel: (t.riskLevel as any) || "LOW",
       riskReason: t.riskReason || "",
       ticketCount: t.ticketCount || 0,

@@ -6,6 +6,8 @@ import {
   type ExtractedTicketItem,
 } from "../prompt";
 
+export const LOW_CONFIDENCE_THRESHOLD = 60;
+
 /**
  * 批次调用大模型进行严格、精准的结构化 Zod 要素抽取
  */
@@ -52,7 +54,11 @@ async function extractBatchWithLLM(
             subject: String(item.subject || "").trim(),
             location: String(item.location || "").trim(),
             eventType: String(item.eventType || "").trim(),
-            category: item.category || "综合民生",
+            category: item.category || "城市管理",
+            confidence:
+              typeof item.confidence === "number"
+                ? Math.max(0, Math.min(100, Math.round(item.confidence)))
+                : 0,
           });
         }
       }
@@ -85,46 +91,62 @@ function fallbackDynamicExtraction(ticket: RawTicket): ExtractedTicketItem {
     }
   }
 
+  const hasSpecificSubject = Boolean(plateSubject || orgSubject);
   const subject = plateSubject || orgSubject || (subdistrict ? `${subdistrict}特定涉事方` : "特定诉求涉事方");
 
   // 3. 通用动态微观地点识别（必须包含路/街/巷/号/小区/广场等，且严防"部门"伪装为"门"）
-  let location = subdistrict ? `${subdistrict}辖区` : "顺德区事发地";
+  let location = subdistrict ? `${subdistrict}辖区` : "未标明微观地点";
+  let hasSpecificLocation = false;
   const matchLoc = content.match(/([^\s，。、（）]{2,25}?(?:街道|镇)?[^\s，。、（）]{2,20}?(?:路|大道|大街|巷|横街|横巷|新村|广场|公园|中心|城|大厦|小区|花园|公寓|自建房|\d+号(?:门口|附近)?))/);
   if (matchLoc && matchLoc[1]) {
     const locCand = matchLoc[1].replace(/^(?:市民|诉求人|致电|反映|在|位于|我是)/, "").trim();
     const badWords = ["部门", "希望", "反映", "致电", "要求", "执法", "电话", "介入", "处理", "情况", "问题"];
     if (!badWords.some((w) => locCand.includes(w)) && locCand.length >= 4) {
       location = locCand;
+      hasSpecificLocation = true;
     }
   }
 
-  let eventType = "综合民生诉求跟进";
-  let category = "综合民生";
+  let eventType = "城市管理日常诉求跟进";
+  let category = "城市管理";
 
   if (plateSubject || content.includes("违停") || content.includes("乱停") || content.includes("停放") || content.includes("挪车")) {
     eventType = "机动车违规停放阻碍通行";
     category = "交通出行";
   } else if (content.includes("噪音") || content.includes("扰民") || content.includes("音乐") || content.includes("喧哗")) {
     eventType = "夜间营业音响喧哗与商业噪音扰民";
-    category = "生态环保";
+    category = "生态环境";
   } else if (content.includes("烟花") || content.includes("爆竹")) {
     eventType = "违规燃放/售卖烟花爆竹扰民";
     category = "公共安全";
   } else if (content.includes("油烟") || content.includes("排气") || content.includes("异味")) {
     eventType = "餐饮油烟直排与空气污染";
-    category = "生态环保";
+    category = "生态环境";
   } else if (content.includes("水管") || content.includes("下水道") || content.includes("排污")) {
     eventType = "市政排污管道与供水抢修问题";
-    category = "住建管理";
+    category = "城市管理";
   } else if (content.includes("小贩") || content.includes("摆摊") || content.includes("占道")) {
     eventType = "流动摊贩占道经营与路面堵塞";
-    category = "市容秩序";
-  } else if (content.includes("退款") || content.includes("收费") || content.includes("欺诈")) {
+    category = "城市管理";
+  } else if (content.includes("退款") || content.includes("收费") || content.includes("欺诈") || content.includes("虚假宣传")) {
     eventType = "消费纠纷与违规收费维权";
     category = "市场监管";
   } else if (content.includes("物业") || content.includes("电梯")) {
     eventType = "小区物业管理与公共设施隐患";
-    category = "住建管理";
+    category = "城市管理";
+  } else if (content.includes("工资") || content.includes("欠薪") || content.includes("社保") || content.includes("劳资") || content.includes("劳动合同")) {
+    eventType = "劳资纠纷与劳动社保权益维护";
+    category = "劳动社保";
+  }
+
+  // 评估规则兜底时的置信度得分
+  let fallbackConfidence = 50;
+  if (hasSpecificSubject && hasSpecificLocation) {
+    fallbackConfidence = 85;
+  } else if (hasSpecificSubject || hasSpecificLocation) {
+    fallbackConfidence = 70;
+  } else {
+    fallbackConfidence = 45;
   }
 
   return {
@@ -133,7 +155,8 @@ function fallbackDynamicExtraction(ticket: RawTicket): ExtractedTicketItem {
     subject,
     location,
     eventType,
-    category: (category as any) || "综合民生",
+    category: (category as any) || "城市管理",
+    confidence: fallbackConfidence,
   };
 }
 
@@ -170,10 +193,15 @@ export async function extractNode(
     const canonicalLocation = aiExtracted?.location || fallback.location;
     const eventType = aiExtracted?.eventType || fallback.eventType;
     const category = aiExtracted?.category || fallback.category;
+    const confidence =
+      typeof aiExtracted?.confidence === "number"
+        ? aiExtracted.confidence
+        : fallback.confidence;
 
     return {
       ...ticket,
       summarizeTitle,
+      confidence,
       canonicalSubject,
       canonicalLocation,
       eventType,
@@ -191,8 +219,17 @@ export async function extractNode(
     };
   });
 
+  const lowConfidenceTickets = enrichedTickets
+    .filter((t) => (t.confidence ?? 0) < LOW_CONFIDENCE_THRESHOLD)
+    .map((t) => ({
+      ticketId: t.id,
+      confidence: t.confidence ?? 0,
+      reason: (t.confidence ?? 0) === 0 ? "EXTRACTION_FAILED" : "LOW_CONFIDENCE",
+    }));
+
   return {
     enrichedTickets,
+    lowConfidenceTickets,
     status: "extracting",
   };
 }

@@ -35,8 +35,11 @@ async function enrichThemeWithLLM(theme: MultiFrequencyTheme): Promise<Partial<M
         const structuredChat = chat.withStructuredOutput(ThemeEnrichmentSchema);
         const structuredRes = await structuredChat.invoke(prompt);
         if (structuredRes && structuredRes.riskLevel) {
+          // 本地 HIGH 是 sticky:LLM 不能把红黄蓝规则产生的 HIGH 拉成 LOW/MEDIUM
+          const incoming = structuredRes.riskLevel as RiskLevel;
+          const finalRisk: RiskLevel = theme.riskLevel === "HIGH" ? "HIGH" : incoming;
           return {
-            riskLevel: structuredRes.riskLevel as RiskLevel,
+            riskLevel: finalRisk,
             riskReason: structuredRes.riskReason,
             aiSummary: structuredRes.aiSummary,
             recommendedAction: structuredRes.recommendedAction,
@@ -52,8 +55,10 @@ async function enrichThemeWithLLM(theme: MultiFrequencyTheme): Promise<Partial<M
       const jsonMatch = rawText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
+        const candidate = (["HIGH", "MEDIUM", "LOW"].includes(parsed.riskLevel) ? parsed.riskLevel : theme.riskLevel) as RiskLevel;
+        const finalRisk: RiskLevel = theme.riskLevel === "HIGH" ? "HIGH" : candidate;
         return {
-          riskLevel: (["HIGH", "MEDIUM", "LOW"].includes(parsed.riskLevel) ? parsed.riskLevel : theme.riskLevel) as RiskLevel,
+          riskLevel: finalRisk,
           riskReason: parsed.riskReason || theme.riskReason,
           aiSummary: parsed.aiSummary || theme.aiSummary,
           recommendedAction: parsed.recommendedAction || theme.recommendedAction,
@@ -90,9 +95,15 @@ export async function summaryNode(
 
     results.forEach((res, idx) => {
       if (res.status === "fulfilled" && res.value) {
+        const local = enrichedThemes[idx];
         enrichedThemes[idx] = {
-          ...enrichedThemes[idx],
+          ...local,
           ...res.value,
+          // 红黄蓝与假闭环由本地规则裁定，LLM 只能补理由/摘要/处置建议
+          riskLevel: local.riskLevel,
+          patternType: local.patternType,
+          reopenCount: local.reopenCount,
+          reopenTicketIds: local.reopenTicketIds,
         };
       } else {
         enrichedThemes[idx] = {
@@ -116,7 +127,10 @@ export async function summaryNode(
   const multiFrequencyTickets = enrichedThemes.reduce((acc, t) => acc + t.ticketCount, 0);
   const multiFrequencyRate = totalTickets > 0 ? Math.round((multiFrequencyTickets / totalTickets) * 100) : 0;
   const compressionRatio = totalTickets > 0 ? Math.round(((totalTickets - enrichedThemes.length) / totalTickets) * 100) : 0;
-  const highRiskCount = enrichedThemes.filter((t) => t.riskLevel === "HIGH").length;
+  const fakeClosureCount = enrichedThemes.reduce((acc, t) => acc + (t.reopenCount || 0), 0);
+  const highRiskCount = enrichedThemes.filter(
+    (t) => t.riskLevel === "HIGH" || (t.reopenCount || 0) > 0
+  ).length;
   const mediumRiskCount = enrichedThemes.filter((t) => t.riskLevel === "MEDIUM").length;
   const lowRiskCount = enrichedThemes.filter((t) => t.riskLevel === "LOW").length;
   const topSubject = enrichedThemes[0]?.canonicalSubject || "暂无重点多频诉求";
@@ -132,6 +146,7 @@ export async function summaryNode(
     compressionRatio,
     topSubject,
     avgResponseTimeSavedHours: 4.8,
+    fakeClosureCount,
   };
 
   // Build Force Graph

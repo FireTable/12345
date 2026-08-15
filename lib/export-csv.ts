@@ -10,6 +10,7 @@ export function exportThemesToCSV(themes: MultiFrequencyTheme[]): void {
     "canonicalSubject": t.canonicalSubject,
     "canonicalLocation": t.canonicalLocation,
     "eventType": t.eventType,
+    "category": t.category,
     "ticketCount": t.ticketCount,
     "timeSpanHours": t.timeSpanHours,
     "firstOccurrence": t.firstOccurrence,

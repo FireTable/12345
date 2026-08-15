@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { runTicketRadarPipeline } from "@/backend/agent";
 import { db } from "@/db/client";
 import { ticketsTable, themesTable, ticketThemesTable } from "@/db/schema";
-import { sql, desc } from "drizzle-orm";
+import { seedReviewQueue } from "@/lib/review-queue";
+import { sql, desc, eq } from "drizzle-orm";
 import type { RawTicket } from "@/backend/state";
 
 export async function POST(req: Request) {
@@ -40,6 +41,11 @@ export async function POST(req: Request) {
         : "2025-01-01 00:00:00",
       content: r.content,
       maskedContent: r.maskedContent || undefined,
+      closedAt: r.closedAt
+        ? r.closedAt.toISOString().slice(0, 19).replace("T", " ")
+        : undefined,
+      closureStatus: (r.closureStatus as "RESOLVED" | "REOPENED" | null) || undefined,
+      isFakeClosure: r.isFakeClosure || false,
       citizenName: r.citizenName || "市民*",
       citizenPhone: r.citizenPhone || "138****0000",
       district: r.district || "所属辖区",
@@ -98,9 +104,24 @@ export async function POST(req: Request) {
             await db.insert(ticketThemesTable).values(chunk).onConflictDoNothing();
           }
         }
+
+        for (const theme of result.themes) {
+          for (const t of theme.tickets || []) {
+            if (!t.isFakeClosure) continue;
+            await db
+              .update(ticketsTable)
+              .set({ isFakeClosure: true, closureStatus: "REOPENED" })
+              .where(eq(ticketsTable.id, t.id));
+          }
+        }
+      }
+
+      // Persist low-confidence tickets to Review Queue
+      if (result.lowConfidenceTickets && result.lowConfidenceTickets.length > 0) {
+        await seedReviewQueue(result.lowConfidenceTickets);
       }
     } catch (persistErr: any) {
-      console.warn("Could not persist themes to DB:", persistErr.message);
+      console.warn("Could not persist themes/reviews to DB:", persistErr.message);
     }
 
     // 5. Build macro topological graph data (filtering out heavy single ticket nodes)

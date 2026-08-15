@@ -99,7 +99,7 @@ export async function canonicalNode(
       }
     }
 
-    const canonicalLocation = (t.canonicalLocation || "").trim() || (t.subdistrict || "顺德区");
+    const canonicalLocation = (t.canonicalLocation || "").trim() || (t.subdistrict || t.district || "");
     const eventType = (t.eventType || "").trim();
 
     return {

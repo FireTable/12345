@@ -25,6 +25,9 @@ const HEADER_MAP: Record<string, string> = {
   街道: "subdistrict",
   镇街: "subdistrict",
   诉求渠道: "channel",
+  办结时间: "closedAt",
+  办结日期: "closedAt",
+  办结状态: "closureStatus",
 };
 
 /**
@@ -133,6 +136,21 @@ export async function POST(req: Request) {
       if (title.includes("小程序")) channel = "微信小程序";
       else if (title.includes("公众号")) channel = "微信公众号";
 
+      const closedAtRaw = normalized.closedAt;
+      let closedAt: Date | null = null;
+      if (closedAtRaw instanceof Date && !isNaN(closedAtRaw.getTime())) {
+        closedAt = closedAtRaw;
+      } else if (closedAtRaw) {
+        const parsed = new Date(String(closedAtRaw));
+        if (!isNaN(parsed.getTime())) closedAt = parsed;
+      }
+      const closureRaw = String(normalized.closureStatus || "").trim();
+      const closureStatus = closedAt
+        ? closureRaw.includes("重开") || closureRaw.toUpperCase() === "REOPENED"
+          ? "REOPENED"
+          : "RESOLVED"
+        : null;
+
       validRecords.push({
         id: `tk-${Date.now()}-${idx + 1}`,
         ticketNo,
@@ -147,6 +165,9 @@ export async function POST(req: Request) {
         channel,
         status: "PENDING",
         createTime,
+        closedAt,
+        closureStatus,
+        isFakeClosure: false,
       });
     }
 

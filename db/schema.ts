@@ -6,6 +6,7 @@ import {
   timestamp,
   index,
   primaryKey,
+  boolean,
 } from "drizzle-orm/pg-core";
 
 /**
@@ -27,12 +28,16 @@ export const ticketsTable = pgTable(
     channel: varchar("channel", { length: 64 }).default("市民服务热线"),
     status: varchar("status", { length: 32 }).default("PENDING"),
     createTime: timestamp("create_time", { withTimezone: true }),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    closureStatus: varchar("closure_status", { length: 32 }),
+    isFakeClosure: boolean("is_fake_closure").default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     index("idx_tickets_ticket_no").on(table.ticketNo),
     index("idx_tickets_subdistrict").on(table.subdistrict),
     index("idx_tickets_create_time").on(table.createTime),
+    index("idx_tickets_closed_at").on(table.closedAt),
   ]
 );
 
@@ -47,7 +52,7 @@ export const themesTable = pgTable(
     canonicalSubject: varchar("canonical_subject", { length: 255 }).notNull(),
     canonicalLocation: varchar("canonical_location", { length: 255 }).notNull(),
     eventType: varchar("event_type", { length: 128 }).notNull(),
-    category: varchar("category", { length: 64 }).default("综合民生"),
+    category: varchar("category", { length: 64 }).default("城市管理"),
     riskLevel: varchar("risk_level", { length: 32 }).notNull().default("LOW"),
     riskReason: text("risk_reason"),
     ticketCount: integer("ticket_count").default(0).notNull(),
@@ -83,8 +88,35 @@ export const ticketThemesTable = pgTable(
   ]
 );
 
+/**
+ * 4. 人工复核队列 (Review Queue Table)
+ */
+export const reviewQueueTable = pgTable(
+  "review_queue",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    ticketId: varchar("ticket_id", { length: 64 })
+      .notNull()
+      .references(() => ticketsTable.id, { onDelete: "cascade" }),
+    reason: varchar("reason", { length: 128 }).notNull().default("LOW_CONFIDENCE"),
+    confidence: integer("confidence"),
+    status: varchar("status", { length: 32 }).notNull().default("PENDING"), // PENDING/REVIEWED/DISMISSED
+    operator: varchar("operator", { length: 64 }),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("idx_review_queue_status").on(table.status),
+    index("idx_review_queue_ticket_id").on(table.ticketId),
+  ]
+);
+
 export type TicketRecord = typeof ticketsTable.$inferSelect;
 export type NewTicketRecord = typeof ticketsTable.$inferInsert;
 
 export type ThemeRecord = typeof themesTable.$inferSelect;
 export type NewThemeRecord = typeof themesTable.$inferInsert;
+
+export type ReviewQueueRecord = typeof reviewQueueTable.$inferSelect;
+export type NewReviewQueueRecord = typeof reviewQueueTable.$inferInsert;

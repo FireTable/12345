@@ -22,6 +22,20 @@
       "when": 1786775066081,
       "tag": "0002_masked_content",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786775650220,
+      "tag": "0003_lovely_yellowjacket",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786775815197,
+      "tag": "0004_fake_closure",
+      "breakpoints": true
     }
   ]
 }

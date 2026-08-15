@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { RawTicket, MultiFrequencyTheme, EnrichedTicket } from "./state";
 import { desensitizeContent, ticketBodyForAI } from "./anonymizer";
+import { formatNegativeTermsForPrompt } from "./rules";
 
 /**
  * 1. 结构化抽取 Zod Schema (Structured Extraction Schemas)
@@ -23,15 +24,20 @@ export const ExtractedTicketItemSchema = z.object({
     .describe("核心事件类型标准提炼（8-15字，如：机动车违规停放阻碍商铺经营、夜间营业音响喧哗与商业噪音扰民）"),
   category: z
     .enum([
-      "市容秩序",
-      "生态环保",
-      "住建管理",
+      "城市管理",
       "市场监管",
-      "公共安全",
+      "社会治理",
       "交通出行",
-      "综合民生",
+      "生态环境",
+      "劳动社保",
+      "公共安全",
     ])
     .describe("民生业务归属分类"),
+  confidence: z
+    .number()
+    .min(0)
+    .max(100)
+    .describe("工单要素抽取综合置信度得分（0-100整数，评估主体、微观地点、诉求事件的清晰度与完整性）"),
 });
 
 export type ExtractedTicketItem = z.infer<typeof ExtractedTicketItemSchema>;
@@ -67,8 +73,18 @@ export function buildBatchExtractionPrompt(tickets: RawTicket[]): string {
 4. summarizeTitle（一句话高清诉求标题）：
    - 12-25字标准公文诉求标题（如 "关于容桂街道扁滘富豪路三街2号粤ESD221违停挪车诉求"）。
 
-5. category：
-   - 严格限定分类："市容秩序" | "生态环保" | "住建管理" | "市场监管" | "公共安全" | "交通出行" | "综合民生"
+5. category（严格限定 7 大业务分类之一）：
+   - 城市管理：小区物业管理与维保、住宅电梯故障与停运、市政排污/供水管网破损、市容市貌、流动摊贩占道经营、违章搭建等；
+   - 市场监管：消费纠纷退款、虚假宣传欺诈、物价收费维权、企业/商户无照经营、食品安全等；
+   - 社会治理：社区基层纠纷调解、邻里矛盾协商、公共服务事务等；
+   - 交通出行：机动车/非机动车违停阻碍通行、路面交通拥堵、交通标线信号灯故障、营运车辆服务等；
+   - 生态环境：商业经营音响与夜间喧哗噪音扰民、餐饮油烟排放、工业废气粉尘、水体黑臭污染等；
+   - 劳动社保：企业拖欠工资欠薪、劳动合同纠纷、社会保险缴纳与待遇、医保报销核算等；
+   - 公共安全：违规售卖或燃放烟花爆竹、易燃易爆危险品隐患、自然灾害抢险、重大安全生产事故等。
+
+6. confidence（置信度得分 0-100）：
+   - 主体明确、地点具体微观、事件诉求清晰的优质工单给出 85-98 分；
+   - 涉事主体模糊、地点过于宽泛（仅镇街无门牌路段）或诉求表达歧义的工单给出 20-55 分。
 
 工单列表：
 ${tickets
@@ -95,6 +111,14 @@ export const ThemeEnrichmentSchema = z.object({
   recommendedAction: z
     .string()
     .describe("高度贴合具体诉求的针对性协同处置建议（必须明确指出牵头部门/科室、响应时限及具体办理路径）（50-80字）"),
+  patternType: z
+    .enum(["GROUP_GATHERING", "INDIVIDUAL_REPEAT"])
+    .optional()
+    .describe("多频形态（可选，旧模型可不返回）"),
+  negativeSentimentHit: z
+    .boolean()
+    .optional()
+    .describe("是否命中负面情绪/险情词（可选）"),
 });
 
 export type ThemeEnrichmentResult = z.infer<typeof ThemeEnrichmentSchema>;
@@ -131,6 +155,9 @@ ${sampleTickets
 - 💼 劳资纠纷/社保待遇：由人社局劳动保障监察大队/医保中心介入核实，核查合同台账或线上申报校验，依法保障权益；
 - 🎆 违规燃放/公共安全：由公安治安大队联动综合行政执法加强敏感时段路面巡查，制止违规行为并依法溯源；
 - 📚 校园教育/节假安排：由教育局基教科核实法定节假日安排合规性，协同校方做好政策解释与家长沟通。
+
+【负面险情词库（只用于写理由，最终红黄蓝由本地规则裁定）】：
+${formatNegativeTermsForPrompt()}。命中且为群体聚集型时按 HIGH 理解，但不要试图压低本地已定的 HIGH。
 
 【研判输出要求】：
 1. riskLevel: "HIGH"（紧急安全隐患/群体诉求/反复未决） | "MEDIUM"（重点关注/矛盾激化可能） | "LOW"（常规咨询与流转）
