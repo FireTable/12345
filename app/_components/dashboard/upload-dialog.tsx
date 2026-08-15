@@ -539,30 +539,35 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                         {[0, 1, 2].map((i) => (
                           <motion.div
                             key={i}
-                            className={`w-1 h-1 rounded-full ${
+                            className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${
                               step2Done
-                                ? "bg-emerald-500"
+                                ? "bg-emerald-500 shadow-[0_0_3px_rgba(16,185,129,0.3)]"
                                 : step2Active
                                 ? "bg-primary"
-                                : "bg-muted-foreground/25"
+                                : "bg-muted-foreground/30"
                             }`}
                             animate={
                               step2Active
                                 ? {
-                                    scale: [0.7, 1.4, 0.7],
-                                    opacity: [0.25, 1, 0.25],
+                                    scale: [0.8, 1.35, 0.8],
+                                    opacity: [0.35, 1, 0.35],
                                   }
-                                : {}
+                                : {
+                                    scale: 1,
+                                    opacity: step2Done ? 1 : 0.35,
+                                  }
                             }
                             transition={
                               step2Active
                                 ? {
                                     repeat: Infinity,
                                     duration: 1.1,
-                                    delay: i * 0.25,
+                                    delay: i * 0.22,
                                     ease: "easeInOut",
                                   }
-                                : {}
+                                : {
+                                    duration: 0.2,
+                                  }
                             }
                           />
                         ))}
@@ -614,30 +619,35 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                         {[0, 1, 2].map((i) => (
                           <motion.div
                             key={i}
-                            className={`w-1 h-1 rounded-full ${
+                            className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${
                               step3Done
-                                ? "bg-emerald-500"
+                                ? "bg-emerald-500 shadow-[0_0_3px_rgba(16,185,129,0.3)]"
                                 : step3Active
                                 ? "bg-amber-500"
-                                : "bg-muted-foreground/25"
+                                : "bg-muted-foreground/30"
                             }`}
                             animate={
                               step3Active
                                 ? {
-                                    scale: [0.7, 1.4, 0.7],
-                                    opacity: [0.25, 1, 0.25],
+                                    scale: [0.8, 1.35, 0.8],
+                                    opacity: [0.35, 1, 0.35],
                                   }
-                                : {}
+                                : {
+                                    scale: 1,
+                                    opacity: step3Done ? 1 : 0.35,
+                                  }
                             }
                             transition={
                               step3Active
                                 ? {
                                     repeat: Infinity,
                                     duration: 1.1,
-                                    delay: i * 0.25,
+                                    delay: i * 0.22,
                                     ease: "easeInOut",
                                   }
-                                : {}
+                                : {
+                                    duration: 0.2,
+                                  }
                             }
                           />
                         ))}
@@ -689,30 +699,35 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                         {[0, 1, 2].map((i) => (
                           <motion.div
                             key={i}
-                            className={`w-1 h-1 rounded-full ${
+                            className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${
                               step4Done
-                                ? "bg-emerald-500"
+                                ? "bg-emerald-500 shadow-[0_0_3px_rgba(16,185,129,0.3)]"
                                 : step4Active
                                 ? "bg-primary"
-                                : "bg-muted-foreground/25"
+                                : "bg-muted-foreground/30"
                             }`}
                             animate={
                               step4Active
                                 ? {
-                                    scale: [0.7, 1.4, 0.7],
-                                    opacity: [0.25, 1, 0.25],
+                                    scale: [0.8, 1.35, 0.8],
+                                    opacity: [0.35, 1, 0.35],
                                   }
-                                : {}
+                                : {
+                                    scale: 1,
+                                    opacity: step4Done ? 1 : 0.35,
+                                  }
                             }
                             transition={
                               step4Active
                                 ? {
                                     repeat: Infinity,
                                     duration: 1.1,
-                                    delay: i * 0.25,
+                                    delay: i * 0.22,
                                     ease: "easeInOut",
                                   }
-                                : {}
+                                : {
+                                    duration: 0.2,
+                                  }
                             }
                           />
                         ))}
