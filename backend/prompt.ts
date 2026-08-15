@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { RawTicket, MultiFrequencyTheme, EnrichedTicket } from "./state";
+import { desensitizeContent } from "./anonymizer";
 
 /**
  * 1. 结构化抽取 Zod Schema (Structured Extraction Schemas)
@@ -73,7 +74,7 @@ export function buildBatchExtractionPrompt(tickets: RawTicket[]): string {
 ${tickets
   .map(
     (t, idx) =>
-      `[${idx + 1}] 工单号: ${t.ticketNo} | 原始标题: ${t.title || "无"} | 所属辖区: ${t.subdistrict || "未指定"}\n诉求正文: ${t.content || ""}`
+      `[${idx + 1}] 工单号: ${t.ticketNo} | 原始标题: ${t.title || "无"} | 所属辖区: ${t.subdistrict || "未指定"}\n诉求正文（已脱敏）: ${desensitizeContent(t.maskedContent || t.content || "")}`
   )
   .join("\n\n")}`;
 }
@@ -115,7 +116,7 @@ export function buildThemeEnrichmentPrompt(
 ${sampleTickets
   .map(
     (t, i) =>
-      `[${i + 1}] 区域: ${t.subdistrict || "本区"} | 登记时间: ${t.createTime}\n诉求正文: ${t.content}`
+      `[${i + 1}] 区域: ${t.subdistrict || "本区"} | 登记时间: ${t.createTime}\n诉求正文（已脱敏）: ${desensitizeContent(t.maskedContent || t.content)}`
   )
   .join("\n\n")}
 

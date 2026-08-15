@@ -28,6 +28,7 @@ export interface RawTicket {
   district: string;
   subdistrict: string;
   content: string;
+  maskedContent?: string;
   channel: string;
   status: "PENDING" | "VERIFIED" | "DISPATCHED" | "RESOLVED";
 }
