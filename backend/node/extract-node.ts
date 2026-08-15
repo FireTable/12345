@@ -1,17 +1,13 @@
 import type { TicketRadarState, EnrichedTicket, RawTicket } from "../state";
 import { getChatModel } from "../model";
-
-interface ExtractedTicketItem {
-  index: number;
-  summarizeTitle: string;
-  subject: string;
-  location: string;
-  eventType: string;
-  category: string;
-}
+import {
+  BatchExtractionSchema,
+  buildBatchExtractionPrompt,
+  type ExtractedTicketItem,
+} from "../prompt";
 
 /**
- * 批次调用大模型进行严格、精准的 AI 语义实体抽取与核心诉求标题提炼
+ * 批次调用大模型进行严格、精准的结构化 Zod 要素抽取
  */
 async function extractBatchWithLLM(
   tickets: RawTicket[],
@@ -20,50 +16,34 @@ async function extractBatchWithLLM(
   const result = new Map<number, ExtractedTicketItem>();
   if (tickets.length === 0) return result;
 
+  const prompt = buildBatchExtractionPrompt(tickets);
+
   try {
     const chat = getChatModel(0);
-    const prompt = `你是一位政务热线顶级智能工单研判专家。请对以下 ${tickets.length} 条市民热线工单进行精准的实体识别、微观地点抽取、事件分类与摘要标题提炼。
 
-【核心抽取规则 - 严谨区分物理实体，严禁混淆】：
-1. subject（被诉具体对象/责任主体）：
-   - 若涉及机动车违停/违章，必须提取精确车牌号作为主体（如 "粤E SD221车辆"、"粤EY6501车辆"），绝不可泛化为模糊的"车主"或"小车"！
-   - 若涉及商家/企业/民宿/物业，必须提取具体字号全称（如 "招财宝民宿"、"林榢主题公寓"、"万象美食城"、"某某物业管理处"）。
-   - 若涉及市政公共设施（无特定企业），提取具体设施对象（如 "市政排污管网"、"市政供水管网"、"路面交通信号设施"）。
-   - 严禁提取空泛无意义词汇（如"车主"、"商家"、"市民"、"某单位"、"责任主体"、"当事人"）！
+    // 1. 优先采用 LangChain 原生 withStructuredOutput 结构化输出
+    try {
+      const structuredChat = chat.withStructuredOutput(BatchExtractionSchema);
+      const structuredRes = await structuredChat.invoke(prompt);
+      if (structuredRes && Array.isArray(structuredRes.items)) {
+        for (const item of structuredRes.items) {
+          if (item && typeof item.index === "number") {
+            result.set(startIndex + item.index - 1, item);
+          }
+        }
+        if (result.size > 0) return result;
+      }
+    } catch (structErr) {
+      // 兼容非原生 function calling 的大模型端点
+    }
 
-2. location（精准事发微观地点）：
-   - 必须提取到最精确的物理空间（包含：镇街 + 路段/巷号 + 具体门牌号/小区/地标），例如："顺德区容桂街道扁滘富豪路三街2号门口"、"顺德区北滘镇碧桂园西苑翠堤岸10号"。
-   - 严禁只填宽泛的"顺德区"或"容桂街道"！
-
-3. eventType（核心事件类型）：
-   - 8-15字政务标准问题定性（如 "机动车违规停放阻碍商铺经营"、"夜间营业音响喧哗与商业噪音扰民"、"市政排污管道水位过高导致污水反涌"）。
-
-4. summarizeTitle（一句话高清诉求标题）：
-   - 12-25字标准公文诉求标题（如 "关于容桂街道扁滘富豪路三街2号粤ESD221违停挪车诉求"）。
-
-5. category：
-   - 严格限定以下分类之一："市容秩序" | "生态环保" | "住建管理" | "市场监管" | "公共安全" | "交通出行" | "综合民生"
-
-工单列表：
-${tickets.map((t, idx) => `[${idx + 1}] 工单号: ${t.ticketNo} | 原始标题: ${t.title || "无"} | 所属辖区: ${t.subdistrict || "未指定"}\n诉求正文: ${t.content || ""}`).join("\n\n")}
-
-请严格输出纯 JSON 数组（不要输出任何额外文字或解释）：
-[
-  {
-    "index": 1,
-    "summarizeTitle": "...",
-    "subject": "...",
-    "location": "...",
-    "eventType": "...",
-    "category": "..."
-  }
-]`;
-
+    // 2. 备用直接 JSON 解析
     const res = await chat.invoke(prompt);
     const text = typeof res.content === "string" ? res.content : JSON.stringify(res.content);
-    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    const jsonMatch = text.match(/\[[\s\S]*\]/) || text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
-      const items: ExtractedTicketItem[] = JSON.parse(jsonMatch[0]);
+      const parsed = JSON.parse(jsonMatch[0]);
+      const items: ExtractedTicketItem[] = Array.isArray(parsed) ? parsed : (parsed.items || []);
       for (const item of items) {
         if (item && typeof item.index === "number") {
           result.set(startIndex + item.index - 1, {
@@ -72,7 +52,7 @@ ${tickets.map((t, idx) => `[${idx + 1}] 工单号: ${t.ticketNo} | 原始标题:
             subject: String(item.subject || "").trim(),
             location: String(item.location || "").trim(),
             eventType: String(item.eventType || "").trim(),
-            category: String(item.category || "综合民生").trim(),
+            category: item.category || "综合民生",
           });
         }
       }
@@ -153,7 +133,7 @@ function fallbackDynamicExtraction(ticket: RawTicket): ExtractedTicketItem {
     subject,
     location,
     eventType,
-    category,
+    category: (category as any) || "综合民生",
   };
 }
 

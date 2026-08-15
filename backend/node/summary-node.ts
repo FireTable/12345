@@ -34,8 +34,13 @@ function getSpecificFallbackAction(eventType: string, subject: string, location:
   return `建议转派所属辖区行业主管部门牵头，2个工作日内核实具体诉求并向市民书面反馈办理进展。`;
 }
 
+import {
+  ThemeEnrichmentSchema,
+  buildThemeEnrichmentPrompt,
+} from "../prompt";
+
 /**
- * 调用大模型对多频主题进行深度公文研判
+ * 调用大模型对多频主题进行深度公文研判（支持 Zod StructuredOutput）
  */
 async function enrichThemeWithLLM(theme: MultiFrequencyTheme): Promise<Partial<MultiFrequencyTheme>> {
   const fallback = {
@@ -46,29 +51,25 @@ async function enrichThemeWithLLM(theme: MultiFrequencyTheme): Promise<Partial<M
     try {
       const chat = getChatModel(0.1);
       const sampleTickets = theme.tickets.slice(0, 5);
-      const prompt = `你是一位政务热线智能研判与督办专家。请根据以下多频诉求数据（共 ${theme.ticketCount} 件工单，跨时 ${theme.timeSpanHours} 小时），深入分析并输出高度契合具体情境的专业政务研判结论。
+      const prompt = buildThemeEnrichmentPrompt(theme, sampleTickets);
 
-【诉求基本信息】
-- 被诉/涉及主体：${theme.canonicalSubject}
-- 发生区域/地点：${theme.canonicalLocation}
-- 核心问题类型：${theme.eventType}
-- 涉及工单列表：
-${sampleTickets.map((t, i) => `[${i + 1}] 区域: ${t.subdistrict || "本区"} | 登记时间: ${t.createTime}\n诉求正文: ${t.content}`).join("\n\n")}
+      // 1. 优先采用 Zod 结构化输出
+      try {
+        const structuredChat = chat.withStructuredOutput(ThemeEnrichmentSchema);
+        const structuredRes = await structuredChat.invoke(prompt);
+        if (structuredRes && structuredRes.riskLevel) {
+          return {
+            riskLevel: structuredRes.riskLevel as RiskLevel,
+            riskReason: structuredRes.riskReason,
+            aiSummary: structuredRes.aiSummary,
+            recommendedAction: structuredRes.recommendedAction,
+          };
+        }
+      } catch (structErr) {
+        // Fallback to text invoke
+      }
 
-【研判输出要求】
-1. riskLevel: "HIGH"（紧急/安全/群体/反复未解决） | "MEDIUM"（多频关注/存在激化可能） | "LOW"（常规咨询/办事流转）
-2. riskReason: 简明扼要的风险诱因与态势研判（25-45字）
-3. aiSummary: 深度公文级全貌研判，清晰指出市民核心痛点与诉求（60-100字）
-4. recommendedAction: 高度贴合具体诉求的针对性处置建议（明确牵头部门与办理路径）（50-80字）
-
-请严格输出纯 JSON 格式：
-{
-  "riskLevel": "HIGH" | "MEDIUM" | "LOW",
-  "riskReason": "...",
-  "aiSummary": "...",
-  "recommendedAction": "..."
-}`;
-
+      // 2. 备用直接 JSON 解析
       const res = await chat.invoke(prompt);
       const rawText = typeof res.content === "string" ? res.content : JSON.stringify(res.content);
       const jsonMatch = rawText.match(/\{[\s\S]*\}/);
