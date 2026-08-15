@@ -9,8 +9,8 @@ import { CivicWorkflowProvider } from "@/app/_components/civic/civic-workflow";
 import { Toaster } from "@/app/_components/ui/sonner";
 
 export const metadata: Metadata = {
-  title: "顺德区12345热线智能工单管理平台",
-  description: "12345 热线多频工单识别与核查",
+  title: "顺德 12345 AI 智能研判系统",
+  description: "顺德 12345 热线多频诉求 AI 智能研判与治理平台",
 };
 
 export default function RootLayout({

@@ -19,7 +19,7 @@ export function CivicNav() {
     <nav className="navbar">
       <div className="navbar__brand">
         <div className="brand-logo">民声智理</div>
-        <span className="brand-text-full">顺德区 12345 热线智能工单管理平台</span>
+        <span className="brand-text-full">顺德 12345 AI 智能研判系统</span>
       </div>
       <div className="navbar__menu">
         {ITEMS.map((it) => {
