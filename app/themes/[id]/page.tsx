@@ -343,13 +343,17 @@ function ThemeDetailInner() {
                     {m.title}
                   </div>
 
-                  {/* 工单正文（展开/折叠） */}
-                  <div
-                    className={`member-item__content text-xs text-slate-700 leading-relaxed bg-slate-50/80 p-3 rounded-lg border border-slate-200/70 mb-2 ${
-                      isExpanded ? "is-expanded" : "is-clamped"
-                    }`}
-                  >
-                    {m.content || "暂无详细正文"}
+                  {/* 工单正文容器 */}
+                  <div className="bg-slate-50/90 p-3 rounded-lg border border-slate-200/70 mb-2">
+                    <div
+                      className={`text-xs text-slate-700 leading-relaxed ${
+                        isExpanded
+                          ? "block whitespace-pre-wrap break-words"
+                          : "line-clamp-2 overflow-hidden"
+                      }`}
+                    >
+                      {m.content || "暂无详细正文"}
+                    </div>
                   </div>
 
                   {/* 展开展示诉求人与具体门牌 */}
