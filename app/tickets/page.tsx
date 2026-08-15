@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useCivicWorkflow } from "@/app/_components/civic/civic-workflow";
-import { FileText, Clock, CheckCircle2, Flame } from "lucide-react";
+import { FileText, Clock, CheckCircle2, Flame, ExternalLink, Layers } from "lucide-react";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
+import { isTownLabel } from "@/lib/admin-area";
 import {
   Select,
   SelectContent,
@@ -25,6 +26,7 @@ type Row = {
   createdAt: string;
   content?: string;
   cluster_id?: string;
+  cluster_name?: string;
   multifreq?: boolean;
 };
 
@@ -51,14 +53,6 @@ export default function TicketsPage() {
   const [time, setTime] = useState("");
   const [jump, setJump] = useState("1");
   const [drawer, setDrawer] = useState<Row | null>(null);
-
-  const handleViewInGroup = (r: Row) => {
-    const targetId = r.ticketId || r.id;
-    const groupId = r.cluster_id || "unknown";
-    router.push(
-      `/themes/${groupId}?ticketId=${encodeURIComponent(targetId)}&highlight=${encodeURIComponent(targetId)}#ticket-${encodeURIComponent(targetId)}`
-    );
-  };
   const [data, setData] = useState<{
     total: number;
     data: Row[];
@@ -85,7 +79,10 @@ export default function TicketsPage() {
           total: j.total || 0,
           data: j.data || [],
           stats: j.stats || data.stats,
-          facets: j.facets || { regions: [], categories: [] },
+          facets: {
+            regions: (j.facets?.regions || []).filter((r: string) => isTownLabel(r)),
+            categories: j.facets?.categories || [],
+          },
         })
       )
       .catch(() => setData((prev) => ({ ...prev, total: 0, data: [] })));
@@ -107,7 +104,15 @@ export default function TicketsPage() {
   function exportCsv() {
     const header = ["单号", "标题", "类型", "镇街", "紧急", "状态", "日期"];
     const lines = [header.join(",")].concat(
-      data.data.map((r) => [r.id, `"${(r.title || "").replace(/"/g, '""')}"`, r.category, r.region, urgencyLabel(r.urgency), statusLabel(r.status), r.createdAt].join(","))
+      data.data.map((r) => [
+        r.id,
+        `"${(r.title || "").replace(/"/g, '""')}"`,
+        r.category,
+        r.region,
+        urgencyLabel(r.urgency),
+        statusLabel(r.status),
+        r.createdAt,
+      ].join(","))
     );
     const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -167,7 +172,7 @@ export default function TicketsPage() {
             setTab("pending");
             setPage(1);
           }}
-          className={tab === "pending" || tab === "progress" ? "ring-2 ring-amber-500/30" : ""}
+          className={tab === "pending" ? "ring-2 ring-orange-500/30" : ""}
         />
         <StatCard
           icon={CheckCircle2}
@@ -186,7 +191,7 @@ export default function TicketsPage() {
           tone="red"
           label="紧急工单"
           value={s.urgent}
-          sub="需优先关注处置"
+          sub="需优先处置"
           onClick={() => {
             setTab("urgent");
             setPage(1);
@@ -195,42 +200,35 @@ export default function TicketsPage() {
         />
       </StatCardGrid>
 
-      <div className="card list-card">
-        <div className="list-card__head">
-          <div>
-            <div className="list-card__title">工单列表</div>
-            <div className="list-card__sub">点击行查看详情</div>
-          </div>
-        </div>
-        <div className="filter-tabs">
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              className={`filter-tab${tab === t.key ? " is-active" : ""}`}
-              onClick={() => {
-                setTab(t.key);
-                setPage(1);
-              }}
-            >
-              {t.label}
-              <span className="filter-tab__count">{tabCount(t.key, s)}</span>
-            </button>
-          ))}
-        </div>
-        <div className="filter-bar">
-          <div className="search-input">
-            <span>⌕</span>
-            <input
-              placeholder="搜索工单标题 / 工单号 / 内容"
-              value={keyword}
-              onChange={(e) => {
-                setKeyword(e.target.value);
-                setPage(1);
-              }}
-            />
-          </div>
-          <div className="filter-bar__divider" />
+      <div className="filter-tabs">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            className={`filter-tab${tab === t.key ? " is-active" : ""}`}
+            onClick={() => {
+              setTab(t.key);
+              setPage(1);
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="filter-bar">
+        <input
+          type="text"
+          placeholder="搜索工单标题、内容或单号…"
+          value={keyword}
+          onChange={(e) => {
+            setKeyword(e.target.value);
+            setPage(1);
+          }}
+          style={{ width: 280 }}
+        />
+
+        <div className="w-[140px]">
           <Select
             value={region || "all"}
             onValueChange={(val) => {
@@ -238,11 +236,11 @@ export default function TicketsPage() {
               setPage(1);
             }}
           >
-            <SelectTrigger className="w-[130px] h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
-              <SelectValue placeholder="镇街：全部" />
+            <SelectTrigger className="h-[34px] bg-white border-slate-200 text-xs">
+              <SelectValue placeholder="全部镇街" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">镇街：全部</SelectItem>
+              <SelectItem value="all">全部镇街</SelectItem>
               {data.facets.regions.map((r) => (
                 <SelectItem key={r} value={r}>
                   {r}
@@ -250,7 +248,9 @@ export default function TicketsPage() {
               ))}
             </SelectContent>
           </Select>
+        </div>
 
+        <div className="w-[140px]">
           <Select
             value={category || "all"}
             onValueChange={(val) => {
@@ -258,11 +258,11 @@ export default function TicketsPage() {
               setPage(1);
             }}
           >
-            <SelectTrigger className="w-[140px] h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
-              <SelectValue placeholder="类型：全部" />
+            <SelectTrigger className="h-[34px] bg-white border-slate-200 text-xs">
+              <SelectValue placeholder="全部分类" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">类型：全部</SelectItem>
+              <SelectItem value="all">全部分类</SelectItem>
               {data.facets.categories.map((c) => (
                 <SelectItem key={c} value={c}>
                   {c}
@@ -270,7 +270,9 @@ export default function TicketsPage() {
               ))}
             </SelectContent>
           </Select>
+        </div>
 
+        <div className="w-[130px]">
           <Select
             value={time || "all"}
             onValueChange={(val) => {
@@ -278,54 +280,70 @@ export default function TicketsPage() {
               setPage(1);
             }}
           >
-            <SelectTrigger className="w-[130px] h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
-              <SelectValue placeholder="时间：全部" />
+            <SelectTrigger className="h-[34px] bg-white border-slate-200 text-xs">
+              <SelectValue placeholder="全部时间" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">时间：全部</SelectItem>
-              <SelectItem value="近90天">时间：近90天</SelectItem>
-              <SelectItem value="近30天">时间：近30天</SelectItem>
-              <SelectItem value="近7天">时间：近7天</SelectItem>
-              <SelectItem value="今天">时间：今天</SelectItem>
-              <SelectItem value="昨天">时间：昨天</SelectItem>
-              <SelectItem value="本月">时间：本月</SelectItem>
-              <SelectItem value="上月">时间：上月</SelectItem>
+              <SelectItem value="all">全部时间</SelectItem>
+              <SelectItem value="24h">近 24 小时</SelectItem>
+              <SelectItem value="3d">近 3 天</SelectItem>
+              <SelectItem value="7d">近 7 天</SelectItem>
+              <SelectItem value="30d">近 30 天</SelectItem>
             </SelectContent>
           </Select>
-          <span className="filter-bar__summary">共 {data.total} 条结果</span>
         </div>
-        <table className="workorder-table">
+
+        {(keyword || region || category || time || tab !== "all") && (
+          <button
+            type="button"
+            className="btn btn--default"
+            onClick={() => {
+              setKeyword("");
+              setRegion("");
+              setCategory("");
+              setTime("");
+              setTab("all");
+              setPage(1);
+            }}
+          >
+            重置
+          </button>
+        )}
+      </div>
+
+      <div className="table-wrap">
+        <table className="table">
           <thead>
             <tr>
-              <th style={{ width: 90 }}>工单号</th>
-              <th>标题 / 内容</th>
-              <th style={{ width: 80 }}>镇街</th>
-              <th style={{ width: 90 }}>类型</th>
-              <th style={{ width: 80 }}>紧急度</th>
-              <th style={{ width: 120 }}>时间</th>
-              <th style={{ width: 90 }}>状态</th>
-              <th style={{ width: 80, textAlign: "right" }}>操作</th>
+              <th style={{ width: 140 }}>工单号</th>
+              <th>诉求标题</th>
+              <th style={{ width: 100 }}>所属镇街</th>
+              <th style={{ width: 100 }}>业务类型</th>
+              <th style={{ width: 90 }}>紧急度</th>
+              <th style={{ width: 150 }}>诉求时间</th>
+              <th style={{ width: 100 }}>处置状态</th>
+              <th style={{ width: 90, textAlign: "right" }}>操作</th>
             </tr>
           </thead>
           <tbody>
             {data.data.map((r) => (
               <tr
                 key={r.ticketId}
-                onClick={() => handleViewInGroup(r)}
-                className="cursor-pointer hover:bg-blue-50/50 transition-colors"
-                title="点击跳转到所属多频群组视图并高亮定位"
+                onClick={() => setDrawer(r)}
+                className="cursor-pointer hover:bg-blue-50/40 transition-colors"
+                title="点击展开工单详细抽屉"
               >
                 <td className="col-id font-mono text-xs">{r.id}</td>
                 <td>
-                  <div className="col-title__text font-medium text-slate-900">{r.title}</div>
-                  <div className="col-title__id text-slate-400">{r.ticketId}</div>
+                  <div className="col-title__text">{r.title}</div>
+                  <div className="col-title__id">{r.ticketId}</div>
                 </td>
                 <td>{r.region || "—"}</td>
                 <td>
-                  {r.category ? <span className={`badge-pill ${catPill(r.category)}`}>{r.category}</span> : "—"}
+                  <span className="badge badge--default">{r.category || "—"}</span>
                 </td>
                 <td>
-                  <span className={`badge-pill ${r.urgency === "URGENT" ? "badge-pill--danger" : r.urgency === "MEDIUM" ? "badge-pill--warning" : "badge-pill--default"}`}>
+                  <span className={`urgency-tag urgency-tag--${urgencyTag(r.urgency)}`}>
                     {urgencyLabel(r.urgency)}
                   </span>
                 </td>
@@ -334,67 +352,96 @@ export default function TicketsPage() {
                   <span className={`status-dot status-dot--${statusDot(r.status)}`} />
                   {statusLabel(r.status)}
                 </td>
-                <td style={{ textAlign: "right", color: "var(--c-brand)", fontWeight: 600 }}>
-                  群组定位 →
+                <td style={{ textAlign: "right", color: "var(--c-brand)", fontWeight: 500 }}>
+                  查看 →
                 </td>
               </tr>
             ))}
+            {data.data.length === 0 && (
+              <tr>
+                <td colSpan={8} className="empty-hint">
+                  暂无匹配工单
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
-        {data.data.length === 0 && <div className="empty-hint">暂无工单</div>}
+
         <div className="pagination">
           <div className="pagination__info">
-            共 <b>{data.total}</b> 条 · 当前 <b>{start}</b>-<b>{end}</b>
+            显示第 <b>{start}</b> - <b>{end}</b> 条，共 <b>{data.total}</b> 条
           </div>
           <div className="pagination__controls">
-            <Select
-              value={String(size)}
-              onValueChange={(val) => {
-                setSize(Number(val));
+            <button
+              type="button"
+              className="page-btn"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              ‹
+            </button>
+            {pageNumbers(pages, page).map((p, i) =>
+              p === "..." ? (
+                <span key={`e-${i}`} style={{ padding: "0 4px", color: "var(--c-ink-3)" }}>
+                  …
+                </span>
+              ) : (
+                <button
+                  key={p}
+                  type="button"
+                  className={`page-btn${page === p ? " is-active" : ""}`}
+                  onClick={() => setPage(Number(p))}
+                >
+                  {p}
+                </button>
+              )
+            )}
+            <button
+              type="button"
+              className="page-btn"
+              disabled={page >= pages}
+              onClick={() => setPage((p) => Math.min(pages, p + 1))}
+            >
+              ›
+            </button>
+            <select
+              className="page-size-select"
+              value={size}
+              onChange={(e) => {
+                setSize(Number(e.target.value));
                 setPage(1);
               }}
             >
-              <SelectTrigger className="w-[88px] h-[30px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] rounded-md font-medium">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="10">10/页</SelectItem>
-                <SelectItem value="20">20/页</SelectItem>
-                <SelectItem value="50">50/页</SelectItem>
-              </SelectContent>
-            </Select>
-            <button type="button" className="page-btn" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-              ‹
-            </button>
-            <button type="button" className="page-btn is-active">
-              {page}
-            </button>
-            <button type="button" className="page-btn" disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>
-              ›
-            </button>
-            <span className="page-jump">
+              <option value="10">10 条/页</option>
+              <option value="20">20 条/页</option>
+              <option value="50">50 条/页</option>
+            </select>
+            <div className="page-jump">
               跳至
               <input
-                type="number"
-                min={1}
+                type="text"
                 value={jump}
                 onChange={(e) => setJump(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") setPage(Math.min(pages, Math.max(1, Number(jump) || 1)));
+                  if (e.key === "Enter") {
+                    const n = parseInt(jump, 10);
+                    if (n >= 1 && n <= pages) setPage(n);
+                  }
                 }}
               />
               页
-            </span>
+            </div>
           </div>
         </div>
       </div>
 
+      {/* 原生 Civic 抽屉（Drawer） */}
       <div className={`drawer-mask${drawer ? " is-open" : ""}`} onClick={() => setDrawer(null)} />
       <div className={`drawer${drawer ? " is-open" : ""}`}>
         <div className="drawer__head">
           <div>
-            <div className="drawer__title">{drawer?.title || "请选择工单"}</div>
-            <div className="list-card__sub">{drawer?.id}</div>
+            <div className="drawer__title">{drawer?.title || "工单详情"}</div>
+            <div className="text-xs text-slate-400 font-mono mt-0.5">{drawer?.id}</div>
           </div>
           <button type="button" className="drawer__close" onClick={() => setDrawer(null)}>
             ×
@@ -405,44 +452,65 @@ export default function TicketsPage() {
             <div className="drawer__section">
               <div className="drawer__section-title">基础信息</div>
               <div className="info-row">
-                <span className="info-row__label">工单号</span>
-                <span className="info-row__value">{drawer.id}</span>
+                <span className="info-row__label">工单编号</span>
+                <span className="info-row__value font-mono">{drawer.id}</span>
               </div>
               <div className="info-row">
-                <span className="info-row__label">紧急度</span>
+                <span className="info-row__label">紧急程度</span>
                 <span className="info-row__value">{urgencyLabel(drawer.urgency)}</span>
               </div>
               <div className="info-row">
-                <span className="info-row__label">类型</span>
+                <span className="info-row__label">业务类别</span>
                 <span className="info-row__value">{drawer.category || "—"}</span>
               </div>
               <div className="info-row">
-                <span className="info-row__label">镇街</span>
+                <span className="info-row__label">所属镇街</span>
                 <span className="info-row__value">{drawer.region || "—"}</span>
               </div>
               <div className="info-row">
-                <span className="info-row__label">创建时间</span>
+                <span className="info-row__label">诉求时间</span>
                 <span className="info-row__value">{drawer.createdAt}</span>
               </div>
               <div className="info-row">
-                <span className="info-row__label">当前状态</span>
+                <span className="info-row__label">处置状态</span>
                 <span className="info-row__value">{statusLabel(drawer.status)}</span>
               </div>
             </div>
+
             <div className="drawer__section">
-              <div className="drawer__section-title">工单内容</div>
-              <div className="content-box">{drawer.content || "—"}</div>
+              <div className="drawer__section-title">诉求正文</div>
+              <div className="content-box">{drawer.content || "暂无详细正文"}</div>
             </div>
+
             <div className="drawer__section">
               <div className="drawer__section-title">快捷操作</div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {drawer.cluster_id ? (
-                  <button type="button" className="btn btn--default" onClick={() => router.push(`/themes/${drawer.cluster_id}`)}>
-                    查看聚类
+                  <button
+                    type="button"
+                    className="btn btn--default flex items-center gap-1.5"
+                    onClick={() => {
+                      setDrawer(null);
+                      router.push(
+                        `/themes/${drawer.cluster_id}?ticketId=${encodeURIComponent(drawer.id)}&highlight=${encodeURIComponent(drawer.id)}#ticket-${encodeURIComponent(drawer.id)}`
+                      );
+                    }}
+                  >
+                    <Layers className="h-3.5 w-3.5 text-blue-600" />
+                    <span>在多频群组中定位</span>
                   </button>
                 ) : null}
-                <button type="button" className="btn btn--primary" style={{ marginLeft: "auto" }} onClick={() => router.push(`/tickets/${drawer.ticketId}`)}>
-                  打开完整详情
+                <button
+                  type="button"
+                  className="btn btn--primary flex items-center gap-1.5"
+                  style={{ marginLeft: "auto" }}
+                  onClick={() => {
+                    setDrawer(null);
+                    router.push(`/tickets/${drawer.ticketId || drawer.id}`);
+                  }}
+                >
+                  <span>打开完整页面</span>
+                  <ExternalLink className="h-3.5 w-3.5" />
                 </button>
               </div>
             </div>
@@ -453,37 +521,37 @@ export default function TicketsPage() {
   );
 }
 
-function tabCount(key: string, s: Stats) {
-  if (key === "all") return s.total;
-  if (key === "pending") return s.pending;
-  if (key === "progress") return s.progress;
-  if (key === "finished") return s.finished;
-  if (key === "urgent") return s.urgent;
-  return s.multifreq;
+function urgencyTag(u?: string) {
+  if (u === "urgent" || u === "URGENT") return "urgent";
+  if (u === "high" || u === "HIGH") return "high";
+  if (u === "medium" || u === "NORMAL") return "medium";
+  return "low";
 }
 
-function urgencyLabel(u: string) {
-  if (u === "URGENT") return "紧急";
-  if (u === "MEDIUM") return "较急";
-  return "普通";
+function urgencyLabel(u?: string) {
+  if (u === "urgent" || u === "URGENT") return "紧急";
+  if (u === "high" || u === "HIGH") return "高";
+  if (u === "medium" || u === "NORMAL") return "中";
+  return "低";
 }
 
-function statusLabel(s: string) {
-  if (s === "RESOLVED") return "已办结";
-  if (s === "IN_PROGRESS") return "处理中";
-  return "待处理";
-}
-
-function statusDot(s: string) {
-  if (s === "RESOLVED") return "finished";
-  if (s === "IN_PROGRESS") return "progress";
+function statusDot(s?: string) {
+  if (s === "PENDING" || s === "未处理") return "pending";
+  if (s === "PROGRESS" || s === "处置中" || s === "处理中") return "progress";
+  if (s === "DONE" || s === "FINISHED" || s === "已办结") return "finished";
   return "pending";
 }
 
-function catPill(cat: string) {
-  if (cat.includes("生态") || cat.includes("环保")) return "badge-pill--success";
-  if (cat.includes("劳动") || cat.includes("劳资")) return "badge-pill--warning";
-  if (cat.includes("市场") || cat.includes("消费")) return "badge-pill--danger";
-  if (cat.includes("城市") || cat.includes("城管")) return "badge-pill--info";
-  return "badge-pill--default";
+function statusLabel(s?: string) {
+  if (s === "PENDING" || s === "未处理") return "待处理";
+  if (s === "PROGRESS" || s === "处置中" || s === "处理中") return "处理中";
+  if (s === "DONE" || s === "FINISHED" || s === "已办结") return "已办结";
+  return "待处理";
+}
+
+function pageNumbers(total: number, cur: number) {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  if (cur <= 4) return [1, 2, 3, 4, 5, "...", total];
+  if (cur >= total - 3) return [1, "...", total - 4, total - 3, total - 2, total - 1, total];
+  return [1, "...", cur - 1, cur, cur + 1, "...", total];
 }
