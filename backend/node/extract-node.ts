@@ -293,6 +293,7 @@ export async function extractNode(
   // 2. 二级 AI 仲裁介入：对低置信度 (< 60) 或存在歧义的工单进行二次消歧与事实纠偏
   const arbitrationTasks: Array<() => Promise<void>> = [];
   const lowConfidenceIndices: number[] = [];
+  let completedArbitrations = 0;
 
   normalizedRawTickets.forEach((ticket, idx) => {
     const item = extractionMap.get(idx) || fallbackDynamicExtraction(ticket);
@@ -301,6 +302,15 @@ export async function extractNode(
       arbitrationTasks.push(async () => {
         const corrected = await arbitrateSingleTicket(ticket, item);
         extractionMap.set(idx, corrected);
+        completedArbitrations++;
+        if (taskId) {
+          const currentPercent = Math.min(68, 58 + Math.round((completedArbitrations / Math.max(1, arbitrationTasks.length)) * 10));
+          updateTaskProgress(taskId, {
+            percent: currentPercent,
+            reviewCount: arbitrationTasks.length,
+            stageText: `二级 AI 仲裁复核中 (${completedArbitrations} / ${arbitrationTasks.length})...`,
+          });
+        }
       });
     }
   });

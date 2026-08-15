@@ -57,53 +57,58 @@ export async function arbitrateSingleTicket(
 ): Promise<ExtractedTicketItem> {
   const prompt = buildArbitrationPrompt(ticket, firstPass);
 
-  try {
-    // 采用更低 temperature (0.0) 和严谨模式的二级模型实例进行仲裁
-    const arbitratorChat = getChatModel(0);
-
-    let arbitrated: ArbitrationResult | null = null;
-
-    try {
-      const structured = arbitratorChat.withStructuredOutput(ArbitrationSchema);
-      arbitrated = (await structured.invoke(prompt)) as ArbitrationResult;
-    } catch (e) {
-      // 备用纯 JSON 解析
-      const res = await arbitratorChat.invoke(prompt);
-      const text = typeof res.content === "string" ? res.content : JSON.stringify(res.content);
-      const match = text.match(/\{[\s\S]*\}/);
-      if (match) {
-        arbitrated = JSON.parse(match[0]);
-      }
-    }
-
-    if (arbitrated && arbitrated.correctedSubject) {
-      const validTownship =
-        canonicalizeTownship(arbitrated.correctedTownship) ||
-        canonicalizeTownship(arbitrated.correctedLocation) ||
-        firstPass.location;
-
-      const normalizedSubject = resolveEntityAlias(arbitrated.correctedSubject);
-      const normalizedLocation = resolveEntityAlias(arbitrated.correctedLocation);
-
-      return {
-        index: firstPass.index,
-        summarizeTitle: `关于${validTownship}${normalizedSubject}${arbitrated.correctedEventType}诉求`,
-        subject: normalizedSubject,
-        location: normalizedLocation,
-        eventType: arbitrated.correctedEventType || firstPass.eventType,
-        category: arbitrated.correctedCategory || firstPass.category,
-        confidence: Math.max(firstPass.confidence, Math.min(99, arbitrated.confidence || 85)),
-      };
-    }
-  } catch (err: any) {
-    console.warn(`[Arbitrator] Secondary model arbitration failed for ticket ${ticket.ticketNo}:`, err.message);
-  }
-
-  // 若二级模型调用超时或失败，采用别名归一化与词汇表强行保真
-  return {
+  const fallbackResult: ExtractedTicketItem = {
     ...firstPass,
     subject: resolveEntityAlias(firstPass.subject),
     location: resolveEntityAlias(firstPass.location),
     confidence: Math.max(firstPass.confidence, 55),
   };
+
+  const arbitrateTask = async (): Promise<ExtractedTicketItem> => {
+    try {
+      const arbitratorChat = getChatModel(0);
+      let arbitrated: ArbitrationResult | null = null;
+
+      try {
+        const structured = arbitratorChat.withStructuredOutput(ArbitrationSchema);
+        arbitrated = (await structured.invoke(prompt)) as ArbitrationResult;
+      } catch (e) {
+        const res = await arbitratorChat.invoke(prompt);
+        const text = typeof res.content === "string" ? res.content : JSON.stringify(res.content);
+        const match = text.match(/\{[\s\S]*\}/);
+        if (match) {
+          arbitrated = JSON.parse(match[0]);
+        }
+      }
+
+      if (arbitrated && arbitrated.correctedSubject) {
+        const validTownship =
+          canonicalizeTownship(arbitrated.correctedTownship) ||
+          canonicalizeTownship(arbitrated.correctedLocation) ||
+          firstPass.location;
+
+        const normalizedSubject = resolveEntityAlias(arbitrated.correctedSubject);
+        const normalizedLocation = resolveEntityAlias(arbitrated.correctedLocation);
+
+        return {
+          index: firstPass.index,
+          summarizeTitle: `关于${validTownship}${normalizedSubject}${arbitrated.correctedEventType || firstPass.eventType}诉求`,
+          subject: normalizedSubject,
+          location: normalizedLocation,
+          eventType: arbitrated.correctedEventType || firstPass.eventType,
+          category: arbitrated.correctedCategory || firstPass.category,
+          confidence: Math.max(firstPass.confidence, Math.min(99, arbitrated.confidence || 85)),
+        };
+      }
+    } catch (err: any) {
+      console.warn(`[Arbitrator] Secondary model arbitration failed for ticket ${ticket.ticketNo}:`, err.message);
+    }
+    return fallbackResult;
+  };
+
+  const timeoutPromise = new Promise<ExtractedTicketItem>((resolve) =>
+    setTimeout(() => resolve(fallbackResult), 8000)
+  );
+
+  return Promise.race([arbitrateTask(), timeoutPromise]);
 }
