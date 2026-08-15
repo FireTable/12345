@@ -21,6 +21,7 @@ import {
   Building2,
   Phone,
   User,
+  Zap,
 } from "lucide-react";
 
 type Member = {
@@ -68,65 +69,125 @@ function asMode(m?: string): CivicMode {
   return "aggregate";
 }
 
+function checkIsTarget(m: Member, target: string): boolean {
+  if (!target) return false;
+  const t = target.toLowerCase().trim().replace(/^#/, "").replace(/^ticket-/, "");
+  const mId = (m.id || "").toLowerCase().trim().replace(/^#/, "");
+  const mTicketId = (m.ticketId || "").toLowerCase().trim().replace(/^#/, "");
+  if (!t) return false;
+  return (
+    mId === t ||
+    mTicketId === t ||
+    (mId.length >= 6 && t.includes(mId)) ||
+    (t.length >= 6 && mId.includes(t)) ||
+    (mTicketId.length >= 6 && t.includes(mTicketId)) ||
+    (t.length >= 6 && mTicketId.includes(t))
+  );
+}
+
 function ThemeDetailInner() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const targetTicketId = (searchParams.get("ticketId") || searchParams.get("highlight") || "").trim();
 
+  // 从 URL 参数与 Hash 中提取目标工单标识
+  const [targetTicketId, setTargetTicketId] = useState("");
   const [row, setRow] = useState<ClusterDetail | null>(null);
   const [load, setLoad] = useState<DetailLoadStatus>("pending");
   const [expandedMap, setExpandedMap] = useState<Record<string, boolean>>({});
   const [isPulsing, setIsPulsing] = useState(true);
+  const [extraMember, setExtraMember] = useState<Member | null>(null);
 
   useEffect(() => {
-    if (targetTicketId) {
+    const qTarget = (searchParams.get("ticketId") || searchParams.get("highlight") || "").trim();
+    const hashTarget = typeof window !== "undefined" ? window.location.hash.replace(/^#ticket-/, "").replace(/^#/, "").trim() : "";
+    const effective = (qTarget || hashTarget).trim();
+    if (effective) {
+      setTargetTicketId(effective);
       setIsPulsing(true);
-      // 高亮强力呼吸闪烁保持至少 6 秒（满足 >= 5s 诉求）
-      const pulseTimer = setTimeout(() => {
+      const timer = setTimeout(() => {
         setIsPulsing(false);
-      }, 6000);
-      return () => clearTimeout(pulseTimer);
+      }, 6500); // 至少 6.5s 强力呼吸
+      return () => clearTimeout(timer);
     }
-  }, [targetTicketId]);
+  }, [searchParams]);
 
   useEffect(() => {
     setLoad("pending");
     setRow(null);
+    setExtraMember(null);
+
     fetch(`/api/clusters/${params.id}`)
       .then((r) => r.json())
-      .then((j) => {
+      .then(async (j) => {
         setRow(j);
         setLoad("done");
+
+        // 若当前群组列表中未包含指定的目标工单，动态补全该工单
+        if (targetTicketId) {
+          const exists = (j.members || []).some((m: Member) => checkIsTarget(m, targetTicketId));
+          if (!exists) {
+            try {
+              const singleRes = await fetch(`/api/workorders/${encodeURIComponent(targetTicketId)}`);
+              const singleData = await singleRes.json();
+              if (singleData.success) {
+                setExtraMember({
+                  id: singleData.id,
+                  ticketId: singleData.ticketId || singleData.id,
+                  title: singleData.title,
+                  category: singleData.category,
+                  region: singleData.region,
+                  createdAt: singleData.createdAt,
+                  content: singleData.content,
+                  confidence: singleData.confidence,
+                  caller_name: singleData.caller_name,
+                  caller_phone: singleData.caller_phone,
+                  address: singleData.address,
+                });
+              }
+            } catch (e) {}
+          }
+        }
       })
       .catch(() => {
         setRow(null);
         setLoad("error");
       });
-  }, [params.id]);
+  }, [params.id, targetTicketId]);
 
   const view = classifyDetailPayload(load, row);
   const mode = asMode(row?.mode);
   const meta = MODE_META[mode];
-  const members = row?.members || [];
+  
+  // 合并群组成员工单（确保目标工单必定存在）
+  const members = useMemo(() => {
+    const list = [...(row?.members || [])];
+    if (extraMember && !list.some((m) => checkIsTarget(m, extraMember.id))) {
+      list.unshift(extraMember);
+    }
+    return list;
+  }, [row?.members, extraMember]);
+
   const days = spanDays(row?.first_date, row?.last_date);
   const radarOpt = useMemo(() => radarOption(row?.radar || []), [row?.radar]);
-  const firstMember = members[0];
 
-  // 自动滚动并锚点定位到目标工单
+  // 自动滚动并锚点居中定位到目标工单
   useEffect(() => {
     if (targetTicketId && members.length > 0) {
       // 默认展开目标工单
       setExpandedMap((prev) => ({ ...prev, [targetTicketId]: true }));
 
       const timer = setTimeout(() => {
+        const cleanId = targetTicketId.replace(/^#/, "").replace(/^ticket-/, "");
         const el =
-          document.getElementById(`ticket-${targetTicketId}`) ||
-          document.getElementById(targetTicketId);
+          document.getElementById(`ticket-${cleanId}`) ||
+          document.getElementById(cleanId) ||
+          document.querySelector(`[data-ticket-id="${cleanId}"]`) ||
+          document.querySelector(".ticket-target-card");
         if (el) {
           el.scrollIntoView({ behavior: "smooth", block: "center" });
         }
-      }, 300);
+      }, 350);
       return () => clearTimeout(timer);
     }
   }, [targetTicketId, members]);
@@ -143,7 +204,7 @@ function ThemeDetailInner() {
           <span>/</span>
           <span>详情</span>
         </div>
-        <div className="empty-hint">加载中…</div>
+        <div className="empty-hint">正在加载多频群组研判数据…</div>
       </>
     );
   }
@@ -169,30 +230,6 @@ function ThemeDetailInner() {
     if (m.region && cluster.region && m.region === cluster.region) return `同属顺德区「${m.region}」`;
     if (m.category && m.category === cluster.type) return `诉求分类同为「${m.category}」`;
     return `已深度关联主题「${cluster.title || cluster.type}」`;
-  }
-
-  function exportReport() {
-    const lines = [
-      `群组编号: ${cluster.code || cluster.id}`,
-      `业务领域: ${cluster.region} · ${cluster.type}`,
-      `多频模式: ${cluster.mode_name}`,
-      `工单件数: ${cluster.count}`,
-      `时间跨度: ${cluster.first_date} ~ ${cluster.last_date}`,
-      `AI置信度: ${cluster.ai_confidence ?? "—"}%`,
-      `态势综述: ${cluster.title || "—"}`,
-      `处置建议: ${cluster.mode_advice || "—"}`,
-      "",
-      "【关联诉求工单清单】",
-      ...members.map((m, i) => `${i + 1}. [${m.id}] ${m.title} (${m.createdAt})`),
-    ];
-    const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${cluster.id}-多频群组研判报告.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success("已导出群组研判报告");
   }
 
   return (
@@ -264,17 +301,17 @@ function ThemeDetailInner() {
                 <span>📑</span>
                 群组成员工单明细
                 <span className="text-xs text-slate-500 font-normal">
-                  (共 {row.count} 件 · 当前加载 {members.length} 件)
+                  (共 {row.count} 件 · 当前展示 {members.length} 件)
                 </span>
               </div>
               <div className="text-[11px] text-slate-400 mt-0.5">
-                点击单条工单可展开详细诉求正文、涉事地点与提取要素
+                点击单条工单可展开详细诉求正文、涉事地址与提取要素
               </div>
             </div>
             {targetTicketId && (
-              <div className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-200">
-                <Target className="h-3.5 w-3.5 animate-spin" />
-                正在定位: #{targetTicketId}
+              <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-200 shadow-2xs">
+                <Target className="h-3.5 w-3.5 text-blue-600 animate-spin" />
+                <span>目标工单定位: #{targetTicketId}</span>
               </div>
             )}
           </div>
@@ -283,54 +320,58 @@ function ThemeDetailInner() {
             {members.length === 0 && <div className="empty-hint">暂无关联工单数据</div>}
             
             {members.map((m) => {
-              const isTarget =
-                Boolean(targetTicketId) &&
-                (m.ticketId === targetTicketId ||
-                  m.id === targetTicketId ||
-                  m.ticketId?.includes(targetTicketId) ||
-                  m.id?.includes(targetTicketId));
-              const isExpanded = isTarget || Boolean(expandedMap[m.ticketId || m.id]);
+              const isTarget = checkIsTarget(m, targetTicketId);
+              const isExpanded = isTarget || Boolean(expandedMap[m.ticketId || m.id] || expandedMap[m.id]);
 
               return (
                 <div
                   key={m.ticketId || m.id}
-                  id={`ticket-${m.ticketId || m.id}`}
-                  className={`member-item transition-all duration-300 relative rounded-xl border p-4 mb-3 cursor-pointer ${
-                    isTarget
-                      ? isPulsing
-                        ? "ticket-highlight-pulse border-blue-500 bg-blue-50/50 shadow-md"
-                        : "ticket-highlight-settled border-blue-500 bg-blue-50/30"
-                      : "border-slate-200/90 bg-white hover:border-slate-300"
+                  id={`ticket-${m.id}`}
+                  data-ticket-id={m.id}
+                  className={`member-item transition-all duration-300 relative rounded-xl border p-4 mb-3.5 cursor-pointer ${
+                    isTarget ? "ticket-target-card" : "border-slate-200/90 bg-white hover:border-slate-300"
                   }`}
+                  style={
+                    isTarget
+                      ? {
+                          boxShadow: isPulsing
+                            ? "0 0 0 3px rgba(37, 99, 235, 0.9), 0 0 25px 6px rgba(37, 99, 235, 0.45)"
+                            : "0 0 0 2px rgba(37, 99, 235, 0.85), 0 4px 16px rgba(37, 99, 235, 0.15)",
+                          borderColor: "#2563eb",
+                          backgroundColor: isPulsing ? "rgba(239, 246, 255, 0.95)" : "rgba(239, 246, 255, 0.5)",
+                          animation: isPulsing ? "ticketBorderPulse 1.3s ease-in-out infinite" : "none",
+                        }
+                      : {}
+                  }
                   onClick={() => toggleExpand(m.ticketId || m.id)}
                 >
                   {/* 目标工单呼吸动画徽标 */}
                   {isTarget && (
                     <div
-                      className={`absolute -top-3 right-4 z-10 flex items-center gap-1.5 bg-blue-600 text-white text-[11px] font-bold px-3 py-0.5 rounded-full shadow-md ${
+                      className={`absolute -top-3.5 right-4 z-20 flex items-center gap-1.5 bg-blue-600 text-white text-[11px] font-bold px-3.5 py-1 rounded-full shadow-lg border border-white/50 ${
                         isPulsing ? "animate-bounce" : ""
                       }`}
                     >
-                      <Target className={`h-3 w-3 ${isPulsing ? "animate-spin" : ""}`} />
-                      🎯 当前定位工单 {isPulsing ? "• 聚焦中" : ""}
+                      <Zap className="h-3.5 w-3.5 text-amber-300 fill-amber-300" />
+                      🎯 当前定位工单 {isPulsing ? "• 聚焦呼吸中 (>=6s)" : "• 已聚焦"}
                     </div>
                   )}
 
-                  <div className="member-item__head flex items-center gap-2 mb-1.5">
-                    <span className="member-item__id font-mono font-bold text-xs text-slate-800 bg-slate-100 px-2 py-0.5 rounded">
+                  <div className="member-item__head flex items-center gap-2 mb-2">
+                    <span className="member-item__id font-mono font-bold text-xs text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200/80">
                       #{m.id}
                     </span>
-                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-md">
                       <Sparkles className="h-3 w-3" />
                       {m.confidence == null ? "已校准" : `置信度 ${m.confidence}%`}
                     </span>
                     {m.category && (
-                      <span className="text-[10px] font-medium text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-md">
+                      <span className="text-[11px] font-medium text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-md">
                         {m.category}
                       </span>
                     )}
                     {m.region && (
-                      <span className="text-[10px] font-medium text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md">
+                      <span className="text-[11px] font-medium text-slate-700 bg-slate-100 px-2.5 py-0.5 rounded-md">
                         📍 {m.region}
                       </span>
                     )}
@@ -339,12 +380,12 @@ function ThemeDetailInner() {
                     </span>
                   </div>
 
-                  <div className="member-item__title text-sm font-bold text-slate-900 mb-1.5">
+                  <div className="member-item__title text-sm font-bold text-slate-900 mb-2">
                     {m.title}
                   </div>
 
-                  {/* 工单正文容器 */}
-                  <div className="bg-slate-50/90 p-3 rounded-lg border border-slate-200/70 mb-2">
+                  {/* 工单正文容器（外层提供内边距，内层提供 line-clamp） */}
+                  <div className="bg-slate-50/90 p-3 rounded-lg border border-slate-200/70 mb-2.5">
                     <div
                       className={`text-xs text-slate-700 leading-relaxed ${
                         isExpanded
@@ -358,23 +399,23 @@ function ThemeDetailInner() {
 
                   {/* 展开展示诉求人与具体门牌 */}
                   {isExpanded && (m.caller_name || m.address) && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] text-slate-600 bg-white p-2 rounded-md border border-slate-200/60 mb-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] text-slate-600 bg-white p-2.5 rounded-md border border-slate-200/80 mb-2.5">
                       {m.caller_name && (
-                        <div className="flex items-center gap-1">
-                          <User className="h-3 w-3 text-slate-400" />
-                          <span>诉求人：{m.caller_name}</span>
+                        <div className="flex items-center gap-1.5">
+                          <User className="h-3.5 w-3.5 text-slate-400" />
+                          <span>诉求人：<b className="text-slate-800 font-medium">{m.caller_name}</b></span>
                         </div>
                       )}
                       {m.address && (
-                        <div className="flex items-center gap-1">
-                          <MapPin className="h-3 w-3 text-slate-400" />
-                          <span>事发地址：{m.address}</span>
+                        <div className="flex items-center gap-1.5">
+                          <MapPin className="h-3.5 w-3.5 text-slate-400" />
+                          <span>事发地址：<b className="text-slate-800 font-medium">{m.address}</b></span>
                         </div>
                       )}
                     </div>
                   )}
 
-                  <div className="member-item__why flex items-center justify-between text-xs text-slate-500 pt-1 border-t border-slate-100/80">
+                  <div className="member-item__why flex items-center justify-between text-xs text-slate-500 pt-1.5 border-t border-slate-100/80">
                     <div className="flex items-center gap-1.5">
                       <span>🔎</span>
                       <span>
