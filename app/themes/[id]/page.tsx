@@ -297,61 +297,72 @@ function ThemeDetailInner() {
         <span>{cluster.region} · {cluster.type}</span>
       </div>
 
-      {/* Hero 区域：融合同事原生 Civic Design 模式渐变背景与优化后的圆角和建议卡片 */}
+      {/* Hero 区域：左侧信息与指标，右侧毛玻璃 AI 处置建议卡片 */}
       <div className={`cluster-hero cluster-hero--${mode}`}>
-        <div className="cluster-hero__row">
-          <div className="cluster-hero__icon">{meta.icon}</div>
-          <div className="cluster-hero__main">
-            <div className="cluster-hero__title">
-              <span>
-                {cluster.region} · {cluster.type}
-              </span>
-              <span className="hero-mode-badge">
-                {meta.icon} {meta.name}
-              </span>
-              <span className="view-switch">
-                {firstMember ? (
-                  <Link href={`/tickets/${firstMember.ticketId}`}>单工单视图</Link>
-                ) : (
-                  <span style={{ padding: "6px 12px", opacity: 0.7 }}>单工单视图</span>
-                )}
-                <span className="is-active">群组视图</span>
-              </span>
+        <div className="cluster-hero__layout">
+          {/* 左侧主要信息与核心指标 */}
+          <div className="cluster-hero__left">
+            <div className="cluster-hero__row">
+              <div className="cluster-hero__icon">{meta.icon}</div>
+              <div className="cluster-hero__main">
+                <div className="cluster-hero__title">
+                  <span>
+                    {cluster.region} · {cluster.type}
+                  </span>
+                  <span className="hero-mode-badge">
+                    {meta.icon} {meta.name}
+                  </span>
+                </div>
+                <div className="cluster-hero__sub">
+                  {meta.tagline}
+                  {row.title ? ` · ${row.title}` : ""}
+                </div>
+              </div>
             </div>
-            <div className="cluster-hero__sub">
-              {meta.tagline}
-              {row.title ? ` · ${row.title}` : ""}
+
+            <div className="cluster-hero__stats">
+              <div className="cluster-hero__stat">
+                <div className="cluster-hero__stat-val">{(row.count || 0).toLocaleString("zh-CN")}</div>
+                <div className="cluster-hero__stat-label">整合工单数（件）</div>
+              </div>
+              <div className="cluster-hero__stat">
+                <div className="cluster-hero__stat-val">{days}</div>
+                <div className="cluster-hero__stat-label">持续天数（天）</div>
+              </div>
+              <div className="cluster-hero__stat">
+                <div className="cluster-hero__stat-val">{row.ai_confidence == null ? "—" : `${row.ai_confidence}%`}</div>
+                <div className="cluster-hero__stat-label">AI 聚类置信度</div>
+              </div>
+              <div className="cluster-hero__stat">
+                <div className="cluster-hero__stat-val">{row.trend || "—"}</div>
+                <div className="cluster-hero__stat-label">近 7 天趋势</div>
+              </div>
+            </div>
+
+            <div className="mode-explainer">
+              <b>研判规则：</b>
+              {meta.icon} {meta.name}（{meta.tagline}） · <b>触发依据：</b>
+              {row.mode_risk ? `${row.mode_risk} · ${meta.rule}` : meta.rule}
             </div>
           </div>
-        </div>
 
-        <div className="cluster-hero__stats">
-          <div className="cluster-hero__stat">
-            <div className="cluster-hero__stat-val">{(row.count || 0).toLocaleString("zh-CN")}</div>
-            <div className="cluster-hero__stat-label">整合工单数（件）</div>
+          {/* 右侧毛玻璃 AI 协同处置建议卡片 */}
+          <div className="cluster-hero__right">
+            <div className="cluster-hero__glass-advice">
+              <div className="glass-advice__head">
+                <span className="glass-advice__icon">✨</span>
+                <span className="glass-advice__title">AI 协同处置建议</span>
+                <span className="glass-advice__badge">公文级建议</span>
+              </div>
+              <div className="glass-advice__body">
+                {row.mode_advice || meta.rule}
+              </div>
+              <div className="glass-advice__foot">
+                <span>牵头：{row.status?.owner || "所属辖区行业主管部门"}</span>
+                <span>建议时限：2 工作日内</span>
+              </div>
+            </div>
           </div>
-          <div className="cluster-hero__stat">
-            <div className="cluster-hero__stat-val">{days}</div>
-            <div className="cluster-hero__stat-label">持续天数（天）</div>
-          </div>
-          <div className="cluster-hero__stat">
-            <div className="cluster-hero__stat-val">{row.ai_confidence == null ? "—" : `${row.ai_confidence}%`}</div>
-            <div className="cluster-hero__stat-label">AI 聚类置信度</div>
-          </div>
-          <div className="cluster-hero__stat">
-            <div className="cluster-hero__stat-val">{row.trend || "—"}</div>
-            <div className="cluster-hero__stat-label">近 7 天趋势</div>
-          </div>
-        </div>
-
-        <div className="cluster-hero__advice">
-          <b>✨ 协同处置建议：</b>
-          {row.mode_advice || meta.rule}
-        </div>
-        <div className="mode-explainer">
-          <b>研判规则：</b>
-          {meta.icon} {meta.name}（{meta.tagline}） · <b>触发依据：</b>
-          {row.mode_risk ? `${row.mode_risk} · ${meta.rule}` : meta.rule}
         </div>
       </div>
 
