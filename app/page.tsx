@@ -132,7 +132,7 @@ export default function DashboardPage() {
           tone="blue"
           label="总工单"
           value={ov?.totalWorkorders}
-          sub={ov?.totalDays ? `${ov.totalDays} 天` : ""}
+          sub={ov?.totalDays ? `${ov.totalDays} 天` : "--"}
           href="/tickets"
         />
         <StatCard
