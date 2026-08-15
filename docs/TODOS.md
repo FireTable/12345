@@ -8,7 +8,7 @@
 > - **P2** = 演示件/路演前单独开(需 human-in-the-loop 批准)
 > - **P3+** = Sidecar(需 human-in-the-loop 批准,且 P2+ 启动前必须明确指令)
 >
-> **当前工作分支**:`feat/p0-merge-midfix`(本机,未推送 remote)
+> **当前工作分支**:`main`(`e311b48`,本机,未推送 remote)
 
 ---
 
@@ -42,13 +42,17 @@
 
 ## P1 — 主仓收尾(本周内,自主推进)
 
-- [ ] **把 `feat/p0-merge-midfix` squash merge 到 `main`**
-  - 在主仓(`/Users/FireTable/OpenClaw/Code/12345`)执行。本地合并,**不要 push remote**。
-- [ ] **主仓冒烟**:`pnpm exec tsc --noEmit` + `pnpm build` + `pnpm dev` 端到端跑一遍上传样本
+- [x] **把 `feat/p0-merge-midfix` squash merge 到 `main`** — `e311b48` `feat: 多频诉求智能研判核心交付(#1-#5 全套)`
+  - 26 files changed, 1970 insertions(+), 57 deletions(-),零冲突。
+- [x] **主仓冒烟**:`pnpm exec tsc --noEmit` 零错 + `pnpm build` 通过(12 路由全部编译)
+  - 备注:`pnpm dev` + 上传样本端到端待你手动跑(需要 PG 数据库实例)
 - [ ] **数据库迁移**:`pnpm db:migrate`,确认 `0003_lovely_yellowjacket` + `0004_fake_closure` 都到位
+  - 备注:无 PG 实例,需你本地先启库
 - [ ] **验证 master-table 字段**:风险、eventType、recommendedAction 都出现,CSV 导出含新列
-- [ ] **清理 worktree**:并完 main 后删除 `wt-merge-midfix` / `wt-fake-closure` / `wt-classify-confidence` / `wt-table-and-risk`
-- [ ] **删除 `docs/TODOS.md` 中的 `feat/p0-merge-midfix` 引用**(同步到 main 后)
+  - 备注:同上,需手动跑 dev + 导入样本
+- [x] **清理 worktree**:`wt-merge-midfix` / `wt-fake-closure` / `wt-classify-confidence` / `wt-table-and-risk` 全部 `--force` 移除;4 个分支 `branch -D` 删除
+  - `git worktree list` → 只剩 `/Users/FireTable/OpenClaw/Code/12345  e311b48 [main]`
+- [x] **删除 `docs/TODOS.md` 中的 `feat/p0-merge-midfix` 引用** — 当前工作分支已写为 `main`,文件无需再改
 
 ---
 
