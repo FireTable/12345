@@ -10,7 +10,7 @@ import {
   Sparkles,
   CheckCircle2,
   FileSpreadsheet,
-  Layers,
+  Loader2,
 } from "lucide-react";
 import type { MultiFrequencyTheme, RawTicket } from "@/backend/state";
 import { exportThemeTicketsToCSV } from "@/lib/export-csv";
@@ -20,17 +20,19 @@ import { toast } from "sonner";
 interface TicketDetailSheetProps {
   theme: MultiFrequencyTheme | null;
   onClose: () => void;
+  isLoadingTickets?: boolean;
 }
 
 export const TicketDetailSheet: React.FC<TicketDetailSheetProps> = ({
   theme,
   onClose,
+  isLoadingTickets = false,
 }) => {
   const [selectedTicketIds, setSelectedTicketIds] = useState<Set<string>>(new Set());
 
   if (!theme) return null;
 
-  const tickets = theme.tickets;
+  const tickets = theme.tickets || [];
   const isHighRisk = theme.riskLevel === "HIGH";
   const isMedRisk = theme.riskLevel === "MEDIUM";
 
@@ -51,7 +53,7 @@ export const TicketDetailSheet: React.FC<TicketDetailSheetProps> = ({
 
   const handleExportThemeTickets = () => {
     exportThemeTicketsToCSV(theme);
-    toast.success(`已导出主题「${theme.title}」下全部 ${tickets.length} 条工单明细！`);
+    toast.success(`已导出主题「${theme.title}」下工单明细！`);
   };
 
   const handleBatchVerify = () => {
@@ -62,11 +64,11 @@ export const TicketDetailSheet: React.FC<TicketDetailSheetProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-200">
       <div
-        className="w-full max-w-2xl h-full bg-white border-l border-slate-200 shadow-2xl flex flex-col overflow-hidden text-slate-900"
+        className="w-full max-w-2xl h-full bg-card border-l border-border shadow-2xl flex flex-col overflow-hidden text-foreground"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Sheet Header */}
-        <div className="p-6 border-b border-slate-200 space-y-3 bg-slate-50/50">
+        <div className="p-6 border-b border-border space-y-3 bg-muted/30">
           <div className="flex items-start justify-between gap-4">
             <div className="flex flex-wrap items-center gap-2">
               {isHighRisk && (
@@ -80,40 +82,40 @@ export const TicketDetailSheet: React.FC<TicketDetailSheetProps> = ({
                 </span>
               )}
               {!isHighRisk && !isMedRisk && (
-                <span className="px-2.5 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                <span className="px-2.5 py-0.5 rounded text-xs font-medium bg-muted text-muted-foreground border border-border">
                   ⚪ 常规流转
                 </span>
               )}
 
-              <span className="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+              <span className="text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground border border-border">
                 {theme.category}
               </span>
 
-              <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                {tickets.length} 件关联工单
+              <span className="font-mono text-xs font-bold text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20">
+                {theme.ticketCount} 件关联工单
               </span>
             </div>
 
             <button
               onClick={onClose}
-              className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+              className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
 
-          <h2 className="text-base font-bold text-slate-900 leading-snug">
+          <h2 className="text-base font-bold text-foreground leading-snug">
             {theme.title}
           </h2>
 
-          <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 pt-1">
+          <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground pt-1">
             <div className="flex items-center gap-1.5 truncate">
-              <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <span className="truncate font-semibold text-slate-800">{theme.canonicalSubject}</span>
+              <Building2 className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+              <span className="truncate font-semibold text-foreground">{theme.canonicalSubject}</span>
             </div>
             <div className="flex items-center gap-1.5 truncate">
-              <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <span className="truncate text-slate-600">{theme.canonicalLocation}</span>
+              <MapPin className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+              <span className="truncate text-muted-foreground">{theme.canonicalLocation}</span>
             </div>
           </div>
 
@@ -134,13 +136,13 @@ export const TicketDetailSheet: React.FC<TicketDetailSheetProps> = ({
             <div className="flex items-center gap-3">
               <button
                 onClick={handleSelectAll}
-                className="text-slate-600 hover:text-slate-900 font-medium cursor-pointer"
+                className="text-muted-foreground hover:text-foreground font-medium cursor-pointer"
               >
                 {selectedTicketIds.size === tickets.length ? "取消全选" : "全选全部"}
               </button>
-              <span className="text-slate-400">|</span>
-              <span className="text-slate-500">
-                已勾选 <strong className="text-slate-800">{selectedTicketIds.size}</strong> 件
+              <span className="text-border">|</span>
+              <span className="text-muted-foreground">
+                已勾选 <strong className="text-foreground">{selectedTicketIds.size}</strong> 件
               </span>
             </div>
 
@@ -149,7 +151,7 @@ export const TicketDetailSheet: React.FC<TicketDetailSheetProps> = ({
                 variant="outline"
                 size="sm"
                 onClick={handleExportThemeTickets}
-                className="h-7 text-xs border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                className="h-7 text-xs border-border bg-card text-foreground hover:bg-muted"
               >
                 <FileSpreadsheet className="w-3 h-3 mr-1" />
                 导出本案明细
@@ -158,7 +160,7 @@ export const TicketDetailSheet: React.FC<TicketDetailSheetProps> = ({
                 variant="default"
                 size="sm"
                 onClick={handleBatchVerify}
-                className="h-7 text-xs bg-blue-600 text-white hover:bg-blue-700 font-semibold"
+                className="h-7 text-xs bg-primary text-primary-foreground hover:bg-primary/90 font-semibold"
               >
                 <CheckCircle2 className="w-3 h-3 mr-1" />
                 批量核查确认
@@ -167,13 +169,24 @@ export const TicketDetailSheet: React.FC<TicketDetailSheetProps> = ({
           </div>
         </div>
 
-        {/* Ticket List Body with Virtualization for Large Datasets */}
+        {/* Ticket List Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-3">
-          <VirtualTicketList
-            tickets={tickets}
-            selectedIds={selectedTicketIds}
-            onToggle={handleToggleSelect}
-          />
+          {isLoadingTickets ? (
+            <div className="h-64 flex flex-col items-center justify-center gap-2 text-muted-foreground text-xs">
+              <Loader2 className="w-6 h-6 animate-spin text-primary" />
+              <span>正在从 PostgreSQL 按需查询工单明细...</span>
+            </div>
+          ) : tickets.length > 0 ? (
+            <VirtualTicketList
+              tickets={tickets}
+              selectedIds={selectedTicketIds}
+              onToggle={handleToggleSelect}
+            />
+          ) : (
+            <div className="h-64 flex flex-col items-center justify-center text-muted-foreground text-xs">
+              暂无匹配工单记录
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -232,42 +245,42 @@ const VirtualTicketList: React.FC<VirtualTicketListProps> = ({
                 onClick={() => onToggle(ticket.id)}
                 className={`p-3.5 rounded-lg border transition-all cursor-pointer ${
                   isSelected
-                    ? "bg-blue-50/70 border-blue-400 shadow-xs"
-                    : "bg-white border-slate-200 hover:border-slate-300 shadow-2xs"
+                    ? "bg-primary/5 border-primary shadow-xs"
+                    : "bg-card border-border hover:border-border/80 shadow-2xs"
                 }`}
               >
                 {/* Header */}
-                <div className="flex items-center justify-between text-xs pb-2 border-b border-slate-100">
+                <div className="flex items-center justify-between text-xs pb-2 border-b border-border/40">
                   <div className="flex items-center gap-2">
                     <input
                       type="checkbox"
                       checked={isSelected}
                       onChange={() => onToggle(ticket.id)}
-                      className="rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+                      className="rounded text-primary focus:ring-primary border-input cursor-pointer"
                     />
-                    <span className="font-mono font-bold text-slate-800">
+                    <span className="font-mono font-bold text-foreground">
                       {ticket.ticketNo}
                     </span>
-                    <span className="text-[11px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-600">
+                    <span className="text-[11px] px-1.5 py-0.2 rounded bg-muted text-muted-foreground">
                       {ticket.subdistrict}
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-1.5 text-slate-400 font-mono text-[11px]">
+                  <div className="flex items-center gap-1.5 text-muted-foreground font-mono text-[11px]">
                     <Clock className="w-3 h-3" />
                     <span>{ticket.createTime}</span>
                   </div>
                 </div>
 
                 {/* Content */}
-                <div className="pt-2 text-xs text-slate-700 leading-relaxed font-normal">
+                <div className="pt-2 text-xs text-foreground leading-relaxed font-normal">
                   {ticket.content}
                 </div>
 
                 {/* Citizen Info Footer */}
-                <div className="pt-2 mt-2 border-t border-slate-50 flex items-center justify-between text-[11px] text-slate-500">
+                <div className="pt-2 mt-2 border-t border-border/30 flex items-center justify-between text-[11px] text-muted-foreground">
                   <span>诉求人: {ticket.citizenName} ({ticket.citizenPhone})</span>
-                  <span className="text-slate-400">渠道: {ticket.channel}</span>
+                  <span className="text-muted-foreground/80">渠道: {ticket.channel}</span>
                 </div>
               </div>
             </div>
