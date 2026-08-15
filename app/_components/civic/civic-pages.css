@@ -205,7 +205,7 @@
 
 .mode-badge, .urgency-tag, .status-tag {
   display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 4px;
-  font-size: 11px; font-weight: 600; white-space: nowrap;
+  font-size: 11px; font-weight: 600; white-space: nowrap; word-break: keep-all;
 }
 .mode-badge--aggregate { background: #FFECE8; color: #F53F3F; }
 .mode-badge--repeat { background: #FFF7E8; color: #FF7D00; }
@@ -214,7 +214,7 @@
 .urgency-tag--high { background: #FFF7E8; color: #FF7D00; }
 .urgency-tag--medium { background: #E8FFEA; color: #52C41A; }
 .urgency-tag--low { background: #F0F1F3; color: #86909C; }
-.status-tag--pending { background: #FFECE8; color: #F53F3F; }
+.status-tag--pending { background: #FFF7E8; color: #FF7D00; }
 .status-tag--progress { background: #E8F3FF; color: #1677FF; }
 .status-tag--done { background: #E8FFEA; color: #52C41A; }
 

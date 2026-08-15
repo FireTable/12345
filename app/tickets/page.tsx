@@ -333,8 +333,10 @@ export default function TicketsPage() {
                 </td>
                 <td>{r.createdAt}</td>
                 <td>
-                  <span className={`status-dot status-dot--${statusDot(r.status)}`} />
-                  {statusLabel(r.status)}
+                  <span className={`status-tag status-tag--${statusTag(r.status)}`}>
+                    <span className={`status-dot status-dot--${statusDot(r.status)}`} />
+                    {statusLabel(r.status)}
+                  </span>
                 </td>
                 <td style={{ textAlign: "right", color: "var(--c-brand)" }}>查看 →</td>
               </tr>
@@ -493,6 +495,12 @@ function statusLabel(s: string) {
 
 function statusDot(s: string) {
   if (s === "RESOLVED" || s === "DONE" || s === "FINISHED" || s === "已办结") return "finished";
+  if (s === "IN_PROGRESS" || s === "PROGRESS" || s === "处置中" || s === "处理中") return "progress";
+  return "pending";
+}
+
+function statusTag(s: string) {
+  if (s === "RESOLVED" || s === "DONE" || s === "FINISHED" || s === "已办结") return "done";
   if (s === "IN_PROGRESS" || s === "PROGRESS" || s === "处置中" || s === "处理中") return "progress";
   return "pending";
 }
