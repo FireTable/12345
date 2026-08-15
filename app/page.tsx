@@ -38,7 +38,7 @@ type Trends = { daily: Record<string, number>; dailyNewClusters?: Record<string,
 export default function DashboardPage() {
   const { openUpload } = useCivicWorkflow();
   const router = useRouter();
-  const [daysRange, setDaysRange] = useState(90);
+  const [daysRange, setDaysRange] = useState(0);
   const [ov, setOv] = useState<Overview | null>(null);
   const [tr, setTr] = useState<Trends | null>(null);
 

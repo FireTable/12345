@@ -190,3 +190,34 @@ export type NewVocabularyRecord = typeof vocabulariesTable.$inferInsert;
 
 export type AliasRecord = typeof aliasesTable.$inferSelect;
 export type NewAliasRecord = typeof aliasesTable.$inferInsert;
+
+/**
+ * 7. 任务进度持久化表 (Task Progress Table)
+ */
+export const taskProgressTable = pgTable(
+  "task_progress",
+  {
+    taskId: varchar("task_id", { length: 128 }).primaryKey(),
+    status: varchar("status", { length: 32 }).notNull().default("PENDING"), // PENDING, RUNNING, COMPLETED, FAILED
+    stage: varchar("stage", { length: 32 }).notNull().default("EXTRACTING"), // PARSING, EXTRACTING, CLUSTERING, SYNTHESIZING, COMPLETED
+    stageText: text("stage_text").notNull().default("准备就绪"),
+    percent: integer("percent").notNull().default(0),
+    total: integer("total").notNull().default(0),
+    processed: integer("processed").notNull().default(0),
+    extractedCount: integer("extracted_count").notNull().default(0),
+    themeCount: integer("theme_count").notNull().default(0),
+    reviewCount: integer("review_count").notNull().default(0),
+    failedCount: integer("failed_count").notNull().default(0),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_task_progress_status").on(table.status),
+    index("idx_task_progress_updated_at").on(table.updatedAt),
+  ]
+);
+
+export type TaskProgressRecord = typeof taskProgressTable.$inferSelect;
+export type NewTaskProgressRecord = typeof taskProgressTable.$inferInsert;
+

@@ -9,6 +9,11 @@ import { adminFromLocation, explicitAdmin } from "@/lib/admin-area";
 import { normalizeAliasesInText, resolveEntityAlias } from "@/lib/alias-dict";
 import { canonicalizeTownship } from "@/lib/vocabulary";
 import { needsArbitration, arbitrateSingleTicket } from "./arbitrator-node";
+import { updateTaskProgress } from "@/lib/task-progress";
+import { db } from "@/db/client";
+import { ticketsTable } from "@/db/schema";
+import { eq } from "drizzle-orm";
+import PQueue from "p-queue";
 
 export const LOW_CONFIDENCE_THRESHOLD = 60;
 
@@ -34,7 +39,15 @@ async function extractBatchWithLLM(
       if (structuredRes && Array.isArray(structuredRes.items)) {
         for (const item of structuredRes.items) {
           if (item && typeof item.index === "number") {
-            result.set(startIndex + item.index - 1, item);
+            result.set(startIndex + item.index - 1, {
+              index: item.index,
+              summarizeTitle: String(item.summarizeTitle || "").trim(),
+              subject: String(item.subject || "").trim(),
+              location: String(item.location || "").trim(),
+              eventType: String(item.eventType || "").trim(),
+              category: item.category || "城市管理",
+              confidence: Number(item.confidence || 85),
+            });
           }
         }
         if (result.size > 0) return result;
@@ -59,17 +72,23 @@ async function extractBatchWithLLM(
             location: String(item.location || "").trim(),
             eventType: String(item.eventType || "").trim(),
             category: item.category || "城市管理",
-            confidence:
-              typeof item.confidence === "number"
-                ? Math.max(0, Math.min(100, Math.round(item.confidence)))
-                : 0,
+            confidence: Number(item.confidence || 85),
           });
         }
       }
+      if (result.size > 0) return result;
     }
   } catch (err: any) {
-    console.warn(`LLM Batch Extraction failed for chunk at ${startIndex}:`, err.message);
+    console.warn(`[extract-node] LLM extraction batch error at index ${startIndex}:`, err.message);
   }
+
+  // 3. 模型失败时平滑退化为本地动态规则抽取引擎
+  tickets.forEach((ticket, idx) => {
+    const globalIdx = startIndex + idx;
+    if (!result.has(globalIdx)) {
+      result.set(globalIdx, fallbackDynamicExtraction(ticket));
+    }
+  });
 
   return result;
 }
@@ -164,9 +183,6 @@ function fallbackDynamicExtraction(ticket: RawTicket): ExtractedTicketItem {
   };
 }
 
-import PQueue from "p-queue";
-import { updateTaskProgress } from "@/lib/task-progress";
-
 /**
  * Extract Node: 全量采用 AI Agent 大模型语义抽取四要素与摘要标题（P-Queue 受控并发与真实进度回报）
  */
@@ -175,17 +191,17 @@ export async function extractNode(
 ): Promise<Partial<TicketRadarState>> {
   const rawTickets = state.rawTickets || [];
   const taskId = state.taskId;
-  const CHUNK_SIZE = 15;
+  const CHUNK_SIZE = 1;
   const extractionMap = new Map<number, ExtractedTicketItem>();
-  const queue = new PQueue({ concurrency: 3 });
+  const queue = new PQueue({ concurrency: 4 });
 
   if (taskId) {
     updateTaskProgress(taskId, {
       stage: "EXTRACTING",
-      stageText: `正在使用大模型并行提取工单要素与微观地点 (共 ${rawTickets.length} 条)...`,
+      stageText: `正在使用大模型逐条并行提取工单要素 (共 ${rawTickets.length} 条)...`,
       total: rawTickets.length,
       processed: 0,
-      percent: 5,
+      percent: 0,
     });
   }
 
@@ -197,19 +213,69 @@ export async function extractNode(
     subdistrict: normalizeAliasesInText(t.subdistrict),
   }));
 
-  let processedCount = 0;
+  // 1.1 检查已抽取过的工单（断点续抽/跳过已处理），直接载入并跳过 LLM
+  let preExtractedCount = 0;
+  normalizedRawTickets.forEach((ticket, idx) => {
+    if (ticket.summarizeTitle && typeof ticket.confidence === "number" && ticket.confidence > 0) {
+      const fallback = fallbackDynamicExtraction(ticket);
+      extractionMap.set(idx, {
+        index: 1,
+        summarizeTitle: ticket.summarizeTitle,
+        subject: ticket.title || fallback.subject || "相关主体",
+        location: ticket.address || ticket.subdistrict || fallback.location || "顺德区",
+        eventType: ticket.sourceCategory || fallback.eventType || "民生诉求",
+        category: (ticket.sourceCategory as any) || fallback.category || "城市管理",
+        confidence: ticket.confidence,
+      });
+      preExtractedCount++;
+    }
+  });
+
+  let processedCount = preExtractedCount;
   const chunkTasks: Array<() => Promise<void>> = [];
 
+  if (taskId && preExtractedCount > 0) {
+    const percent = Math.round((processedCount / Math.max(1, normalizedRawTickets.length)) * 50);
+    updateTaskProgress(taskId, {
+      processed: processedCount,
+      percent,
+      stageText: `已恢复断点：跳过已抽取工单 ${preExtractedCount} 条，继续抽取剩余 ${normalizedRawTickets.length - preExtractedCount} 条...`,
+      extractedCount: extractionMap.size,
+    });
+  }
+
+  // 1.2 对尚未抽取的工单加入并发队列
   for (let i = 0; i < normalizedRawTickets.length; i += CHUNK_SIZE) {
+    if (extractionMap.has(i)) {
+      continue; // 历史已抽取，直接跳过！
+    }
     const chunk = normalizedRawTickets.slice(i, i + CHUNK_SIZE);
     const startIdx = i;
     chunkTasks.push(async () => {
       const res = await extractBatchWithLLM(chunk, startIdx);
-      res.forEach((val, key) => extractionMap.set(key, val));
+      res.forEach((val, key) => {
+        extractionMap.set(key, val);
+        // 单条实时持久化至 PostgreSQL 数据库，保证中途关闭或刷新永不丢失进度
+        const orig = normalizedRawTickets[key];
+        if (orig && orig.id) {
+          const area = adminFromLocation(val.location, orig);
+          db.update(ticketsTable)
+            .set({
+              summarizeTitle: val.summarizeTitle,
+              address: val.location,
+              district: area.district || orig.district || null,
+              subdistrict: area.subdistrict || orig.subdistrict || null,
+              sourceCategory: val.category,
+              confidence: val.confidence,
+            })
+            .where(eq(ticketsTable.id, orig.id))
+            .catch((e) => console.warn(`Failed to persist ticket ${orig.id}:`, e.message));
+        }
+      });
       processedCount += chunk.length;
       if (taskId) {
         const currentProcessed = Math.min(processedCount, normalizedRawTickets.length);
-        const percent = Math.min(50, 5 + Math.round((currentProcessed / Math.max(1, normalizedRawTickets.length)) * 45));
+        const percent = Math.round((currentProcessed / Math.max(1, normalizedRawTickets.length)) * 50);
         updateTaskProgress(taskId, {
           processed: currentProcessed,
           percent,
@@ -220,7 +286,9 @@ export async function extractNode(
     });
   }
 
-  await queue.addAll(chunkTasks);
+  if (chunkTasks.length > 0) {
+    await queue.addAll(chunkTasks);
+  }
 
   // 2. 二级 AI 仲裁介入：对低置信度 (< 60) 或存在歧义的工单进行二次消歧与事实纠偏
   const arbitrationTasks: Array<() => Promise<void>> = [];

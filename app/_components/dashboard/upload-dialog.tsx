@@ -181,29 +181,28 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
   const handleStartAgentClustering = async () => {
     const claimed = claimClusterTask(`task-cluster-${Date.now()}`);
     const taskId = claimed.taskId;
+    const isOwner = claimed.claimed;
     setStep("CLUSTERING");
     onClusteringChange?.(true);
 
-    if (!claimed.claimed) {
-      return;
+    if (isOwner) {
+      setTaskProgress({
+        taskId,
+        status: "RUNNING",
+        stage: "EXTRACTING",
+        stageText: "正在初始化 LangGraph 多频研判流水线...",
+        percent: 0,
+        total: report?.insertedCount || 300,
+        processed: 0,
+        extractedCount: 0,
+        themeCount: 0,
+        reviewCount: 0,
+        failedCount: 0,
+        updatedAt: Date.now(),
+      });
     }
 
-    setTaskProgress({
-      taskId,
-      status: "RUNNING",
-      stage: "EXTRACTING",
-      stageText: "正在初始化 LangGraph 多频研判流水线...",
-      percent: 5,
-      total: report?.insertedCount || 300,
-      processed: 0,
-      extractedCount: 0,
-      themeCount: 0,
-      reviewCount: 0,
-      failedCount: 0,
-      updatedAt: Date.now(),
-    });
-
-    // 进度轮询：只读内存进度，不触发 LLM。1.5s 一次，结束即停。
+    // 进度轮询：读内存与DB进度，6s 请求一次，结束即停。
     if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     let pollInFlight = false;
     pollTimerRef.current = setInterval(async () => {
@@ -227,7 +226,12 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
       } finally {
         pollInFlight = false;
       }
-    }, 1500);
+    }, 6000);
+
+    if (!isOwner) {
+      // 任务已在后台运行中，直接连上轮询监听
+      return;
+    }
 
     toast.info("正在唤起 LangGraph Agent 执行知识图谱聚类...");
 
@@ -480,36 +484,275 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                   />
                 </div>
 
-                {/* Real Metrics Grid */}
-                <div className="grid grid-cols-4 gap-2 pt-1">
-                  <div className="p-2.5 rounded-lg border border-border bg-muted/20 space-y-0.5">
-                    <span className="text-[10.5px] text-muted-foreground">总工单量</span>
-                    <p className="text-sm font-bold font-mono text-foreground">
-                      {taskProgress.total || report?.insertedCount || 0}
-                    </p>
-                  </div>
+                {/* Real Pipeline Flow Metrics */}
+                {(() => {
+                  const totalTickets = taskProgress.total || report?.insertedCount || 300;
+                  const processedTickets = taskProgress.processed || 0;
+                  const themeCount = taskProgress.themeCount || 0;
+                  const reviewCount = taskProgress.reviewCount || 0;
+                  const isDone = taskProgress.status === "COMPLETED";
 
-                  <div className="p-2.5 rounded-lg border border-border bg-muted/20 space-y-0.5">
-                    <span className="text-[10.5px] text-muted-foreground">已抽取工单</span>
-                    <p className="text-sm font-bold font-mono text-foreground">
-                      {taskProgress.processed}
-                    </p>
-                  </div>
+                  const step1Done = totalTickets > 0;
+                  const step2Active = taskProgress.status === "RUNNING" && processedTickets < totalTickets;
+                  const step2Done = isDone || (totalTickets > 0 && processedTickets >= totalTickets);
+                  const step3Active = taskProgress.status === "RUNNING" && step2Done && themeCount === 0;
+                  const step3Done = isDone || themeCount > 0;
+                  const step4Active = taskProgress.status === "RUNNING" && (taskProgress.stageText?.includes("仲裁") || taskProgress.stageText?.includes("复核"));
+                  const step4Done = isDone || reviewCount > 0 || (step3Done && !step4Active);
 
-                  <div className="p-2.5 rounded-lg border border-border bg-muted/20 space-y-0.5">
-                    <span className="text-[10.5px] text-muted-foreground">已聚类主题</span>
-                    <p className="text-sm font-bold font-mono text-primary">
-                      {taskProgress.themeCount}
-                    </p>
-                  </div>
+                  return (
+                    <div className="flex items-center justify-between gap-1 pt-1 select-none">
+                      {/* Step 1: 总工单量 */}
+                      <motion.div
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className={`flex-1 p-2.5 rounded-lg border transition-all duration-300 ${
+                          step1Done
+                            ? "border-emerald-500/30 bg-emerald-500/5 shadow-xs"
+                            : "border-border/40 bg-muted/20 opacity-50"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10.5px] font-medium text-muted-foreground">总工单量</span>
+                          {step1Done ? (
+                            <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
+                          ) : (
+                            <Clock className="w-3 h-3 text-muted-foreground/40 shrink-0" />
+                          )}
+                        </div>
+                        <p className="text-sm font-bold font-mono text-foreground">
+                          {totalTickets}
+                        </p>
+                      </motion.div>
 
-                  <div className="p-2.5 rounded-lg border border-border bg-muted/20 space-y-0.5">
-                    <span className="text-[10.5px] text-muted-foreground">低置信复核</span>
-                    <p className="text-sm font-bold font-mono text-amber-600">
-                      {taskProgress.reviewCount}
-                    </p>
-                  </div>
-                </div>
+                      {/* Flowing Connector 1 -> 2 */}
+                      <div className="flex items-center justify-center gap-1 px-1 shrink-0">
+                        {[0, 1, 2].map((i) => (
+                          <motion.div
+                            key={i}
+                            className={`w-1 h-1 rounded-full ${
+                              step2Done
+                                ? "bg-emerald-500"
+                                : step2Active
+                                ? "bg-primary"
+                                : "bg-muted-foreground/25"
+                            }`}
+                            animate={
+                              step2Active
+                                ? {
+                                    scale: [0.7, 1.4, 0.7],
+                                    opacity: [0.25, 1, 0.25],
+                                  }
+                                : {}
+                            }
+                            transition={
+                              step2Active
+                                ? {
+                                    repeat: Infinity,
+                                    duration: 1.1,
+                                    delay: i * 0.25,
+                                    ease: "easeInOut",
+                                  }
+                                : {}
+                            }
+                          />
+                        ))}
+                      </div>
+
+                      {/* Step 2: 已抽取工单 */}
+                      <motion.div
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.2, delay: 0.05 }}
+                        className={`flex-1 p-2.5 rounded-lg border transition-all duration-300 ${
+                          step2Active
+                            ? "border-primary/50 bg-primary/5 ring-1 ring-primary/40 shadow-[0_0_12px_rgba(59,130,246,0.14)]"
+                            : step2Done
+                            ? "border-emerald-500/30 bg-emerald-500/5 shadow-xs"
+                            : "border-border/40 bg-muted/15 opacity-40 grayscale"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span
+                            className={`text-[10.5px] font-medium transition-colors ${
+                              step2Active ? "text-primary font-semibold" : "text-muted-foreground"
+                            }`}
+                          >
+                            已抽取工单
+                          </span>
+                          {step2Active ? (
+                            <span className="relative flex h-2 w-2">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+                            </span>
+                          ) : step2Done ? (
+                            <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
+                          ) : (
+                            <Clock className="w-3 h-3 text-muted-foreground/40 shrink-0" />
+                          )}
+                        </div>
+                        <p
+                          className={`text-sm font-bold font-mono transition-colors ${
+                            step2Active ? "text-primary" : "text-foreground"
+                          }`}
+                        >
+                          {processedTickets}
+                        </p>
+                      </motion.div>
+
+                      {/* Flowing Connector 2 -> 3 */}
+                      <div className="flex items-center justify-center gap-1 px-1 shrink-0">
+                        {[0, 1, 2].map((i) => (
+                          <motion.div
+                            key={i}
+                            className={`w-1 h-1 rounded-full ${
+                              step3Done
+                                ? "bg-emerald-500"
+                                : step3Active
+                                ? "bg-primary"
+                                : "bg-muted-foreground/25"
+                            }`}
+                            animate={
+                              step3Active
+                                ? {
+                                    scale: [0.7, 1.4, 0.7],
+                                    opacity: [0.25, 1, 0.25],
+                                  }
+                                : {}
+                            }
+                            transition={
+                              step3Active
+                                ? {
+                                    repeat: Infinity,
+                                    duration: 1.1,
+                                    delay: i * 0.25,
+                                    ease: "easeInOut",
+                                  }
+                                : {}
+                            }
+                          />
+                        ))}
+                      </div>
+
+                      {/* Step 3: 已聚类主题 */}
+                      <motion.div
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.2, delay: 0.1 }}
+                        className={`flex-1 p-2.5 rounded-lg border transition-all duration-300 ${
+                          step3Active
+                            ? "border-primary/50 bg-primary/5 ring-1 ring-primary/40 shadow-[0_0_12px_rgba(59,130,246,0.14)]"
+                            : step3Done
+                            ? "border-emerald-500/30 bg-emerald-500/5 shadow-xs"
+                            : "border-border/40 bg-muted/15 opacity-40 grayscale"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span
+                            className={`text-[10.5px] font-medium transition-colors ${
+                              step3Active ? "text-primary font-semibold" : "text-muted-foreground"
+                            }`}
+                          >
+                            已聚类主题
+                          </span>
+                          {step3Active ? (
+                            <span className="relative flex h-2 w-2">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+                            </span>
+                          ) : step3Done ? (
+                            <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
+                          ) : (
+                            <Clock className="w-3 h-3 text-muted-foreground/40 shrink-0" />
+                          )}
+                        </div>
+                        <p
+                          className={`text-sm font-bold font-mono transition-colors ${
+                            step3Active ? "text-primary" : step3Done ? "text-primary" : "text-muted-foreground"
+                          }`}
+                        >
+                          {themeCount}
+                        </p>
+                      </motion.div>
+
+                      {/* Flowing Connector 3 -> 4 */}
+                      <div className="flex items-center justify-center gap-1 px-1 shrink-0">
+                        {[0, 1, 2].map((i) => (
+                          <motion.div
+                            key={i}
+                            className={`w-1 h-1 rounded-full ${
+                              step4Done
+                                ? "bg-emerald-500"
+                                : step4Active
+                                ? "bg-amber-500"
+                                : "bg-muted-foreground/25"
+                            }`}
+                            animate={
+                              step4Active
+                                ? {
+                                    scale: [0.7, 1.4, 0.7],
+                                    opacity: [0.25, 1, 0.25],
+                                  }
+                                : {}
+                            }
+                            transition={
+                              step4Active
+                                ? {
+                                    repeat: Infinity,
+                                    duration: 1.1,
+                                    delay: i * 0.25,
+                                    ease: "easeInOut",
+                                  }
+                                : {}
+                            }
+                          />
+                        ))}
+                      </div>
+
+                      {/* Step 4: 低置信复核 */}
+                      <motion.div
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.2, delay: 0.15 }}
+                        className={`flex-1 p-2.5 rounded-lg border transition-all duration-300 ${
+                          step4Active
+                            ? "border-amber-500/50 bg-amber-500/5 ring-1 ring-amber-500/40 shadow-[0_0_12px_rgba(245,158,11,0.15)]"
+                            : step4Done
+                            ? "border-border/60 bg-muted/20"
+                            : "border-border/40 bg-muted/15 opacity-40 grayscale"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span
+                            className={`text-[10.5px] font-medium transition-colors ${
+                              step4Active ? "text-amber-600 dark:text-amber-400 font-semibold" : "text-muted-foreground"
+                            }`}
+                          >
+                            低置信复核
+                          </span>
+                          {step4Active ? (
+                            <span className="relative flex h-2 w-2">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-500 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                            </span>
+                          ) : step4Done ? (
+                            <CheckCircle2 className="w-3 h-3 text-muted-foreground/60 shrink-0" />
+                          ) : (
+                            <Clock className="w-3 h-3 text-muted-foreground/40 shrink-0" />
+                          )}
+                        </div>
+                        <p
+                          className={`text-sm font-bold font-mono transition-colors ${
+                            step4Active || reviewCount > 0 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"
+                          }`}
+                        >
+                          {reviewCount}
+                        </p>
+                      </motion.div>
+                    </div>
+                  );
+                })()}
               </motion.div>
             )}
 

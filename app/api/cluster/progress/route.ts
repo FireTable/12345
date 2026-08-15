@@ -1,15 +1,24 @@
 import { NextResponse } from "next/server";
-import { getTaskProgress } from "@/lib/task-progress";
+import { getTaskProgress, getLatestTaskProgress } from "@/lib/task-progress";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const taskId = searchParams.get("taskId");
 
-  if (!taskId) {
-    return NextResponse.json({ success: false, error: "Missing taskId parameter" }, { status: 400 });
+  if (!taskId || taskId === "latest") {
+    const latest = await getLatestTaskProgress();
+    if (latest) {
+      return NextResponse.json({
+        success: true,
+        data: latest,
+      });
+    }
+    if (!taskId) {
+      return NextResponse.json({ success: false, error: "Missing taskId parameter" }, { status: 400 });
+    }
   }
 
-  const progress = getTaskProgress(taskId);
+  const progress = await getTaskProgress(taskId!);
   if (!progress) {
     return NextResponse.json({
       success: true,
