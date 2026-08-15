@@ -50,6 +50,17 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
   const [report, setReport] = useState<IngestionReport | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Lock background body scroll when Upload Dialog is open
+  React.useEffect(() => {
+    if (isOpen) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   // 1. Instant file selection: No browser parsing, no UI freezing!

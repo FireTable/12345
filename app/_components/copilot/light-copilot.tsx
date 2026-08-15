@@ -49,6 +49,17 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
 
+  // Lock background body scroll when Copilot drawer is open
+  React.useEffect(() => {
+    if (isOpen) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const handleSend = async (customText?: string) => {
@@ -101,11 +112,11 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex justify-end bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex justify-end bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-200 overscroll-contain"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg h-full bg-white border-l border-slate-200 shadow-2xl flex flex-col overflow-hidden text-slate-900"
+        className="w-full max-w-lg h-full bg-white border-l border-slate-200 shadow-2xl flex flex-col overflow-hidden text-slate-900 animate-in slide-in-from-right duration-250"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -160,7 +171,7 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
         </div>
 
         {/* Message History */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 overscroll-contain">
           {messages.map((m) => (
             <div
               key={m.id}

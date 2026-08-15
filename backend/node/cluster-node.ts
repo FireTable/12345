@@ -94,7 +94,7 @@ export async function clusterNode(
         firstOccurrence: firstTime,
         lastOccurrence: lastTime,
         aiSummary: `系统聚类发现：位于【${canonicalLocation}】的【${canonicalSubject}】在 ${timeSpanHours} 小时内累计被诉求 ${tickets.length} 次，主要涉及“${eventType}”。`,
-        recommendedAction: "转派所属辖区及主管部门开展现场核实处置。",
+        recommendedAction: `转派所属辖区行业主管部门牵头，2个工作日内核实具体诉求并向市民反馈办理进展。`,
         tickets,
         relatedSubjects: Array.from(new Set(tickets.map((t) => t.canonicalSubject))),
         relatedLocations: Array.from(new Set(tickets.map((t) => t.canonicalLocation))),

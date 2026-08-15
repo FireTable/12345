@@ -33,6 +33,17 @@ export const TicketDetailSheet: React.FC<TicketDetailSheetProps> = ({
 }) => {
   const [selectedTicketIds, setSelectedTicketIds] = useState<Set<string>>(new Set());
 
+  // Lock background body scroll when drawer is open
+  React.useEffect(() => {
+    if (theme) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [theme]);
+
   if (!theme) return null;
 
   const tickets = theme.tickets || [];
@@ -66,7 +77,7 @@ export const TicketDetailSheet: React.FC<TicketDetailSheetProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex justify-end bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex justify-end bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-200 overscroll-contain"
       onClick={onClose}
     >
       <div
@@ -182,7 +193,7 @@ export const TicketDetailSheet: React.FC<TicketDetailSheetProps> = ({
         </div>
 
         {/* Ticket List Body - Full Height Natural Scroll */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-6 overscroll-contain">
           {isLoadingTickets ? (
             <div className="h-64 flex flex-col items-center justify-center gap-3 text-muted-foreground text-xs">
               <Loader2 className="w-7 h-7 animate-spin text-primary" />
