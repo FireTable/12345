@@ -191,7 +191,7 @@ function ThemeDetailInner() {
 
     if (isUnknownGroup(params.id)) {
       if (!ticketKey) {
-        setRow(unknownClusterFromTicket({
+        const shell = unknownClusterFromTicket({
           id: "",
           ticketId: "",
           title: "未指定工单",
@@ -200,7 +200,10 @@ function ThemeDetailInner() {
           createdAt: "",
           content: "",
           confidence: null,
-        }));
+        });
+        shell.members = [];
+        shell.count = 0;
+        setRow(shell);
         setLoad("done");
         return;
       }
@@ -323,6 +326,7 @@ function ThemeDetailInner() {
   const cluster = row;
 
   function memberWhy(m: Member) {
+    if (cluster.ungrouped) return "尚未归入多频群组，当前为单条工单视图";
     if (m.region && cluster.region && m.region === cluster.region && m.category && m.category === cluster.type) {
       return `同镇街「${m.region}」且诉求分类「${m.category}」`;
     }
@@ -334,39 +338,41 @@ function ThemeDetailInner() {
   return (
     <>
       <div className="breadcrumb">
-        <Link href="/themes">群组中心</Link>
+        <Link href={cluster.ungrouped ? "/tickets" : "/themes"}>{cluster.ungrouped ? "工单中心" : "群组中心"}</Link>
         <span>/</span>
-        <span>{cluster.code || cluster.id}</span>
+        <span>{cluster.ungrouped ? "unknown" : cluster.code || cluster.id}</span>
       </div>
 
-      <div className="cluster-hero">
+      <div className={`cluster-hero${cluster.ungrouped ? " cluster-hero--unknown" : ""}`}>
         <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6 mb-3">
           {/* 左侧：标题、分类、形态与 KPI 指标 */}
           <div className="flex-1 min-w-0">
             <div className="cluster-hero__header">
-              <div className="cluster-hero__icon">{meta.icon}</div>
+              <div className="cluster-hero__icon">{cluster.ungrouped ? "○" : meta.icon}</div>
               <div className="cluster-hero__info">
                 <div className="flex items-center flex-wrap gap-2.5 mb-1.5">
                   <span className="text-xl md:text-2xl font-bold tracking-tight text-white inline-flex items-center">
-                    {cluster.region} · {cluster.type}
+                    {cluster.ungrouped ? "unknown" : `${cluster.region} · ${cluster.type}`}
                   </span>
                   <span
                     className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold shadow-xs ${
-                      cluster.mode === "aggregate"
+                      cluster.ungrouped
+                        ? "bg-white/20 text-white"
+                        : cluster.mode === "aggregate"
                         ? "bg-rose-500/90 text-white"
                         : cluster.mode === "repeat"
                         ? "bg-amber-500/90 text-white"
                         : "bg-blue-600/90 text-white"
                     }`}
                   >
-                    {meta.name}
+                    {cluster.ungrouped ? "未归组" : meta.name}
                   </span>
                   <span className="text-xs text-white/90 font-medium inline-flex items-center bg-white/15 px-2.5 py-0.5 rounded-md border border-white/20">
-                    多频群组全景视图
+                    {cluster.ungrouped ? "单条工单视图" : "多频群组全景视图"}
                   </span>
                 </div>
                 <div className="cluster-hero__sub">
-                  {meta.tagline}
+                  {cluster.ungrouped ? "尚未归入多频群组" : meta.tagline}
                   {row.title ? ` · ${row.title}` : ""}
                 </div>
               </div>
@@ -401,7 +407,7 @@ function ThemeDetailInner() {
                   <span>AI 协同处置建议</span>
                 </div>
                 <span className="text-[10px] text-white/90 bg-white/20 px-2 py-0.5 rounded font-medium">
-                  智能派单策略
+                  {cluster.ungrouped ? "未聚类" : "智能派单策略"}
                 </span>
               </div>
               <div className="text-xs text-white/95 leading-relaxed">
@@ -419,9 +425,18 @@ function ThemeDetailInner() {
 
         {/* 底部：研判规则与触发依据 */}
         <div className="mode-explainer">
-          <b>研判规则：</b>
-          {meta.icon} {meta.name}（{meta.tagline}） · <b>触发依据：</b>
-          {row.mode_risk ? `${row.mode_risk} · ${meta.rule}` : meta.rule}
+          {cluster.ungrouped ? (
+            <>
+              <b>归组状态：</b>
+              unknown · 本条工单未进入多频聚类，不套用群体聚集 / 个体重复 / 同主体发散规则。
+            </>
+          ) : (
+            <>
+              <b>研判规则：</b>
+              {meta.icon} {meta.name}（{meta.tagline}） · <b>触发依据：</b>
+              {row.mode_risk ? `${row.mode_risk} · ${meta.rule}` : meta.rule}
+            </>
+          )}
         </div>
       </div>
 
@@ -432,7 +447,7 @@ function ThemeDetailInner() {
             <div>
               <div className="card__title flex items-center gap-2">
                 <span>📑</span>
-                群组成员工单明细
+                {cluster.ungrouped ? "工单明细" : "群组成员工单明细"}
                 <span className="text-xs text-slate-500 font-normal">
                   (共 {row.count} 件 · 当前展示 {members.length} 件)
                 </span>
@@ -450,7 +465,11 @@ function ThemeDetailInner() {
           </div>
 
           <div className="card__body" style={{ padding: "14px 18px" }}>
-            {members.length === 0 && <div className="empty-hint">暂无关联工单数据</div>}
+            {members.length === 0 && (
+              <div className="empty-hint">
+                {cluster.ungrouped ? "请从工单中心选择要查看的工单。" : "暂无关联工单数据"}
+              </div>
+            )}
             
             {members.map((m) => {
               const isTarget = checkIsTarget(m, targetTicketId);
@@ -571,17 +590,17 @@ function ThemeDetailInner() {
         <div>
           <div className="card" style={{ marginBottom: 14 }}>
             <div className="card__header">
-              <div className="card__title">📌 群组基本信息</div>
+              <div className="card__title">{cluster.ungrouped ? "📌 工单基本信息" : "📌 群组基本信息"}</div>
             </div>
             <div className="card__body" style={{ padding: "8px 18px" }}>
               <div className="info-row">
                 <span className="info-row__label">群组编号</span>
-                <span className="info-row__value">{row.code || row.id}</span>
+                <span className="info-row__value">{cluster.ungrouped ? "unknown" : row.code || row.id}</span>
               </div>
               <div className="info-row">
-                <span className="info-row__label">群组类型</span>
+                <span className="info-row__label">{cluster.ungrouped ? "类型" : "群组类型"}</span>
                 <span className="info-row__value">
-                  {meta.icon} {row.type}
+                  {cluster.ungrouped ? row.type || "—" : `${meta.icon} ${row.type}`}
                 </span>
               </div>
               <div className="info-row">
@@ -605,37 +624,43 @@ function ThemeDetailInner() {
 
           <div className="card" style={{ marginBottom: 14 }}>
             <div className="card__header">
-              <div className="card__title">🤖 AI 聚类研判依据</div>
+              <div className="card__title">{cluster.ungrouped ? "🤖 聚类状态" : "🤖 AI 聚类研判依据"}</div>
             </div>
             <div className="card__body" style={{ padding: "8px 18px 14px" }}>
-              <div className="feature-list">
-                {(row.features || []).length === 0 && <div className="empty-hint">暂无特征（尚未落库）</div>}
-                {(row.features || []).map((f) => (
-                  <div key={f.name} className="feature-list__item">
-                    <div className="feature-list__head">
-                      <span>
-                        {f.name} <span style={{ color: "var(--c-ink-3)", fontSize: 11 }}>{f.desc || ""}</span>
-                      </span>
-                      <span style={{ fontWeight: 600, color: "#1E5AFF" }}>{f.pct}%</span>
-                    </div>
-                    <div className="feature-list__bar">
-                      <div className="feature-list__fill" style={{ width: `${f.pct}%` }} />
-                    </div>
+              {cluster.ungrouped ? (
+                <div className="empty-hint">尚未聚类，暂无研判依据。工作人员可直接阅读左侧工单原文。</div>
+              ) : (
+                <>
+                  <div className="feature-list">
+                    {(row.features || []).length === 0 && <div className="empty-hint">暂无特征（尚未落库）</div>}
+                    {(row.features || []).map((f) => (
+                      <div key={f.name} className="feature-list__item">
+                        <div className="feature-list__head">
+                          <span>
+                            {f.name} <span style={{ color: "var(--c-ink-3)", fontSize: 11 }}>{f.desc || ""}</span>
+                          </span>
+                          <span style={{ fontWeight: 600, color: "#1E5AFF" }}>{f.pct}%</span>
+                        </div>
+                        <div className="feature-list__bar">
+                          <div className="feature-list__fill" style={{ width: `${f.pct}%` }} />
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-              <div style={{ marginTop: 14 }}>
-                <div style={{ fontSize: 12, color: "var(--c-ink-3)", marginBottom: 6 }}>匹配五维</div>
-                {row.radar?.length ? <CivicEChart option={radarOpt} height={200} /> : <div className="empty-hint">暂无雷达数据</div>}
-              </div>
-              <div style={{ marginTop: 12 }}>
-                <div style={{ fontSize: 12, color: "var(--c-ink-3)", marginBottom: 6 }}>归入本群组的核心原因</div>
-                <ul className="ai-reason-list">
-                  {meta.reasons.map((r) => (
-                    <li key={r}>{r}</li>
-                  ))}
-                </ul>
-              </div>
+                  <div style={{ marginTop: 14 }}>
+                    <div style={{ fontSize: 12, color: "var(--c-ink-3)", marginBottom: 6 }}>匹配五维</div>
+                    {row.radar?.length ? <CivicEChart option={radarOpt} height={200} /> : <div className="empty-hint">暂无雷达数据</div>}
+                  </div>
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{ fontSize: 12, color: "var(--c-ink-3)", marginBottom: 6 }}>归入本群组的核心原因</div>
+                    <ul className="ai-reason-list">
+                      {meta.reasons.map((r) => (
+                        <li key={r}>{r}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
@@ -660,7 +685,7 @@ function ThemeDetailInner() {
             <div className="card__body" style={{ padding: "14px 18px" }}>
               <div className="info-row">
                 <span className="info-row__label">责任人 / 部门</span>
-                <span className="info-row__value">{row.status?.owner || "顺德区热线督办组"}</span>
+                <span className="info-row__value">{row.status?.owner || (cluster.ungrouped ? "—" : "顺德区热线督办组")}</span>
               </div>
               <div className="info-row">
                 <span className="info-row__label">办理进度</span>
