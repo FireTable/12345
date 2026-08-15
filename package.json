@@ -12,6 +12,7 @@
     "slice": "tsx scripts/slice-excel.ts",
     "ingest": "tsx scripts/ingest-full-dataset.ts",
     "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx scripts/db-migrate.ts",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx scripts/db-seed.ts",
     "db:studio": "drizzle-kit studio"

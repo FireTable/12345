@@ -4,7 +4,7 @@ import * as schema from "./schema";
 
 const url =
   process.env.DATABASE_URL ||
-  "postgres://postgres:postgres@localhost:5432/ticket_radar";
+  "postgresql://FireTable@localhost:5432/ticket_radar";
 
 declare global {
   var __pg: ReturnType<typeof postgres> | undefined;
