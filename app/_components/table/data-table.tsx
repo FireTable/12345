@@ -5,7 +5,6 @@ import {
   ColumnDef,
   ColumnFiltersState,
   SortingState,
-  VisibilityState,
   flexRender,
   getCoreRowModel,
   getFilteredRowModel,
@@ -79,22 +78,22 @@ export function DataTable<TData, TValue>({
             onChange={(event) =>
               table.getColumn(searchKey)?.setFilterValue(event.target.value)
             }
-            className="max-w-sm h-8 text-xs bg-zinc-900/80 border-zinc-800"
+            className="max-w-sm h-8.5 text-xs bg-white border-slate-300 text-slate-900 shadow-2xs"
           />
-          <div className="text-xs text-zinc-500">
-            共 {table.getFilteredRowModel().rows.length} 条记录
+          <div className="text-xs text-slate-500 font-medium">
+            共 <span className="font-bold text-slate-800">{table.getFilteredRowModel().rows.length}</span> 个治理主题
           </div>
         </div>
       )}
 
-      <div className="rounded-lg border border-zinc-800 bg-zinc-950/60 overflow-hidden">
+      <div className="rounded-lg border border-slate-200 bg-white overflow-hidden shadow-2xs">
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id} className="border-zinc-800 hover:bg-transparent">
+              <TableRow key={headerGroup.id} className="border-slate-200 hover:bg-transparent bg-slate-50">
                 {headerGroup.headers.map((header) => {
                   return (
-                    <TableHead key={header.id} className="text-zinc-400 font-medium text-xs h-9 bg-zinc-900/50">
+                    <TableHead key={header.id} className="text-slate-600 font-bold text-xs h-9.5">
                       {header.isPlaceholder
                         ? null
                         : flexRender(
@@ -114,12 +113,12 @@ export function DataTable<TData, TValue>({
                   key={row.id}
                   data-state={row.getIsSelected() && "selected"}
                   onClick={() => onRowClick && onRowClick(row.original)}
-                  className={`border-zinc-800/60 transition-colors ${
-                    onRowClick ? "cursor-pointer hover:bg-zinc-900/50" : ""
+                  className={`border-slate-100 transition-colors ${
+                    onRowClick ? "cursor-pointer hover:bg-slate-50/80" : ""
                   }`}
                 >
                   {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id} className="py-2.5 px-3 text-xs">
+                    <TableCell key={cell.id} className="py-3 px-3 text-xs text-slate-700">
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </TableCell>
                   ))}
@@ -127,7 +126,7 @@ export function DataTable<TData, TValue>({
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={columns.length} className="h-24 text-center text-zinc-500 text-xs">
+                <TableCell colSpan={columns.length} className="h-24 text-center text-slate-400 text-xs">
                   暂无匹配数据
                 </TableCell>
               </TableRow>
@@ -137,7 +136,7 @@ export function DataTable<TData, TValue>({
       </div>
 
       {/* Pagination Controls */}
-      <div className="flex items-center justify-between px-1 text-xs text-zinc-400">
+      <div className="flex items-center justify-between px-1 text-xs text-slate-500">
         <div>
           {table.getFilteredSelectedRowModel().rows.length > 0 && (
             <span>
@@ -147,14 +146,14 @@ export function DataTable<TData, TValue>({
           )}
         </div>
         <div className="flex items-center space-x-2">
-          <span className="text-zinc-500 mr-2">
+          <span className="text-slate-500 mr-2">
             第 {table.getState().pagination.pageIndex + 1} 页 / 共{" "}
             {Math.max(1, table.getPageCount())} 页
           </span>
           <Button
             variant="outline"
             size="icon"
-            className="h-7 w-7 border-zinc-800 bg-zinc-900"
+            className="h-7 w-7 border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
             onClick={() => table.setPageIndex(0)}
             disabled={!table.getCanPreviousPage()}
           >
@@ -163,7 +162,7 @@ export function DataTable<TData, TValue>({
           <Button
             variant="outline"
             size="icon"
-            className="h-7 w-7 border-zinc-800 bg-zinc-900"
+            className="h-7 w-7 border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
             onClick={() => table.previousPage()}
             disabled={!table.getCanPreviousPage()}
           >
@@ -172,7 +171,7 @@ export function DataTable<TData, TValue>({
           <Button
             variant="outline"
             size="icon"
-            className="h-7 w-7 border-zinc-800 bg-zinc-900"
+            className="h-7 w-7 border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
             onClick={() => table.nextPage()}
             disabled={!table.getCanNextPage()}
           >
@@ -181,7 +180,7 @@ export function DataTable<TData, TValue>({
           <Button
             variant="outline"
             size="icon"
-            className="h-7 w-7 border-zinc-800 bg-zinc-900"
+            className="h-7 w-7 border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
             onClick={() => table.setPageIndex(table.getPageCount() - 1)}
             disabled={!table.getCanNextPage()}
           >

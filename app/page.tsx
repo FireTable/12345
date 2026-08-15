@@ -62,7 +62,7 @@ export default function HomePage() {
         }
       } catch (err) {
         console.error("Failed to load initial cluster data:", err);
-        toast.error("从 LangGraph 后端获取多频数据失败，请检查服务状态");
+        toast.error("从后端获取多频数据失败，请检查服务状态");
       } finally {
         setIsLoading(false);
       }
@@ -102,7 +102,7 @@ export default function HomePage() {
   const handleRefreshClustering = async () => {
     try {
       setIsAnalyzing(true);
-      toast.info("正在调用 LangGraph JS 后端执行多频图聚类...");
+      toast.info("正在执行多频知识图谱聚类计算...");
       const res = await fetch("/api/cluster", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -113,10 +113,10 @@ export default function HomePage() {
         setThemes(json.data.themes);
         setStats(json.data.stats);
         setGraphData(json.data.graphData);
-        toast.success(`LangGraph 聚类完成！识别 ${json.data.themes.length} 个多频主题，聚合 ${json.data.stats.multiFrequencyTickets} 件工单`);
+        toast.success(`聚类分析完成！聚合 ${json.data.themes.length} 个多频主题，覆盖 ${json.data.stats.multiFrequencyTickets} 件多频工单`);
       }
     } catch (err) {
-      toast.error("调用 LangGraph 聚类失败");
+      toast.error("调用多频聚类分析失败");
     } finally {
       setIsAnalyzing(false);
     }
@@ -125,11 +125,11 @@ export default function HomePage() {
   // Export Master Verification Table
   const handleExportMaster = () => {
     exportThemesToCSV(themes);
-    toast.success("热线多频工单核查报表 (CSV) 已成功导出！");
+    toast.success("多频工单核查总表 (CSV) 已成功导出！");
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-cyan-500 selection:text-white">
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col selection:bg-blue-600 selection:text-white">
       {/* 1. Header */}
       <Header
         activeView={activeView}
@@ -159,9 +159,9 @@ export default function HomePage() {
       {/* 4. Main Content Area */}
       <main className="flex-1 pb-12">
         {isLoading ? (
-          <div className="max-w-7xl mx-auto px-6 py-20 flex flex-col items-center justify-center gap-3 text-slate-400">
-            <Loader2 className="w-8 h-8 animate-spin text-cyan-400" />
-            <p className="text-xs">正在从 LangGraph JS 后端拉取多频工单知识图谱...</p>
+          <div className="max-w-7xl mx-auto px-6 py-20 flex flex-col items-center justify-center gap-3 text-slate-500">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            <p className="text-xs font-medium">正在拉取多频知识图谱与工单数据...</p>
           </div>
         ) : (
           <>
