@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import {
   Dialog,
   DialogContent,
@@ -12,7 +13,7 @@ import {
 type ConfirmDialogProps = {
   open: boolean;
   title: string;
-  description?: React.ReactNode;
+  description?: ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
   destructive?: boolean;

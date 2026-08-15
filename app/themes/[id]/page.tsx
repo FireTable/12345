@@ -345,8 +345,8 @@ function ThemeDetailInner() {
 
                   {/* 工单正文（展开/折叠） */}
                   <div
-                    className={`member-item__content text-xs text-slate-600 leading-relaxed bg-slate-50/70 p-2.5 rounded-lg border border-slate-100 mb-2 ${
-                      isExpanded ? "whitespace-pre-wrap" : "line-clamp-2"
+                    className={`member-item__content text-xs text-slate-700 leading-relaxed bg-slate-50/80 p-3 rounded-lg border border-slate-200/70 mb-2 ${
+                      isExpanded ? "is-expanded" : "is-clamped"
                     }`}
                   >
                     {m.content || "暂无详细正文"}
