@@ -7,6 +7,9 @@ import "@/app/_components/civic/civic-pages.css";
 import { CivicNav } from "@/app/_components/civic/civic-nav";
 import { CivicWorkflowProvider } from "@/app/_components/civic/civic-workflow";
 import { Toaster } from "@/app/_components/ui/sonner";
+import { appViewport } from "./viewport";
+
+export const viewport = appViewport;
 
 export const metadata: Metadata = {
   title: "顺德 12345 AI 智能研判系统",

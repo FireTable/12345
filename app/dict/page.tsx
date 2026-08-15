@@ -348,7 +348,7 @@ export default function DictionaryManagementPage() {
       {/* Tab 1: 别名知识库映射列表 (Table) */}
       {activeTab === "aliases" && (
         <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="table-scroll overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50/80 border-b border-slate-200/80 text-[11px] font-semibold text-slate-600">
                 <tr>

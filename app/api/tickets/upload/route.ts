@@ -6,6 +6,7 @@ import { ticketsTable } from "@/db/schema";
 import { inArray } from "drizzle-orm";
 import { desensitizeContent } from "@/backend/anonymizer";
 import { AGENT_TICKET_NULLS } from "@/lib/civic-persist";
+import { invalidateCivicAggregates } from "@/lib/civic-cache";
 
 const HEADER_MAP: Record<string, string> = {
   序号: "index",
@@ -204,6 +205,7 @@ export async function POST(req: Request) {
     }
 
     const durationMs = Date.now() - startTime;
+    invalidateCivicAggregates();
 
     return NextResponse.json({
       success: true,

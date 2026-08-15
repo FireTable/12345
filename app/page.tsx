@@ -165,7 +165,7 @@ export default function DashboardPage() {
         <div className="card__header">
           <div className="card__title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ display: "inline-block", width: 4, height: 14, background: "linear-gradient(180deg,#F53F3F 0%,#FF7D00 100%)", borderRadius: 2 }} />
-            关键洞察
+            工单透势
             <span style={{ fontSize: 11, fontWeight: 400, color: "var(--c-ink-3)", marginLeft: 6 }}>由 AI 实时分析生成</span>
           </div>
         </div>
@@ -251,7 +251,7 @@ export default function DashboardPage() {
             <div className="card__title">镇街 × 类型 工单数量</div>
             <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>色深表示工单数量</div>
           </div>
-          <div className="card__body" style={{ padding: "8px 12px", overflowX: "auto" }}>
+          <div className="card__body heatmap-scroll" style={{ padding: "8px 12px" }}>
             <CivicHeatmap
               regions={regions.slice(0, 10).map((r) => r[0])}
               cats={cats.slice(0, 7).map((c) => c[0])}

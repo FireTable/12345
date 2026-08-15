@@ -57,6 +57,13 @@
       "when": 1786792580775,
       "tag": "0007_fine_vampiro",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786813200000,
+      "tag": "0008_ticket_filter_indexes",
+      "breakpoints": true
     }
   ]
 }

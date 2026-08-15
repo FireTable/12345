@@ -298,6 +298,7 @@ export default function TicketsPage() {
           </Select>
           <span className="filter-bar__summary">共 {data.total} 条结果</span>
         </div>
+        <div className="table-scroll">
         <table className="workorder-table">
           <thead>
             <tr>
@@ -344,6 +345,7 @@ export default function TicketsPage() {
             ))}
           </tbody>
         </table>
+        </div>
         {data.data.length === 0 && <div className="empty-hint">暂无工单</div>}
         <div className="pagination">
           <div className="pagination__info">

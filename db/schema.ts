@@ -46,6 +46,11 @@ export const ticketsTable = pgTable(
     index("idx_tickets_subdistrict").on(table.subdistrict),
     index("idx_tickets_create_time").on(table.createTime),
     index("idx_tickets_closed_at").on(table.closedAt),
+    index("idx_tickets_status").on(table.status),
+    index("idx_tickets_urgency").on(table.urgency),
+    index("idx_tickets_source_category").on(table.sourceCategory),
+    index("idx_tickets_primary_theme_id").on(table.primaryThemeId),
+    index("idx_tickets_status_create_time").on(table.status, table.createTime),
   ]
 );
 
@@ -85,6 +90,7 @@ export const themesTable = pgTable(
     index("idx_themes_risk_level").on(table.riskLevel),
     index("idx_themes_subject").on(table.canonicalSubject),
     index("idx_themes_pattern_type").on(table.patternType),
+    index("idx_themes_ticket_count").on(table.ticketCount),
   ]
 );
 

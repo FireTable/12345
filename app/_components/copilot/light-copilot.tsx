@@ -145,12 +145,12 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs">
+        <div className="p-4 border-b border-slate-200 flex items-center justify-between gap-2 bg-slate-50">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs shrink-0">
               <BotMessageSquare className="w-4 h-4" />
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-1.5">
                 <h2 className="text-xs font-bold text-slate-900">
                   AI 智能研判副驾驶
@@ -159,7 +159,7 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
                   GraphRAG
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500">
+              <p className="text-[11px] text-slate-500 truncate">
                 实时多频态势感知 · 智能归因分析 · 简报生成
               </p>
             </div>

@@ -286,6 +286,7 @@ export default function ThemesPage() {
           <span className="filter-bar__summary">共 {filtered.length} 条结果</span>
         </div>
 
+        <div className="table-scroll">
         <table className="group-table">
           <thead>
             <tr>
@@ -372,6 +373,7 @@ export default function ThemesPage() {
             })}
           </tbody>
         </table>
+        </div>
         {filtered.length === 0 && <div className="empty-hint">暂无群组。请先触发聚类研判。</div>}
         {filtered.length > 0 && (
           <div className="pagination">

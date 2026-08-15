@@ -240,6 +240,7 @@ function MultifreqInner() {
             查看全部 {filtered.length} 个聚类 →
           </button>
         </div>
+        <div className="table-scroll">
         <table className="workorder-table">
           <thead>
             <tr>
@@ -321,6 +322,7 @@ function MultifreqInner() {
             })}
           </tbody>
         </table>
+        </div>
         {top5.length === 0 && <div className="empty-hint">暂无多频群组。请先启动 Agent 研判。</div>}
       </section>
 

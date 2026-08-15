@@ -31,6 +31,112 @@ function ym(d: Date): string {
   return d.toISOString().slice(0, 7);
 }
 
+export type OverviewBuckets = {
+  total: number;
+  analyzed: number;
+  multifreq: number;
+  minTime: Date | null;
+  maxTime: Date | null;
+  themeCount: number;
+  regionRows: Array<{ subdistrict: string | null; n: number }>;
+  categoryRows: Array<{ category: string | null; n: number }>;
+  regionCategoryRows: Array<{ subdistrict: string | null; category: string | null; n: number }>;
+  monthlyRows: Array<{ month: string; n: number }>;
+};
+
+export type TrendBuckets = {
+  dailyRows: Array<{ day: string; n: number }>;
+  clusterDayRows: Array<{ day: string; n: number }>;
+};
+
+export function buildOverviewFromBuckets(b: OverviewBuckets) {
+  const min = b.minTime;
+  const max = b.maxTime;
+  const totalDays =
+    min && max ? Math.max(1, Math.round((max.getTime() - min.getTime()) / 86400000) + 1) : 0;
+
+  const regionDistribution: Record<string, number> = {};
+  for (const row of b.regionRows) {
+    const town = explicitAdmin(row.subdistrict);
+    const region = town ? regionLabel(town) : "";
+    if (region && isTownLabel(region)) {
+      regionDistribution[region] = (regionDistribution[region] || 0) + Number(row.n || 0);
+    }
+  }
+
+  const categoryDistribution: Record<string, number> = {};
+  for (const row of b.categoryRows) {
+    const cat = (row.category || "").trim();
+    if (cat) categoryDistribution[cat] = (categoryDistribution[cat] || 0) + Number(row.n || 0);
+  }
+
+  const regionCategory: Record<string, Record<string, number>> = {};
+  for (const row of b.regionCategoryRows) {
+    const town = explicitAdmin(row.subdistrict);
+    const region = town ? regionLabel(town) : "";
+    const cat = (row.category || "").trim();
+    if (region && isTownLabel(region) && cat) {
+      if (!regionCategory[region]) regionCategory[region] = {};
+      regionCategory[region][cat] = (regionCategory[region][cat] || 0) + Number(row.n || 0);
+    }
+  }
+
+  const monthlyTrend: Record<string, number> = {};
+  for (const row of b.monthlyRows) {
+    if (row.month) monthlyTrend[row.month] = Number(row.n || 0);
+  }
+
+  const topRegion =
+    Object.entries(regionDistribution).sort((a, c) => c[1] - a[1])[0]?.[0] || "";
+  const topCategory =
+    Object.entries(categoryDistribution).sort((a, c) => c[1] - a[1])[0]?.[0] || "";
+
+  return {
+    totalWorkorders: Number(b.total || 0),
+    analyzedCount: Number(b.analyzed || 0),
+    dateRange: min && max ? `${ymd(min)} ~ ${ymd(max)}` : "",
+    totalDays,
+    avgDaily: totalDays ? Math.round(Number(b.total || 0) / totalDays) : 0,
+    topRegion,
+    topCategory,
+    multiFreqCount: Number(b.multifreq || 0),
+    multiFreqClusters: Number(b.themeCount || 0),
+    regionDistribution,
+    categoryDistribution,
+    regionCategory,
+    monthlyTrend,
+  };
+}
+
+export function buildTrendsFromBuckets(b: TrendBuckets) {
+  const daily: Record<string, number> = {};
+  const weekly: Record<string, number> = {};
+  const monthly: Record<string, number> = {};
+  const dailyNewClusters: Record<string, number> = {};
+
+  for (const row of b.dailyRows) {
+    if (!row.day) continue;
+    const n = Number(row.n || 0);
+    daily[row.day] = n;
+    monthly[row.day.slice(0, 7)] = (monthly[row.day.slice(0, 7)] || 0) + n;
+    const d = asDate(row.day);
+    if (!d) continue;
+    const weekStart = new Date(d);
+    const dow = weekStart.getUTCDay() || 7;
+    weekStart.setUTCDate(weekStart.getUTCDate() - (dow - 1));
+    const weekEnd = new Date(weekStart);
+    weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
+    const wk = `${ymd(weekStart)}/${ymd(weekEnd)}`;
+    weekly[wk] = (weekly[wk] || 0) + n;
+  }
+
+  for (const row of b.clusterDayRows) {
+    if (row.day) dailyNewClusters[row.day] = Number(row.n || 0);
+  }
+
+  return { monthly, weekly, daily, dailyNewClusters };
+}
+
 export function buildOverview(tickets: TicketStatRow[], themeCount: number) {
   const dates = tickets.map((t) => asDate(t.createTime)).filter((d): d is Date => !!d);
   const min = dates.length ? new Date(Math.min(...dates.map((d) => d.getTime()))) : null;

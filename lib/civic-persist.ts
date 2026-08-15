@@ -3,6 +3,7 @@ import { ticketsTable, themesTable, ticketThemesTable } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { adminFromLocation } from "@/lib/admin-area";
 import { civicModeFromPattern } from "@/backend/theme-metrics";
+import { invalidateCivicAggregates } from "@/lib/civic-cache";
 import type { EnrichedTicket, MultiFrequencyTheme } from "@/backend/state";
 
 export type TicketAgentPatch = {
@@ -162,4 +163,5 @@ export async function persistClusterResult(input: {
       }
     }
   }
+  invalidateCivicAggregates();
 }
