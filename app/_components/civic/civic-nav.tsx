@@ -18,7 +18,7 @@ export function CivicNav() {
   return (
     <nav className="navbar">
       <div className="navbar__brand">
-        <div className="brand-logo">12345</div>
+        <div className="brand-logo">民声智理</div>
         <span className="brand-text-full">顺德区 12345 热线智能工单管理平台</span>
       </div>
       <div className="navbar__menu">

@@ -295,7 +295,7 @@ export default function ThemesPage() {
               <th>代表性诉求标题</th>
               <th style={{ width: 75, textAlign: "right" }}>工单数</th>
               <th style={{ width: 75, textAlign: "right" }}>未处理</th>
-              <th style={{ width: 80 }}>紧急度</th>
+              <th style={{ width: 120 }}>紧急度</th>
               <th style={{ width: 85, textAlign: "right" }}>持续天数</th>
               <th style={{ width: 125 }}>AI 置信度</th>
               <th style={{ width: 85 }}>处置状态</th>
