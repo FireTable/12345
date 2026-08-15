@@ -278,9 +278,9 @@ export default function ThemesPage() {
             <SelectContent>
               <SelectItem value="all">紧急度：全部</SelectItem>
               <SelectItem value="urgent">紧急</SelectItem>
-              <SelectItem value="high">高</SelectItem>
-              <SelectItem value="medium">中</SelectItem>
-              <SelectItem value="low">低</SelectItem>
+              <SelectItem value="high">较急</SelectItem>
+              <SelectItem value="medium">中等</SelectItem>
+              <SelectItem value="low">普通</SelectItem>
             </SelectContent>
           </Select>
           <span className="filter-bar__summary">共 {filtered.length} 条结果</span>

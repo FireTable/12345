@@ -42,9 +42,9 @@ export function deriveClusterUrgency(unprocessed: number, type: string, urgentCu
 
 export const URGENCY_META: Record<ClusterUrgency, { label: string; cls: string }> = {
   urgent: { label: "紧急", cls: "urgency-tag--urgent" },
-  high: { label: "高", cls: "urgency-tag--high" },
-  medium: { label: "中", cls: "urgency-tag--medium" },
-  low: { label: "低", cls: "urgency-tag--low" },
+  high: { label: "较急", cls: "urgency-tag--high" },
+  medium: { label: "中等", cls: "urgency-tag--medium" },
+  low: { label: "普通", cls: "urgency-tag--low" },
 };
 
 export function mapColorByShare(count: number, max: number): string {
