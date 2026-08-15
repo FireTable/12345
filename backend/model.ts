@@ -36,9 +36,9 @@ export class PatchedChatOpenAI extends ChatOpenAI {
  * 78Code / OpenAI-compatible Chat LLM (gpt-5.6-terra)
  */
 export function getChatModel(temperature: number = 0.2): ChatOpenAI {
-  const apiKey = process.env.OPENAI_API_KEY;
-  const baseURL = process.env.OPENAI_BASE_URL || "https://www.78code.cc/v1";
-  const model = process.env.OPENAI_MODEL || "gpt-5.6-terra";
+  const apiKey = process.env.OPENAI_API_KEY || "ollama";
+  const baseURL = process.env.OPENAI_BASE_URL || "http://localhost:11434/v1";
+  const model = process.env.OPENAI_MODEL || "hoangquan456/qwen3-nothink:8b";
 
   return new PatchedChatOpenAI({
     model,
