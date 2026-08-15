@@ -272,21 +272,65 @@ export function donutOption(dist: Record<string, number>) {
 export function radarOption(values: number[]) {
   const data = values.length === 5 ? values : [0, 0, 0, 0, 0];
   return {
-    tooltip: { trigger: "item" },
+    tooltip: {
+      trigger: "item",
+      backgroundColor: "rgba(15, 23, 42, 0.95)",
+      borderColor: "#334155",
+      textStyle: { color: "#F8FAFC", fontSize: 12 },
+      formatter: (p: { value: number[] }) => {
+        const names = ["关键词", "地理", "时间", "情绪", "重复度"];
+        const colors = ["#2563EB", "#10B981", "#F59E0B", "#EC4899", "#8B5CF6"];
+        return (
+          `<b>AI 五维研判匹配度</b><br/>` +
+          names
+            .map((n, i) => `<span style="color:${colors[i]}">●</span> ${n}：<b>${p.value[i] ?? 0}%</b>`)
+            .join("<br/>")
+        );
+      },
+    },
     radar: {
       indicator: [
-        { name: "关键词", max: 100 },
-        { name: "地理", max: 100 },
-        { name: "时间", max: 100 },
-        { name: "情绪", max: 100 },
-        { name: "重复度", max: 100 },
+        { name: "关键词", max: 100, color: "#1D4ED8" },
+        { name: "地理", max: 100, color: "#059669" },
+        { name: "时间", max: 100, color: "#D97706" },
+        { name: "情绪", max: 100, color: "#DB2777" },
+        { name: "重复度", max: 100, color: "#7C3AED" },
       ],
       shape: "polygon",
       splitNumber: 4,
-      axisName: { color: "#64748B", fontSize: 11 },
-      splitLine: { lineStyle: { color: "rgba(22,119,255,0.12)" } },
-      splitArea: { areaStyle: { color: ["rgba(22,119,255,0.02)", "rgba(22,119,255,0.05)"] } },
-      axisLine: { lineStyle: { color: "rgba(22,119,255,0.15)" } },
+      axisName: {
+        fontSize: 12,
+        fontWeight: 600,
+        padding: [2, 4],
+      },
+      splitLine: {
+        lineStyle: {
+          color: [
+            "rgba(148, 163, 184, 0.15)",
+            "rgba(148, 163, 184, 0.25)",
+            "rgba(148, 163, 184, 0.35)",
+            "rgba(148, 163, 184, 0.45)",
+          ],
+          width: 1,
+        },
+      },
+      splitArea: {
+        show: true,
+        areaStyle: {
+          color: [
+            "rgba(241, 245, 249, 0.25)",
+            "rgba(241, 245, 249, 0.45)",
+            "rgba(241, 245, 249, 0.65)",
+            "rgba(241, 245, 249, 0.85)",
+          ],
+        },
+      },
+      axisLine: {
+        lineStyle: {
+          color: "rgba(148, 163, 184, 0.3)",
+          type: "dashed",
+        },
+      },
     },
     series: [
       {
@@ -294,12 +338,35 @@ export function radarOption(values: number[]) {
         data: [
           {
             value: data,
-            name: "匹配度",
+            name: "研判五维匹配度",
             symbol: "circle",
-            symbolSize: 4,
-            lineStyle: { color: "#1E5AFF", width: 2 },
-            areaStyle: { color: "rgba(22,119,255,0.18)" },
-            itemStyle: { color: "#1E5AFF" },
+            symbolSize: 6,
+            lineStyle: {
+              width: 2.5,
+              color: "#2563EB",
+              shadowColor: "rgba(37, 99, 235, 0.35)",
+              shadowBlur: 8,
+            },
+            areaStyle: {
+              color: {
+                type: "radial",
+                x: 0.5,
+                y: 0.5,
+                r: 0.5,
+                colorStops: [
+                  { offset: 0, color: "rgba(37, 99, 235, 0.45)" },
+                  { offset: 0.6, color: "rgba(99, 102, 241, 0.3)" },
+                  { offset: 1, color: "rgba(236, 72, 153, 0.15)" },
+                ],
+              },
+            },
+            itemStyle: {
+              color: "#2563EB",
+              borderColor: "#FFFFFF",
+              borderWidth: 2,
+              shadowColor: "rgba(0, 0, 0, 0.2)",
+              shadowBlur: 4,
+            },
           },
         ],
       },

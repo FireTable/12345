@@ -559,19 +559,33 @@ function ThemeDetailInner() {
                 <>
                   <div className="feature-list">
                     {(row.features || []).length === 0 && <div className="empty-hint">暂无特征（尚未落库）</div>}
-                    {(row.features || []).map((f) => (
-                      <div key={f.name} className="feature-list__item">
-                        <div className="feature-list__head">
-                          <span>
-                            {f.name} <span style={{ color: "var(--c-ink-3)", fontSize: 11 }}>{f.desc || ""}</span>
-                          </span>
-                          <span style={{ fontWeight: 600, color: "#1E5AFF" }}>{f.pct}%</span>
+                    {(row.features || []).map((f, idx) => {
+                      const dimStyles = [
+                        { text: "#1D4ED8", fill: "linear-gradient(90deg, #60A5FA 0%, #1D4ED8 100%)", dot: "#2563EB" }, // 关键词
+                        { text: "#059669", fill: "linear-gradient(90deg, #34D399 0%, #059669 100%)", dot: "#10B981" }, // 地理
+                        { text: "#D97706", fill: "linear-gradient(90deg, #FBBF24 0%, #D97706 100%)", dot: "#F59E0B" }, // 时间
+                        { text: "#DB2777", fill: "linear-gradient(90deg, #F472B6 0%, #DB2777 100%)", dot: "#EC4899" }, // 情绪
+                        { text: "#7C3AED", fill: "linear-gradient(90deg, #A78BFA 0%, #7C3AED 100%)", dot: "#8B5CF6" }, // 重复度
+                      ];
+                      const style = dimStyles[idx % dimStyles.length];
+                      return (
+                        <div key={f.name} className="feature-list__item">
+                          <div className="feature-list__head">
+                            <span className="flex items-center gap-1.5 font-medium text-slate-700">
+                              <span style={{ width: 6, height: 6, borderRadius: "50%", background: style.dot, display: "inline-block", flexShrink: 0 }} />
+                              {f.name} <span style={{ color: "var(--c-ink-3)", fontSize: 11 }}>{f.desc || ""}</span>
+                            </span>
+                            <span style={{ fontWeight: 700, color: style.text }}>{f.pct}%</span>
+                          </div>
+                          <div className="feature-list__bar" style={{ background: "#F1F5F9" }}>
+                            <div
+                              className="feature-list__fill"
+                              style={{ width: `${f.pct}%`, background: style.fill, transition: "width 0.4s ease" }}
+                            />
+                          </div>
                         </div>
-                        <div className="feature-list__bar">
-                          <div className="feature-list__fill" style={{ width: `${f.pct}%` }} />
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                   <div style={{ marginTop: 14 }}>
                     <div style={{ fontSize: 12, color: "var(--c-ink-3)", marginBottom: 6 }}>匹配五维</div>
