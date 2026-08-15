@@ -12,7 +12,9 @@ export type QuadCluster = {
   status: { label: string };
 };
 
-function quadKey(c: QuadCluster): "tl" | "tr" | "bl" | "br" {
+type Q = "tl" | "tr" | "bl" | "br";
+
+function quadKey(c: QuadCluster): Q {
   const urgent = c.urgency === "urgent" || c.urgency === "medium";
   const important = c.urgency === "urgent" || c.urgency === "high";
   if (urgent && important) return "tr";
@@ -21,32 +23,59 @@ function quadKey(c: QuadCluster): "tl" | "tr" | "bl" | "br" {
   return "bl";
 }
 
-const QUAD_RANGE = {
-  tl: { x: [0, 50], y: [0, 50] },
-  tr: { x: [50, 100], y: [0, 50] },
-  bl: { x: [0, 50], y: [50, 100] },
-  br: { x: [50, 100], y: [50, 100] },
-} as const;
+/**
+ * Per-quadrant bounding box in % coords. Each quadrant is 50×50 of the
+ * chart, with an inner padding so dots don't sit on the cross / border.
+ *   tl: x ∈ [pad, 50-pad]  y ∈ [pad, 50-pad]
+ *   tr: x ∈ [50+pad, 100-pad] y ∈ [pad, 50-pad]
+ *   bl: x ∈ [pad, 50-pad]  y ∈ [50+pad, 100-pad]
+ *   br: x ∈ [50+pad, 100-pad] y ∈ [50+pad, 100-pad]
+ */
+const QBOX: Record<Q, { xMin: number; xMax: number; yMin: number; yMax: number }> = {
+  tl: { xMin: 8,  xMax: 46, yMin: 18, yMax: 44 },
+  tr: { xMin: 54, xMax: 92, yMin: 18, yMax: 44 },
+  bl: { xMin: 8,  xMax: 46, yMin: 56, yMax: 88 },
+  br: { xMin: 54, xMax: 92, yMin: 56, yMax: 88 },
+};
+
+/**
+ * FNV-1a mix → number in [0, 1). Two different salts give independent
+ * x / y streams so neighbours don't fall on the same row or column.
+ */
+function hash01(id: string, salt: number): number {
+  let h = 2166136261 ^ salt;
+  for (let i = 0; i < id.length; i++) {
+    h ^= id.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return ((h >>> 0) % 10000) / 10000;
+}
 
 export function QuadrantBoard({ clusters }: { clusters: QuadCluster[] }) {
   const router = useRouter();
   const pending = clusters.filter((c) => c.status.label !== "已办结");
-  const grouped: Record<"tl" | "tr" | "bl" | "br", QuadCluster[]> = { tl: [], tr: [], bl: [], br: [] };
-  pending.forEach((c) => grouped[quadKey(c)].push(c));
 
-  const dots: Array<{ c: QuadCluster; left: number; top: number; size: number; cls: string }> = [];
-  let idx = 0;
-  (Object.keys(grouped) as Array<keyof typeof grouped>).forEach((key) => {
-    const range = QUAD_RANGE[key];
-    grouped[key].forEach((c, i) => {
-      const left = range.x[0] + 12 + ((i * 17 + idx * 11) % (range.x[1] - range.x[0] - 14));
-      const top = range.y[0] + 18 + ((i * 13 + idx * 7) % (range.y[1] - range.y[0] - 20));
-      const size = Math.max(14, Math.min(36, 12 + Math.log10((c.count || 1) + 1) * 8));
-      const cls =
-        key === "tr" ? "quad-dot--urgent" : key === "tl" ? "quad-dot--high" : key === "br" ? "quad-dot--medium" : "quad-dot--low";
-      dots.push({ c, left, top, size, cls });
-      idx += 1;
-    });
+  // Per-quadrant counts for the corner labels
+  const grouped: Record<Q, number> = { tl: 0, tr: 0, bl: 0, br: 0 };
+  pending.forEach((c) => { grouped[quadKey(c)] += 1; });
+
+  type Dot = { c: QuadCluster; left: number; top: number; size: number; cls: string };
+  const dots: Dot[] = pending.map((c) => {
+    const q = quadKey(c);
+    const box = QBOX[q];
+    // Pseudo-random scatter inside the quadrant's inner box.
+    // hash01 returns [0, 1) so we span the full box width/height.
+    const rx = hash01(c.id, 0xA1);
+    const ry = hash01(c.id, 0xB2);
+    const left = box.xMin + rx * (box.xMax - box.xMin);
+    const top  = box.yMin + ry * (box.yMax - box.yMin);
+    const size = Math.max(14, Math.min(38, 12 + Math.log10((c.count || 1) + 1) * 9));
+    const cls =
+      c.urgency === "urgent" ? "quad-dot--urgent"
+      : c.urgency === "high" ? "quad-dot--high"
+      : c.urgency === "medium" ? "quad-dot--medium"
+      : "quad-dot--low";
+    return { c, left, top, size, cls };
   });
 
   return (
@@ -55,28 +84,28 @@ export function QuadrantBoard({ clusters }: { clusters: QuadCluster[] }) {
         <div className="quad quad--tl">
           <div className="quad__inner">
             <div className="quad__label">🟠 重要不紧急</div>
-            <div className="quad__count">{grouped.tl.length}</div>
+            <div className="quad__count">{grouped.tl}</div>
             <div className="quad__hint">计划安排处理</div>
           </div>
         </div>
         <div className="quad quad--tr">
           <div className="quad__inner" style={{ textAlign: "right" }}>
             <div className="quad__label">🔴 紧急且重要</div>
-            <div className="quad__count">{grouped.tr.length}</div>
+            <div className="quad__count">{grouped.tr}</div>
             <div className="quad__hint">立即处置</div>
           </div>
         </div>
         <div className="quad quad--bl">
           <div className="quad__inner">
             <div className="quad__label">🟢 观察等待</div>
-            <div className="quad__count">{grouped.bl.length}</div>
+            <div className="quad__count">{grouped.bl}</div>
             <div className="quad__hint">暂不紧急</div>
           </div>
         </div>
         <div className="quad quad--br">
           <div className="quad__inner" style={{ textAlign: "right" }}>
             <div className="quad__label">🟡 快速处置</div>
-            <div className="quad__count">{grouped.br.length}</div>
+            <div className="quad__count">{grouped.br}</div>
             <div className="quad__hint">快速分流</div>
           </div>
         </div>
@@ -118,7 +147,7 @@ export function QuadrantBoard({ clusters }: { clusters: QuadCluster[] }) {
           低
         </div>
         <div className="quad-legend-item" style={{ marginLeft: "auto", color: "#4E5969" }}>
-          圆点大小 = 工单数 · 点击跳群组
+          圆点位置 = 重要 × 紧急 · 大小 = 工单数 · 点击跳群组
         </div>
       </div>
     </div>
