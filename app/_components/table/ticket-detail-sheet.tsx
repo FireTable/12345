@@ -150,8 +150,11 @@ export const TicketDetailSheet: React.FC<TicketDetailSheetProps> = ({
             <p className="text-slate-700 leading-relaxed text-xs text-left">
               {theme.riskReason}
             </p>
-            <div className="pt-2.5 border-t border-blue-100/90 text-xs text-left leading-relaxed">
-              <span className="font-bold text-blue-800">📌 处置建议：</span>
+            <div className="pt-2.5 border-t border-blue-100/90 text-xs text-left leading-relaxed flex items-start gap-1.5">
+              <span className="inline-flex items-center gap-1 font-bold text-blue-800 shrink-0">
+                <Sparkles className="h-3.5 w-3.5 text-blue-600" />
+                AI 协同处置建议：
+              </span>
               <span className="text-slate-800 font-medium">{theme.recommendedAction}</span>
             </div>
           </div>

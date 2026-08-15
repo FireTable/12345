@@ -281,9 +281,14 @@ function ThemeDetailInner() {
           </div>
         </div>
 
-        <div className="cluster-hero__advice">
-          <b>协同处置建议：</b>
-          {row.mode_advice || meta.rule}
+        <div className="cluster-hero__advice flex items-start gap-2.5">
+          <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-200 bg-white/20 px-2.5 py-0.5 rounded-md shrink-0 border border-white/25">
+            <Sparkles className="h-3.5 w-3.5 text-amber-300 fill-amber-300" />
+            AI 协同处置建议
+          </span>
+          <span className="text-xs leading-relaxed opacity-95">
+            {row.mode_advice || meta.rule}
+          </span>
         </div>
         <div className="mode-explainer">
           <b>研判规则：</b>
