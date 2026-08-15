@@ -222,7 +222,7 @@ function MultifreqInner() {
           </div>
           <div className="card__body" style={{ padding: 8 }}>
             {pending.length === 0 ? (
-              <div className="empty-hint">暂无未处理群组。请先启动 AI 聚类。</div>
+              <div className="empty-hint">暂无未处理群组。请先启动 Agent 研判。</div>
             ) : (
               <QuadrantBoard clusters={filtered} />
             )}
@@ -322,7 +322,7 @@ function MultifreqInner() {
             })}
           </tbody>
         </table>
-        {top5.length === 0 && <div className="empty-hint">暂无多频群组。请先启动 AI 聚类。</div>}
+        {top5.length === 0 && <div className="empty-hint">暂无多频群组。请先启动 Agent 研判。</div>}
       </section>
 
       <div className={`modal-mask${thresholdOpen ? " is-open" : ""}`} onClick={() => setThresholdOpen(false)}>

@@ -47,7 +47,7 @@ export const Header: React.FC<HeaderProps> = ({
                 Ticket Radar
               </h1>
               <Badge variant="outline" className="font-mono text-[10px] py-0 px-1.5 text-primary bg-primary/10 border-primary/20">
-                LangGraph JS
+                Agent
               </Badge>
             </div>
             <p className="text-[11px] text-muted-foreground">
@@ -115,7 +115,7 @@ export const Header: React.FC<HeaderProps> = ({
             className="text-xs h-8 border-purple-200 bg-purple-50/50 text-purple-700 hover:bg-purple-100 font-semibold"
           >
             <Bot className={`w-3.5 h-3.5 mr-1 ${isAnalyzing ? "animate-spin text-purple-600" : ""}`} />
-            {isAnalyzing ? "研判中..." : "启动 AI 聚类"}
+            {isAnalyzing ? "研判中..." : "启动 Agent 研判"}
           </Button>
 
           {/* Button 3: CSV Export */}

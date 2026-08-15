@@ -229,7 +229,7 @@ export default function DashboardPage() {
                 </div>
               );
             })}
-            {regions.length === 0 && <div className="empty-hint">暂无镇街分布。上传后请启动 AI 聚类，镇街由模型从微观地点切分。</div>}
+            {regions.length === 0 && <div className="empty-hint">暂无镇街分布。上传后请启动 Agent 研判，镇街由模型从微观地点切分。</div>}
           </div>
         </div>
       </section>

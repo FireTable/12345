@@ -197,7 +197,7 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
           {isTyping && (
             <div className="flex items-center gap-2 text-slate-500 text-xs py-2">
               <Sparkles className="w-3.5 h-3.5 text-blue-600 animate-spin" />
-              <span>LangGraph Agent 正在遍历图谱进行归因研判...</span>
+              <span>Agent 正在遍历图谱进行归因研判...</span>
             </div>
           )}
         </div>

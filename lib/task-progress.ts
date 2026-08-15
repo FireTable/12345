@@ -82,7 +82,7 @@ export function initTaskProgress(taskId: string, total: number = 0): TaskProgres
     taskId,
     status: "RUNNING",
     stage: "EXTRACTING",
-    stageText: "正在初始化 LangGraph 研判流水线...",
+    stageText: "正在初始化 Agent 研判流水线...",
     percent: 0,
     total,
     processed: 0,

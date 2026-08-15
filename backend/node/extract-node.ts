@@ -309,6 +309,7 @@ export async function extractNode(
     if (taskId) {
       updateTaskProgress(taskId, {
         percent: 58,
+        reviewCount: arbitrationTasks.length,
         stageText: `触发二级 AI 仲裁机制，正在对 ${arbitrationTasks.length} 条低置信度/歧义工单进行事实复核纠偏...`,
       });
     }

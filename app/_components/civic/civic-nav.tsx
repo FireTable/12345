@@ -39,7 +39,7 @@ export function CivicNav() {
           上传工单
         </button>
         <button type="button" className="btn btn--primary" onClick={runCluster} disabled={analyzing}>
-          {analyzing ? "研判中…" : "启动 AI 聚类"}
+          {analyzing ? "研判中…" : "启动 Agent 研判"}
         </button>
         <button type="button" className="btn btn--default" onClick={openCopilot}>
           研判助手

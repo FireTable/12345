@@ -33,7 +33,7 @@ interface UploadDialogProps {
     graphData: GraphData;
   }) => void;
   onDatabaseUpdated?: () => void;
-  /** 右上角「启动 AI 聚类」：跳过选文件，直接进入研判进度条 */
+  /** 右上角「启动 Agent 研判」：跳过选文件，直接进入研判进度条 */
   autoStartCluster?: boolean;
   onClusteringChange?: (running: boolean) => void;
 }
@@ -190,7 +190,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
         taskId,
         status: "RUNNING",
         stage: "EXTRACTING",
-        stageText: "正在初始化 LangGraph 多频研判流水线...",
+        stageText: "正在初始化 Agent 多频研判流水线...",
         percent: 0,
         total: report?.insertedCount || 300,
         processed: 0,
@@ -233,7 +233,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
       return;
     }
 
-    toast.info("正在唤起 LangGraph Agent 执行知识图谱聚类...");
+    toast.info("正在唤起 Agent 执行知识图谱聚类...");
 
     try {
       const clusterRes = await fetch("/api/cluster", {
@@ -323,7 +323,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                 {step === "REPORT"
                   ? "入库校验报告"
                   : step === "CLUSTERING"
-                  ? "LangGraph Agent 智能研判中"
+                  ? "Agent 智能研判中"
                   : step === "INGESTING"
                   ? "数据表格解析入库"
                   : step === "ERROR"
@@ -465,7 +465,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                       </span>
                     </div>
                     <p className="text-[11px] text-muted-foreground pl-5.5">
-                      P-Queue 3 线程并发处理 · 实体抽取与连通图谱聚类
+                      多线程并发处理 · 实体抽取与连通图谱聚类
                     </p>
                   </div>
 
@@ -491,14 +491,22 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                   const themeCount = taskProgress.themeCount || 0;
                   const reviewCount = taskProgress.reviewCount || 0;
                   const isDone = taskProgress.status === "COMPLETED";
+                  const stageText = taskProgress.stageText || "";
+                  const percent = taskProgress.percent || 0;
 
                   const step1Done = totalTickets > 0;
-                  const step2Active = taskProgress.status === "RUNNING" && processedTickets < totalTickets;
-                  const step2Done = isDone || (totalTickets > 0 && processedTickets >= totalTickets);
-                  const step3Active = taskProgress.status === "RUNNING" && step2Done && themeCount === 0;
-                  const step3Done = isDone || themeCount > 0;
-                  const step4Active = taskProgress.status === "RUNNING" && (taskProgress.stageText?.includes("仲裁") || taskProgress.stageText?.includes("复核"));
-                  const step4Done = isDone || reviewCount > 0 || (step3Done && !step4Active);
+
+                  // 步骤 2: 要素抽取
+                  const step2Active = taskProgress.status === "RUNNING" && (processedTickets < totalTickets && !stageText.includes("仲裁") && !stageText.includes("聚类") && percent < 55);
+                  const step2Done = isDone || processedTickets >= totalTickets || stageText.includes("仲裁") || stageText.includes("复核") || stageText.includes("聚类") || percent >= 55;
+
+                  // 步骤 3: 低置信复核 (二级 AI 仲裁纠偏)
+                  const step3Active = taskProgress.status === "RUNNING" && (stageText.includes("仲裁") || stageText.includes("复核") || (percent >= 55 && percent < 70 && themeCount === 0 && !stageText.includes("图谱") && !stageText.includes("聚类")));
+                  const step3Done = isDone || themeCount > 0 || stageText.includes("图谱") || stageText.includes("聚类") || percent >= 70;
+
+                  // 步骤 4: 多频主题聚类
+                  const step4Active = taskProgress.status === "RUNNING" && (stageText.includes("图谱") || stageText.includes("聚类") || percent >= 70) && !isDone && themeCount === 0;
+                  const step4Done = isDone || themeCount > 0;
 
                   return (
                     <div className="flex items-center justify-between gap-1 pt-1 select-none">
@@ -610,7 +618,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                               step3Done
                                 ? "bg-emerald-500"
                                 : step3Active
-                                ? "bg-primary"
+                                ? "bg-amber-500"
                                 : "bg-muted-foreground/25"
                             }`}
                             animate={
@@ -635,14 +643,14 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                         ))}
                       </div>
 
-                      {/* Step 3: 已聚类主题 */}
+                      {/* Step 3: 低置信复核 (二级 AI 仲裁纠偏) */}
                       <motion.div
                         initial={{ opacity: 0, y: 5 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.2, delay: 0.1 }}
                         className={`flex-1 p-2.5 rounded-lg border transition-all duration-300 ${
                           step3Active
-                            ? "border-primary/50 bg-primary/5 ring-1 ring-primary/40 shadow-[0_0_12px_rgba(59,130,246,0.14)]"
+                            ? "border-amber-500/50 bg-amber-500/5 ring-1 ring-amber-500/40 shadow-[0_0_12px_rgba(245,158,11,0.15)]"
                             : step3Done
                             ? "border-emerald-500/30 bg-emerald-500/5 shadow-xs"
                             : "border-border/40 bg-muted/15 opacity-40 grayscale"
@@ -651,15 +659,15 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                         <div className="flex items-center justify-between mb-1">
                           <span
                             className={`text-[10.5px] font-medium transition-colors ${
-                              step3Active ? "text-primary font-semibold" : "text-muted-foreground"
+                              step3Active ? "text-amber-600 dark:text-amber-400 font-semibold" : "text-muted-foreground"
                             }`}
                           >
-                            已聚类主题
+                            低置信复核
                           </span>
                           {step3Active ? (
                             <span className="relative flex h-2 w-2">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-500 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
                             </span>
                           ) : step3Done ? (
                             <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
@@ -669,10 +677,10 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                         </div>
                         <p
                           className={`text-sm font-bold font-mono transition-colors ${
-                            step3Active ? "text-primary" : step3Done ? "text-primary" : "text-muted-foreground"
+                            step3Active || reviewCount > 0 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"
                           }`}
                         >
-                          {themeCount}
+                          {reviewCount}
                         </p>
                       </motion.div>
 
@@ -685,7 +693,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                               step4Done
                                 ? "bg-emerald-500"
                                 : step4Active
-                                ? "bg-amber-500"
+                                ? "bg-primary"
                                 : "bg-muted-foreground/25"
                             }`}
                             animate={
@@ -710,44 +718,44 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                         ))}
                       </div>
 
-                      {/* Step 4: 低置信复核 */}
+                      {/* Step 4: 已聚类主题 */}
                       <motion.div
                         initial={{ opacity: 0, y: 5 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.2, delay: 0.15 }}
                         className={`flex-1 p-2.5 rounded-lg border transition-all duration-300 ${
                           step4Active
-                            ? "border-amber-500/50 bg-amber-500/5 ring-1 ring-amber-500/40 shadow-[0_0_12px_rgba(245,158,11,0.15)]"
+                            ? "border-primary/50 bg-primary/5 ring-1 ring-primary/40 shadow-[0_0_12px_rgba(59,130,246,0.14)]"
                             : step4Done
-                            ? "border-border/60 bg-muted/20"
+                            ? "border-emerald-500/30 bg-emerald-500/5 shadow-xs"
                             : "border-border/40 bg-muted/15 opacity-40 grayscale"
                         }`}
                       >
                         <div className="flex items-center justify-between mb-1">
                           <span
                             className={`text-[10.5px] font-medium transition-colors ${
-                              step4Active ? "text-amber-600 dark:text-amber-400 font-semibold" : "text-muted-foreground"
+                              step4Active ? "text-primary font-semibold" : "text-muted-foreground"
                             }`}
                           >
-                            低置信复核
+                            已聚类主题
                           </span>
                           {step4Active ? (
                             <span className="relative flex h-2 w-2">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-500 opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
                             </span>
                           ) : step4Done ? (
-                            <CheckCircle2 className="w-3 h-3 text-muted-foreground/60 shrink-0" />
+                            <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
                           ) : (
                             <Clock className="w-3 h-3 text-muted-foreground/40 shrink-0" />
                           )}
                         </div>
                         <p
                           className={`text-sm font-bold font-mono transition-colors ${
-                            step4Active || reviewCount > 0 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"
+                            step4Active ? "text-primary" : step4Done ? "text-primary" : "text-muted-foreground"
                           }`}
                         >
-                          {reviewCount}
+                          {themeCount}
                         </p>
                       </motion.div>
                     </div>

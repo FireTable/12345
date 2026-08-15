@@ -316,7 +316,7 @@ export function CivicHeatmap({
   cats: string[];
   grid: Record<string, Record<string, number>>;
 }) {
-  if (!regions.length || !cats.length) return <div className="empty-hint">暂无交叉统计。请先启动 AI 聚类。</div>;
+  if (!regions.length || !cats.length) return <div className="empty-hint">暂无交叉统计。请先启动 Agent 研判。</div>;
   const max = Math.max(1, ...regions.flatMap((r) => cats.map((c) => grid[r]?.[c] || 0)));
   const colors = [
     "rgb(239, 248, 255)",

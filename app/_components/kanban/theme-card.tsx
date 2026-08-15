@@ -76,7 +76,7 @@ export const ThemeCard: React.FC<ThemeCardProps> = ({ theme, onClick }) => {
         <div className="p-2.5 rounded-md bg-slate-50 border border-slate-200 text-[11.5px] text-slate-600 leading-relaxed space-y-1">
           <div className="flex items-center gap-1 font-semibold text-blue-700 text-[11px]">
             <Sparkles className="w-3 h-3 text-blue-500" />
-            LangGraph 归因研判
+            Agent 归因研判
           </div>
           <p className="line-clamp-2 text-slate-600">{theme.riskReason}</p>
         </div>
