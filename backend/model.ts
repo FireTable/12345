@@ -49,8 +49,8 @@ export function getChatModel(temperature: number = 0.2): ChatOpenAI {
       baseURL,
       defaultHeaders: DEFAULT_HEADERS,
     },
-    maxRetries: 1,
-    timeout: 15000,
+    maxRetries: 2,
+    timeout: 120000,
   });
 }
 
