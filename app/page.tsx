@@ -95,15 +95,15 @@ export default function DashboardPage() {
 
   return (
     <>
-      <section className="page-header">
+      <section className="page-hero">
         <div>
-          <h1 className="page-header__title">{ov?.dateRange ? `${ov.dateRange} 工单数据总览` : "工单数据总览"}</h1>
-          <div className="page-header__status">
-            <span className="status-dot" />
-            <span>接口运行正常 · {ov?.dateRange || "等待数据"}</span>
+          <h1 className="page-hero__title">📊 工单数据总览</h1>
+          <div className="page-hero__sub flex items-center gap-2">
+            <span className="status-dot status-dot--finished" style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#52C41A" }} />
+            <span>接口运行正常 · {ov?.dateRange || "全部时间"} · 实时研判</span>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div className="page-hero__actions">
           <Select
             value={String(daysRange)}
             onValueChange={(val) => setDaysRange(Number(val))}
