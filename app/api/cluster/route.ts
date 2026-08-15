@@ -1,13 +1,23 @@
 import { NextResponse } from "next/server";
 import { runTicketRadarPipeline } from "@/backend/agent";
 import { db } from "@/db/client";
-import { ticketsTable, themesTable, ticketThemesTable } from "@/db/schema";
+import { ticketsTable } from "@/db/schema";
 import { seedReviewQueue } from "@/lib/review-queue";
 import { initTaskProgress } from "@/lib/task-progress";
-import { sql, desc, eq } from "drizzle-orm";
+import { persistClusterResult } from "@/lib/civic-persist";
+import { sql, desc } from "drizzle-orm";
 import type { RawTicket } from "@/backend/state";
 
+let clusterRunning = false;
+
 export async function POST(req: Request) {
+  if (clusterRunning) {
+    return NextResponse.json(
+      { success: false, error: "研判任务已在运行，请等待当前进度结束" },
+      { status: 409 }
+    );
+  }
+  clusterRunning = true;
   try {
     let body: any = {};
     try {
@@ -49,8 +59,8 @@ export async function POST(req: Request) {
       isFakeClosure: r.isFakeClosure || false,
       citizenName: r.citizenName || "热线市民",
       citizenPhone: r.citizenPhone || "",
-      district: r.district || "所属辖区",
-      subdistrict: r.subdistrict || "未归属镇街",
+      district: r.district || undefined,
+      subdistrict: r.subdistrict || undefined,
       channel: r.channel || "市民服务热线",
       status: (r.status as any) || "PENDING",
     }));
@@ -65,78 +75,12 @@ export async function POST(req: Request) {
     // 3. Run LangGraph JS Pipeline
     const result = await runTicketRadarPipeline(tickets, threadId, taskId);
 
-    // 4. Persist computed themes & ticket_themes to PostgreSQL
+    // 4. Persist extract + cluster agent fields (never overwrite content)
     try {
-      await db.delete(ticketThemesTable);
-      await db.delete(themesTable);
-
-      const themeRecords = result.themes.map((t) => ({
-        id: t.id,
-        title: t.title,
-        canonicalSubject: t.canonicalSubject,
-        canonicalLocation: t.canonicalLocation,
-        eventType: t.eventType,
-        category: t.category,
-        riskLevel: t.riskLevel,
-        riskReason: t.riskReason,
-        ticketCount: t.ticketCount,
-        timeSpanHours: t.timeSpanHours,
-        aiSummary: t.aiSummary,
-        recommendedAction: t.recommendedAction,
-        patternType: t.patternType || null,
-        aiConfidence: t.aiConfidence ?? null,
-        firstAt: t.firstOccurrence ? new Date(t.firstOccurrence.replace(" ", "T")) : null,
-        lastAt: t.lastOccurrence ? new Date(t.lastOccurrence.replace(" ", "T")) : null,
-        handlingStatus: t.handlingStatus || "未处理",
-        handlingProgress: t.handlingProgress ?? 0,
-        handlingOwner: t.handlingOwner || null,
-        featuresJson: t.features ? JSON.stringify(t.features) : null,
-        radarJson: t.radar ? JSON.stringify(t.radar) : null,
-        trendPct: t.trendPct ?? null,
-      }));
-
-      if (themeRecords.length > 0) {
-        await db.insert(themesTable).values(themeRecords);
-
-        // Persist ticket_themes junction records
-        const ticketThemeMappings: Array<{ ticketId: string; themeId: string }> = [];
-        for (const theme of result.themes) {
-          if (theme.tickets && Array.isArray(theme.tickets)) {
-            for (const t of theme.tickets) {
-              ticketThemeMappings.push({
-                ticketId: t.id,
-                themeId: theme.id,
-              });
-            }
-          }
-        }
-
-        if (ticketThemeMappings.length > 0) {
-          // Batch in chunks of 500
-          for (let i = 0; i < ticketThemeMappings.length; i += 500) {
-            const chunk = ticketThemeMappings.slice(i, i + 500);
-            await db.insert(ticketThemesTable).values(chunk).onConflictDoNothing();
-          }
-        }
-
-        for (const theme of result.themes) {
-          for (const t of theme.tickets || []) {
-            await db
-              .update(ticketsTable)
-              .set({
-                primaryThemeId: theme.id,
-                address: t.canonicalLocation || t.address || null,
-                confidence: t.confidence ?? null,
-                ...(t.isFakeClosure
-                  ? { isFakeClosure: true, closureStatus: "REOPENED" as const }
-                  : {}),
-              })
-              .where(eq(ticketsTable.id, t.id));
-          }
-        }
-      }
-
-      // Persist low-confidence tickets to Review Queue
+      await persistClusterResult({
+        tickets: result.enrichedTickets || [],
+        themes: result.themes || [],
+      });
       if (result.lowConfidenceTickets && result.lowConfidenceTickets.length > 0) {
         await seedReviewQueue(result.lowConfidenceTickets);
       }
@@ -187,9 +131,17 @@ export async function POST(req: Request) {
       { success: false, error: err.message || "Cluster failed" },
       { status: 500 }
     );
+  } finally {
+    clusterRunning = false;
   }
 }
 
 export async function GET() {
-  return POST(new Request("http://localhost:3000/api/cluster", { method: "POST" }));
+  return NextResponse.json(
+    {
+      success: false,
+      error: "研判只能 POST /api/cluster 启动一次；进度请 GET /api/cluster/progress",
+    },
+    { status: 405 }
+  );
 }

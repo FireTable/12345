@@ -19,6 +19,8 @@ export async function GET() {
         sourceCategory: t.sourceCategory,
         category: t.sourceCategory,
         primaryThemeId: t.primaryThemeId,
+        confidence: t.confidence,
+        address: t.address,
       })),
       Number(themeCountRes[0]?.count || 0)
     );

@@ -5,6 +5,13 @@ import { Search } from "lucide-react";
 import type { RiskLevel } from "@/backend/state";
 import { Input } from "@/app/_components/ui/input";
 import { Button } from "@/app/_components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/app/_components/ui/select";
 
 interface FilterToolbarProps {
   searchQuery: string;
@@ -98,18 +105,22 @@ export const FilterToolbar: React.FC<FilterToolbarProps> = ({
         </Button>
 
         {/* Category dropdown */}
-        <select
+        <Select
           value={selectedCategory}
-          onChange={(e) => onCategoryChange(e.target.value)}
-          className="bg-white border border-slate-300 text-xs text-slate-700 rounded-md px-2.5 py-1 outline-none h-7.5 focus:border-blue-500 shadow-2xs"
+          onValueChange={(val) => onCategoryChange(val)}
         >
-          <option value="ALL">全部分类</option>
-          {categories.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger className="w-[125px] h-7.5 bg-white border-slate-300 text-xs text-slate-700 rounded-md shadow-2xs">
+            <SelectValue placeholder="全部分类" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">全部分类</SelectItem>
+            {categories.map((c) => (
+              <SelectItem key={c} value={c}>
+                {c}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
     </div>
   );

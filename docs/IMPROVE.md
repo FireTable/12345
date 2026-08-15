@@ -51,4 +51,40 @@ Rule: pages read persisted or aggregated data. No `Math.random` trends, no `log1
 - Nav now always shows 上传工单 / 启动 AI 聚类 / 研判助手 on every route.
 - Verification: `tsc --noEmit`; grep nav labels + upload/cluster handlers in civic-workflow.
 
+## 2026-08-15 — nav chrome
+
+- Brand mark `12345` is a 56×28 rectangle, not a 32×32 square.
+- Removed the active tab underline (`::after` bar); current item is tint + weight only.
+
+## 2026-08-15 — unbreak Tailwind
+
+- Civic `tokens.css` had an unlayered `* { margin:0; padding:0 }` and `button { background:none }` after Tailwind, which wiped UploadDialog / Copilot / Shadcn spacing.
+- Left only `:root` tokens + body canvas; links scoped to `.navbar` / `.main`.
+
+## 2026-08-15 — 镇街/类型等 AI 回写
+
+- 上传不再用正文正则猜镇街，也不再默认「所属辖区 / 综合辖区」。文件没有辖区列就留空。
+- `parseAdminArea` 按省市区 + 镇/街道后缀切微观地点（不写顺德地名表）。
+- 聚类后对**全部**已抽取工单回写 district / subdistrict / 七类 sourceCategory / address / confidence，不只写进了主题的那些。
+- 总览镇街 TOP、类型、热力图只统计 `confidence != null` 的工单；总量/趋势仍含未研判。
+- 工单列表/详情同样等研判后再展示镇街与类型，避免把「:00致电反映：均安镇」这类正则碎片当辖区。
+- Verification: `pnpm exec tsx scripts/verify-civic-map.ts`（入库不进分布、地点切分、小区不误判为区）；浏览器 `/` 已研判 0/306、镇街/类型空态；`/tickets` 类型与镇街为 —。
+
+## 2026-08-15 — 按设计稿还原四页结构
+
+对照 `/Users/FireTable/Downloads/frontend/` 补齐先前只搭了壳的页面：
+
+- 工作面板：双轴折线（每日工单 + 多频群组新增）和七类环形图改回 ECharts，镇街 TOP 10 用色条排名，热力表按设计色阶。
+- 工单中心：4 张统计卡 + 全部/待处理/处理中/已办结/紧急/多频聚类 Tab + 镇街/类型/时间筛选 + 行点击抽屉。
+- 多频透视：未处理/今日新增/紧急/总量 4 卡，可点镇街的顺德图 + 紧急×重要四象限 + TOP 5 表，不再用三种模式 KPI 顶替。
+- 群组中心：按处置状态归类（全部/未处理/处置中/已办结/紧急），模式改为筛选项；表头对齐设计稿（编号、未处理、紧急度、持续天数）。
+- 镇街筛选项来自已研判数据，不写死十镇街表。
+
+## 2026-08-15 — ingest vs agent persist
+
+- 工单表增加 `ingest_district` / `ingest_subdistrict` / `ingest_category`（文件原列）；`district` / `subdistrict` / `source_category` / `address` / `confidence` / `summarize_title` / `primary_theme_id` 仅由 extract+cluster persist 写入。
+- 主题表增加 `civic_mode`。官方迁移 `0006_ingest_agent_split.sql`。
+- `lib/civic-persist.ts` 是唯一回写路径；`POST /api/cluster` 调用它。不覆盖 `content` / `masked_content`。
+- Verification: `pnpm exec tsx scripts/verify-civic-map.ts`（未研判空镇街、persist 切均安+生态环境、DB 原文不变）；`GET /api/overview|workorders|clusters` 200。
+
 ---

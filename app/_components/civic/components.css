@@ -20,12 +20,14 @@
   min-width: 380px;
 }
 .brand-logo {
-  width: 32px; height: 32px;
+  width: auto; min-width: 56px; height: 28px;
+  padding: 0 10px;
   background: linear-gradient(135deg, #1677FF 0%, #0958D9 100%);
-  border-radius: var(--r-md);
-  display: flex; align-items: center; justify-content: center;
-  color: #fff; font-size: 11px; font-weight: 700;
-  letter-spacing: 0.5px; box-shadow: 0 2px 6px rgba(22,119,255,0.3);
+  border-radius: 4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 12px; font-weight: 700;
+  letter-spacing: 0.6px; box-shadow: 0 2px 6px rgba(22,119,255,0.3);
+  line-height: 1;
 }
 .navbar__menu {
   display: flex; gap: var(--s-2);
@@ -43,13 +45,8 @@
   cursor: pointer;
 }
 .nav-item:hover { color: var(--c-brand); background: var(--c-brand-tint); }
-.nav-item.is-active { color: var(--c-brand); font-weight: 500; }
-.nav-item.is-active::after {
-  content: ''; position: absolute; bottom: -19px; left: 50%;
-  transform: translateX(-50%);
-  width: 24px; height: 2px;
-  background: var(--c-brand); border-radius: 1px;
-}
+.nav-item.is-active { color: var(--c-brand); font-weight: 600; background: var(--c-brand-tint); }
+.nav-item.is-active::after { content: none; }
 .nav-item__arrow {
   font-size: 10px; opacity: 0.6;
   transition: transform var(--dur-fast) var(--ease);

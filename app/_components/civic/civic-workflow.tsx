@@ -24,7 +24,7 @@ type CivicWorkflow = {
   analyzing: boolean;
   openUpload: () => void;
   openCopilot: () => void;
-  runCluster: () => Promise<void>;
+  runCluster: () => void;
 };
 
 const CivicWorkflowContext = createContext<CivicWorkflow | null>(null);
@@ -38,6 +38,7 @@ export function useCivicWorkflow() {
 export function CivicWorkflowProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [clusterOnly, setClusterOnly] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [themes, setThemes] = useState<MultiFrequencyTheme[]>([]);
@@ -50,38 +51,21 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
     }
   }, [router]);
 
-  const runCluster = useCallback(async () => {
-    setAnalyzing(true);
-    toast.info("正在启动 LangGraph 多频研判…");
-    try {
-      const res = await fetch("/api/cluster", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      const json = await res.json();
-      if (!json.success) {
-        toast.error(json.error || "聚类失败");
-        return;
-      }
-      const nextThemes = json.data?.themes || [];
-      const nextStats = json.data?.stats;
-      setThemes(nextThemes);
-      if (nextStats) setStats({ ...emptyStats, ...nextStats });
-      toast.success(`研判完成，生成 ${nextThemes.length} 个多频主题`);
-      refreshPages();
-    } catch (err: any) {
-      toast.error(err.message || "聚类请求失败");
-    } finally {
-      setAnalyzing(false);
-    }
-  }, [refreshPages]);
+  const openUpload = useCallback(() => {
+    setClusterOnly(false);
+    setUploadOpen(true);
+  }, []);
+
+  const runCluster = useCallback(() => {
+    setClusterOnly(true);
+    setUploadOpen(true);
+  }, []);
 
   return (
     <CivicWorkflowContext.Provider
       value={{
         analyzing,
-        openUpload: () => setUploadOpen(true),
+        openUpload,
         openCopilot: () => setCopilotOpen(true),
         runCluster,
       }}
@@ -89,13 +73,21 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
       {children}
       <UploadDialog
         isOpen={uploadOpen}
-        onClose={() => setUploadOpen(false)}
+        autoStartCluster={clusterOnly}
+        onClusteringChange={setAnalyzing}
+        onClose={() => {
+          if (analyzing) return;
+          setUploadOpen(false);
+          setClusterOnly(false);
+        }}
         onDatabaseUpdated={refreshPages}
         onUploadSuccess={(data) => {
           setThemes(data.themes || []);
           if (data.stats) setStats({ ...emptyStats, ...data.stats });
-          toast.success("入库并研判完成");
+          toast.success(clusterOnly ? "研判完成" : "入库并研判完成");
+          setAnalyzing(false);
           setUploadOpen(false);
+          setClusterOnly(false);
           refreshPages();
         }}
       />

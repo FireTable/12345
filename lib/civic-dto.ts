@@ -1,5 +1,6 @@
 import { MODE_META, civicModeFromPattern } from "@/backend/theme-metrics";
 import type { CivicMode, PatternType } from "@/backend/state";
+import { explicitAdmin, parseAdminArea } from "@/lib/admin-area";
 
 export function regionLabel(subdistrict?: string | null, district?: string | null): string {
   const raw = (subdistrict || district || "").trim();
@@ -31,7 +32,7 @@ export function toClusterDto(theme: {
   eventType?: string | null;
   ticketCount?: number | null;
   patternType?: PatternType | string | null;
-  civicMode?: CivicMode | null;
+  civicMode?: CivicMode | string | null;
   aiConfidence?: number | null;
   firstOccurrence?: string | null;
   lastOccurrence?: string | null;
@@ -59,7 +60,10 @@ export function toClusterDto(theme: {
     district?: string | null;
   }>;
 }) {
-  const mode = theme.civicMode || civicModeFromPattern(theme.patternType as PatternType);
+  const mode: CivicMode =
+    theme.civicMode === "aggregate" || theme.civicMode === "repeat" || theme.civicMode === "diverge"
+      ? theme.civicMode
+      : civicModeFromPattern(theme.patternType as PatternType);
   const meta = MODE_META[mode];
   const samples = theme.tickets || [];
   const first =
@@ -88,13 +92,19 @@ export function toClusterDto(theme: {
     }
   }
 
-  const region = regionLabel(samples[0]?.subdistrict, samples[0]?.district);
+  const fromSample = explicitAdmin(samples[0]?.subdistrict);
+  const parsed = parseAdminArea(theme.canonicalLocation);
+  const region = fromSample
+    ? regionLabel(fromSample)
+    : parsed.subdistrict
+      ? regionLabel(parsed.subdistrict)
+      : regionLabel(theme.canonicalLocation);
   const type = theme.category || theme.eventType || "综合民生";
 
   return {
     id: theme.id,
     type,
-    region: region === "未归属" ? regionLabel(theme.canonicalLocation) : region,
+    region,
     count: theme.ticketCount || 0,
     sample_ids: samples.slice(0, 5).map((t) => t.ticketNo || t.id),
     sample_titles: samples.slice(0, 5).map((t) => t.summarizeTitle || t.title || theme.title || type),
@@ -127,6 +137,11 @@ export function toClusterDto(theme: {
     canonicalLocation: theme.canonicalLocation || "",
     eventType: theme.eventType || "",
     title: theme.title || "",
+    unprocessed: 0,
+    urgency: "low" as const,
+    days: 0,
+    communities: 0,
+    code: "",
   };
 }
 
@@ -154,12 +169,13 @@ export function toWorkorderDto(row: {
     row.createTime instanceof Date
       ? row.createTime.toISOString().slice(0, 10)
       : String(row.createTime || "").slice(0, 10);
+  const analyzed = row.confidence != null;
   return {
     id: row.ticketNo || row.id,
     ticketId: row.id,
     title: row.summarizeTitle || row.title || "市民诉求",
-    category: row.sourceCategory || row.category || "",
-    region: regionLabel(row.subdistrict, row.district),
+    category: analyzed ? row.sourceCategory || row.category || "" : "",
+    region: analyzed ? regionLabel(row.subdistrict, row.district) : "",
     urgency: row.urgency || "NORMAL",
     status: mapTicketStatus(row.status),
     createdAt: created,
@@ -170,5 +186,6 @@ export function toWorkorderDto(row: {
     address: row.address || "",
     cluster_id: row.primaryThemeId || "",
     confidence: row.confidence ?? null,
+    multifreq: Boolean(row.primaryThemeId),
   };
 }

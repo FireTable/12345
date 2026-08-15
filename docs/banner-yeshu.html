@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<title>Ticket Radar 易拉宝 · 椰树牌</title>
+<style>
+/* 椰树牌易拉宝 80cm x 200cm 满版出血 直接送印 */
+@page { size: 80cm 200cm; margin: 0 }
+* { margin:0; padding:0; box-sizing:border-box }
+body { background:#111; display:flex; justify-content:center;
+  font-family:"PingFang SC","Microsoft YaHei","Heiti SC",sans-serif }
+
+.banner{
+  width:80cm; height:200cm; font-size:1cm;        /* 1em = 1cm */
+  background:#0a3fa8; color:#fff; font-weight:900; line-height:1;
+  position:relative; overflow:hidden; flex:none; transform-origin:top center;
+  border:.6em solid #000;
+  padding:.9em 3.4em;                              /* 只给左右竖条让位 */
+  display:flex; flex-direction:column; justify-content:space-between;  /* 均分空隙，不留白 */
+}
+/* 撑满整行宽——椰树的命根子 */
+.fill{ text-align:justify; text-align-last:justify }
+.y{ color:#ffe600 } .w{ color:#fff }
+
+/* 左右满高竖条 */
+.side{ position:absolute; top:0; bottom:0; width:3.4em; background:#ffe600; color:#000;
+  writing-mode:vertical-rl; font-size:1em; display:flex; align-items:center; justify-content:center;
+  border-left:.25em solid #000; border-right:.25em solid #000 }
+.side b{ font-size:2.6em; letter-spacing:.55em }
+.side.l{ left:0 } .side.r{ right:0 }
+
+.bar{ background:#ffe600; color:#000; border:.28em solid #000; padding:.28em .5em; font-size:3.6em }
+
+.brand{ margin-top:.5em; font-size:8.2em; color:#ffe600; letter-spacing:-.02em }
+.sub{ font-size:4.2em; color:#fff; margin-top:.15em }
+
+/* 主标题：每行撑满 80cm；描边写在子元素上，.em 才跟着巨字放大 */
+.hero{ transform:scaleY(1.25); transform-origin:top; margin-bottom:13.5em }  /* scaleY 不占布局高，手动补 */
+.hero div{ -webkit-text-stroke:.075em #000; paint-order:stroke fill; text-shadow:.06em .06em 0 #000;
+  margin-bottom:.26em }
+.hero .l1, .hero .l2{ font-size:15.6em } .hero .l3{ font-size:11em }
+
+/* 三色卖点 零间隙 */
+.claims{ margin-top:1.6em; border:.3em solid #000 }
+.claims div{ font-size:5.2em; padding:.16em .3em; border-bottom:.06em solid #000 }
+.claims div:last-child{ border-bottom:0 }
+.c1{ background:#ffe600; color:#000 } .c2{ background:#e60012; color:#fff } .c3{ background:#fff; color:#0a3fa8 }
+
+.arrows{ font-size:4em; color:#ffe600; margin-top:.25em; letter-spacing:.6em; text-align:center }
+
+/* 吹牛数据 */
+.nums{ margin-top:.3em; background:#000; border:.35em solid #ffe600; display:flex; padding:.7em 0 }
+.nums > div{ flex:1; text-align:center; border-right:.15em solid #ffe600 }
+.nums > div:last-child{ border-right:0 }
+.nums b{ display:block; font-size:8em; color:#ffe600; line-height:.9 }
+.nums span{ font-size:2.5em; color:#fff; letter-spacing:.12em }
+
+.testi{ display:flex; align-items:center; gap:1.2em }
+.quote{ flex:1; font-size:7em; line-height:1.1; color:#ffe600;
+  font-family:"Xingkai SC","STXingkai","Kaiti SC",cursive; transform:rotate(-3.5deg); text-align:center }
+.qs{ font-size:2.6em; color:#fff; text-align:center; letter-spacing:.1em }
+
+.seal{ flex:none; width:16em; height:16em; rotate:-15deg;
+  border:.6em solid #e60012; border-radius:50%; background:rgba(255,255,255,.94); color:#e60012;
+  display:flex; align-items:center; justify-content:center; text-align:center;
+  font-size:1em; line-height:1.2 }
+.seal span{ font-size:3.2em; letter-spacing:.08em }
+
+.foot{ background:#ffe600; color:#000; border:.3em solid #000 }
+.foot .f1{ font-size:4.3em; padding:.22em .3em; border-bottom:.07em solid #000 }
+.foot .f2{ font-size:2.2em; font-weight:700; padding:.5em .6em; text-align:center; line-height:1.35 }
+
+@media print { body{background:#fff} .banner{transform:none!important} }
+</style>
+
+<div class="banner">
+  <div class="side l"><b>正 宗 · 认 准 蓝 底 黄 字</b></div>
+  <div class="side r"><b>从 早 班 用 到 晚 班</b></div>
+
+  <div class="bar fill" style="margin-top:.9em">热线民生首选</div>
+
+  <div class="brand fill">TICKET RADAR</div>
+  <div class="sub fill">工 单 雷 达</div>
+
+  <div class="hero stroke">
+    <div class="l1 fill y">多频工单</div>
+    <div class="l2 fill w">一抓一个</div>
+    <div class="l3 fill y">准！不用人盯</div>
+  </div>
+
+  <div class="claims">
+    <div class="c1 fill">不加人工翻单</div>
+    <div class="c2 fill">不加通宵加班</div>
+    <div class="c3 fill">不加一张 Excel</div>
+  </div>
+
+  <div class="arrows">↓ ↓ ↓ ↓ ↓</div>
+
+  <div class="nums">
+    <div><b>85%↑</b><span>主题压缩率</span></div>
+    <div><b>3s</b><span>全量出图</span></div>
+    <div><b>0</b><span>漏 报</span></div>
+  </div>
+
+  <div class="testi">
+    <div class="quote">我从实习<br>用到退休</div>
+    <div class="seal"><span>实时聚类<br>不是<br>人工统计</span></div>
+  </div>
+  <div class="qs">—— 某热线值班员 · 每天都用 · 用了都说好</div>
+
+  <div class="foot">
+    <div class="f1 fill">实体对齐·图谱聚类·一键导出</div>
+    <div class="f2">LangGraph JS 持久化 ＋ 轻量 GraphRAG ＋ AI 研判副驾驶<br>80×200cm 认准正宗 · 别的看板都是模仿</div>
+  </div>
+</div>
+
+<script>
+// 屏幕预览缩放；打印出片不受影响
+const b = document.querySelector('.banner');
+const fit = () => {
+  const s = Math.min(innerWidth / b.offsetWidth, innerHeight / b.offsetHeight) * .97;
+  b.style.transform = `scale(${s})`;
+  document.body.style.height = b.offsetHeight * s + 'px';
+};
+addEventListener('resize', fit); fit();
+</script>
+</html>

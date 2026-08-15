@@ -22,6 +22,7 @@ import { Card } from "@/app/_components/ui/card";
 import { toast } from "sonner";
 import type { MultiFrequencyTheme, OverallStats, GraphData } from "@/backend/state";
 import type { TaskProgress } from "@/lib/task-progress";
+import { claimClusterTask, releaseClusterTask } from "@/lib/cluster-client";
 
 interface UploadDialogProps {
   isOpen: boolean;
@@ -32,6 +33,9 @@ interface UploadDialogProps {
     graphData: GraphData;
   }) => void;
   onDatabaseUpdated?: () => void;
+  /** 右上角「启动 AI 聚类」：跳过选文件，直接进入研判进度条 */
+  autoStartCluster?: boolean;
+  onClusteringChange?: (running: boolean) => void;
 }
 
 interface IngestionReport {
@@ -47,6 +51,8 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
   onClose,
   onUploadSuccess,
   onDatabaseUpdated,
+  autoStartCluster = false,
+  onClusteringChange,
 }) => {
   const [step, setStep] = useState<"SELECT" | "INGESTING" | "REPORT" | "CLUSTERING" | "ERROR">("SELECT");
   const [isDragging, setIsDragging] = useState(false);
@@ -72,6 +78,8 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const clusterStartedRef = useRef(false);
+  const startClusterRef = useRef<() => Promise<void>>(async () => {});
 
   // Stop polling on unmount
   useEffect(() => {
@@ -90,6 +98,21 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
       };
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      clusterStartedRef.current = false;
+      setStep("SELECT");
+      return;
+    }
+    if (autoStartCluster) {
+      setStep("CLUSTERING");
+      if (!clusterStartedRef.current) {
+        clusterStartedRef.current = true;
+        void startClusterRef.current();
+      }
+    }
+  }, [isOpen, autoStartCluster]);
 
   if (!isOpen) return null;
 
@@ -156,8 +179,14 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
 
   // 阶段 2：启动 LangGraph Agent 智能聚类（基于后端真实 p-queue 进度轮询）
   const handleStartAgentClustering = async () => {
-    const taskId = `task-cluster-${Date.now()}`;
+    const claimed = claimClusterTask(`task-cluster-${Date.now()}`);
+    const taskId = claimed.taskId;
     setStep("CLUSTERING");
+    onClusteringChange?.(true);
+
+    if (!claimed.claimed) {
+      return;
+    }
 
     setTaskProgress({
       taskId,
@@ -174,9 +203,12 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
       updatedAt: Date.now(),
     });
 
-    // 启动定时器真实轮询后端进度
+    // 进度轮询：只读内存进度，不触发 LLM。1.5s 一次，结束即停。
     if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    let pollInFlight = false;
     pollTimerRef.current = setInterval(async () => {
+      if (pollInFlight) return;
+      pollInFlight = true;
       try {
         const pRes = await fetch(`/api/cluster/progress?taskId=${taskId}`);
         const pJson = await pRes.json();
@@ -185,11 +217,17 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
             ...prev,
             ...pJson.data,
           }));
+          const st = pJson.data.status;
+          if (st === "COMPLETED" || st === "FAILED") {
+            if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+          }
         }
       } catch (e) {
         // Silent poll error
+      } finally {
+        pollInFlight = false;
       }
-    }, 400);
+    }, 1500);
 
     toast.info("正在唤起 LangGraph Agent 执行知识图谱聚类...");
 
@@ -213,6 +251,8 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
           status: "COMPLETED",
           stageText: `研判完成！已聚合 ${clusterJson.data.themes.length} 个多频主题`,
         }));
+        onClusteringChange?.(false);
+        releaseClusterTask(taskId);
 
         setTimeout(() => {
           toast.success(`Agent 研判完成！已生成 ${clusterJson.data.themes.length} 个多频治理主题！`);
@@ -220,17 +260,22 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
           handleFinishAndClose();
         }, 500);
       } else {
+        onClusteringChange?.(false);
+        releaseClusterTask(taskId);
         setErrorMessage(clusterJson.error || "Agent 智能聚类失败");
         setStep("ERROR");
         toast.error("智能聚类失败，请重试");
       }
     } catch (err: any) {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+      onClusteringChange?.(false);
+      releaseClusterTask(taskId);
       setErrorMessage(err.message || "Agent 调用网络超时或中断");
       setStep("ERROR");
       toast.error(`Agent 研判异常: ${err.message}`);
     }
   };
+  startClusterRef.current = handleStartAgentClustering;
 
   const handleReset = () => {
     if (pollTimerRef.current) clearInterval(pollTimerRef.current);
@@ -571,6 +616,8 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                 <ArrowRight className="w-3.5 h-3.5 ml-1" />
               </Button>
             </>
+          ) : step === "CLUSTERING" ? (
+            <p className="w-full text-[11px] text-muted-foreground">研判进行中，完成后将自动刷新页面</p>
           ) : step === "ERROR" ? (
             <div className="w-full flex justify-end">
               <Button
@@ -588,7 +635,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                 variant="outline"
                 size="sm"
                 onClick={onClose}
-                disabled={step === "INGESTING" || step === "CLUSTERING"}
+                disabled={step === "INGESTING"}
                 className="h-8 text-xs border-border bg-card text-foreground hover:bg-muted cursor-pointer"
               >
                 取消
@@ -598,7 +645,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                 variant="default"
                 size="sm"
                 onClick={handleUploadAndIngest}
-                disabled={!file || step === "INGESTING" || step === "CLUSTERING"}
+                disabled={!file || step === "INGESTING"}
                 className="h-8 text-xs bg-primary text-primary-foreground hover:bg-primary/90 font-medium cursor-pointer disabled:opacity-50"
               >
                 <Database className="w-3.5 h-3.5 mr-1.5" />

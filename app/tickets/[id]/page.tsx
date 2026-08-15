@@ -62,7 +62,7 @@ export default function TicketDetailPage() {
         <div>
           <h1 className="page-hero__title">{row.title}</h1>
           <div className="page-hero__sub">
-            {row.region} · {row.category || "未分类"} · {row.createdAt}
+            {[row.region, row.category, row.createdAt].filter(Boolean).join(" · ") || row.createdAt}
           </div>
         </div>
       </div>

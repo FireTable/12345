@@ -5,6 +5,7 @@ import { db } from "@/db/client";
 import { ticketsTable } from "@/db/schema";
 import { inArray } from "drizzle-orm";
 import { desensitizeContent } from "@/backend/anonymizer";
+import { AGENT_TICKET_NULLS } from "@/lib/civic-persist";
 
 const HEADER_MAP: Record<string, string> = {
   序号: "index",
@@ -33,19 +34,10 @@ const HEADER_MAP: Record<string, string> = {
   办结状态: "closureStatus",
 };
 
-/**
- * 通用行政区划与镇街动态抽取（根据中文行政特征通用匹配）
- */
-function extractDynamicSubdistrict(content: string, title: string, fallbackSubdistrict?: string): string {
-  if (fallbackSubdistrict && fallbackSubdistrict.trim()) {
-    return fallbackSubdistrict.trim();
-  }
-  const text = (title || "") + " " + (content || "");
-  const match = text.match(/([^\s，。、（）]{2,10}?(?:街道|镇|乡|区|开发区|新城))/);
-  if (match && match[1]) {
-    return match[1].trim();
-  }
-  return "综合辖区";
+function optionalText(value: unknown): string | null {
+  if (value == null) return null;
+  const text = String(value).trim();
+  return text || null;
 }
 
 const DATE_REGEX = /(\d{4}年\d{1,2}月\d{1,2}日|\d{1,2}月\d{1,2}日)[\s\S]{0,10}?(\d{1,2}[:：]\d{1,2}(?:[:：]\d{1,2})?)/;
@@ -132,7 +124,6 @@ export async function POST(req: Request) {
       const ticketNo = String(
         normalized.ticketNo || `GD-UPLOAD-${Date.now()}-${String(idx + 1).padStart(6, "0")}`
       );
-      const subdistrict = extractDynamicSubdistrict(content, title, normalized.subdistrict);
       const createTime = extractDate(content);
 
       let channel = normalized.channel || "市民服务热线";
@@ -157,15 +148,15 @@ export async function POST(req: Request) {
       validRecords.push({
         id: `tk-${Date.now()}-${idx + 1}`,
         ticketNo,
-        title: title || "", // 保留原始表格标题列
-        summarizeTitle: normalized.summarizeTitle || null, // AI提炼标题
+        title: title || "",
         content,
         maskedContent: desensitizeContent(content),
         citizenName: normalized.citizenName || "热线市民",
         citizenPhone: normalized.citizenPhone || "",
-        district: normalized.district || "所属辖区",
-        subdistrict,
-        sourceCategory: normalized.sourceCategory ? String(normalized.sourceCategory).trim() : null,
+        ingestDistrict: optionalText(normalized.district),
+        ingestSubdistrict: optionalText(normalized.subdistrict),
+        ingestCategory: optionalText(normalized.sourceCategory),
+        ...AGENT_TICKET_NULLS,
         urgency: "NORMAL",
         channel,
         status: "PENDING",

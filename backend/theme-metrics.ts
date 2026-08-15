@@ -5,7 +5,15 @@ const NEGATIVE_RE = negativeTermsPattern();
 
 export const MODE_META: Record<
   CivicMode,
-  { name: string; tagline: string; risk: string; color: string; icon: string }
+  {
+    name: string;
+    tagline: string;
+    risk: string;
+    color: string;
+    icon: string;
+    rule: string;
+    reasons: string[];
+  }
 > = {
   aggregate: {
     name: "群体聚集型",
@@ -13,6 +21,12 @@ export const MODE_META: Record<
     risk: "短时间集中爆发，存在蔓延迹象",
     color: "#F53F3F",
     icon: "🚨",
+    rule: "不同人投诉同一事件，短时间内频发爆发",
+    reasons: [
+      "投诉主体明显不同但指向同一事件，说明事件具有公共属性",
+      "短时间内工单数陡增，存在突发蔓延迹象，需尽快响应",
+      "地理 / 主题词高度集中，可作为同一聚类归档",
+    ],
   },
   repeat: {
     name: "个体重复型",
@@ -20,6 +34,12 @@ export const MODE_META: Record<
     risk: "问题长期未解决，需闭环跟踪",
     color: "#FF7D00",
     icon: "🔁",
+    rule: "同一人同一事件多次投诉，问题长期未解决",
+    reasons: [
+      "反映人多次来电反映同一问题未解决，建议上升处置优先级",
+      "问题在窗口期内反复出现，应启动闭环跟踪",
+      "可识别为重点回访对象，需安排专员对接",
+    ],
   },
   diverge: {
     name: "同主体发散型",
@@ -27,6 +47,12 @@ export const MODE_META: Record<
     risk: "治理隐患，建议源头核查",
     color: "#1677FF",
     icon: "📍",
+    rule: "相同地点不同类事件，治理隐患",
+    reasons: [
+      "同一地点 / 主体在短期内出现多种类型问题",
+      "说明该地点在管理 / 服务 / 治理上存在系统隐患",
+      "建议现场核查 + 源头治理，避免问题反复出现",
+    ],
   },
 };
 

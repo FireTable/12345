@@ -4,7 +4,7 @@ import { ticketsTable, themesTable } from "@/db/schema";
 import { eq, or } from "drizzle-orm";
 import { toWorkorderDto } from "@/lib/civic-dto";
 import { MODE_META, civicModeFromPattern } from "@/backend/theme-metrics";
-import type { PatternType } from "@/backend/state";
+import type { CivicMode, PatternType } from "@/backend/state";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -22,7 +22,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       const themes = await db.select().from(themesTable).where(eq(themesTable.id, row.primaryThemeId)).limit(1);
       const th = themes[0];
       if (th) {
-        const mode = civicModeFromPattern(th.patternType as PatternType);
+        const mode = (th.civicMode as CivicMode) || civicModeFromPattern(th.patternType as PatternType);
         cluster_info = {
           id: th.id,
           title: th.title,

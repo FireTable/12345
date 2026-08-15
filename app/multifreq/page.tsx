@@ -1,7 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { toast } from "sonner";
+import { ShundeMap } from "@/app/_components/civic/shunde-map";
+import { QuadrantBoard } from "@/app/_components/civic/quadrant";
+import type { ClusterUrgency } from "@/lib/civic-cluster";
+import { Clock, TrendingUp, Flame, Layers } from "lucide-react";
+import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/app/_components/ui/select";
 
 type Cluster = {
   id: string;
@@ -11,105 +24,313 @@ type Cluster = {
   mode: "aggregate" | "repeat" | "diverge";
   mode_name: string;
   mode_icon: string;
+  ai_confidence: number | null;
+  status: { label: string };
+  trend: string;
+  title: string;
+  urgency: ClusterUrgency;
+  unprocessed: number;
+  communities: number;
+  sample_titles?: string[];
+  first_date?: string;
+  last_date?: string;
 };
 
-export default function MultifreqPage() {
-  const [rows, setRows] = useState<Cluster[]>([]);
-  const [ov, setOv] = useState<{ regionDistribution?: Record<string, number> } | null>(null);
+type Overview = { regionDistribution?: Record<string, number> };
 
-  useEffect(() => {
+export default function MultifreqPage() {
+  return (
+    <Suspense fallback={<div className="empty-hint">加载中…</div>}>
+      <MultifreqInner />
+    </Suspense>
+  );
+}
+
+function MultifreqInner() {
+  const router = useRouter();
+  const search = useSearchParams();
+  const [rows, setRows] = useState<Cluster[]>([]);
+  const [ov, setOv] = useState<Overview | null>(null);
+  const [region, setRegion] = useState(search.get("region") || "");
+  const [timeLabel, setTimeLabel] = useState("近 7 天");
+  const [thresholdOpen, setThresholdOpen] = useState(false);
+  const [confMin, setConfMin] = useState(85);
+  const [minCount, setMinCount] = useState(3);
+  const [windowDays, setWindowDays] = useState(7);
+
+  function load() {
     Promise.all([fetch("/api/clusters").then((r) => r.json()), fetch("/api/overview").then((r) => r.json())])
       .then(([c, o]) => {
         setRows(c.topClusters || []);
         setOv(o);
       })
       .catch(() => setRows([]));
+  }
+
+  useEffect(() => {
+    load();
+    window.addEventListener("civic-data-refresh", load);
+    return () => window.removeEventListener("civic-data-refresh", load);
   }, []);
 
-  const byMode = {
-    aggregate: rows.filter((r) => r.mode === "aggregate"),
-    repeat: rows.filter((r) => r.mode === "repeat"),
-    diverge: rows.filter((r) => r.mode === "diverge"),
-  };
+  const filtered = useMemo(() => {
+    return rows.filter((r) => {
+      if (region && !r.region.includes(region)) return false;
+      if ((r.ai_confidence ?? 100) < confMin) return false;
+      if (r.count < minCount) return false;
+      return true;
+    });
+  }, [rows, region, confMin, minCount]);
+
+  const pending = filtered.filter((r) => r.status.label === "未处理");
+  const urgent = filtered.filter((r) => r.urgency === "urgent");
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayNew = filtered.filter((r) => r.last_date === todayKey || r.first_date === todayKey).length;
+
+  const clusterByRegion: Record<string, number> = {};
+  for (const r of filtered) {
+    if (r.region) clusterByRegion[r.region] = (clusterByRegion[r.region] || 0) + 1;
+  }
+
+  const regions = useMemo(() => {
+    const set = new Set(rows.map((r) => r.region).filter((n) => n && n !== "未归属"));
+    return [...set].sort((a, b) => a.localeCompare(b, "zh-CN"));
+  }, [rows]);
+
+  const top5 = [...filtered].sort((a, b) => b.count - a.count).slice(0, 5);
+
+  function cycleTime() {
+    const times = ["近 7 天", "近 30 天", "近 90 天", "全部"];
+    setTimeLabel(times[(times.indexOf(timeLabel) + 1) % times.length]);
+  }
 
   return (
     <>
-      <div className="page-hero">
+      <section className="page-hero">
         <div>
-          <h1 className="page-hero__title">多频透视</h1>
-          <div className="page-hero__sub">三种多频形态 · 镇街热力</div>
+          <h1 className="page-hero__title">
+            <span>🔥</span>
+            多频工单实时透视
+          </h1>
+          <div className="page-hero__sub">实时识别 · AI 自动聚类 · 置信度 ≥ {confMin}%</div>
         </div>
-      </div>
-      <section className="kpi-row">
-        <ModeKpi mode="aggregate" label="群体聚集型" rows={byMode.aggregate} />
-        <ModeKpi mode="repeat" label="个体重复型" rows={byMode.repeat} />
-        <ModeKpi mode="diverge" label="同主体发散型" rows={byMode.diverge} />
-      </section>
-      <section className="split-row">
-        <div className="card">
-          <div className="card__header">
-            <div className="card__title">顺德镇街热力</div>
-          </div>
-          <div className="card__body">
-            <div className="map-wrap">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <object data="/civic/shunde-map.svg" type="image/svg+xml" aria-label="顺德区地图" style={{ width: "100%", height: 360 }} />
-            </div>
-            <div style={{ marginTop: 12 }}>
-              {Object.entries(ov?.regionDistribution || {})
-                .sort((a, b) => b[1] - a[1])
-                .map(([name, n]) => (
-                  <div key={name} className="rank-row">
-                    <div className="rank-row__name">{name}</div>
-                    <div className="rank-row__track">
-                      <div
-                        className="rank-row__bar"
-                        style={{
-                          width: `${(n / Math.max(1, ...Object.values(ov?.regionDistribution || {}))) * 100}%`,
-                        }}
-                      />
-                    </div>
-                    <div className="rank-row__n">{n}</div>
-                  </div>
-                ))}
-            </div>
-          </div>
-        </div>
-        <div className="card">
-          <div className="card__header">
-            <div className="card__title">TOP 群组</div>
-          </div>
-          <div className="card__body">
-            {rows.slice(0, 8).map((r) => (
-              <div key={r.id} style={{ padding: "8px 0", borderBottom: "1px solid var(--c-border-soft)" }}>
-                <Link href={`/themes/${r.id}`}>
-                  {r.mode_icon} {r.region} · {r.type}
-                </Link>
-                <div style={{ fontSize: 12, color: "var(--c-ink-3)" }}>
-                  {r.mode_name} · {r.count} 件
-                </div>
-              </div>
-            ))}
-            {rows.length === 0 && <div className="empty-hint">暂无多频群组</div>}
-          </div>
+        <div className="page-hero__actions">
+          <button type="button" className="btn btn--default" onClick={cycleTime}>
+            {timeLabel}
+          </button>
+          <Select
+            value={region || "all"}
+            onValueChange={(val) => setRegion(val === "all" ? "" : val)}
+          >
+            <SelectTrigger className="w-[125px] h-[34px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
+              <SelectValue placeholder="全部镇街" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部镇街</SelectItem>
+              {regions.map((r) => (
+                <SelectItem key={r} value={r}>
+                  {r}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <button type="button" className="btn btn--default" onClick={() => setThresholdOpen(true)}>
+            阈值设置
+          </button>
+          <button type="button" className="icon-circle" title="刷新" onClick={load}>
+            ↻
+          </button>
         </div>
       </section>
-    </>
-  );
-}
 
-function ModeKpi({ mode, label, rows }: { mode: string; label: string; rows: Cluster[] }) {
-  const n = rows.reduce((a, r) => a + r.count, 0);
-  return (
-    <div className="kpi-card">
-      <div className="kpi-card__body">
-        <div className="kpi-card__label">{label}</div>
-        <div className="kpi-card__value">{rows.length}</div>
-        <div className="kpi-card__sub">{n} 件工单</div>
-        <span className={`mode-pill mode-pill--${mode}`} style={{ marginTop: 8 }}>
-          {label}
-        </span>
+      <StatCardGrid columns={4}>
+        <StatCard
+          icon={Clock}
+          tone="blue"
+          label="未处理"
+          value={pending.length}
+          sub="多频群组"
+        />
+        <StatCard
+          icon={TrendingUp}
+          tone="orange"
+          label="今日新增"
+          value={todayNew}
+          sub="多频群组"
+        />
+        <StatCard
+          icon={Flame}
+          tone="red"
+          label="紧急"
+          value={urgent.length}
+          sub="需优先关注处置"
+        />
+        <StatCard
+          icon={Layers}
+          tone="purple"
+          label="总量"
+          value={filtered.length}
+          sub="多频群组"
+        />
+      </StatCardGrid>
+
+      <section className="split-row split-row--map">
+        <div className="card">
+          <div className="card__header">
+            <div className="card__title">顺德区多频工单地理透视</div>
+            <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>点击镇街筛选 · 悬停查看详情</div>
+          </div>
+          <div className="card__body" style={{ padding: 8 }}>
+            <ShundeMap
+              counts={ov?.regionDistribution || {}}
+              clusterCounts={clusterByRegion}
+              selected={region}
+              onSelect={(name) => setRegion(name)}
+            />
+          </div>
+        </div>
+        <div className="card">
+          <div className="card__header">
+            <div className="card__title">未处理群组 · 紧急 × 重要 四象限</div>
+            <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>
+              共 <b style={{ color: "#1E5AFF" }}>{pending.length}</b> 个未处理群组
+            </div>
+          </div>
+          <div className="card__body" style={{ padding: 8 }}>
+            {pending.length === 0 ? (
+              <div className="empty-hint">暂无未处理群组。请先启动 AI 聚类。</div>
+            ) : (
+              <QuadrantBoard clusters={filtered} />
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="card" style={{ marginTop: 20 }}>
+        <div className="top5-header">
+          <div className="top5-header__title">
+            <span style={{ color: "#F53F3F" }}>🔥</span>
+            TOP 5 多频聚类
+            <span style={{ fontSize: 12, color: "var(--c-ink-3)", fontWeight: 400, marginLeft: 6 }}>点击下钻到详情</span>
+          </div>
+          <button type="button" className="top5-header__more" onClick={() => router.push("/themes")}>
+            查看全部 {filtered.length} 个聚类 →
+          </button>
+        </div>
+        <table className="workorder-table">
+          <thead>
+            <tr>
+              <th>排名</th>
+              <th>镇街·类别</th>
+              <th>工单数</th>
+              <th>置信度</th>
+              <th>风险</th>
+              <th>趋势</th>
+              <th>涉社区</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {top5.map((c, i) => {
+              const risk = c.urgency === "urgent" ? "urgent" : i < 3 ? "medium" : "low";
+              const riskText = c.urgency === "urgent" ? "紧急" : i < 3 ? "较急" : "普通";
+              const conf = c.ai_confidence;
+              return (
+                <tr key={c.id} onClick={() => router.push(`/themes/${c.id}`)}>
+                  <td>
+                    <span className={`rank-badge rank-badge--${i + 1}`}>{i + 1}</span>
+                  </td>
+                  <td>
+                    <div className="cluster-region">
+                      {c.region} · {c.type}{" "}
+                      <span className={`mode-badge mode-badge--${c.mode}`}>
+                        {c.mode_icon} {c.mode_name}
+                      </span>
+                    </div>
+                    <div className="cluster-desc">{c.sample_titles?.[0] || c.title || ""}</div>
+                  </td>
+                  <td style={{ fontWeight: 600, fontFeatureSettings: "'tnum'" }}>{c.count}</td>
+                  <td>
+                    {conf == null ? (
+                      "—"
+                    ) : (
+                      <div className="conf-inline">
+                        <span className="conf-bar conf-bar--wide">
+                          <span className="conf-bar__fill" style={{ width: `${conf}%`, display: "block" }} />
+                        </span>
+                        {conf}%
+                      </div>
+                    )}
+                  </td>
+                  <td>
+                    <span className={`risk-pill risk-pill--${risk}`}>
+                      <span className="risk-pill__dot" />
+                      {riskText}
+                    </span>
+                  </td>
+                  <td>
+                    <span className="trend-up">{c.trend || "—"}</span>
+                  </td>
+                  <td>{c.communities ? `${c.communities} 个` : "—"}</td>
+                  <td>
+                    <span className="row-arrow">→</span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {top5.length === 0 && <div className="empty-hint">暂无多频群组。请先启动 AI 聚类。</div>}
+      </section>
+
+      <div className={`modal-mask${thresholdOpen ? " is-open" : ""}`} onClick={() => setThresholdOpen(false)}>
+        <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal__header">
+            <div className="modal__title">⚙ AI 识别阈值</div>
+            <button type="button" className="modal__close" onClick={() => setThresholdOpen(false)}>
+              ×
+            </button>
+          </div>
+          <div className="modal__body">
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                <span style={{ fontSize: 13 }}>最低置信度</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--c-brand)" }}>{confMin}%</span>
+              </div>
+              <input type="range" min={50} max={99} value={confMin} onChange={(e) => setConfMin(Number(e.target.value))} style={{ width: "100%" }} />
+            </div>
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                <span style={{ fontSize: 13 }}>最小工单数</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--c-brand)" }}>{minCount}</span>
+              </div>
+              <input type="range" min={2} max={20} value={minCount} onChange={(e) => setMinCount(Number(e.target.value))} style={{ width: "100%" }} />
+            </div>
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                <span style={{ fontSize: 13 }}>时间窗口（天）</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--c-brand)" }}>{windowDays}</span>
+              </div>
+              <input type="range" min={3} max={30} value={windowDays} onChange={(e) => setWindowDays(Number(e.target.value))} style={{ width: "100%" }} />
+            </div>
+          </div>
+          <div className="modal__footer">
+            <button type="button" className="btn btn--default" onClick={() => setThresholdOpen(false)}>
+              取消
+            </button>
+            <button
+              type="button"
+              className="btn btn--primary"
+              onClick={() => {
+                setThresholdOpen(false);
+                toast.success("阈值已保存，列表已按新阈值过滤");
+              }}
+            >
+              保存设置
+            </button>
+          </div>
+        </div>
       </div>
-    </div>
+    </>
   );
 }

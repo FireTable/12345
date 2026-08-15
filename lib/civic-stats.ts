@@ -1,3 +1,4 @@
+import { explicitAdmin } from "./admin-area";
 import { regionLabel } from "./civic-dto";
 
 export type TicketStatRow = {
@@ -7,6 +8,8 @@ export type TicketStatRow = {
   sourceCategory?: string | null;
   category?: string | null;
   primaryThemeId?: string | null;
+  confidence?: number | null;
+  address?: string | null;
 };
 
 export type ThemeStatRow = {
@@ -40,20 +43,34 @@ export function buildOverview(tickets: TicketStatRow[], themeCount: number) {
   const regionCategory: Record<string, Record<string, number>> = {};
   const monthlyTrend: Record<string, number> = {};
   let multiFreqCount = 0;
+  let analyzedCount = 0;
 
   for (const t of tickets) {
-    const region = regionLabel(t.subdistrict, t.district);
-    regionDistribution[region] = (regionDistribution[region] || 0) + 1;
-    const cat = t.sourceCategory || t.category || "未分类";
-    categoryDistribution[cat] = (categoryDistribution[cat] || 0) + 1;
-    if (!regionCategory[region]) regionCategory[region] = {};
-    regionCategory[region][cat] = (regionCategory[region][cat] || 0) + 1;
     const d = asDate(t.createTime);
     if (d) {
       const key = ym(d);
       monthlyTrend[key] = (monthlyTrend[key] || 0) + 1;
     }
     if (t.primaryThemeId) multiFreqCount += 1;
+
+    // 镇街 / 类型只统计 AI 已回写的工单，避免入库正则误切
+    if (t.confidence == null) continue;
+    analyzedCount += 1;
+
+    const town = explicitAdmin(t.subdistrict);
+    const region = town ? regionLabel(town) : "";
+    const cat = (t.sourceCategory || t.category || "").trim();
+
+    if (region) {
+      regionDistribution[region] = (regionDistribution[region] || 0) + 1;
+    }
+    if (cat) {
+      categoryDistribution[cat] = (categoryDistribution[cat] || 0) + 1;
+    }
+    if (region && cat) {
+      if (!regionCategory[region]) regionCategory[region] = {};
+      regionCategory[region][cat] = (regionCategory[region][cat] || 0) + 1;
+    }
   }
 
   const topRegion =
@@ -63,6 +80,7 @@ export function buildOverview(tickets: TicketStatRow[], themeCount: number) {
 
   return {
     totalWorkorders: tickets.length,
+    analyzedCount,
     dateRange: min && max ? `${ymd(min)} ~ ${ymd(max)}` : "",
     totalDays,
     avgDaily: totalDays ? Math.round(tickets.length / totalDays) : 0,

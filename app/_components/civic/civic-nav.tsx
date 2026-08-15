@@ -18,7 +18,7 @@ export function CivicNav() {
     <nav className="navbar">
       <div className="navbar__brand">
         <div className="brand-logo">12345</div>
-        <span className="brand-text-full">顺德区12345热线智能工单管理平台</span>
+        <span className="brand-text-full">顺德区 12345 热线智能工单管理平台</span>
       </div>
       <div className="navbar__menu">
         {ITEMS.map((it) => {
@@ -37,7 +37,7 @@ export function CivicNav() {
         <button type="button" className="btn btn--default" onClick={openUpload}>
           上传工单
         </button>
-        <button type="button" className="btn btn--primary" onClick={() => void runCluster()} disabled={analyzing}>
+        <button type="button" className="btn btn--primary" onClick={runCluster} disabled={analyzing}>
           {analyzing ? "研判中…" : "启动 AI 聚类"}
         </button>
         <button type="button" className="btn btn--default" onClick={openCopilot}>

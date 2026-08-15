@@ -27,8 +27,8 @@ export interface RawTicket {
   createTime: string;
   citizenName: string;
   citizenPhone: string;
-  district: string;
-  subdistrict: string;
+  district?: string;
+  subdistrict?: string;
   content: string;
   maskedContent?: string;
   channel: string;

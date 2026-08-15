@@ -1,9 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useCivicWorkflow } from "@/app/_components/civic/civic-workflow";
+import { CivicEChart, CivicHeatmap, donutOption, trendOption } from "@/app/_components/civic/civic-charts";
+import { RANK_COLORS } from "@/lib/civic-cluster";
+import { FileText, Activity, Sparkles, FolderKanban } from "lucide-react";
+import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/app/_components/ui/select";
 
 type Overview = {
   totalWorkorders: number;
@@ -12,6 +24,7 @@ type Overview = {
   avgDaily: number;
   topRegion: string;
   topCategory: string;
+  analyzedCount?: number;
   multiFreqCount: number;
   multiFreqClusters: number;
   regionDistribution: Record<string, number>;
@@ -24,15 +37,13 @@ type Trends = { daily: Record<string, number>; dailyNewClusters?: Record<string,
 
 export default function DashboardPage() {
   const { openUpload } = useCivicWorkflow();
+  const router = useRouter();
   const [daysRange, setDaysRange] = useState(90);
   const [ov, setOv] = useState<Overview | null>(null);
   const [tr, setTr] = useState<Trends | null>(null);
 
   function load() {
-    Promise.all([
-      fetch("/api/overview").then((r) => r.json()),
-      fetch(`/api/trends?days=${daysRange}`).then((r) => r.json()),
-    ])
+    Promise.all([fetch("/api/overview").then((r) => r.json()), fetch(`/api/trends?days=${daysRange}`).then((r) => r.json())])
       .then(([a, b]) => {
         setOv(a);
         setTr(b);
@@ -53,7 +64,7 @@ export default function DashboardPage() {
     const list = json.topClusters || [];
     const header = ["id", "region", "type", "count", "mode", "confidence", "status"];
     const lines = [header.join(",")].concat(
-      list.map((c: any) =>
+      list.map((c: { id: string; region: string; type: string; count: number; mode: string; ai_confidence?: number; status?: { label: string } }) =>
         [c.id, c.region, c.type, c.count, c.mode, c.ai_confidence ?? "", c.status?.label ?? ""].join(",")
       )
     );
@@ -68,32 +79,41 @@ export default function DashboardPage() {
   }
 
   const regions = Object.entries(ov?.regionDistribution || {}).sort((a, b) => b[1] - a[1]);
-  const cats = Object.entries(ov?.categoryDistribution || {}).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  const cats = Object.entries(ov?.categoryDistribution || {}).sort((a, b) => b[1] - a[1]);
   const maxR = regions[0]?.[1] || 1;
-  const days = Object.entries(tr?.daily || {}).sort((a, b) => a[0].localeCompare(b[0]));
-  const maxD = Math.max(1, ...days.map(([, n]) => n));
+  const maxDaily = Math.max(0, ...Object.values(tr?.daily || {}));
+  const trendOpt = useMemo(
+    () => trendOption(tr?.daily || {}, tr?.dailyNewClusters || {}),
+    [tr]
+  );
+  const donutOpt = useMemo(() => donutOption(ov?.categoryDistribution || {}), [ov]);
+  const hasTrend = Object.keys(tr?.daily || {}).length > 0;
+  const hasDonut = cats.length > 0;
 
   return (
     <>
       <section className="page-header">
         <div>
-          <h1 className="page-header__title">工单数据总览</h1>
+          <h1 className="page-header__title">{ov?.dateRange ? `${ov.dateRange} 工单数据总览` : "工单数据总览"}</h1>
           <div className="page-header__status">
             <span className="status-dot" />
-            <span>{ov?.dateRange || "等待数据"} · 接口运行正常</span>
+            <span>接口运行正常 · {ov?.dateRange || "等待数据"}</span>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <select
-            className="btn btn--default"
-            value={daysRange}
-            onChange={(e) => setDaysRange(Number(e.target.value))}
-            aria-label="统计区间"
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <Select
+            value={String(daysRange)}
+            onValueChange={(val) => setDaysRange(Number(val))}
           >
-            <option value={7}>近7天</option>
-            <option value={30}>近30天</option>
-            <option value={90}>近90天</option>
-          </select>
+            <SelectTrigger className="w-[105px] h-[34px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
+              <SelectValue placeholder="统计区间" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="7">近7天</SelectItem>
+              <SelectItem value="30">近30天</SelectItem>
+              <SelectItem value="90">近90天</SelectItem>
+            </SelectContent>
+          </Select>
           <button type="button" className="btn btn--default" onClick={() => void exportOverview()}>
             导出
           </button>
@@ -103,18 +123,49 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <section className="kpi-row">
-        <Kpi icon="blue" label="总工单" value={ov?.totalWorkorders} sub={ov?.totalDays ? `${ov.totalDays} 天` : ""} />
-        <Kpi icon="green" label="日均" value={ov?.avgDaily} sub={ov?.topRegion ? `最多 ${ov.topRegion}` : ""} />
-        <Kpi icon="purple" label="AI 多频" value={ov?.multiFreqCount} sub="多频工单" />
-        <Kpi icon="orange" label="聚类数" value={ov?.multiFreqClusters} sub="多频聚类" />
-      </section>
+      <StatCardGrid columns={4}>
+        <StatCard
+          icon={FileText}
+          tone="blue"
+          label="总工单"
+          value={ov?.totalWorkorders}
+          sub={ov?.totalDays ? `${ov.totalDays} 天` : ""}
+          href="/tickets"
+        />
+        <StatCard
+          icon={Activity}
+          tone="green"
+          label="日均"
+          value={ov?.avgDaily}
+          sub={maxDaily ? `最高 ${maxDaily.toLocaleString("zh-CN")}` : ov?.topRegion ? `最多 ${ov.topRegion}` : ""}
+        />
+        <StatCard
+          icon={Sparkles}
+          tone="purple"
+          label="AI 多频"
+          value={ov?.multiFreqCount}
+          sub="多频工单"
+          href="/multifreq"
+        />
+        <StatCard
+          icon={FolderKanban}
+          tone="orange"
+          label="聚类数"
+          value={ov?.multiFreqClusters}
+          sub="多频聚类"
+          href="/themes"
+        />
+      </StatCardGrid>
 
       <section className="card" style={{ marginTop: 16 }}>
         <div className="card__header">
-          <div className="card__title">关键洞察</div>
+          <div className="card__title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ display: "inline-block", width: 4, height: 14, background: "linear-gradient(180deg,#F53F3F 0%,#FF7D00 100%)", borderRadius: 2 }} />
+            关键洞察
+            <span style={{ fontSize: 11, fontWeight: 400, color: "var(--c-ink-3)", marginLeft: 6 }}>由 AI 实时分析生成</span>
+          </div>
         </div>
-        <div className="card__body">
+        <div className="card__body" style={{ padding: "14px 16px" }}>
           {ov?.insights && ov.insights.length > 0 ? (
             <div className="insight-grid">
               {ov.insights.map((c) => (
@@ -133,141 +184,78 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <section className="split-row">
+      <section className="split-row split-row--main">
         <div className="card">
           <div className="card__header">
-            <div className="card__title">工单量与多频群组新增趋势</div>
+            <div className="card__title">{daysRange} 天工单量与多频群组新增趋势</div>
+            <div className="chart-legend">
+              <span>
+                <i style={{ background: "#1677FF" }} /> 每日工单量
+              </span>
+              <span>
+                <i style={{ background: "#FF7D00" }} /> 多频群组新增
+              </span>
+            </div>
           </div>
-          <div className="card__body">
-            {days.length === 0 ? (
-              <div className="empty-hint">暂无按日工单</div>
-            ) : (
-              <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 220 }}>
-                {days.map(([d, n]) => (
-                  <div key={d} title={`${d} ${n} 单`} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-                    <div style={{ width: "70%", height: `${(n / maxD) * 180}px`, background: "#1677FF", borderRadius: 2 }} />
-                    {tr?.dailyNewClusters?.[d] ? (
-                      <div style={{ width: "70%", height: 4, background: "#FF7D00", borderRadius: 2 }} />
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            )}
+          <div className="card__body" style={{ padding: "12px 8px 8px" }}>
+            {hasTrend ? <CivicEChart option={trendOpt} height={300} /> : <div className="empty-hint">暂无按日工单</div>}
           </div>
         </div>
         <div className="card">
           <div className="card__header">
             <div className="card__title">镇街工单量 TOP 10</div>
+            <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>近 {daysRange} 天 · 已研判</div>
           </div>
-          <div className="card__body">
-            {regions.slice(0, 10).map(([name, n]) => (
-              <div key={name} className="rank-row">
-                <div className="rank-row__name">{name}</div>
-                <div className="rank-row__track">
-                  <div className="rank-row__bar" style={{ width: `${(n / maxR) * 100}%` }} />
+          <div className="card__body" style={{ padding: "8px 12px 4px" }}>
+            {regions.slice(0, 10).map(([name, n], i) => {
+              const color = RANK_COLORS[i] || "#86909C";
+              const top = i < 3;
+              return (
+                <div key={name} className="rank-item" onClick={() => router.push(`/multifreq?region=${encodeURIComponent(name)}`)}>
+                  <span className="rank-item__no" style={{ background: top ? color : "var(--c-border-soft)", color: top ? "#fff" : "var(--c-ink-3)" }}>
+                    {i + 1}
+                  </span>
+                  <span style={{ color: "var(--c-ink)", fontWeight: 500, minWidth: 42 }}>{name}</span>
+                  <div className="rank-item__track">
+                    <div className="rank-item__bar" style={{ width: `${(n / maxR) * 100}%`, background: color }} />
+                  </div>
+                  <span style={{ color: "var(--c-ink)", fontWeight: 600, minWidth: 60, textAlign: "right", fontFeatureSettings: "'tnum'" }}>
+                    {n.toLocaleString("zh-CN")}
+                  </span>
                 </div>
-                <div className="rank-row__n">{n.toLocaleString("zh-CN")}</div>
-              </div>
-            ))}
-            {regions.length === 0 && <div className="empty-hint">暂无镇街分布</div>}
+              );
+            })}
+            {regions.length === 0 && <div className="empty-hint">暂无镇街分布。上传后请启动 AI 聚类，镇街由模型从微观地点切分。</div>}
           </div>
         </div>
       </section>
 
-      <section className="split-row">
+      <section className="split-row split-row--main" style={{ marginTop: 16 }}>
         <div className="card">
           <div className="card__header">
             <div className="card__title">工单类型分布</div>
             <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>
-              共 <b>{ov?.totalWorkorders || 0}</b> 件
+              已研判 <b>{ov?.analyzedCount || 0}</b> / {ov?.totalWorkorders || 0} 件
             </div>
           </div>
-          <div className="card__body">
-            <div className="donut-legend">
-              {cats.map(([name, n]) => (
-                <span key={name}>
-                  {name} {n}
-                </span>
-              ))}
-            </div>
-            {cats.map(([name, n]) => (
-              <div key={name} className="feat-row">
-                <span style={{ width: 88 }}>{name || "未分类"}</span>
-                <div className="feat-row__bar">
-                  <div className="feat-row__fill" style={{ width: `${(n / (ov?.totalWorkorders || 1)) * 100}%` }} />
-                </div>
-                <span>{n}</span>
-              </div>
-            ))}
+          <div className="card__body" style={{ padding: "8px 12px" }}>
+            {hasDonut ? <CivicEChart option={donutOpt} height={300} /> : <div className="empty-hint">暂无类型分布。类型由 AI 归入七类民生业务后展示。</div>}
           </div>
         </div>
         <div className="card">
           <div className="card__header">
             <div className="card__title">镇街 × 类型 工单数量</div>
+            <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>色深表示工单数量</div>
           </div>
-          <div className="card__body" style={{ overflowX: "auto" }}>
-            <Heatmap
-              regions={regions.slice(0, 6).map((r) => r[0])}
-              cats={cats.slice(0, 6).map((c) => c[0])}
+          <div className="card__body" style={{ padding: "8px 12px", overflowX: "auto" }}>
+            <CivicHeatmap
+              regions={regions.slice(0, 10).map((r) => r[0])}
+              cats={cats.slice(0, 7).map((c) => c[0])}
               grid={ov?.regionCategory || {}}
             />
           </div>
         </div>
       </section>
     </>
-  );
-}
-
-function Kpi({ icon, label, value, sub }: { icon: string; label: string; value?: number; sub: string }) {
-  return (
-    <div className="kpi-card">
-      <div className={`kpi-card__icon kpi-card__icon--${icon}`} />
-      <div className="kpi-card__body">
-        <div className="kpi-card__label">{label}</div>
-        <div className="kpi-card__value">{(value || 0).toLocaleString("zh-CN")}</div>
-        <div className="kpi-card__sub">{sub}</div>
-      </div>
-    </div>
-  );
-}
-
-function Heatmap({
-  regions,
-  cats,
-  grid,
-}: {
-  regions: string[];
-  cats: string[];
-  grid: Record<string, Record<string, number>>;
-}) {
-  if (!regions.length || !cats.length) return <div className="empty-hint">数据不足</div>;
-  const max = Math.max(1, ...regions.flatMap((r) => cats.map((c) => grid[r]?.[c] || 0)));
-  return (
-    <table className="heatmap">
-      <thead>
-        <tr>
-          <th />
-          {cats.map((c) => (
-            <th key={c}>{c}</th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {regions.map((r) => (
-          <tr key={r}>
-            <th>{r}</th>
-            {cats.map((c) => {
-              const n = grid[r]?.[c] || 0;
-              const a = n / max;
-              return (
-                <td key={c} style={{ background: `rgba(22,119,255,${0.08 + a * 0.55})` }}>
-                  {n || ""}
-                </td>
-              );
-            })}
-          </tr>
-        ))}
-      </tbody>
-    </table>
   );
 }

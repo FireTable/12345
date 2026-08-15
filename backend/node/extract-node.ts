@@ -5,6 +5,7 @@ import {
   buildBatchExtractionPrompt,
   type ExtractedTicketItem,
 } from "../prompt";
+import { adminFromLocation, explicitAdmin } from "@/lib/admin-area";
 
 export const LOW_CONFIDENCE_THRESHOLD = 60;
 
@@ -75,7 +76,7 @@ async function extractBatchWithLLM(
  */
 function fallbackDynamicExtraction(ticket: RawTicket): ExtractedTicketItem {
   const content = typeof ticket?.content === "string" ? ticket.content : "";
-  const subdistrict = ticket?.subdistrict || "";
+  const subdistrict = explicitAdmin(ticket?.subdistrict) || "";
 
   // 1. 车牌专用精确识别（如 粤E SD221 或 粤EY6501）
   const matchPlate = content.match(/(?:车牌[号为：:\s]*|小车|车辆|车牌[：:\s]*)([粤京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼][A-Z][\s]?[A-Z0-9]{4,6}[A-Z0-9挂学警港澳]?)/);
@@ -222,9 +223,14 @@ export async function extractNode(
       typeof aiExtracted?.confidence === "number"
         ? aiExtracted.confidence
         : fallback.confidence;
+    const area = adminFromLocation(canonicalLocation, ticket);
 
     return {
       ...ticket,
+      district: area.district || undefined,
+      subdistrict: area.subdistrict || undefined,
+      sourceCategory: category,
+      address: canonicalLocation,
       summarizeTitle,
       confidence,
       canonicalSubject,
