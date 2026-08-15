@@ -113,12 +113,12 @@ export const ThemeEnrichmentSchema = z.object({
     .describe("高度贴合具体诉求的针对性协同处置建议（必须明确指出牵头部门/科室、响应时限及具体办理路径）（50-80字）"),
   patternType: z
     .enum(["GROUP_GATHERING", "INDIVIDUAL_REPEAT"])
-    .optional()
-    .describe("多频形态（可选，旧模型可不返回）"),
+    .nullable()
+    .describe("多频形态（可选，可为 null）"),
   negativeSentimentHit: z
     .boolean()
-    .optional()
-    .describe("是否命中负面情绪/险情词（可选）"),
+    .nullable()
+    .describe("是否命中负面情绪/险情词（可选，可为 null）"),
 });
 
 export type ThemeEnrichmentResult = z.infer<typeof ThemeEnrichmentSchema>;
