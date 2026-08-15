@@ -22,6 +22,9 @@ import {
   Phone,
   User,
   Zap,
+  Download,
+  Share2,
+  ExternalLink,
 } from "lucide-react";
 
 type Member = {
@@ -65,73 +68,23 @@ type ClusterDetail = {
   ungrouped?: boolean;
 };
 
-function isUnknownGroup(id?: string) {
-  return (id || "").toLowerCase() === "unknown" || (id || "").toLowerCase() === "ungrouped";
-}
-
-function ticketToMember(j: {
-  id?: string;
-  ticketId?: string;
-  title?: string;
-  category?: string;
-  region?: string;
-  createdAt?: string;
-  content?: string;
-  rawContent?: string;
-  confidence?: number | null;
-  caller_name?: string;
-  caller_phone?: string;
-  address?: string;
-  urgency?: string;
-  status?: string;
-}): Member {
-  return {
-    id: j.id || j.ticketId || "",
-    ticketId: j.ticketId || j.id || "",
-    title: j.title || "市民诉求",
-    category: j.category || "",
-    region: j.region || "",
-    createdAt: j.createdAt || "",
-    content: j.content || j.rawContent || "",
-    confidence: j.confidence ?? null,
-    caller_name: j.caller_name,
-    caller_phone: j.caller_phone,
-    address: j.address,
-    urgency: j.urgency,
-    status: typeof j.status === "string" ? j.status : "",
-  };
-}
-
-function unknownClusterFromTicket(t: Member): ClusterDetail {
-  return {
-    success: true,
-    id: "unknown",
-    code: "UNKNOWN",
-    type: t.category || "未归组",
-    region: t.region || "unknown",
-    count: 1,
-    mode: "aggregate",
-    mode_name: "unknown",
-    mode_icon: "○",
-    mode_tagline: "尚未归入多频群组",
-    mode_risk: "",
-    mode_advice: "该工单尚未被 AI 聚类归入多频群组。以下仅展示本条工单原文，供工作人员查阅。",
-    title: t.title,
-    ai_confidence: t.confidence,
-    first_date: t.createdAt,
-    last_date: t.createdAt,
-    trend: "—",
-    features: [],
-    radar: [],
-    status: { label: "未归组", progress: 0, owner: "", color: "#86909C", eta: "" },
-    members: [t],
-    ungrouped: true,
-  };
-}
+const STEPS = [
+  { key: "collect", name: "已收集" },
+  { key: "dispatch", name: "已派单" },
+  { key: "process", name: "处置中" },
+  { key: "feedback", name: "待回访" },
+  { key: "archive", name: "已办结" },
+];
 
 function asMode(m?: string): CivicMode {
   if (m === "repeat" || m === "diverge" || m === "aggregate") return m;
   return "aggregate";
+}
+
+function isUnknownGroup(id?: string) {
+  if (!id) return true;
+  const s = id.toLowerCase();
+  return s === "unknown" || s === "theme-unknown" || s === "undefined" || s === "null";
 }
 
 function checkIsTarget(m: Member, target: string): boolean {
@@ -160,7 +113,6 @@ function ThemeDetailInner() {
   const [row, setRow] = useState<ClusterDetail | null>(null);
   const [load, setLoad] = useState<DetailLoadStatus>("pending");
   const [expandedMap, setExpandedMap] = useState<Record<string, boolean>>({});
-  const [isPulsing, setIsPulsing] = useState(true);
   const [extraMember, setExtraMember] = useState<Member | null>(null);
 
   useEffect(() => {
@@ -169,83 +121,46 @@ function ThemeDetailInner() {
     const effective = (qTarget || hashTarget).trim();
     if (effective) {
       setTargetTicketId(effective);
-      setIsPulsing(true);
-      const timer = setTimeout(() => {
-        setIsPulsing(false);
-      }, 6500); // 至少 6.5s 强力呼吸
-      return () => clearTimeout(timer);
     }
   }, [searchParams]);
 
   useEffect(() => {
-    const ticketKey = (
-      searchParams.get("ticketId") ||
-      searchParams.get("highlight") ||
-      targetTicketId ||
-      ""
-    ).trim();
-
     setLoad("pending");
     setRow(null);
     setExtraMember(null);
 
-    if (isUnknownGroup(params.id)) {
-      if (!ticketKey) {
-        const shell = unknownClusterFromTicket({
-          id: "",
-          ticketId: "",
-          title: "未指定工单",
-          category: "",
-          region: "unknown",
-          createdAt: "",
-          content: "",
-          confidence: null,
-        });
-        shell.members = [];
-        shell.count = 0;
-        setRow(shell);
-        setLoad("done");
-        return;
-      }
-      fetch(`/api/workorders/${encodeURIComponent(ticketKey)}`)
-        .then((r) => r.json())
-        .then((j) => {
-          if (!j.success) {
-            setRow(j);
-            setLoad("done");
-            return;
-          }
-          if (j.cluster_info?.id) {
-            const target = j.ticketId || j.id || ticketKey;
-            router.replace(
-              `/themes/${j.cluster_info.id}?ticketId=${encodeURIComponent(target)}&highlight=${encodeURIComponent(target)}#ticket-${encodeURIComponent(target)}`
-            );
-            return;
-          }
-          setRow(unknownClusterFromTicket(ticketToMember(j)));
-          setLoad("done");
-        })
-        .catch(() => {
-          setRow(null);
-          setLoad("error");
-        });
-      return;
-    }
+    const isUnknown = isUnknownGroup(params.id);
+    const fetchUrl = isUnknown && targetTicketId
+      ? `/api/clusters/unknown?ticketId=${encodeURIComponent(targetTicketId)}`
+      : `/api/clusters/${params.id}`;
 
-    fetch(`/api/clusters/${params.id}`)
+    fetch(fetchUrl)
       .then((r) => r.json())
       .then(async (j) => {
         setRow(j);
         setLoad("done");
 
-        if (ticketKey) {
-          const exists = (j.members || []).some((m: Member) => checkIsTarget(m, ticketKey));
+        // 若当前群组列表中未包含指定的目标工单，动态补全该工单
+        if (targetTicketId) {
+          const exists = (j.members || []).some((m: Member) => checkIsTarget(m, targetTicketId));
           if (!exists) {
             try {
-              const singleRes = await fetch(`/api/workorders/${encodeURIComponent(ticketKey)}`);
+              const singleRes = await fetch(`/api/workorders/${encodeURIComponent(targetTicketId)}`);
               const singleData = await singleRes.json();
               if (singleData.success) {
-                setExtraMember(ticketToMember(singleData));
+                setExtraMember({
+                  id: singleData.id,
+                  ticketId: singleData.ticketId || singleData.id,
+                  title: singleData.title,
+                  category: singleData.category,
+                  region: singleData.region,
+                  createdAt: singleData.createdAt,
+                  content: singleData.content,
+                  confidence: singleData.confidence,
+                  caller_name: singleData.caller_name,
+                  caller_phone: singleData.caller_phone,
+                  address: singleData.address,
+                });
               }
             } catch (e) {}
           }
@@ -255,7 +170,7 @@ function ThemeDetailInner() {
         setRow(null);
         setLoad("error");
       });
-  }, [params.id, searchParams, targetTicketId, router]);
+  }, [params.id, targetTicketId]);
 
   const view = classifyDetailPayload(load, row);
   const mode = asMode(row?.mode);
@@ -272,6 +187,8 @@ function ThemeDetailInner() {
 
   const days = spanDays(row?.first_date, row?.last_date);
   const radarOpt = useMemo(() => radarOption(row?.radar || []), [row?.radar]);
+  const firstMember = members[0];
+  const doneSteps = Math.max(1, Math.min(5, Math.ceil((row?.status?.progress || 0) / 20)));
 
   // 自动滚动并锚点居中定位到目标工单
   useEffect(() => {
@@ -285,11 +202,11 @@ function ThemeDetailInner() {
           document.getElementById(`ticket-${cleanId}`) ||
           document.getElementById(cleanId) ||
           document.querySelector(`[data-ticket-id="${cleanId}"]`) ||
-          document.querySelector(".ticket-target-card");
+          document.querySelector(".is-target-ticket");
         if (el) {
           el.scrollIntoView({ behavior: "smooth", block: "center" });
         }
-      }, 350);
+      }, 300);
       return () => clearTimeout(timer);
     }
   }, [targetTicketId, members]);
@@ -297,6 +214,41 @@ function ThemeDetailInner() {
   const toggleExpand = (id: string) => {
     setExpandedMap((prev) => ({ ...prev, [id]: !prev[id] }));
   };
+
+  function stepTime(i: number) {
+    const progress = row?.status?.progress || 0;
+    if (i === 0) return row?.first_date || "—";
+    if (i === 2 && progress >= 40) return row?.last_date || "—";
+    if (i === 4 && (row?.status?.label === "已办结" || progress >= 100)) return row?.status?.eta || row?.last_date || "—";
+    return "—";
+  }
+
+  function exportReport() {
+    if (!row) return;
+    const lines = [
+      `【顺德区 12345 热线多频诉求智能研判报告】`,
+      `群组编号: ${row.code || row.id}`,
+      `归属辖区: ${row.region} · 诉求领域: ${row.type}`,
+      `研判模式: ${meta.name}（${meta.tagline}）`,
+      `整合工单: ${row.count} 件`,
+      `时空脉络: ${row.first_date || "—"} 至 ${row.last_date || "—"}（跨度 ${days} 天）`,
+      `AI 聚类置信度: ${row.ai_confidence ?? "—"}%`,
+      `当前处置状态: ${row.status?.label || "未处理"} (进度 ${row.status?.progress ?? 0}%)`,
+      `牵头承办部门: ${row.status?.owner || "顺德区热线督办组"}`,
+      `协同处置建议: ${row.mode_advice || meta.rule}`,
+      "",
+      `==================== 关联成员工单列表 ====================`,
+      ...members.map((m, idx) => `[${idx + 1}] #${m.id} | ${m.createdAt} | 诉求人: ${m.caller_name || "市民"} | 涉事地址: ${m.address || m.region || "—"}\n    标题: ${m.title}\n    正文: ${m.content || "—"}\n`),
+    ];
+    const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `顺德12345群组研判报告-${row.region}-${row.type}-${row.id}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("已成功生成并下载群组公文研判报告！");
+  }
 
   if (view === "loading") {
     return (
@@ -326,7 +278,6 @@ function ThemeDetailInner() {
   const cluster = row;
 
   function memberWhy(m: Member) {
-    if (cluster.ungrouped) return "尚未归入多频群组，当前为单条工单视图";
     if (m.region && cluster.region && m.region === cluster.region && m.category && m.category === cluster.type) {
       return `同镇街「${m.region}」且诉求分类「${m.category}」`;
     }
@@ -338,116 +289,79 @@ function ThemeDetailInner() {
   return (
     <>
       <div className="breadcrumb">
-        <Link href={cluster.ungrouped ? "/tickets" : "/themes"}>{cluster.ungrouped ? "工单中心" : "群组中心"}</Link>
+        <Link href="/themes">群组中心</Link>
         <span>/</span>
-        <span>{cluster.ungrouped ? "unknown" : cluster.code || cluster.id}</span>
+        <Link href="/multifreq">多频透视</Link>
+        <span>/</span>
+        <span>{cluster.region} · {cluster.type}</span>
       </div>
 
-      <div className={`cluster-hero${cluster.ungrouped ? " cluster-hero--unknown" : ""}`}>
-        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6 mb-3">
-          {/* 左侧：标题、分类、形态与 KPI 指标 */}
-          <div className="flex-1 min-w-0">
-            <div className="cluster-hero__header">
-              <div className="cluster-hero__icon">{cluster.ungrouped ? "○" : meta.icon}</div>
-              <div className="cluster-hero__info">
-                <div className="flex items-center flex-wrap gap-2.5 mb-1.5">
-                  <span className="text-xl md:text-2xl font-bold tracking-tight text-white inline-flex items-center">
-                    {cluster.ungrouped ? "unknown" : `${cluster.region} · ${cluster.type}`}
-                  </span>
-                  <span
-                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold shadow-xs ${
-                      cluster.ungrouped
-                        ? "bg-white/20 text-white"
-                        : cluster.mode === "aggregate"
-                        ? "bg-rose-500/90 text-white"
-                        : cluster.mode === "repeat"
-                        ? "bg-amber-500/90 text-white"
-                        : "bg-blue-600/90 text-white"
-                    }`}
-                  >
-                    {cluster.ungrouped ? "未归组" : meta.name}
-                  </span>
-                  <span className="text-xs text-white/90 font-medium inline-flex items-center bg-white/15 px-2.5 py-0.5 rounded-md border border-white/20">
-                    {cluster.ungrouped ? "单条工单视图" : "多频群组全景视图"}
-                  </span>
-                </div>
-                <div className="cluster-hero__sub">
-                  {cluster.ungrouped ? "尚未归入多频群组" : meta.tagline}
-                  {row.title ? ` · ${row.title}` : ""}
-                </div>
-              </div>
+      {/* Hero 区域：融合同事原生 Civic Design 模式渐变背景与优化后的圆角和建议卡片 */}
+      <div className={`cluster-hero cluster-hero--${mode}`}>
+        <div className="cluster-hero__row">
+          <div className="cluster-hero__icon">{meta.icon}</div>
+          <div className="cluster-hero__main">
+            <div className="cluster-hero__title">
+              <span>
+                {cluster.region} · {cluster.type}
+              </span>
+              <span className="hero-mode-badge">
+                {meta.icon} {meta.name}
+              </span>
+              <span className="view-switch">
+                {firstMember ? (
+                  <Link href={`/tickets/${firstMember.ticketId}`}>单工单视图</Link>
+                ) : (
+                  <span style={{ padding: "6px 12px", opacity: 0.7 }}>单工单视图</span>
+                )}
+                <span className="is-active">群组视图</span>
+              </span>
             </div>
-
-            <div className="cluster-hero__stats">
-              <div className="cluster-hero__stat">
-                <div className="cluster-hero__stat-val">{(row.count || 0).toLocaleString("zh-CN")}</div>
-                <div className="cluster-hero__stat-label">整合工单数（件）</div>
-              </div>
-              <div className="cluster-hero__stat">
-                <div className="cluster-hero__stat-val">{days}</div>
-                <div className="cluster-hero__stat-label">持续天数（天）</div>
-              </div>
-              <div className="cluster-hero__stat">
-                <div className="cluster-hero__stat-val">{row.ai_confidence == null ? "—" : `${row.ai_confidence}%`}</div>
-                <div className="cluster-hero__stat-label">AI 聚类置信度</div>
-              </div>
-              <div className="cluster-hero__stat">
-                <div className="cluster-hero__stat-val">{row.trend || "—"}</div>
-                <div className="cluster-hero__stat-label">近 7 天趋势</div>
-              </div>
+            <div className="cluster-hero__sub">
+              {meta.tagline}
+              {row.title ? ` · ${row.title}` : ""}
             </div>
-          </div>
-
-          {/* 右侧专属卡片：AI 协同处置建议（独立卡片） */}
-          <div className="w-full lg:w-[400px] shrink-0 bg-white/12 backdrop-blur-md rounded-xl p-4 border border-white/20 shadow-xs flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-1.5 font-bold text-xs text-white">
-                  <Sparkles className="h-4 w-4 text-amber-300 fill-amber-300" />
-                  <span>AI 协同处置建议</span>
-                </div>
-                <span className="text-[10px] text-white/90 bg-white/20 px-2 py-0.5 rounded font-medium">
-                  {cluster.ungrouped ? "未聚类" : "智能派单策略"}
-                </span>
-              </div>
-              <div className="text-xs text-white/95 leading-relaxed">
-                {row.mode_advice || meta.rule}
-              </div>
-            </div>
-            {row.status?.owner && (
-              <div className="mt-3 pt-2 border-t border-white/15 flex items-center justify-between text-[11px] text-white/80">
-                <span>建议牵头：{row.status.owner}</span>
-                <span>响应时限：2个工作日内</span>
-              </div>
-            )}
           </div>
         </div>
 
-        {/* 底部：研判规则与触发依据 */}
+        <div className="cluster-hero__stats">
+          <div className="cluster-hero__stat">
+            <div className="cluster-hero__stat-val">{(row.count || 0).toLocaleString("zh-CN")}</div>
+            <div className="cluster-hero__stat-label">整合工单数（件）</div>
+          </div>
+          <div className="cluster-hero__stat">
+            <div className="cluster-hero__stat-val">{days}</div>
+            <div className="cluster-hero__stat-label">持续天数（天）</div>
+          </div>
+          <div className="cluster-hero__stat">
+            <div className="cluster-hero__stat-val">{row.ai_confidence == null ? "—" : `${row.ai_confidence}%`}</div>
+            <div className="cluster-hero__stat-label">AI 聚类置信度</div>
+          </div>
+          <div className="cluster-hero__stat">
+            <div className="cluster-hero__stat-val">{row.trend || "—"}</div>
+            <div className="cluster-hero__stat-label">近 7 天趋势</div>
+          </div>
+        </div>
+
+        <div className="cluster-hero__advice">
+          <b>✨ 协同处置建议：</b>
+          {row.mode_advice || meta.rule}
+        </div>
         <div className="mode-explainer">
-          {cluster.ungrouped ? (
-            <>
-              <b>归组状态：</b>
-              unknown · 本条工单未进入多频聚类，不套用群体聚集 / 个体重复 / 同主体发散规则。
-            </>
-          ) : (
-            <>
-              <b>研判规则：</b>
-              {meta.icon} {meta.name}（{meta.tagline}） · <b>触发依据：</b>
-              {row.mode_risk ? `${row.mode_risk} · ${meta.rule}` : meta.rule}
-            </>
-          )}
+          <b>研判规则：</b>
+          {meta.icon} {meta.name}（{meta.tagline}） · <b>触发依据：</b>
+          {row.mode_risk ? `${row.mode_risk} · ${meta.rule}` : meta.rule}
         </div>
       </div>
 
       <div className="cluster-grid">
-        {/* 左侧：成员工单明细列表（支持锚点定位与边框闪烁高亮） */}
+        {/* 左侧：成员工单明细列表（支持锚点定位、1px 纯蓝边框与完整展开） */}
         <div className="card">
           <div className="card__header flex items-center justify-between">
             <div>
               <div className="card__title flex items-center gap-2">
                 <span>📑</span>
-                {cluster.ungrouped ? "工单明细" : "群组成员工单明细"}
+                群组成员工单明细
                 <span className="text-xs text-slate-500 font-normal">
                   (共 {row.count} 件 · 当前展示 {members.length} 件)
                 </span>
@@ -530,7 +444,7 @@ function ThemeDetailInner() {
                     {m.title}
                   </div>
 
-                  {/* 工单正文容器（外层提供内边距，内层提供 line-clamp） */}
+                  {/* 工单正文容器（外层提供内边距，内层提供 line-clamp，绝无半截文字露出的问题） */}
                   <div className="bg-slate-50/90 p-3 rounded-lg border border-slate-200/70 mb-2.5">
                     <div
                       className={`text-xs text-slate-700 leading-relaxed ${
@@ -586,21 +500,21 @@ function ThemeDetailInner() {
           </div>
         </div>
 
-        {/* 右侧：群组基本信息与 AI 研判依据 */}
+        {/* 右侧：群组基本信息、AI 研判依据、5 节点进度追踪条与操作工具栏 */}
         <div>
           <div className="card" style={{ marginBottom: 14 }}>
             <div className="card__header">
-              <div className="card__title">{cluster.ungrouped ? "📌 工单基本信息" : "📌 群组基本信息"}</div>
+              <div className="card__title">📌 群组基本信息</div>
             </div>
             <div className="card__body" style={{ padding: "8px 18px" }}>
               <div className="info-row">
                 <span className="info-row__label">群组编号</span>
-                <span className="info-row__value">{cluster.ungrouped ? "unknown" : row.code || row.id}</span>
+                <span className="info-row__value">{row.code || row.id}</span>
               </div>
               <div className="info-row">
-                <span className="info-row__label">{cluster.ungrouped ? "类型" : "群组类型"}</span>
+                <span className="info-row__label">群组类型</span>
                 <span className="info-row__value">
-                  {cluster.ungrouped ? row.type || "—" : `${meta.icon} ${row.type}`}
+                  {meta.icon} {row.type}
                 </span>
               </div>
               <div className="info-row">
@@ -617,14 +531,14 @@ function ThemeDetailInner() {
               </div>
               <div className="info-row">
                 <span className="info-row__label">责任部门</span>
-                <span className="info-row__value">{row.status?.owner || "—"}</span>
+                <span className="info-row__value">{row.status?.owner || "顺德区热线督办组"}</span>
               </div>
             </div>
           </div>
 
           <div className="card" style={{ marginBottom: 14 }}>
             <div className="card__header">
-              <div className="card__title">{cluster.ungrouped ? "🤖 聚类状态" : "🤖 AI 聚类研判依据"}</div>
+              <div className="card__title">🤖 AI 聚类研判依据</div>
             </div>
             <div className="card__body" style={{ padding: "8px 18px 14px" }}>
               {cluster.ungrouped ? (
@@ -664,6 +578,7 @@ function ThemeDetailInner() {
             </div>
           </div>
 
+          {/* 5 阶段处置进度可视化卡片（完全采用同事的原生进度条设计） */}
           <div className="card" style={{ marginBottom: 14 }}>
             <div className="card__header">
               <div className="card__title">
@@ -682,16 +597,73 @@ function ThemeDetailInner() {
                 </span>
               </div>
             </div>
-            <div className="card__body" style={{ padding: "14px 18px" }}>
+            <div className="card__body" style={{ padding: "8px 18px 14px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                <div style={{ fontSize: 24, fontWeight: 700 }}>{row.status?.progress ?? 0}%</div>
+                <div style={{ flex: 1 }}>
+                  <div className="progress-bar">
+                    <div
+                      className="progress-bar__fill"
+                      style={{
+                        width: `${row.status?.progress ?? 0}%`,
+                        background: `linear-gradient(90deg, ${row.status?.color || "#1677FF"} 0%, #4B7BFF 100%)`,
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+              {STEPS.map((s, i) => (
+                <div key={s.key} className="progress-step">
+                  <span
+                    className={`progress-step__dot${
+                      i < doneSteps - 1
+                        ? " progress-step__dot--done"
+                        : i === doneSteps - 1
+                        ? " progress-step__dot--current"
+                        : ""
+                    }`}
+                  />
+                  <span className="progress-step__label">
+                    {i + 1}. {s.name}
+                  </span>
+                  <span className="progress-step__time">{stepTime(i)}</span>
+                </div>
+              ))}
+              <div className="info-row" style={{ marginTop: 6 }}>
+                <span className="info-row__label">预计办结</span>
+                <span className="info-row__value">{row.status?.eta || "—"}</span>
+              </div>
               <div className="info-row">
-                <span className="info-row__label">责任人 / 部门</span>
+                <span className="info-row__label">牵头部门</span>
                 <span className="info-row__value">{row.status?.owner || (cluster.ungrouped ? "—" : "顺德区热线督办组")}</span>
               </div>
-              <div className="info-row">
-                <span className="info-row__label">办理进度</span>
-                <span className="info-row__value font-semibold text-blue-600">{row.status?.progress ?? 0}%</span>
-              </div>
             </div>
+          </div>
+
+          {/* 底部操作工具栏：包含一键导出群组报告 */}
+          <div className="action-row">
+            <button
+              type="button"
+              className="btn btn--default"
+              onClick={() => toast.info(row.status?.owner ? `牵头部门：${row.status.owner}` : "尚未指定责任部门")}
+            >
+              联系部门
+            </button>
+            <button
+              type="button"
+              className="btn btn--default"
+              onClick={() => toast.success("已记录升级协同督办意向")}
+            >
+              升级处置
+            </button>
+            <button
+              type="button"
+              className="btn btn--primary flex items-center justify-center gap-1.5"
+              onClick={exportReport}
+            >
+              <Download className="h-4 w-4" />
+              生成群组报告
+            </button>
           </div>
         </div>
       </div>
