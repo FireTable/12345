@@ -30,6 +30,8 @@
 ### 3. 图谱可视化与数据导出
 | 依赖库名称 | 用途说明 | 开源许可证 | 官方/开源地址 |
 | :--- | :--- | :--- | :--- |
+| **`@tanstack/react-table`** | Shadcn 标准 Data Table 引擎（多列排序、过滤、分页、勾选） | **MIT** | [tanstack/table](https://github.com/tanstack/table) |
+| **`@tanstack/react-virtual`** | 海量工单虚拟列表滚动引擎（保障超长列表丝滑性能） | **MIT** | [tanstack/virtual](https://github.com/tanstack/virtual) |
 | **`react-force-graph-2d`** | 知识图谱网络拓扑可视化渲染（力导向图） | **MIT** | [vasturiano/react-force-graph](https://github.com/vasturiano/react-force-graph) |
 | **`papaparse`** / **`xlsx`** | 多频工单批量核查报表 CSV / Excel 导出工具 | **MIT** / **Apache-2.0** | [mholt/PapaParse](https://github.com/mholt/PapaParse) |
 
