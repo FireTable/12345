@@ -364,9 +364,17 @@ function ThemeDetailInner() {
                   data-ticket-id={m.id}
                   className={`member-item transition-colors relative rounded-xl p-4 mb-3.5 cursor-pointer ${
                     isTarget
-                      ? "border border-blue-500 bg-blue-50/25"
+                      ? "is-target-ticket border border-blue-600 bg-blue-50/30 shadow-xs"
                       : "border border-slate-200/90 bg-white hover:border-slate-300"
                   }`}
+                  style={
+                    isTarget
+                      ? {
+                          borderColor: "#2563eb",
+                          backgroundColor: "rgba(239, 246, 255, 0.4)",
+                        }
+                      : {}
+                  }
                   onClick={() => toggleExpand(m.ticketId || m.id)}
                 >
                   {/* 目标工单浮动徽标 */}

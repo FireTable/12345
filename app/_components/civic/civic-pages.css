@@ -86,6 +86,11 @@
   padding: 12px 14px; background: #F7F8FA; border-radius: 8px;
   border: 1px solid var(--c-border-soft); margin-bottom: 8px; cursor: pointer;
 }
+.member-item.is-target-ticket {
+  border: 1.5px solid #2563eb !important;
+  border-color: #2563eb !important;
+  background-color: rgba(239, 246, 255, 0.4) !important;
+}
 .member-item:hover { background: #fff; border-color: #1E5AFF; }
 .member-item__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
 .member-item__id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--c-ink-3); }
