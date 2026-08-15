@@ -26,6 +26,8 @@ import {
   Download,
   Share2,
   ExternalLink,
+  Copy,
+  Check,
 } from "lucide-react";
 
 type Member = {
@@ -185,6 +187,23 @@ function ThemeDetailInner() {
     }
     return list;
   }, [row?.members, extraMember]);
+
+  const [copiedAdvice, setCopiedAdvice] = useState(false);
+
+  const handleCopyAdvice = () => {
+    const text = row?.mode_advice || meta.rule;
+    if (!text) return;
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        setCopiedAdvice(true);
+        toast.success("已复制协同处置建议！");
+        setTimeout(() => setCopiedAdvice(false), 2000);
+      })
+      .catch(() => {
+        toast.error("复制失败，请手动选取复制");
+      });
+  };
 
   const days = spanDays(row?.first_date, row?.last_date);
   const radarOpt = useMemo(() => radarOption(row?.radar || []), [row?.radar]);
@@ -352,7 +371,24 @@ function ThemeDetailInner() {
               <div className="glass-advice__head">
                 <span className="glass-advice__icon">✨</span>
                 <span className="glass-advice__title">AI 协同处置建议</span>
-                <span className="glass-advice__badge">公文级建议</span>
+                <button
+                  type="button"
+                  onClick={handleCopyAdvice}
+                  className="glass-advice__copy-btn"
+                  title="一键复制协同处置建议"
+                >
+                  {copiedAdvice ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-300" />
+                      <span>已复制</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5 text-white/90" />
+                      <span>复制建议</span>
+                    </>
+                  )}
+                </button>
               </div>
               <div className="glass-advice__body">
                 {row.mode_advice || meta.rule}
