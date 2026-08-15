@@ -322,7 +322,21 @@
 .cluster-desc { font-size: 12px; color: var(--c-ink-3); margin-top: 2px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-arrow { color: var(--c-ink-4); }
 
-.heatmap-cell { min-width: 48px; padding: 6px 4px; border-radius: 4px; font-feature-settings: "tnum"; }
+.heatmap-cell {
+  min-width: 48px;
+  padding: 6px 4px;
+  border-radius: 6px;
+  font-feature-settings: "tnum";
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease;
+  cursor: pointer;
+}
+.heatmap-cell:hover {
+  transform: scale(1.22);
+  position: relative;
+  z-index: 15;
+  box-shadow: 0 6px 16px rgba(22, 119, 255, 0.35);
+  filter: brightness(1.05);
+}
 .rank-item { display: flex; align-items: center; gap: 10px; padding: 7px 0; font-size: 12px; cursor: pointer; }
 .rank-item__no {
   width: 20px; height: 20px; border-radius: 4px; display: flex; align-items: center; justify-content: center;

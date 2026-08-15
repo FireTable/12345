@@ -44,12 +44,43 @@ export function CivicEChart({ option, height }: { option: Record<string, unknown
   const key = JSON.stringify(option);
 
   useEffect(() => {
-    let chart: ReturnType<NonNullable<Window["echarts"]>["init"]> | null = null;
+    let chart: any = null;
     let cancelled = false;
     loadEcharts().then((echarts) => {
       if (cancelled || !ref.current) return;
       chart = echarts.init(ref.current);
-      chart.setOption(JSON.parse(key));
+      const parsedOption = JSON.parse(key);
+      chart.setOption(parsedOption);
+
+      // 监听鼠标悬停交互：动态实时切换环形图圆心百分比与分类
+      const defaultTitle = parsedOption.title ? JSON.parse(JSON.stringify(parsedOption.title)) : null;
+      if (defaultTitle && parsedOption.series?.some((s: any) => s.type === "pie")) {
+        chart.on("mouseover", "series.pie", (params: any) => {
+          const pct = params.percent != null ? Number(params.percent).toFixed(1) : "0.0";
+          chart.setOption({
+            title: {
+              text: `${pct}%`,
+              subtext: params.name,
+              textStyle: {
+                color: params.color || "#1E5AFF",
+                fontSize: 28,
+                fontWeight: "bold",
+              },
+              subtextStyle: {
+                color: "#1E293B",
+                fontWeight: "600",
+                fontSize: 12,
+              },
+            },
+          });
+        });
+
+        chart.on("mouseout", "series.pie", () => {
+          chart.setOption({
+            title: defaultTitle,
+          });
+        });
+      }
     });
     const onResize = () => chart?.resize();
     window.addEventListener("resize", onResize);
@@ -316,8 +347,12 @@ export function CivicHeatmap({
               const bg = colors[lvl - 1];
               const textColor = lvl >= 4 ? "#fff" : "#1E5AFF";
               return (
-                <td key={c}>
-                  <div className="heatmap-cell" style={{ background: bg, color: textColor }}>
+                <td key={c} style={{ overflow: "visible" }}>
+                  <div
+                    className="heatmap-cell"
+                    style={{ background: bg, color: textColor }}
+                    title={`${r} × ${c}：${n ? n.toLocaleString("zh-CN") + " 件" : "暂无工单"}`}
+                  >
                     {n ? n.toLocaleString("zh-CN") : "—"}
                   </div>
                 </td>
