@@ -3,7 +3,6 @@ import { runTicketRadarPipeline } from "@/backend/agent";
 import { db } from "@/db/client";
 import { ticketsTable } from "@/db/schema";
 import { sql } from "drizzle-orm";
-import { MOCK_RAW_TICKETS } from "@/lib/mock-data";
 import type { RawTicket, MultiFrequencyTheme } from "@/backend/state";
 
 let cachedThemes: MultiFrequencyTheme[] | null = null;
@@ -37,22 +36,32 @@ async function fetchSampleTickets(): Promise<RawTicket[]> {
     // Fallback
   }
 
-  return MOCK_RAW_TICKETS;
+  return [];
 }
 
 export async function GET(req: Request) {
   try {
+    const { searchParams } = new URL(req.url);
+    const forceRefresh = searchParams.get("refresh") === "true";
     const now = Date.now();
-    // Cache for 60s to guarantee instant <5ms responses
-    if (!cachedThemes || now - lastCacheTime > 60000) {
+
+    if (forceRefresh || !cachedThemes || now - lastCacheTime > 60000) {
       const tickets = await fetchSampleTickets();
+      if (tickets.length === 0) {
+        cachedThemes = [];
+        lastCacheTime = now;
+        return NextResponse.json({
+          success: true,
+          data: [],
+        });
+      }
+
       const result = await runTicketRadarPipeline(tickets, "theme-cache-session");
       cachedThemes = result.themes;
       lastCacheTime = now;
     }
 
-    // Strip heavy nested ticket contents from the theme list payload
-    const lightweightThemes = cachedThemes.map((t) => ({
+    const lightweightThemes = (cachedThemes || []).map((t) => ({
       id: t.id,
       title: t.title,
       canonicalSubject: t.canonicalSubject,
@@ -68,7 +77,7 @@ export async function GET(req: Request) {
       relatedSubjects: t.relatedSubjects,
       aiSummary: t.aiSummary,
       recommendedAction: t.recommendedAction,
-      tickets: [], // tickets loaded on-demand via /api/themes/[id]/tickets
+      tickets: [],
     }));
 
     return NextResponse.json({
