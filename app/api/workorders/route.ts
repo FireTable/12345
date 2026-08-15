@@ -3,7 +3,7 @@ import { db } from "@/db/client";
 import { ticketsTable } from "@/db/schema";
 import { and, desc, eq, gte, ilike, isNotNull, lt, or, sql } from "drizzle-orm";
 import { mapTicketStatus, regionLabel, toWorkorderDto } from "@/lib/civic-dto";
-import { explicitAdmin } from "@/lib/admin-area";
+import { explicitAdmin, isTownLabel } from "@/lib/admin-area";
 import { timeWindow } from "@/lib/civic-time";
 import { CIVIC_CATEGORIES } from "@/lib/civic-cluster";
 
@@ -56,7 +56,7 @@ export async function GET(req: Request) {
       if (t.confidence != null) {
         const town = explicitAdmin(t.subdistrict);
         const label = town ? regionLabel(town) : "";
-        if (label) regionSet.add(label);
+        if (isTownLabel(label)) regionSet.add(label);
         const cat = (t.sourceCategory || "").trim();
         if (cat) categorySet.add(cat);
       }

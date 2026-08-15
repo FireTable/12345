@@ -6,6 +6,8 @@ import { toast } from "sonner";
 import { ShundeMap } from "@/app/_components/civic/shunde-map";
 import { QuadrantBoard } from "@/app/_components/civic/quadrant";
 import type { ClusterUrgency } from "@/lib/civic-cluster";
+import { inTimeWindow } from "@/lib/civic-time";
+import { isTownLabel } from "@/lib/admin-area";
 import { Clock, TrendingUp, Flame, Layers } from "lucide-react";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import {
@@ -74,13 +76,19 @@ function MultifreqInner() {
   }, []);
 
   const filtered = useMemo(() => {
+    const latestStr = rows.reduce((acc, r) => {
+      const d = r.last_date || r.first_date || "";
+      return d > acc ? d : acc;
+    }, "");
+    const ref = latestStr ? new Date(latestStr.replace(" ", "T")) : new Date();
     return rows.filter((r) => {
       if (region && !r.region.includes(region)) return false;
       if ((r.ai_confidence ?? 100) < confMin) return false;
       if (r.count < minCount) return false;
+      if (!inTimeWindow(r.last_date || r.first_date, timeLabel, ref)) return false;
       return true;
     });
-  }, [rows, region, confMin, minCount]);
+  }, [rows, region, confMin, minCount, timeLabel]);
 
   const pending = filtered.filter((r) => r.status.label === "未处理");
   const urgent = filtered.filter((r) => r.urgency === "urgent");
@@ -93,7 +101,7 @@ function MultifreqInner() {
   }
 
   const regions = useMemo(() => {
-    const set = new Set(rows.map((r) => r.region).filter((n) => n && n !== "未归属"));
+    const set = new Set(rows.map((r) => r.region).filter((n) => isTownLabel(n)));
     return [...set].sort((a, b) => a.localeCompare(b, "zh-CN"));
   }, [rows]);
 
@@ -322,6 +330,9 @@ function MultifreqInner() {
               type="button"
               className="btn btn--primary"
               onClick={() => {
+                if (windowDays <= 7) setTimeLabel("近 7 天");
+                else if (windowDays <= 30) setTimeLabel("近 30 天");
+                else setTimeLabel("近 90 天");
                 setThresholdOpen(false);
                 toast.success("阈值已保存，列表已按新阈值过滤");
               }}

@@ -9,6 +9,7 @@ import { markFakeClosures } from "./fake-closure";
 import { deriveRiskLevel, scanNegativeSentiment } from "./risk-rules";
 import { RULES } from "../rules";
 import { civicModeFromPattern, deriveThemeMetrics, inferPatternType } from "../theme-metrics";
+import { validateAndFilterThemes } from "./cluster-validator";
 
 function safeParseDate(dateStr: string): Date {
   if (!dateStr) return new Date();
@@ -259,10 +260,15 @@ export async function clusterNode(
   }
 
   // ==========================================
-  // 3. 排序与结构输出（高风险与高频次优先）
+  // 3. 严格真实性与质量交叉质检（Cluster Validator）
+  // ==========================================
+  const validatedThemes = validateAndFilterThemes(themes, enrichedTickets);
+
+  // ==========================================
+  // 4. 排序与结构输出（高风险与高频次优先）
   // ==========================================
   const riskOrder: Record<RiskLevel, number> = { HIGH: 0, MEDIUM: 1, LOW: 2 };
-  themes.sort((a, b) => {
+  validatedThemes.sort((a, b) => {
     if (riskOrder[a.riskLevel] !== riskOrder[b.riskLevel]) {
       return riskOrder[a.riskLevel] - riskOrder[b.riskLevel];
     }
@@ -270,7 +276,7 @@ export async function clusterNode(
   });
 
   return {
-    themes,
+    themes: validatedThemes,
     status: "clustering",
   };
 }

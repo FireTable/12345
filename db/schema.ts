@@ -133,6 +133,49 @@ export const reviewQueueTable = pgTable(
   ]
 );
 
+/**
+ * 5. 官方标准政务词汇表 (Standard Vocabulary Table)
+ */
+export const vocabulariesTable = pgTable(
+  "vocabularies",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    type: varchar("type", { length: 32 }).notNull(), // TOWNSHIP, COMMUNITY, CATEGORY, DEPARTMENT
+    name: varchar("name", { length: 128 }).notNull(),
+    fullName: varchar("full_name", { length: 255 }),
+    parentName: varchar("parent_name", { length: 128 }),
+    metaJson: text("meta_json"),
+    description: text("description"),
+    isStandard: boolean("is_standard").default(true).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_vocabularies_type").on(table.type),
+    index("idx_vocabularies_name").on(table.name),
+  ]
+);
+
+/**
+ * 6. 别名与同义词映射知识库表 (Aliases Knowledge Base Table)
+ */
+export const aliasesTable = pgTable(
+  "aliases",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    alias: varchar("alias", { length: 128 }).notNull().unique(),
+    canonical: varchar("canonical", { length: 128 }).notNull(),
+    type: varchar("type", { length: 32 }).default("ENTITY").notNull(), // TOWNSHIP, LOCATION, SUBJECT, DEPARTMENT
+    source: varchar("source", { length: 32 }).default("PRESET").notNull(), // PRESET, AI_MINED, MANUAL
+    usageCount: integer("usage_count").default(0).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_aliases_alias").on(table.alias),
+    index("idx_aliases_canonical").on(table.canonical),
+    index("idx_aliases_type").on(table.type),
+  ]
+);
+
 export type TicketRecord = typeof ticketsTable.$inferSelect;
 export type NewTicketRecord = typeof ticketsTable.$inferInsert;
 
@@ -141,3 +184,9 @@ export type NewThemeRecord = typeof themesTable.$inferInsert;
 
 export type ReviewQueueRecord = typeof reviewQueueTable.$inferSelect;
 export type NewReviewQueueRecord = typeof reviewQueueTable.$inferInsert;
+
+export type VocabularyRecord = typeof vocabulariesTable.$inferSelect;
+export type NewVocabularyRecord = typeof vocabulariesTable.$inferInsert;
+
+export type AliasRecord = typeof aliasesTable.$inferSelect;
+export type NewAliasRecord = typeof aliasesTable.$inferInsert;

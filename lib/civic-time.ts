@@ -45,3 +45,20 @@ export function timeWindow(
       return {};
   }
 }
+
+export function normalizeTimeLabel(time: string): string {
+  return time.replace(/\s+/g, "");
+}
+
+export function inTimeWindow(dateStr: string | undefined | null, time: string, ref: Date): boolean {
+  const key = normalizeTimeLabel(time);
+  if (!key || key === "全部") return true;
+  const win = timeWindow(key, ref);
+  if (!win.from && !win.to) return true;
+  if (!dateStr) return false;
+  const t = Date.parse(String(dateStr).replace(" ", "T"));
+  if (Number.isNaN(t)) return false;
+  if (win.from && t < win.from.getTime()) return false;
+  if (win.to && t >= win.to.getTime()) return false;
+  return true;
+}

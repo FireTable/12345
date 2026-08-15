@@ -2,9 +2,9 @@ import { inferPatternType, civicModeFromPattern, deriveThemeMetrics } from "../b
 import { toClusterDto, toWorkorderDto, regionLabel } from "../lib/civic-dto";
 import { buildOverview, buildTrends, buildInsights } from "../lib/civic-stats";
 import { classifyDetailPayload } from "../lib/detail-load";
-import { parseAdminArea, explicitAdmin } from "../lib/admin-area";
+import { parseAdminArea, explicitAdmin, isTownLabel } from "../lib/admin-area";
 import { deriveClusterUrgency, spanDays, urgentCutFromUnprocessed } from "../lib/civic-cluster";
-import { timeWindow } from "../lib/civic-time";
+import { timeWindow, inTimeWindow } from "../lib/civic-time";
 import { AGENT_TICKET_NULLS, buildTicketAgentPatch, buildThemePersistRow } from "../lib/civic-persist";
 import type { EnrichedTicket, MultiFrequencyTheme } from "../backend/state";
 
@@ -187,6 +187,13 @@ const win = timeWindow("近7天", new Date(2025, 2, 31));
 const ymd = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 assert("近7天相对数据集末日", !!win.from && ymd(win.from) === "2025-03-25");
+assert("镇街筛选项接受容桂", isTownLabel("容桂"));
+assert("镇街筛选项丢掉未提供具体", !isTownLabel("未提供具体") && !isTownLabel("施工地点未提供等多处"));
+assert(
+  "近7天命中窗口内日期",
+  inTimeWindow("2025-03-31", "近 7 天", new Date(2025, 2, 31)) &&
+    !inTimeWindow("2025-03-01", "近7天", new Date(2025, 2, 31))
+);
 
 assert(
   "入库行 agent 列为空",

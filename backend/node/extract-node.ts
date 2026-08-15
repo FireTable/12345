@@ -6,6 +6,9 @@ import {
   type ExtractedTicketItem,
 } from "../prompt";
 import { adminFromLocation, explicitAdmin } from "@/lib/admin-area";
+import { normalizeAliasesInText, resolveEntityAlias } from "@/lib/alias-dict";
+import { canonicalizeTownship } from "@/lib/vocabulary";
+import { needsArbitration, arbitrateSingleTicket } from "./arbitrator-node";
 
 export const LOW_CONFIDENCE_THRESHOLD = 60;
 
@@ -186,23 +189,31 @@ export async function extractNode(
     });
   }
 
+  // 1. 全文别名标准化预处理
+  const normalizedRawTickets = rawTickets.map((t) => ({
+    ...t,
+    title: normalizeAliasesInText(t.title),
+    content: normalizeAliasesInText(t.content),
+    subdistrict: normalizeAliasesInText(t.subdistrict),
+  }));
+
   let processedCount = 0;
   const chunkTasks: Array<() => Promise<void>> = [];
 
-  for (let i = 0; i < rawTickets.length; i += CHUNK_SIZE) {
-    const chunk = rawTickets.slice(i, i + CHUNK_SIZE);
+  for (let i = 0; i < normalizedRawTickets.length; i += CHUNK_SIZE) {
+    const chunk = normalizedRawTickets.slice(i, i + CHUNK_SIZE);
     const startIdx = i;
     chunkTasks.push(async () => {
       const res = await extractBatchWithLLM(chunk, startIdx);
       res.forEach((val, key) => extractionMap.set(key, val));
       processedCount += chunk.length;
       if (taskId) {
-        const currentProcessed = Math.min(processedCount, rawTickets.length);
-        const percent = Math.min(65, 5 + Math.round((currentProcessed / Math.max(1, rawTickets.length)) * 60));
+        const currentProcessed = Math.min(processedCount, normalizedRawTickets.length);
+        const percent = Math.min(50, 5 + Math.round((currentProcessed / Math.max(1, normalizedRawTickets.length)) * 45));
         updateTaskProgress(taskId, {
           processed: currentProcessed,
           percent,
-          stageText: `AI 正在抽取工单实体与微观地点 (${currentProcessed} / ${rawTickets.length})...`,
+          stageText: `AI 正在抽取工单实体与微观地点 (${currentProcessed} / ${normalizedRawTickets.length})...`,
           extractedCount: extractionMap.size,
         });
       }
@@ -211,24 +222,54 @@ export async function extractNode(
 
   await queue.addAll(chunkTasks);
 
-  const enrichedTickets: EnrichedTicket[] = rawTickets.map((ticket, index) => {
+  // 2. 二级 AI 仲裁介入：对低置信度 (< 60) 或存在歧义的工单进行二次消歧与事实纠偏
+  const arbitrationTasks: Array<() => Promise<void>> = [];
+  const lowConfidenceIndices: number[] = [];
+
+  normalizedRawTickets.forEach((ticket, idx) => {
+    const item = extractionMap.get(idx) || fallbackDynamicExtraction(ticket);
+    if (needsArbitration(item, ticket)) {
+      lowConfidenceIndices.push(idx);
+      arbitrationTasks.push(async () => {
+        const corrected = await arbitrateSingleTicket(ticket, item);
+        extractionMap.set(idx, corrected);
+      });
+    }
+  });
+
+  if (arbitrationTasks.length > 0) {
+    if (taskId) {
+      updateTaskProgress(taskId, {
+        percent: 58,
+        stageText: `触发二级 AI 仲裁机制，正在对 ${arbitrationTasks.length} 条低置信度/歧义工单进行事实复核纠偏...`,
+      });
+    }
+    await queue.addAll(arbitrationTasks);
+  }
+
+  // 3. 构建富化工单并执行最终标准词汇表与别名规范化映射
+  const enrichedTickets: EnrichedTicket[] = normalizedRawTickets.map((ticket, index) => {
     const fallback = fallbackDynamicExtraction(ticket);
     const aiExtracted = extractionMap.get(index);
     const summarizeTitle = aiExtracted?.summarizeTitle || ticket.summarizeTitle || fallback.summarizeTitle;
-    const canonicalSubject = aiExtracted?.subject || fallback.subject;
-    const canonicalLocation = aiExtracted?.location || fallback.location;
+    const rawSubject = aiExtracted?.subject || fallback.subject;
+    const rawLocation = aiExtracted?.location || fallback.location;
     const eventType = aiExtracted?.eventType || fallback.eventType;
     const category = aiExtracted?.category || fallback.category;
     const confidence =
       typeof aiExtracted?.confidence === "number"
         ? aiExtracted.confidence
         : fallback.confidence;
+
+    const canonicalSubject = resolveEntityAlias(rawSubject);
+    const canonicalLocation = resolveEntityAlias(rawLocation);
     const area = adminFromLocation(canonicalLocation, ticket);
+    const subdistrict = canonicalizeTownship(area.subdistrict || ticket.subdistrict) || area.subdistrict || undefined;
 
     return {
       ...ticket,
       district: area.district || undefined,
-      subdistrict: area.subdistrict || undefined,
+      subdistrict,
       sourceCategory: category,
       address: canonicalLocation,
       summarizeTitle,
@@ -238,9 +279,9 @@ export async function extractNode(
       eventType,
       themes: [category],
       entities: [
-        { name: canonicalSubject, canonicalName: canonicalSubject, type: "SUBJECT", confidence: 0.95 },
-        { name: canonicalLocation, canonicalName: canonicalLocation, type: "LOCATION", confidence: 0.92 },
-        { name: eventType, canonicalName: eventType, type: "EVENT_TYPE", confidence: 0.94 },
+        { name: canonicalSubject, canonicalName: canonicalSubject, type: "SUBJECT", confidence: Math.min(1, confidence / 100) },
+        { name: canonicalLocation, canonicalName: canonicalLocation, type: "LOCATION", confidence: Math.min(1, (confidence - 5) / 100) },
+        { name: eventType, canonicalName: eventType, type: "EVENT_TYPE", confidence: Math.min(1, confidence / 100) },
       ],
       relations: [
         { source: ticket.id, target: canonicalSubject, relation: "投诉主体" },

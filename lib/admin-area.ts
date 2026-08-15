@@ -25,6 +25,14 @@ export function explicitAdmin(value?: string | null): string | null {
   return text;
 }
 
+/** 筛选项只用像镇街的短名，丢掉「未提供具体…」「…等多处」这类碎片。 */
+export function isTownLabel(name?: string | null): boolean {
+  const text = (name || "").trim();
+  if (!text || text.length > 6) return false;
+  if (/未提供|具体|等多处|未标明|未归属|所属|地址/.test(text)) return false;
+  return /^[\u4e00-\u9fff]{2,6}$/.test(text);
+}
+
 function cjkTail(before: string, maxLen: number): string {
   const chars = (before.match(/[\u4e00-\u9fff]+$/) || [""])[0];
   return chars.slice(-maxLen);

@@ -1,4 +1,5 @@
 import type { TicketRadarState, EnrichedTicket } from "../state";
+import { registerAlias, resolveEntityAlias } from "@/lib/alias-dict";
 
 /**
  * 车牌号提取与唯一标识符判断
@@ -52,7 +53,7 @@ function isSamePhysicalEntity(a: string, b: string): boolean {
 }
 
 /**
- * Canonical Alignment Node: 实体对齐与规范化（严格实体隔离，杜绝跨主体串扰）
+ * Canonical Alignment Node: 实体对齐与规范化（严格实体隔离，杜绝跨主体串扰并沉淀别名字典）
  */
 export async function canonicalNode(
   state: TicketRadarState
@@ -63,7 +64,7 @@ export async function canonicalNode(
   const canonicalEntityGroups: Array<{ representative: string; members: Set<string> }> = [];
 
   for (const t of enrichedTickets) {
-    const rawSubject = (t.canonicalSubject || "").trim();
+    const rawSubject = resolveEntityAlias((t.canonicalSubject || "").trim());
     if (!rawSubject) continue;
 
     let foundGroup = false;
@@ -84,6 +85,15 @@ export async function canonicalNode(
         representative: rawSubject,
         members: new Set([rawSubject]),
       });
+    }
+  }
+
+  // 沉淀新发现的实体别名映射，实现一次学习、全局沉淀
+  for (const group of canonicalEntityGroups) {
+    for (const member of group.members) {
+      if (member !== group.representative && member.length >= 2) {
+        registerAlias(member, group.representative);
+      }
     }
   }
 

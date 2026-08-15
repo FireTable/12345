@@ -1,0 +1,188 @@
+/**
+ * 顺德区官方权威政务标准词汇表 (Standard Civil & Administrative Vocabulary for Shunde)
+ * 严格杜绝大模型在行政区划、诉求分类与责任部门上的幻觉捏造。
+ */
+
+export interface TownshipInfo {
+  name: string; // 简写，如 "大良"
+  fullName: string; // 官方全称，如 "大良街道"
+  aliases: string[]; // 常见俗称、旧称、别名
+  communities: string[]; // 重点知名社区 / 村居
+  landmarks: string[]; // 知名地标 / 园区
+}
+
+/**
+ * 顺德区 10 大法定镇街官方标准词汇库
+ */
+export const SHUNDE_TOWNSHIPS: TownshipInfo[] = [
+  {
+    name: "大良",
+    fullName: "大良街道",
+    aliases: ["大良", "大良街道", "大良镇", "顺德大良", "德胜新区", "顺峰山", "清晖园片区"],
+    communities: ["府又社区", "中区社区", "北区社区", "南区社区", "新松社区", "金榜社区", "近良社区", "云路社区", "新桂社区", "德和社区", "逢沙村", "五沙村"],
+    landmarks: ["顺峰山公园", "清晖园", "华侨城欢乐海岸", "德胜广场", "五沙工业园", "大良医院"],
+  },
+  {
+    name: "容桂",
+    fullName: "容桂街道",
+    aliases: ["容桂", "容桂街道", "容桂镇", "容奇", "桂洲", "容奇镇", "桂洲镇", "容桂区"],
+    communities: ["容山社区", "容新社区", "桂洲社区", "海尾社区", "扁滘社区", "华口社区", "幸福社区", "红星社区", "红旗社区", "细滘社区", "小黄圃社区"],
+    landmarks: ["渔人码头", "海尾工业区", "华口工业区", "容桂客运站", "容奇大桥", "德胜河南岸"],
+  },
+  {
+    name: "伦教",
+    fullName: "伦教街道",
+    aliases: ["伦教", "伦教街道", "伦教镇", "顺德伦教"],
+    communities: ["常教社区", "伦常社区", "熹涌村", "霞石村", "三洲村", "羊额村", "新塘村", "仕版村", "鸡洲村"],
+    landmarks: ["长鹿旅游休博园", "伦教木工机械城", "伦教珠宝产业园", "三洲烈士陵园"],
+  },
+  {
+    name: "勒流",
+    fullName: "勒流街道",
+    aliases: ["勒流", "勒流街道", "勒流镇", "顺德勒流"],
+    communities: ["勒流社区", "育贤社区", "大城村", "光大村", "连杜村", "黄连村", "江义村", "富裕村", "龙眼村", "裕涌村"],
+    landmarks: ["勒流港", "五金小镇", "黄连古村落", "勒流职业技术学校"],
+  },
+  {
+    name: "陈村",
+    fullName: "陈村镇",
+    aliases: ["陈村", "陈村镇", "陈村街道", "顺德陈村", "花乡陈村"],
+    communities: ["旧圩社区", "新圩社区", "赤花社区", "锦龙社区", "合成社区", "弼教村", "石洲村", "仙涌村", "庄头村", "潭洲村"],
+    landmarks: ["陈村花卉世界", "潭洲国际会展中心", "三龙湾陈村片区", "佛山地铁2号线陈村站"],
+  },
+  {
+    name: "北滘",
+    fullName: "北滘镇",
+    aliases: ["北滘", "北滘镇", "北滘街道", "顺德北滘", "北滘新城", "碧桂园总部片区"],
+    communities: ["北滘社区", "碧江社区", "碧桂园社区", "顺江社区", "广教村", "林头村", "西海村", "桃村", "莘村", "马龙村"],
+    landmarks: ["美的总部", "碧桂园总部", "和美术馆", "北滘公园", "美的库卡智能制造产业园", "广州地铁7号线美的大道站"],
+  },
+  {
+    name: "乐从",
+    fullName: "乐从镇",
+    aliases: ["乐从", "乐从镇", "乐从街道", "顺德乐从", "佛山新城片区", "乐从钢铁城", "乐从家具城"],
+    communities: ["乐从社区", "平步社区", "腾冲社区", "新隆村", "葛岸村", "水藤村", "大罗村", "劳村", "沙滘村", "罗沙村"],
+    landmarks: ["乐从国际会展中心", "乐从家具博览中心", "乐从钢铁世界", "世纪莲体育中心", "中欧中心", "佛山大剧院"],
+  },
+  {
+    name: "龙江",
+    fullName: "龙江镇",
+    aliases: ["龙江", "龙江镇", "龙江街道", "顺德龙江", "龙江家具城"],
+    communities: ["龙江社区", "龙山社区", "苏溪社区", "排沙村", "陈涌村", "世埠村", "西溪村", "东头村", "左滩村", "麦朗村"],
+    landmarks: ["龙江前进汇展中心", "亚洲国际家具材料交易中心", "左滩甘竹滩洪潮发电站", "龙江医院"],
+  },
+  {
+    name: "杏坛",
+    fullName: "杏坛镇",
+    aliases: ["杏坛", "杏坛镇", "杏坛街道", "顺德杏坛", "水乡杏坛"],
+    communities: ["杏坛社区", "齐杏社区", "逢简村", "龙潭村", "桑麻村", "古朗村", "光华村", "昌竹村", "南华村", "马东村"],
+    landmarks: ["逢简水乡", "顺德高新区杏坛片区", "综合保税区", "杏坛新联工业区"],
+  },
+  {
+    name: "均安",
+    fullName: "均安镇",
+    aliases: ["均安", "均安镇", "均安街道", "顺德均安", "李小龙故里"],
+    communities: ["均安社区", "三华社区", "仓门社区", "沙浦村", "天连村", "南沙村", "沙头村", "鹤峰村", "星槎村"],
+    landmarks: ["李小龙乐园", "李小龙故居", "均安牛仔博览中心", "南沙生态岛"],
+  },
+];
+
+/**
+ * 标准 7 大民生诉求分类定义与细分事项
+ */
+export const STANDARD_CATEGORIES = [
+  {
+    category: "城市管理",
+    subItems: ["物业管理纠纷", "住宅电梯维保与故障", "市政排污/供水管网", "市容市貌与流动摊贩占道", "违章搭建与占绿", "路灯照明与公用设施"],
+    leadDepartment: "综合行政执法队 / 城市建设和水务办公室 / 住房和城乡建设局",
+  },
+  {
+    category: "市场监管",
+    subItems: ["消费维权与退款纠纷", "虚假宣传与价格欺诈", "无照无证经营", "食品药品安全隐患", "特种设备安全", "民宿与商户规范经营"],
+    leadDepartment: "市场监督管理所 / 消费者委员会",
+  },
+  {
+    category: "社会治理",
+    subItems: ["社区邻里矛盾纠纷", "基层物业管理协商", "公共服务与便民事务", "租房租赁纠纷", "信访诉求调解"],
+    leadDepartment: "综合治理办公室 / 社区居民委员会 / 司法所",
+  },
+  {
+    category: "交通出行",
+    subItems: ["机动车违停阻碍通行", "主干道交通拥堵", "非机动车/共享单车乱堆放", "交通信号灯与标线破损", "营运客运与公交服务"],
+    leadDepartment: "交警中队 / 交通运输分局",
+  },
+  {
+    category: "生态环境",
+    subItems: ["商业夜间经营音响噪音扰民", "工地施工噪声", "餐饮油烟与恶臭直排", "工业废气粉尘排放", "河道水体黑臭与偷排"],
+    leadDepartment: "生态环境所 / 综合行政执法队",
+  },
+  {
+    category: "劳动社保",
+    subItems: ["企业拖欠工资欠薪", "劳动合同解除与经济补偿", "社保医保缴纳与断缴", "工伤认定与劳动仲裁"],
+    leadDepartment: "人力资源和社会保障所 / 劳动仲裁委员会",
+  },
+  {
+    category: "公共安全",
+    subItems: ["违规销售/燃放烟花爆竹", "危险化学品与易燃易爆隐患", "消防通道占用与堵塞", "建筑施工安全生产事故"],
+    leadDepartment: "应急管理所 / 消防救援中队 / 辖区派出所",
+  },
+] as const;
+
+export type StandardCategoryName = (typeof STANDARD_CATEGORIES)[number]["category"];
+
+/**
+ * 检验一个输入字符串（镇街名、地点或诉求正文）是否包含合法的顺德 10 大法定镇街或其所属社区
+ */
+export function isValidShundeTownship(name?: string | null): boolean {
+  if (!name) return false;
+  const clean = name.trim().replace(/^(顺德区|顺德|佛山市顺德区|佛山)/, "");
+  return SHUNDE_TOWNSHIPS.some((t) => {
+    if (t.name === clean || t.fullName === clean || t.aliases.includes(clean)) return true;
+    if (clean.includes(t.fullName) || clean.includes(t.name)) return true;
+    return t.aliases.some((a) => clean.includes(a)) || t.communities.some((c) => clean.includes(c));
+  });
+}
+
+/**
+ * 将任意镇街或地点文本标准化为对应的官方标准镇街全称（如 "容奇" -> "容桂街道"，"顺德区北滘镇碧桂园" -> "北滘镇"）
+ */
+export function canonicalizeTownship(name?: string | null): string | null {
+  if (!name) return null;
+  const clean = name.trim().replace(/^(顺德区|顺德|佛山市顺德区|佛山)/, "");
+
+  // 1. 优先精确匹配
+  for (const t of SHUNDE_TOWNSHIPS) {
+    if (t.name === clean || t.fullName === clean || t.aliases.includes(clean)) {
+      return t.fullName;
+    }
+  }
+
+  // 2. 包含匹配（按全称、简称、别名、社区匹配）
+  for (const t of SHUNDE_TOWNSHIPS) {
+    if (clean.includes(t.fullName) || clean.includes(t.name)) {
+      return t.fullName;
+    }
+    if (t.aliases.some((a) => clean.includes(a))) {
+      return t.fullName;
+    }
+    if (t.communities.some((c) => clean.includes(c))) {
+      return t.fullName;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * 生成供 Prompt 使用的高密度标准词汇表注入文本
+ */
+export function buildVocabularyPromptConstraint(): string {
+  const townsList = SHUNDE_TOWNSHIPS.map((t) => `${t.fullName}（简称：${t.name}，代表社区：${t.communities.slice(0, 4).join("、")}）`).join("\n");
+  const catList = STANDARD_CATEGORIES.map((c) => `- 【${c.category}】（牵头部门：${c.leadDepartment}）包含：${c.subItems.join("、")}`).join("\n");
+
+  return `【佛山市顺德区法定行政区划词汇表（严禁凭空捏造不存在的镇街/区县）】：
+${townsList}
+
+【法定民生业务分类词汇表（必须严格归入以下 7 大标准分类之一）】：
+${catList}`;
+}

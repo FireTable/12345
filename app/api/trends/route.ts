@@ -10,7 +10,11 @@ export async function GET(req: Request) {
       db.select().from(ticketsTable),
       db.select({ createdAt: themesTable.createdAt, patternType: themesTable.patternType }).from(themesTable),
     ]);
-    const cut = Date.now() - Math.max(1, days) * 86400000;
+    const latest = tickets.reduce((acc, t) => {
+      const n = t.createTime ? t.createTime.getTime() : 0;
+      return n > acc ? n : acc;
+    }, 0);
+    const cut = (latest || Date.now()) - Math.max(1, days) * 86400000;
     const recentTickets = tickets.filter((t) => {
       if (!t.createTime) return false;
       return t.createTime.getTime() >= cut;

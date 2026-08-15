@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { RawTicket, MultiFrequencyTheme, EnrichedTicket } from "./state";
 import { desensitizeContent, ticketBodyForAI } from "./anonymizer";
 import { formatNegativeTermsForPrompt } from "./rules";
+import { buildVocabularyPromptConstraint } from "@/lib/vocabulary";
 
 /**
  * 1. 结构化抽取 Zod Schema (Structured Extraction Schemas)
@@ -18,7 +19,7 @@ export const ExtractedTicketItemSchema = z.object({
     .describe("被诉具体对象/责任主体名称（如具体车牌号'粤E SD221车辆'、商铺全称'招财宝民宿'、物业公司'某某物业管理处'；严禁使用'车主/商家/市民/某单位'等泛化虚词）"),
   location: z
     .string()
-    .describe("精准事发微观地点（必须包含：镇街 + 路段/巷号 + 具体门牌号/小区/地标，如：顺德区容桂街道扁滘富豪路三街2号门口）"),
+    .describe("精准事发微观地点（必须包含：法定镇街 + 路段/巷号 + 具体门牌号/小区/地标，如：顺德区容桂街道扁滘富豪路三街2号门口）"),
   eventType: z
     .string()
     .describe("核心事件类型标准提炼（8-15字，如：机动车违规停放阻碍商铺经营、夜间营业音响喧哗与商业噪音扰民）"),
@@ -51,10 +52,51 @@ export const BatchExtractionSchema = z.object({
 export type BatchExtractionResult = z.infer<typeof BatchExtractionSchema>;
 
 /**
+ * 二级 AI 仲裁消歧与纠偏 Zod Schema (Arbitration Schema)
+ */
+export const ArbitrationSchema = z.object({
+  correctedSubject: z
+    .string()
+    .describe("纠正或确认后的具体涉事主体（精确到车牌或机构字号，杜绝泛词）"),
+  correctedLocation: z
+    .string()
+    .describe("纠正后的微观地点（必须包含法定镇街+具体路段门牌/小区，严禁编造不存在的区划）"),
+  correctedTownship: z
+    .string()
+    .describe("归属的顺德区法定镇街（必须为：大良街道、容桂街道、伦教街道、勒流街道、陈村镇、北滘镇、乐从镇、龙江镇、杏坛镇、均安镇之一）"),
+  correctedEventType: z
+    .string()
+    .describe("标准提炼的核心事件问题（8-15字）"),
+  correctedCategory: z
+    .enum([
+      "城市管理",
+      "市场监管",
+      "社会治理",
+      "交通出行",
+      "生态环境",
+      "劳动社保",
+      "公共安全",
+    ])
+    .describe("核定后的标准民生业务分类"),
+  confidence: z
+    .number()
+    .min(0)
+    .max(100)
+    .describe("二级仲裁置信度得分（0-100）"),
+  arbitrationReason: z
+    .string()
+    .describe("仲裁纠偏与消歧的核心依据（20-40字）"),
+});
+
+export type ArbitrationResult = z.infer<typeof ArbitrationSchema>;
+
+/**
  * 2. 批量要素抽取 Prompt 生成器
  */
 export function buildBatchExtractionPrompt(tickets: RawTicket[]): string {
   return `你是一位政务热线顶级智能工单研判专家。请对以下 ${tickets.length} 条市民热线工单进行精准的实体识别、微观地点抽取、事件分类与摘要标题提炼。
+
+${buildVocabularyPromptConstraint()}
 
 【核心抽取规则 - 严谨区分物理实体，严禁混淆】：
 1. subject（被诉具体对象/责任主体）：
@@ -64,7 +106,8 @@ export function buildBatchExtractionPrompt(tickets: RawTicket[]): string {
    - 严禁提取空泛无意义词汇（如"车主"、"商家"、"市民"、"某单位"、"责任主体"、"当事人"）！
 
 2. location（精准事发微观地点）：
-   - 必须提取到最精确的物理空间（包含：镇街 + 路段/巷号 + 具体门牌号/小区/地标），例如："顺德区容桂街道扁滘富豪路三街2号门口"、"顺德区北滘镇碧桂园西苑翠堤岸10号"。
+   - 必须提取到最精确的物理空间（包含：法定镇街 + 路段/巷号 + 具体门牌号/小区/地标），例如："顺德区容桂街道扁滘富豪路三街2号门口"、"顺德区北滘镇碧桂园西苑翠堤岸10号"。
+   - 镇街必须严格属于顺德区 10 大法定镇街词汇表，严禁凭空编造外部不存在的区县镇街！
    - 严禁只填宽泛的"顺德区"或"容桂街道"！
 
 3. eventType（核心事件类型）：
@@ -74,17 +117,11 @@ export function buildBatchExtractionPrompt(tickets: RawTicket[]): string {
    - 12-25字标准公文诉求标题（如 "关于容桂街道扁滘富豪路三街2号粤ESD221违停挪车诉求"）。
 
 5. category（严格限定 7 大业务分类之一）：
-   - 城市管理：小区物业管理与维保、住宅电梯故障与停运、市政排污/供水管网破损、市容市貌、流动摊贩占道经营、违章搭建等；
-   - 市场监管：消费纠纷退款、虚假宣传欺诈、物价收费维权、企业/商户无照经营、食品安全等；
-   - 社会治理：社区基层纠纷调解、邻里矛盾协商、公共服务事务等；
-   - 交通出行：机动车/非机动车违停阻碍通行、路面交通拥堵、交通标线信号灯故障、营运车辆服务等；
-   - 生态环境：商业经营音响与夜间喧哗噪音扰民、餐饮油烟排放、工业废气粉尘、水体黑臭污染等；
-   - 劳动社保：企业拖欠工资欠薪、劳动合同纠纷、社会保险缴纳与待遇、医保报销核算等；
-   - 公共安全：违规售卖或燃放烟花爆竹、易燃易爆危险品隐患、自然灾害抢险、重大安全生产事故等。
+   - 城市管理、市场监管、社会治理、交通出行、生态环境、劳动社保、公共安全。
 
 6. confidence（置信度得分 0-100）：
-   - 主体明确、地点具体微观、事件诉求清晰的优质工单给出 85-98 分；
-   - 涉事主体模糊、地点过于宽泛（仅镇街无门牌路段）或诉求表达歧义的工单给出 20-55 分。
+   - 主体明确、地点具体微观且符合官方词汇表、事件诉求清晰的工单给出 85-98 分；
+   - 涉事主体模糊、地点过于宽泛或诉求表达存在歧义的工单给出 20-55 分。
 
 工单列表：
 ${tickets
@@ -93,6 +130,38 @@ ${tickets
       `[${idx + 1}] 工单号: ${t.ticketNo} | 原始标题: ${desensitizeContent(t.title || "无")} | 所属辖区: ${t.subdistrict || "未指定"}\n诉求正文（已脱敏）: ${ticketBodyForAI(t)}`
   )
   .join("\n\n")}`;
+}
+
+/**
+ * 二级 AI 仲裁与事实复核 Prompt
+ */
+export function buildArbitrationPrompt(
+  ticket: RawTicket,
+  firstPass: ExtractedTicketItem
+): string {
+  return `你是一位政务 12345 疑难争议工单首席复核仲裁专家。首轮 AI 抽取该工单时给出了较低置信度（${firstPass.confidence}分）或存在要素歧义。
+请结合原始诉求与标准词汇表，进行严谨的事实交叉核验与纠偏。
+
+${buildVocabularyPromptConstraint()}
+
+【原始工单信息】
+- 工单号：${ticket.ticketNo}
+- 登记标题：${desensitizeContent(ticket.title || "无")}
+- 登记辖区：${ticket.subdistrict || "未指定"}
+- 诉求详细正文：
+${ticketBodyForAI(ticket)}
+
+【首轮初筛候选要素（供复核参考）】
+- 候选主体：${firstPass.subject}
+- 候选微观地点：${firstPass.location}
+- 候选事件类型：${firstPass.eventType}
+- 候选分类：${firstPass.category}
+- 初筛置信度：${firstPass.confidence}
+
+【仲裁与纠偏指令】：
+1. 仔细通读原始诉求正文，挖掘隐蔽的具体涉事车牌、商户全称或精准门牌，彻底纠正"某车主/某商户/未指定"等泛词。
+2. 核定事发地归属的顺德 10 大法定镇街（大良、容桂、伦教、勒流、陈村、北滘、乐从、龙江、杏坛、均安），若原文含别称（如"容奇/桂洲"）必须纠正为法定全称（如"容桂街道"）。
+3. 准确输出纠正后的主体、微观地点、归属镇街、事件类型、分类及仲裁依据。`;
 }
 
 /**

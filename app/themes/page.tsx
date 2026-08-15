@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { URGENCY_META, type ClusterUrgency } from "@/lib/civic-cluster";
+import { isTownLabel } from "@/lib/admin-area";
 import { FolderKanban, Clock, Flame, CheckCircle2 } from "lucide-react";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import {
@@ -59,7 +60,7 @@ export default function ThemesPage() {
       .then((r) => r.json())
       .then((j) => {
         setRows(j.topClusters || []);
-        setRegions(j.facets?.regions || []);
+        setRegions((j.facets?.regions || []).filter((r: string) => isTownLabel(r)));
       })
       .catch(() => setRows([]));
   }

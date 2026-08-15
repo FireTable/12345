@@ -3,7 +3,7 @@ import { db } from "@/db/client";
 import { themesTable, ticketsTable, ticketThemesTable } from "@/db/schema";
 import { desc } from "drizzle-orm";
 import { mapTicketStatus, regionLabel, toClusterDto } from "@/lib/civic-dto";
-import { explicitAdmin } from "@/lib/admin-area";
+import { explicitAdmin, isTownLabel } from "@/lib/admin-area";
 import { deriveClusterUrgency, spanDays, urgentCutFromUnprocessed } from "@/lib/civic-cluster";
 
 export async function GET(req: Request) {
@@ -126,7 +126,7 @@ export async function GET(req: Request) {
         status: c.status.label,
       })),
       facets: {
-        regions: [...new Set(allForFacets.filter((r) => r && r !== "未归属"))].sort((a, b) =>
+        regions: [...new Set(allForFacets.filter((r) => isTownLabel(r)))].sort((a, b) =>
           a.localeCompare(b, "zh-CN")
         ),
       },
