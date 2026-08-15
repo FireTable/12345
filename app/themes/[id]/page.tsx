@@ -247,12 +247,12 @@ function ThemeDetailInner() {
             <div className="cluster-hero__header">
               <div className="cluster-hero__icon">{meta.icon}</div>
               <div className="cluster-hero__info">
-                <div className="cluster-hero__title-row flex items-center flex-wrap gap-2 mb-1">
-                  <span className="cluster-hero__title mr-1">
+                <div className="flex items-center flex-wrap gap-2.5 mb-1.5">
+                  <span className="text-xl md:text-2xl font-bold tracking-tight text-white inline-flex items-center">
                     {cluster.region} · {cluster.type}
                   </span>
                   <span
-                    className={`inline-flex items-center px-3 py-0.5 rounded-full text-xs font-semibold shadow-xs mr-3 ${
+                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold shadow-xs ${
                       cluster.mode === "aggregate"
                         ? "bg-rose-500/90 text-white"
                         : cluster.mode === "repeat"
@@ -262,8 +262,8 @@ function ThemeDetailInner() {
                   >
                     {meta.name}
                   </span>
-                  <span className="cluster-hero__tabs">
-                    <span className="is-active">多频群组全景视图</span>
+                  <span className="text-xs text-white/90 font-medium inline-flex items-center bg-white/15 px-2.5 py-0.5 rounded-md border border-white/20">
+                    多频群组全景视图
                   </span>
                 </div>
                 <div className="cluster-hero__sub">
