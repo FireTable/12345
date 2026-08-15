@@ -1,11 +1,11 @@
 import fs from "fs";
 import path from "path";
 
-interface RawExcelRow {
-  序号?: number;
-  工单编号?: string;
-  标题?: string;
-  内容?: string;
+interface EnglishRawRow {
+  index?: number;
+  ticketNo?: string;
+  title?: string;
+  content?: string;
   [key: string]: any;
 }
 
@@ -39,15 +39,14 @@ function main() {
     return;
   }
 
-  const rawRows: RawExcelRow[] = JSON.parse(fs.readFileSync(jsonPath, "utf-8"));
-  console.log(`正在将 ${rawRows.length} 条真实样本工单转换为系统内置数据集...`);
+  const rawRows: EnglishRawRow[] = JSON.parse(fs.readFileSync(jsonPath, "utf-8"));
+  console.log(`正在将 ${rawRows.length} 条英文 Key 样本工单转换为系统内置数据集...`);
 
   const tickets = rawRows.map((r, idx) => {
-    const ticketNo = r.工单编号 || `GD-20250101-${String(idx + 1).padStart(4, "0")}`;
-    const content = (r.内容 || r.标题 || "市民诉求内容").replace(/12345/g, "市民服务热线");
-    const subdistrict = extractSubdistrict(content, r.标题 || "");
+    const ticketNo = r.ticketNo || `GD-20250101-${String(idx + 1).padStart(4, "0")}`;
+    const content = (r.content || r.title || "市民诉求内容").replace(/12345/g, "市民服务热线");
+    const subdistrict = extractSubdistrict(content, r.title || "");
 
-    // 随机但确定的时间分布（2025年1月）
     const day = 1 + (idx % 3);
     const hour = String(8 + (idx % 14)).padStart(2, "0");
     const minute = String((idx * 7) % 60).padStart(2, "0");
@@ -73,14 +72,14 @@ function main() {
   const mockFileContent = `import type { RawTicket } from "@/backend/state";
 
 /**
- * 真实样本工单数据集（200 条真实脱敏抽样）
+ * 真实样本工单数据集（200 条真实脱敏抽样，全英文 Key 规范）
  */
 export const MOCK_RAW_TICKETS: RawTicket[] = ${JSON.stringify(tickets, null, 2)};
 `;
 
   const targetPath = path.resolve(process.cwd(), "lib", "mock-data.ts");
   fs.writeFileSync(targetPath, mockFileContent, "utf-8");
-  console.log(`✅ 成功将 ${tickets.length} 条真实脱敏工单覆盖写入: ${targetPath}`);
+  console.log(`✅ 成功将 ${tickets.length} 条全英文 Key 真实脱敏工单写入: ${targetPath}`);
 }
 
 main();

@@ -1,7 +1,7 @@
 import type { RawTicket } from "@/backend/state";
 
 /**
- * 真实样本工单数据集（200 条真实脱敏抽样）
+ * 真实样本工单数据集（200 条真实脱敏抽样，全英文 Key 规范）
  */
 export const MOCK_RAW_TICKETS: RawTicket[] = [
   {
