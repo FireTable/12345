@@ -11,68 +11,95 @@ import { getChatModel } from "../model";
 
 import {
   ThemeEnrichmentSchema,
+  BatchThemeEnrichmentSchema,
   buildThemeEnrichmentPrompt,
+  buildBatchThemeEnrichmentPrompt,
 } from "../prompt";
 
 const DEFAULT_RECOMMENDED_ACTION = "建议转派所属辖区行业主管部门牵头，2个工作日内核实具体诉求并向市民书面反馈办理进展。";
 
 /**
- * 调用大模型对多频主题进行深度公文研判（由 Prompt 规则智能驱动）
+ * 批量调用大模型对多频主题进行深度公文研判（每批最多 10 个主题打包在 1 个 AI 请求中，不足 10 个按实际数量处理）
  */
-async function enrichThemeWithLLM(theme: MultiFrequencyTheme): Promise<Partial<MultiFrequencyTheme>> {
-  const fallback = {
+async function enrichThemeBatchWithLLM(
+  themeBatch: MultiFrequencyTheme[]
+): Promise<Array<Partial<MultiFrequencyTheme>>> {
+  if (themeBatch.length === 0) return [];
+  const fallbacks = themeBatch.map(() => ({
     recommendedAction: DEFAULT_RECOMMENDED_ACTION,
-  };
+  }));
 
-  const enrichTask = async (): Promise<Partial<MultiFrequencyTheme>> => {
+  const enrichTask = async (): Promise<Array<Partial<MultiFrequencyTheme>>> => {
     try {
       const chat = getChatModel(0.1);
-      const sampleTickets = theme.tickets.slice(0, 5);
-      const prompt = buildThemeEnrichmentPrompt(theme, sampleTickets);
+      const prompt = buildBatchThemeEnrichmentPrompt(themeBatch);
 
-      // 1. 优先采用 Zod 结构化输出
+      // 1. 优先采用 Zod 批量结构化输出
       try {
-        const structuredChat = chat.withStructuredOutput(ThemeEnrichmentSchema);
+        const structuredChat = chat.withStructuredOutput(BatchThemeEnrichmentSchema);
         const structuredRes = await structuredChat.invoke(prompt);
-        if (structuredRes && structuredRes.riskLevel) {
-          // 本地 HIGH 是 sticky:LLM 不能把红黄蓝规则产生的 HIGH 拉成 LOW/MEDIUM
-          const incoming = structuredRes.riskLevel as RiskLevel;
-          const finalRisk: RiskLevel = theme.riskLevel === "HIGH" ? "HIGH" : incoming;
-          return {
-            riskLevel: finalRisk,
-            riskReason: structuredRes.riskReason,
-            aiSummary: structuredRes.aiSummary,
-            recommendedAction: structuredRes.recommendedAction,
-          };
+        if (structuredRes && Array.isArray(structuredRes.results) && structuredRes.results.length > 0) {
+          const resultMap = new Map<number, any>();
+          structuredRes.results.forEach((r) => {
+            resultMap.set(r.themeIndex, r);
+          });
+
+          return themeBatch.map((theme, i) => {
+            const r = resultMap.get(i + 1) || structuredRes.results[i];
+            if (!r) return { recommendedAction: DEFAULT_RECOMMENDED_ACTION };
+
+            const incoming = r.riskLevel as RiskLevel;
+            const finalRisk: RiskLevel = theme.riskLevel === "HIGH" ? "HIGH" : incoming;
+            return {
+              riskLevel: finalRisk,
+              riskReason: r.riskReason || theme.riskReason,
+              aiSummary: r.aiSummary || theme.aiSummary,
+              recommendedAction: r.recommendedAction || DEFAULT_RECOMMENDED_ACTION,
+            };
+          });
         }
       } catch (structErr) {
         // Fallback to text invoke
       }
 
-      // 2. 备用直接 JSON 解析
+      // 2. 备用直接 Prompt + JSON 解析
       const res = await chat.invoke(prompt);
       const rawText = typeof res.content === "string" ? res.content : JSON.stringify(res.content);
       const jsonMatch = rawText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
-        const candidate = (["HIGH", "MEDIUM", "LOW"].includes(parsed.riskLevel) ? parsed.riskLevel : theme.riskLevel) as RiskLevel;
-        const finalRisk: RiskLevel = theme.riskLevel === "HIGH" ? "HIGH" : candidate;
-        return {
-          riskLevel: finalRisk,
-          riskReason: parsed.riskReason || theme.riskReason,
-          aiSummary: parsed.aiSummary || theme.aiSummary,
-          recommendedAction: parsed.recommendedAction || theme.recommendedAction,
-        };
+        const results = Array.isArray(parsed.results) ? parsed.results : Array.isArray(parsed) ? parsed : [];
+        if (results.length > 0) {
+          const resultMap = new Map<number, any>();
+          results.forEach((r: any, idx: number) => {
+            const index = typeof r.themeIndex === "number" ? r.themeIndex : idx + 1;
+            resultMap.set(index, r);
+          });
+
+          return themeBatch.map((theme, i) => {
+            const r = resultMap.get(i + 1) || results[i];
+            if (!r) return { recommendedAction: DEFAULT_RECOMMENDED_ACTION };
+
+            const candidate = (["HIGH", "MEDIUM", "LOW"].includes(r.riskLevel) ? r.riskLevel : theme.riskLevel) as RiskLevel;
+            const finalRisk: RiskLevel = theme.riskLevel === "HIGH" ? "HIGH" : candidate;
+            return {
+              riskLevel: finalRisk,
+              riskReason: r.riskReason || theme.riskReason,
+              aiSummary: r.aiSummary || theme.aiSummary,
+              recommendedAction: r.recommendedAction || DEFAULT_RECOMMENDED_ACTION,
+            };
+          });
+        }
       }
     } catch (err: any) {
-      // Return fallback
+      console.warn("[summary-node] Batch enrichment error:", err?.message);
     }
-    return fallback;
+    return fallbacks;
   };
 
-  // 6秒强力超时控制
-  const timeoutPromise = new Promise<Partial<MultiFrequencyTheme>>((resolve) =>
-    setTimeout(() => resolve(fallback), 6000)
+  // 15秒批次超时控制
+  const timeoutPromise = new Promise<Array<Partial<MultiFrequencyTheme>>>((resolve) =>
+    setTimeout(() => resolve(fallbacks), 15000)
   );
 
   return Promise.race([enrichTask(), timeoutPromise]);
@@ -92,51 +119,56 @@ export async function summaryNode(
   const enrichedThemes = [...initialThemes];
   const taskId = state.taskId;
 
-  // 1. LLM deep synthesis for ALL themes with controlled P-Queue concurrency
+  const THEME_CHUNK_SIZE = 10;
+
+  // 1. LLM deep synthesis for themes with 10-per-batch chunking
   if (enrichedThemes.length > 0 && process.env.OPENAI_API_KEY) {
     if (taskId) {
       updateTaskProgress(taskId, {
         stage: "SYNTHESIZING",
-        stageText: `正在对 ${enrichedThemes.length} 个多频主题进行深度公文研判与协同处置建议生成...`,
+        stageText: `正在对 ${enrichedThemes.length} 个多频主题进行批量深度公文研判与协同处置建议生成...`,
         percent: 78,
         themeCount: enrichedThemes.length,
       });
     }
 
-    const queue = new PQueue({ concurrency: 3 });
+    const queue = new PQueue({ concurrency: 4 });
     let synthesizedCount = 0;
 
-    const tasks = enrichedThemes.map((theme, idx) => async () => {
-      const res = await enrichThemeWithLLM(theme);
-      if (res) {
-        const local = enrichedThemes[idx];
-        enrichedThemes[idx] = {
-          ...local,
-          ...res,
-          // 红黄蓝与假闭环由本地规则裁定，LLM 只能补理由/摘要/处置建议
-          riskLevel: local.riskLevel,
-          patternType: local.patternType,
-          reopenCount: local.reopenCount,
-          reopenTicketIds: local.reopenTicketIds,
-        };
-      } else {
-        enrichedThemes[idx] = {
-          ...enrichedThemes[idx],
-          recommendedAction: DEFAULT_RECOMMENDED_ACTION,
-        };
-      }
-
-      synthesizedCount++;
-      if (taskId) {
-        const percent = Math.min(96, 78 + Math.round((synthesizedCount / Math.max(1, enrichedThemes.length)) * 18));
-        updateTaskProgress(taskId, {
-          percent,
-          stageText: `AI 正在生成公文级处置建议 (${synthesizedCount} / ${enrichedThemes.length})...`,
+    const chunkTasks: Array<() => Promise<void>> = [];
+    for (let i = 0; i < enrichedThemes.length; i += THEME_CHUNK_SIZE) {
+      const startIdx = i;
+      const batch = enrichedThemes.slice(startIdx, startIdx + THEME_CHUNK_SIZE);
+      chunkTasks.push(async () => {
+        const batchResults = await enrichThemeBatchWithLLM(batch);
+        batchResults.forEach((res, offset) => {
+          const idx = startIdx + offset;
+          if (idx < enrichedThemes.length) {
+            const local = enrichedThemes[idx];
+            enrichedThemes[idx] = {
+              ...local,
+              ...res,
+              // 红黄蓝与假闭环由本地规则裁定，LLM 只能补理由/摘要/处置建议
+              riskLevel: local.riskLevel,
+              patternType: local.patternType,
+              reopenCount: local.reopenCount,
+              reopenTicketIds: local.reopenTicketIds,
+            };
+          }
         });
-      }
-    });
 
-    await queue.addAll(tasks);
+        synthesizedCount += batch.length;
+        if (taskId) {
+          const percent = Math.min(96, 78 + Math.round((synthesizedCount / Math.max(1, enrichedThemes.length)) * 18));
+          updateTaskProgress(taskId, {
+            percent,
+            stageText: `AI 正在生成公文级处置建议 (${Math.min(synthesizedCount, enrichedThemes.length)} / ${enrichedThemes.length})...`,
+          });
+        }
+      });
+    }
+
+    await queue.addAll(chunkTasks);
   }
 
   if (taskId) {

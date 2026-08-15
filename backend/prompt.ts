@@ -236,6 +236,65 @@ ${formatNegativeTermsForPrompt()}。命中且为群体聚集型时按 HIGH 理�
 }
 
 /**
+ * 批量多频主题研判 Zod Schema（支持最多 10 个主题 1 个 AI 请求）
+ */
+export const BatchThemeEnrichmentSchema = z.object({
+  results: z.array(
+    z.object({
+      themeIndex: z.number().describe("主题序号（从 1 开始，对应待研判列表 [1], [2], ...）"),
+      riskLevel: z.enum(["HIGH", "MEDIUM", "LOW"]).describe("多频风险等级评定"),
+      riskReason: z.string().describe("简明扼要的风险诱因与态势研判（25-45字）"),
+      aiSummary: z.string().describe("深度公文级全貌研判综述（60-100字）"),
+      recommendedAction: z.string().describe("针对性协同处置建议（明确牵头部门、响应时限及具体路径）（50-80字）"),
+    })
+  ),
+});
+
+export type BatchThemeEnrichmentResult = z.infer<typeof BatchThemeEnrichmentSchema>;
+
+/**
+ * 批量多频主题研判 Prompt 生成器（最多 10 个主题打包）
+ */
+export function buildBatchThemeEnrichmentPrompt(
+  themes: MultiFrequencyTheme[]
+): string {
+  return `你是一位政务热线顶级智能研判与督办专家。请对以下 ${themes.length} 个多频诉求主题进行批量深度公文研判，输出各主题的风险评级、归因分析、全貌综述与精准协同处置建议。
+
+【专业研判与协同处置指引（按具体民生领域精准指定牵头部门、响应时限与办理路径）】：
+- 🚗 车辆违停/道路拥堵：由辖区交警中队联动综合行政执法队，1小时内到场劝离或电子抓拍处罚，保障主干道畅通；
+- 🍢 流动摊贩/占道经营：由属地综合行政执法办/队加强早晚高峰路面巡查，规范跨门槛经营，引导入市规范经营；
+- 🔊 商业噪音/夜间喧哗：由综合行政执法队联合辖区派出所开展夜间测噪联合巡查，责令涉事方加装降噪控音设施；
+- 💨 餐饮油烟/工业废气：由属地生态环境所联合综合执法办核查净化设施与清洗台账，限期达标排放并开展油烟浓度抽测；
+- 🏢 小区物业/电梯维保：由住建局物业科联合市场监管特种设备股下发督办单，限期排查安全隐患并张贴维保公示；
+- 💧 市政排水/管网堵塞：由市政水务/排水抢修工程队立即赶赴现场排查，2小时内核定抢修方案并于当日完成通水排污保障；
+- 💳 消费纠纷/虚假宣传：由属地市场监管所（消委会）于2个工作日内核查交易记录与凭证，组织调解并依法处置；
+- 💼 劳资纠纷/社保待遇：由人社局劳动保障监察大队/医保中心介入核实，核查合同台账或线上申报校验，依法保障权益；
+- 🎆 违规燃放/公共安全：由公安治安大队联动综合行政执法加强敏感时段路面巡查，制止违规行为并依法溯源；
+- 📚 校园教育/节假安排：由教育局基教科核实法定节假日安排合规性，协同校方做好政策解释与家长沟通。
+
+【待研判多频主题列表（共 ${themes.length} 个）】：
+${themes
+  .map((theme, idx) => {
+    const sampleTickets = theme.tickets.slice(0, 3);
+    return `=== [${idx + 1}] 主题 ID: ${theme.id} ===
+- 涉及主体: ${theme.canonicalSubject}
+- 发生区域/地点: ${theme.canonicalLocation}
+- 核心问题类型: ${theme.eventType} (${theme.category})
+- 涉及工单量: ${theme.ticketCount} 件，跨度: ${theme.timeSpanHours} 小时
+- 样例诉求正文:
+${sampleTickets
+  .map(
+    (t, i) =>
+      `  (${i + 1}) [${t.subdistrict || "本区"}] ${t.summarizeTitle || t.title}: ${ticketBodyForAI(t).slice(0, 90)}...`
+  )
+  .join("\n")}`;
+  })
+  .join("\n\n")}
+
+请严格按照 JSON 结构返回包含所有 ${themes.length} 个主题研判结论的 results 数组（themeIndex 必须与 [1]..[${themes.length}] 严格对应）。`;
+}
+
+/**
  * 5. AI Copilot 问答副驾驶 Prompt 生成器
  */
 export function buildCopilotPrompt(params: {

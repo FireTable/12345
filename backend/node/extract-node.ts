@@ -193,7 +193,7 @@ export async function extractNode(
   const taskId = state.taskId;
   const CHUNK_SIZE = 1;
   const extractionMap = new Map<number, ExtractedTicketItem>();
-  const queue = new PQueue({ concurrency: 4 });
+  const queue = new PQueue({ concurrency: 10 });
 
   if (taskId) {
     updateTaskProgress(taskId, {
