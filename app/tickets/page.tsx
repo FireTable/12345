@@ -51,6 +51,12 @@ export default function TicketsPage() {
   const [time, setTime] = useState("");
   const [jump, setJump] = useState("1");
   const [drawer, setDrawer] = useState<Row | null>(null);
+
+  const handleViewInGroup = (r: Row) => {
+    const clusterId = r.cluster_id || "THEME-1";
+    const targetId = r.ticketId || r.id;
+    router.push(`/themes/${clusterId}?ticketId=${encodeURIComponent(targetId)}&highlight=${encodeURIComponent(targetId)}#ticket-${encodeURIComponent(targetId)}`);
+  };
   const [data, setData] = useState<{
     total: number;
     data: Row[];
@@ -301,11 +307,16 @@ export default function TicketsPage() {
           </thead>
           <tbody>
             {data.data.map((r) => (
-              <tr key={r.ticketId} onClick={() => setDrawer(r)}>
-                <td className="col-id">{r.id}</td>
+              <tr
+                key={r.ticketId}
+                onClick={() => handleViewInGroup(r)}
+                className="cursor-pointer hover:bg-blue-50/50 transition-colors"
+                title="点击跳转到所属多频群组视图并高亮定位"
+              >
+                <td className="col-id font-mono text-xs">{r.id}</td>
                 <td>
-                  <div className="col-title__text">{r.title}</div>
-                  <div className="col-title__id">{r.ticketId}</div>
+                  <div className="col-title__text font-medium text-slate-900">{r.title}</div>
+                  <div className="col-title__id text-slate-400">{r.ticketId}</div>
                 </td>
                 <td>{r.region || "—"}</td>
                 <td>
@@ -316,12 +327,14 @@ export default function TicketsPage() {
                     {urgencyLabel(r.urgency)}
                   </span>
                 </td>
-                <td>{r.createdAt}</td>
+                <td className="text-xs text-slate-500">{r.createdAt}</td>
                 <td>
                   <span className={`status-dot status-dot--${statusDot(r.status)}`} />
                   {statusLabel(r.status)}
                 </td>
-                <td style={{ textAlign: "right", color: "var(--c-brand)" }}>查看 →</td>
+                <td style={{ textAlign: "right", color: "var(--c-brand)", fontWeight: 600 }}>
+                  群组定位 →
+                </td>
               </tr>
             ))}
           </tbody>

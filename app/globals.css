@@ -87,3 +87,21 @@
   animation: shimmer 1.8s infinite linear;
 }
 
+@keyframes ticketBorderPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.9), 0 0 20px 4px rgba(37, 99, 235, 0.35);
+    border-color: #2563eb;
+    background-color: rgba(239, 246, 255, 0.85);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 1), 0 0 30px 8px rgba(59, 130, 246, 0.6);
+    border-color: #3b82f6;
+    background-color: rgba(219, 234, 254, 0.95);
+  }
+}
+
+.ticket-highlight-pulse {
+  animation: ticketBorderPulse 1.8s ease-in-out infinite !important;
+  scroll-margin-top: 100px;
+}
+

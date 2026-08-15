@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db/client";
 import { themesTable, ticketsTable, ticketThemesTable } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, or, ilike } from "drizzle-orm";
 import { toClusterDto, toWorkorderDto } from "@/lib/civic-dto";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -12,13 +12,44 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     if (!theme) return NextResponse.json({ success: false, error: "not found" }, { status: 404 });
 
     const junctions = await db.select().from(ticketThemesTable).where(eq(ticketThemesTable.themeId, id));
-    const members = [];
+    const memberMap = new Map<string, any>();
+
     for (const j of junctions) {
       const rows = await db.select().from(ticketsTable).where(eq(ticketsTable.id, j.ticketId)).limit(1);
-      if (rows[0]) members.push(rows[0]);
+      if (rows[0]) memberMap.set(rows[0].id, rows[0]);
     }
 
-    const dto = toClusterDto({ ...theme, tickets: members });
+    // 补充 primaryThemeId 匹配的工单
+    const byPrimary = await db
+      .select()
+      .from(ticketsTable)
+      .where(eq(ticketsTable.primaryThemeId, id))
+      .limit(50);
+    for (const t of byPrimary) {
+      memberMap.set(t.id, t);
+    }
+
+    // 若仍为空且存在明确涉事主体，按主体匹配工单
+    if (memberMap.size === 0 && theme.canonicalSubject && theme.canonicalSubject.length >= 3) {
+      const bySubject = await db
+        .select()
+        .from(ticketsTable)
+        .where(
+          or(
+            ilike(ticketsTable.content, `%${theme.canonicalSubject}%`),
+            ilike(ticketsTable.title, `%${theme.canonicalSubject}%`),
+            ilike(ticketsTable.summarizeTitle, `%${theme.canonicalSubject}%`)
+          )
+        )
+        .limit(20);
+      for (const t of bySubject) {
+        memberMap.set(t.id, t);
+      }
+    }
+
+    const members = Array.from(memberMap.values());
+    const dto = toClusterDto({ ...theme, tickets: members, ticketCount: members.length || theme.ticketCount });
+
     return NextResponse.json({
       success: true,
       ...dto,
