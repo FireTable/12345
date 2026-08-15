@@ -179,7 +179,7 @@
     <text x="250" y="252" class="region-label" data-name="勒流" data-id="leliu">勒流</text>
     <text x="409" y="296" class="region-label region-label--inverse" data-name="大良" data-id="daliang">大良</text>
     <text x="231" y="360" class="region-label" data-name="杏坛" data-id="xingtan">杏坛</text>
-    <text x="402" y="365" class="region-label" data-name="容桂" data-id="ronggui">容桂</text>
+    <text x="410" y="386" class="region-label" data-name="容桂" data-id="ronggui">容桂</text>
     <text x="227" y="454" class="region-label" data-name="均安" data-id="junan">均安</text>
   </g>
 </svg>
