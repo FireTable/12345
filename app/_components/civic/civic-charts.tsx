@@ -170,6 +170,27 @@ export function donutOption(dist: Record<string, number>) {
   const topPct = total > 0 && topItem ? ((topItem.value / total) * 100).toFixed(1) : "0.0";
 
   return {
+    title: {
+      text: `${topPct}%`,
+      subtext: topItem?.name || "工单分类",
+      left: "50%",
+      top: "36%",
+      textAlign: "center",
+      itemGap: 3,
+      textStyle: {
+        fontSize: 28,
+        fontWeight: "bold",
+        color: "#1E293B",
+        fontFamily: "ui-sans-serif, system-ui, -apple-system, sans-serif",
+        lineHeight: 32,
+      },
+      subtextStyle: {
+        fontSize: 12,
+        color: "#64748B",
+        fontWeight: "500",
+        lineHeight: 16,
+      },
+    },
     tooltip: {
       trigger: "item",
       backgroundColor: "rgba(30, 41, 59, 0.95)",
@@ -194,27 +215,10 @@ export function donutOption(dist: Record<string, number>) {
       {
         type: "pie",
         radius: ["54%", "78%"],
-        center: ["50%", "42%"],
+        center: ["50%", "44%"],
         avoidLabelOverlap: false,
         label: {
-          show: true,
-          position: "center",
-          formatter: () => `{val|${topPct}%}\n{name|${topItem?.name || "主要诉求"}}`,
-          rich: {
-            val: {
-              fontSize: 26,
-              fontWeight: 800,
-              color: "#1E293B",
-              fontFamily: "ui-sans-serif, system-ui, -apple-system, sans-serif",
-              lineHeight: 34,
-            },
-            name: {
-              fontSize: 12,
-              color: "#64748B",
-              fontWeight: 500,
-              lineHeight: 18,
-            },
-          },
+          show: false,
         },
         labelLine: { show: false },
         data,
@@ -223,27 +227,7 @@ export function donutOption(dist: Record<string, number>) {
           scale: true,
           scaleSize: 6,
           label: {
-            show: true,
-            position: "center",
-            formatter: (p: any) => {
-              const pct = p.percent != null ? Number(p.percent).toFixed(1) : ((p.value / total) * 100).toFixed(1);
-              return `{val|${pct}%}\n{name|${p.name}}`;
-            },
-            rich: {
-              val: {
-                fontSize: 28,
-                fontWeight: 800,
-                color: "#1E5AFF",
-                fontFamily: "ui-sans-serif, system-ui, -apple-system, sans-serif",
-                lineHeight: 36,
-              },
-              name: {
-                fontSize: 12,
-                color: "#1E293B",
-                fontWeight: 600,
-                lineHeight: 18,
-              },
-            },
+            show: false,
           },
         },
       },
