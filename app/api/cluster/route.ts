@@ -39,8 +39,8 @@ export async function POST(req: Request) {
       content: r.content,
       citizenName: r.citizenName || "市民*",
       citizenPhone: r.citizenPhone || "138****0000",
-      district: r.district || "顺德区",
-      subdistrict: r.subdistrict || "大良街道",
+      district: r.district || "所属辖区",
+      subdistrict: r.subdistrict || "未归属镇街",
       channel: r.channel || "市民服务热线",
       status: (r.status as any) || "PENDING",
     }));
@@ -52,7 +52,7 @@ export async function POST(req: Request) {
     // 3. Run LangGraph JS Pipeline
     const result = await runTicketRadarPipeline(tickets, threadId);
 
-    // 4. Persist computed themes to PostgreSQL themesTable
+    // 4. Persist computed themes & ticket_themes to PostgreSQL
     try {
       await db.delete(ticketThemesTable);
       await db.delete(themesTable);
@@ -74,6 +74,27 @@ export async function POST(req: Request) {
 
       if (themeRecords.length > 0) {
         await db.insert(themesTable).values(themeRecords);
+
+        // Persist ticket_themes junction records
+        const ticketThemeMappings: Array<{ ticketId: string; themeId: string }> = [];
+        for (const theme of result.themes) {
+          if (theme.tickets && Array.isArray(theme.tickets)) {
+            for (const t of theme.tickets) {
+              ticketThemeMappings.push({
+                ticketId: t.id,
+                themeId: theme.id,
+              });
+            }
+          }
+        }
+
+        if (ticketThemeMappings.length > 0) {
+          // Batch in chunks of 500
+          for (let i = 0; i < ticketThemeMappings.length; i += 500) {
+            const chunk = ticketThemeMappings.slice(i, i + 500);
+            await db.insert(ticketThemesTable).values(chunk).onConflictDoNothing();
+          }
+        }
       }
     } catch (persistErr: any) {
       console.warn("Could not persist themes to DB:", persistErr.message);
@@ -107,7 +128,7 @@ export async function POST(req: Request) {
           mediumRiskCount,
           lowRiskCount,
           compressionRatio,
-          topSubject: result.themes[0]?.canonicalSubject || "大良街道重点诉求责任主体",
+          topSubject: result.themes[0]?.canonicalSubject || "暂无重点多频诉求",
           avgResponseTimeSavedHours: 5.2,
         },
         graphData: {

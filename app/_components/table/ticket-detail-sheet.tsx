@@ -1,7 +1,6 @@
 "use client";
 
-import React, { useRef, useState } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import React, { useState } from "react";
 import {
   X,
   Building2,
@@ -11,6 +10,10 @@ import {
   CheckCircle2,
   FileSpreadsheet,
   Loader2,
+  FileText,
+  User,
+  Phone,
+  Layers,
 } from "lucide-react";
 import type { MultiFrequencyTheme, RawTicket } from "@/backend/state";
 import { exportThemeTicketsToCSV } from "@/lib/export-csv";
@@ -62,73 +65,82 @@ export const TicketDetailSheet: React.FC<TicketDetailSheetProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-200">
+    <div
+      className="fixed inset-0 z-50 flex justify-end bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-200"
+      onClick={onClose}
+    >
       <div
-        className="w-full max-w-2xl h-full bg-card border-l border-border shadow-2xl flex flex-col overflow-hidden text-foreground"
+        className="w-full max-w-3xl h-full bg-card border-l border-border shadow-2xl flex flex-col overflow-hidden text-foreground animate-in slide-in-from-right duration-250"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Sheet Header */}
-        <div className="p-6 border-b border-border space-y-3 bg-muted/30">
+        <div className="p-6 border-b border-border space-y-4 bg-muted/20 shrink-0">
           <div className="flex items-start justify-between gap-4">
             <div className="flex flex-wrap items-center gap-2">
               {isHighRisk && (
-                <span className="px-2.5 py-0.5 rounded text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-600 animate-pulse" />
                   🔴 紧急督办
                 </span>
               )}
               {isMedRisk && (
-                <span className="px-2.5 py-0.5 rounded text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />
                   🟡 重点跟进
                 </span>
               )}
               {!isHighRisk && !isMedRisk && (
-                <span className="px-2.5 py-0.5 rounded text-xs font-medium bg-muted text-muted-foreground border border-border">
+                <span className="px-2.5 py-1 rounded-md text-xs font-medium bg-muted text-muted-foreground border border-border">
                   ⚪ 常规流转
                 </span>
               )}
 
-              <span className="text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground border border-border">
+              <span className="text-xs px-2.5 py-1 rounded-md bg-muted text-muted-foreground border border-border font-medium">
                 {theme.category}
               </span>
 
-              <span className="font-mono text-xs font-bold text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20">
+              <span className="font-mono text-xs font-bold text-primary bg-primary/10 px-2.5 py-1 rounded-md border border-primary/20 flex items-center gap-1">
+                <Layers className="w-3.5 h-3.5" />
                 {theme.ticketCount} 件关联工单
               </span>
             </div>
 
             <button
               onClick={onClose}
-              className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+              title="关闭抽屉"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
 
-          <h2 className="text-base font-bold text-foreground leading-snug">
-            {theme.title}
-          </h2>
-
-          <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground pt-1">
-            <div className="flex items-center gap-1.5 truncate">
-              <Building2 className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-              <span className="truncate font-semibold text-foreground">{theme.canonicalSubject}</span>
-            </div>
-            <div className="flex items-center gap-1.5 truncate">
-              <MapPin className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-              <span className="truncate text-muted-foreground">{theme.canonicalLocation}</span>
+          <div>
+            <h2 className="text-lg font-bold text-foreground leading-snug tracking-tight">
+              {theme.title}
+            </h2>
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted-foreground mt-2">
+              <div className="flex items-center gap-1.5 font-medium">
+                <Building2 className="w-4 h-4 text-primary shrink-0" />
+                <span className="text-foreground font-semibold">{theme.canonicalSubject}</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <MapPin className="w-4 h-4 text-muted-foreground shrink-0" />
+                <span className="text-muted-foreground">{theme.canonicalLocation}</span>
+              </div>
             </div>
           </div>
 
           {/* AI Risk Reason Card */}
-          <div className="p-3 rounded-lg bg-blue-50/60 border border-blue-100 text-xs text-slate-700 space-y-1.5">
-            <div className="flex items-center gap-1.5 font-bold text-blue-800">
-              <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-              LangGraph 智能研判与处置建议
+          <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-100 text-xs text-slate-700 space-y-2">
+            <div className="flex items-center gap-1.5 font-bold text-blue-900">
+              <Sparkles className="w-4 h-4 text-blue-600 shrink-0" />
+              LangGraph AI 智能研判与协同处置方案
             </div>
-            <p className="text-slate-600 leading-relaxed">{theme.riskReason}</p>
-            <p className="text-[11.5px] text-blue-900 font-medium pt-1 border-t border-blue-100/80">
-              📌 <span className="font-bold">建议举措：</span>{theme.recommendedAction}
-            </p>
+            <p className="text-slate-600 leading-relaxed pl-5">{theme.riskReason}</p>
+            <div className="pt-2 border-t border-blue-100/90 pl-5 text-[12px] text-blue-950 font-medium leading-relaxed">
+              <span className="font-bold text-blue-700">📌 处置建议：</span>
+              {theme.recommendedAction}
+            </div>
           </div>
 
           {/* Batch Action Toolbar */}
@@ -136,156 +148,119 @@ export const TicketDetailSheet: React.FC<TicketDetailSheetProps> = ({
             <div className="flex items-center gap-3">
               <button
                 onClick={handleSelectAll}
-                className="text-muted-foreground hover:text-foreground font-medium cursor-pointer"
+                className="text-muted-foreground hover:text-foreground font-medium cursor-pointer transition-colors"
               >
                 {selectedTicketIds.size === tickets.length ? "取消全选" : "全选全部"}
               </button>
               <span className="text-border">|</span>
               <span className="text-muted-foreground">
-                已勾选 <strong className="text-foreground">{selectedTicketIds.size}</strong> 件
+                已勾选 <strong className="text-primary font-bold">{selectedTicketIds.size}</strong> / {tickets.length} 件
               </span>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2.5">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handleExportThemeTickets}
-                className="h-7 text-xs border-border bg-card text-foreground hover:bg-muted"
+                className="h-8 text-xs border-border bg-card text-foreground hover:bg-muted font-medium"
               >
-                <FileSpreadsheet className="w-3 h-3 mr-1" />
+                <FileSpreadsheet className="w-3.5 h-3.5 mr-1 text-emerald-600" />
                 导出本案明细
               </Button>
               <Button
                 variant="default"
                 size="sm"
                 onClick={handleBatchVerify}
-                className="h-7 text-xs bg-primary text-primary-foreground hover:bg-primary/90 font-semibold"
+                className="h-8 text-xs bg-primary text-primary-foreground hover:bg-primary/90 font-semibold shadow-xs"
               >
-                <CheckCircle2 className="w-3 h-3 mr-1" />
+                <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
                 批量核查确认
               </Button>
             </div>
           </div>
         </div>
 
-        {/* Ticket List Body */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-3">
+        {/* Ticket List Body - Full Height Natural Scroll */}
+        <div className="flex-1 overflow-y-auto p-6">
           {isLoadingTickets ? (
-            <div className="h-64 flex flex-col items-center justify-center gap-2 text-muted-foreground text-xs">
-              <Loader2 className="w-6 h-6 animate-spin text-primary" />
-              <span>正在从 PostgreSQL 按需查询工单明细...</span>
+            <div className="h-64 flex flex-col items-center justify-center gap-3 text-muted-foreground text-xs">
+              <Loader2 className="w-7 h-7 animate-spin text-primary" />
+              <span>正在从 PostgreSQL 按需查询聚合工单明细...</span>
             </div>
           ) : tickets.length > 0 ? (
-            <VirtualTicketList
-              tickets={tickets}
-              selectedIds={selectedTicketIds}
-              onToggle={handleToggleSelect}
-            />
+            <div className="space-y-3.5 pb-6">
+              {tickets.map((ticket, idx) => {
+                const isSelected = selectedTicketIds.has(ticket.id);
+
+                return (
+                  <div
+                    key={ticket.id || `ticket-${idx}`}
+                    onClick={() => handleToggleSelect(ticket.id)}
+                    className={`w-full p-4 rounded-xl border transition-all cursor-pointer select-none ${
+                      isSelected
+                        ? "bg-primary/5 border-primary shadow-xs ring-1 ring-primary/30"
+                        : "bg-card border-border hover:border-border/80 hover:bg-muted/30 shadow-2xs"
+                    }`}
+                  >
+                    {/* Header Row */}
+                    <div className="flex items-center justify-between text-xs pb-2.5 border-b border-border/40">
+                      <div className="flex items-center gap-2.5">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleToggleSelect(ticket.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-4 h-4 rounded text-primary focus:ring-primary border-input cursor-pointer"
+                        />
+                        <span className="font-mono font-bold text-foreground text-xs">
+                          {ticket.ticketNo}
+                        </span>
+                        {ticket.subdistrict && (
+                          <span className="text-[11px] px-2 py-0.5 rounded bg-muted text-muted-foreground font-medium border border-border/50">
+                            {ticket.subdistrict}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1.5 text-muted-foreground font-mono text-[11px]">
+                        <Clock className="w-3.5 h-3.5 text-muted-foreground/70" />
+                        <span>{ticket.createTime}</span>
+                      </div>
+                    </div>
+
+                    {/* Ticket Content Full Body */}
+                    <div className="pt-3 text-xs text-foreground/90 leading-relaxed font-normal whitespace-pre-wrap">
+                      {ticket.content}
+                    </div>
+
+                    {/* Citizen & Channel Footer */}
+                    <div className="pt-2.5 mt-3 border-t border-border/30 flex items-center justify-between text-[11.5px] text-muted-foreground">
+                      <div className="flex items-center gap-3">
+                        <span className="flex items-center gap-1">
+                          <User className="w-3.5 h-3.5 text-muted-foreground/70" />
+                          诉求人: <strong className="font-medium text-foreground/80">{ticket.citizenName || "市民*"}</strong>
+                        </span>
+                        <span className="flex items-center gap-1 font-mono">
+                          <Phone className="w-3.5 h-3.5 text-muted-foreground/70" />
+                          {ticket.citizenPhone || "138****0000"}
+                        </span>
+                      </div>
+                      <span className="text-muted-foreground/80 flex items-center gap-1">
+                        <FileText className="w-3 h-3 text-muted-foreground/60" />
+                        渠道: {ticket.channel || "市民服务热线"}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           ) : (
             <div className="h-64 flex flex-col items-center justify-center text-muted-foreground text-xs">
               暂无匹配工单记录
             </div>
           )}
         </div>
-      </div>
-    </div>
-  );
-};
-
-interface VirtualTicketListProps {
-  tickets: RawTicket[];
-  selectedIds: Set<string>;
-  onToggle: (id: string) => void;
-}
-
-const VirtualTicketList: React.FC<VirtualTicketListProps> = ({
-  tickets,
-  selectedIds,
-  onToggle,
-}) => {
-  const parentRef = useRef<HTMLDivElement>(null);
-
-  const rowVirtualizer = useVirtualizer({
-    count: tickets.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 140,
-    overscan: 5,
-  });
-
-  return (
-    <div
-      ref={parentRef}
-      className="h-[520px] overflow-y-auto pr-1 space-y-3"
-    >
-      <div
-        style={{
-          height: `${rowVirtualizer.getTotalSize()}px`,
-          width: "100%",
-          position: "relative",
-        }}
-      >
-        {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-          const ticket = tickets[virtualRow.index];
-          const isSelected = selectedIds.has(ticket.id);
-
-          return (
-            <div
-              key={ticket.id}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: "100%",
-                transform: `translateY(${virtualRow.start}px)`,
-              }}
-              className="pb-3"
-            >
-              <div
-                onClick={() => onToggle(ticket.id)}
-                className={`p-3.5 rounded-lg border transition-all cursor-pointer ${
-                  isSelected
-                    ? "bg-primary/5 border-primary shadow-xs"
-                    : "bg-card border-border hover:border-border/80 shadow-2xs"
-                }`}
-              >
-                {/* Header */}
-                <div className="flex items-center justify-between text-xs pb-2 border-b border-border/40">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => onToggle(ticket.id)}
-                      className="rounded text-primary focus:ring-primary border-input cursor-pointer"
-                    />
-                    <span className="font-mono font-bold text-foreground">
-                      {ticket.ticketNo}
-                    </span>
-                    <span className="text-[11px] px-1.5 py-0.2 rounded bg-muted text-muted-foreground">
-                      {ticket.subdistrict}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-1.5 text-muted-foreground font-mono text-[11px]">
-                    <Clock className="w-3 h-3" />
-                    <span>{ticket.createTime}</span>
-                  </div>
-                </div>
-
-                {/* Content */}
-                <div className="pt-2 text-xs text-foreground leading-relaxed font-normal">
-                  {ticket.content}
-                </div>
-
-                {/* Citizen Info Footer */}
-                <div className="pt-2 mt-2 border-t border-border/30 flex items-center justify-between text-[11px] text-muted-foreground">
-                  <span>诉求人: {ticket.citizenName} ({ticket.citizenPhone})</span>
-                  <span className="text-muted-foreground/80">渠道: {ticket.channel}</span>
-                </div>
-              </div>
-            </div>
-          );
-        })}
       </div>
     </div>
   );

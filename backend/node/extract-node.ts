@@ -1,144 +1,164 @@
-import type { TicketRadarState, EnrichedTicket } from "../state";
+import type { TicketRadarState, EnrichedTicket, RawTicket } from "../state";
+import { getChatModel } from "../model";
+
+interface ExtractedTicketItem {
+  index: number;
+  subject: string;
+  location: string;
+  eventType: string;
+  category: string;
+}
 
 /**
- * 动态实体抽取正则与词库（匹配真实政务诉求）
+ * 批次调用大模型进行纯 AI 语义四要素抽取（完全基于 LLM 理解，零硬编码）
  */
-const SUBJECT_PATTERNS = [
-  /(?:位于|在|名称[：:])([^\s，。、（）]{2,20}?(?:民宿|公寓|酒店|酒馆|酒吧|KTV|烧烤店|大排档|快餐店|美食城|商场|便利店|超市|体验馆|俱乐部|桌球室|茶庄|饭店|有限公司|项目部|工程部|施工方|物业(?:服务中心|管理处|公司)?|花园|小区|苑|居委会))/g,
-  /([^\s，。、（）]{2,15}?(?:民宿|公寓|酒店|酒馆|酒吧|KTV|烧烤|大排档|百货|商场|超市|桌球|家具|物业|花园|雅苑|轩|居|项目部|工地))/g,
-];
+async function extractBatchWithLLM(
+  tickets: RawTicket[],
+  startIndex: number
+): Promise<Map<number, ExtractedTicketItem>> {
+  const result = new Map<number, ExtractedTicketItem>();
+  if (tickets.length === 0) return result;
 
-const LOCATION_PATTERNS = [
-  /((?:顺德区)?(?:大良|容桂|伦教|勒流|陈村|北滘|乐从|龙江|杏坛|均安)(?:街道|镇)?[^\s，。、（）]{2,25}?(?:路|街|巷|大道|社区|村|广场|公园|中心|城|站|门|大厦|居))/g,
-];
+  try {
+    const chat = getChatModel(0);
+    const prompt = `你是一位政务热线智能工单研判 Agent。请对以下 ${tickets.length} 条市民热线工单进行结构化要素抽取。完全依靠语义理解提取被诉主体、发生地点、事件核心特征与类别。
 
-function extractDynamicSubject(content: string, subdistrict: string): string {
-  // 1. 优先提取明确的商户/单位/小区主体
-  for (const pattern of SUBJECT_PATTERNS) {
-    const matches = Array.from(content.matchAll(pattern));
-    if (matches.length > 0 && matches[0][1]) {
-      const subj = matches[0][1].trim();
-      if (subj.length >= 3 && !subj.includes("顺德区") && !subj.includes("街道") && !subj.includes("市民")) {
-        return subj;
+工单列表：
+${tickets.map((t, idx) => `[${idx + 1}] 工单号: ${t.ticketNo} | 所属辖区: ${t.subdistrict || "未指定"}\n诉求正文: ${t.content || ""}`).join("\n\n")}
+
+请严格输出纯 JSON 数组（不要有 markdown 代码块以外的任何文字）：
+[
+  {
+    "index": 1,
+    "subject": "被诉主体/责任单位名称（如商家名/物业公司/项目部/经营者/职能部门）",
+    "location": "标准发生地点（包含行政区/镇街/道路/小区/地标）",
+    "eventType": "事件类型核心提炼（6-15字）",
+    "category": "市容秩序|生态环保|住建管理|市场监管|公共安全|交通出行|综合民生"
+  }
+]`;
+
+    const res = await chat.invoke(prompt);
+    const text = typeof res.content === "string" ? res.content : JSON.stringify(res.content);
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      const items: ExtractedTicketItem[] = JSON.parse(jsonMatch[0]);
+      for (const item of items) {
+        if (item && typeof item.index === "number") {
+          result.set(startIndex + item.index - 1, {
+            index: item.index,
+            subject: String(item.subject || "").trim(),
+            location: String(item.location || "").trim(),
+            eventType: String(item.eventType || "").trim(),
+            category: String(item.category || "综合民生").trim(),
+          });
+        }
       }
     }
+  } catch (err: any) {
+    console.warn(`LLM Batch Extraction failed for chunk at ${startIndex}:`, err.message);
   }
 
-  // 2. 启发式回退抽取
-  if (content.includes("宝蓝轩家具")) return "佛山市宝蓝轩家具有限公司";
-  if (content.includes("招财宝")) return "招财宝民宿";
-  if (content.includes("仓门村夜市")) return "均安仓门夜市街";
-  if (content.includes("万象美食城")) return "龙江万象美食城";
-  if (content.includes("悦然里")) return "北滘天宁路悦然里商场";
-  if (content.includes("林榢")) return "林榢主题公寓(北滘站店)";
-  if (content.includes("东海绿岛")) return "南沙围东海绿岛";
-  if (content.includes("兰州拉面")) return "康乐路兰州拉面烧烤店";
-  if (content.includes("恒艺音乐")) return "恒艺音乐悠闲体验馆";
-  if (content.includes("佳润上品轩")) return "佳润上品轩小贩占道群";
-  if (content.includes("华庭轩") || content.includes("深夜烧烤")) return "华庭轩深夜烧烤店";
-  if (content.includes("南岸公园")) return "容桂南岸公园露天区";
-  if (content.includes("八方连锁酒店")) return "八方连锁酒店(欢度店)";
-  if (content.includes("狐朋")) return "和桂十六街狐朋商铺";
-  if (content.includes("澳奇物业")) return "顺德区澳奇物业管理有限公司";
-  if (content.includes("骏华轩")) return "和季路骏华轩商铺";
-  if (content.includes("ALSOLIVE") || content.includes("ALSO")) return "北滘ALSO商业区";
-  if (content.includes("惠福兴")) return "惠福兴生活超市周边地摊";
-  if (content.includes("人民路食街")) return "伦教人民路食街停车场";
-  if (content.includes("万民金海城") || content.includes("time party")) return "万民金海城MOCITY KTV";
-  if (content.includes("云景商务公寓") || content.includes("云谷广场")) return "云景商务公寓(顺德欢乐海岸店)";
-  if (content.includes("玉成小学") || content.includes("逢沙大道")) return "玉成小学周边流动摊贩群";
-  if (content.includes("渔人码头")) return "容桂渔人码头景区";
-  if (content.includes("烤乐滋")) return "简岸路烤乐滋烧烤店";
-  if (content.includes("18号酒馆")) return "18号酒馆·美式烤肉(ALSO店)";
-  if (content.includes("百灵桌球")) return "百灵桌球俱乐部";
-  if (content.includes("东逸湾")) return "容桂东逸湾倚湖居";
-  if (content.includes("桂畔花园")) return "大良桂畔花园商铺群";
-  if (content.includes("玫瑰轩")) return "玫瑰轩居民楼下酒馆";
-  if (content.includes("博翠天下") || content.includes("金科")) return "金科博翠天下施工项目部";
-  if (content.includes("文海路") || content.includes("水管爆裂")) return "容桂文海西路主供水管网";
-  if (content.includes("保利中汇")) return "保利中汇物业服务中心";
-  if (content.includes("顺峰山")) return "顺峰山南门流动摊区";
-  if (content.includes("万达")) return "顺德万达广场餐饮区";
-
-  return `${subdistrict}重点诉求责任主体`;
-}
-
-function extractDynamicLocation(content: string, subdistrict: string): string {
-  for (const pattern of LOCATION_PATTERNS) {
-    const matches = Array.from(content.matchAll(pattern));
-    if (matches.length > 0 && matches[0][1]) {
-      const loc = matches[0][1].trim();
-      if (loc.length >= 4) return loc;
-    }
-  }
-  return `顺德区${subdistrict}`;
-}
-
-function extractEventTypeAndThemes(content: string): { eventType: string; themes: string[] } {
-  const themes: string[] = [];
-
-  if (content.includes("烟花") || content.includes("爆竹")) {
-    themes.push("公共安全", "禁燃禁放", "应急治理");
-    return { eventType: "违规燃放/售卖烟花爆竹扰民", themes };
-  }
-  if (content.includes("油烟") || content.includes("排烟") || content.includes("排气")) {
-    themes.push("生态环保", "餐饮监管", "油烟直排");
-    return { eventType: "餐饮油烟直排与空气污染", themes };
-  }
-  if (content.includes("下水道") || content.includes("排污") || content.includes("反涌") || content.includes("水管")) {
-    themes.push("市政设施", "管网排污", "积水抢修");
-    return { eventType: "市政排污管道水位过高与下水反涌", themes };
-  }
-  if (content.includes("小贩") || content.includes("摆摊") || content.includes("占道") || content.includes("地摊") || content.includes("流动摊")) {
-    themes.push("市容秩序", "城管执法", "占道经营");
-    return { eventType: "流动摊贩夜间占道经营与路面堵塞", themes };
-  }
-  if (content.includes("消费") || content.includes("退款") || content.includes("欺诈") || content.includes("虚假") || content.includes("订单") || content.includes("停车费")) {
-    themes.push("市场监管", "消费维权", "价格纠纷");
-    return { eventType: "消费纠纷与违规收费维权", themes };
-  }
-  if (content.includes("物业") || content.includes("物管") || content.includes("电梯") || content.includes("消防")) {
-    themes.push("住建管理", "物业服务", "安全生产");
-    return { eventType: "小区物业履职不到位与公共安全隐患", themes };
-  }
-  if (content.includes("噪音") || content.includes("扰民") || content.includes("喧哗") || content.includes("音乐") || content.includes("音响") || content.includes("唱歌") || content.includes("施工")) {
-    themes.push("噪音治理", "夜间扰民", "市容城管");
-    return { eventType: "夜间营业音响喧哗与商业噪音扰民", themes };
-  }
-
-  themes.push("日常民生诉求", "综合服务");
-  return { eventType: "综合民生诉求跟进", themes };
+  return result;
 }
 
 /**
- * Extract Node: 高精度动态提取四要素
+ * 通用正则兜底提取器（当网络离线时备用，通用中文模式，零特定地名硬编码）
+ */
+function fallbackDynamicExtraction(ticket: RawTicket): ExtractedTicketItem {
+  const content = typeof ticket?.content === "string" ? ticket.content : "";
+  const subdistrict = ticket?.subdistrict || "";
+
+  // 通用动态主体识别
+  const matchSubj = content.match(/(?:在|位于|投诉|反映|名称[：:])([^\s，。、（）]{2,25}?(?:民宿|公寓|酒店|酒馆|酒吧|KTV|烧烤店|大排档|快餐店|美食城|商场|便利店|超市|体验馆|俱乐部|桌球室|茶庄|饭店|有限公司|项目部|工程部|施工方|物业|花园|小区|苑|居委会|公司|中心|店))/);
+  const subject = matchSubj && matchSubj[1] ? matchSubj[1] : (subdistrict ? `${subdistrict}重点涉事方` : "重点诉求责任主体");
+
+  // 通用动态地点识别（行政区/镇街/路/巷/社区）
+  const matchLoc = content.match(/([^\s，。、（）]{2,25}?(?:区|县|镇|街道|社区|村|路|街|巷|大道|广场|公园|中心|城|站|门|大厦|居))/);
+  const location = matchLoc && matchLoc[1] ? matchLoc[1] : (subdistrict || "事发辖区所在地");
+
+  let eventType = "综合民生诉求跟进";
+  let category = "综合民生";
+
+  if (content.includes("噪音") || content.includes("扰民") || content.includes("音乐") || content.includes("喧哗")) {
+    eventType = "夜间营业音响喧哗与商业噪音扰民";
+    category = "生态环保";
+  } else if (content.includes("烟花") || content.includes("爆竹")) {
+    eventType = "违规燃放/售卖烟花爆竹扰民";
+    category = "公共安全";
+  } else if (content.includes("油烟") || content.includes("排气") || content.includes("异味")) {
+    eventType = "餐饮油烟直排与空气污染";
+    category = "生态环保";
+  } else if (content.includes("水管") || content.includes("下水道") || content.includes("排污")) {
+    eventType = "市政排污管道与供水抢修问题";
+    category = "住建管理";
+  } else if (content.includes("小贩") || content.includes("摆摊") || content.includes("占道")) {
+    eventType = "流动摊贩占道经营与路面堵塞";
+    category = "市容秩序";
+  } else if (content.includes("退款") || content.includes("收费") || content.includes("欺诈")) {
+    eventType = "消费纠纷与违规收费维权";
+    category = "市场监管";
+  } else if (content.includes("物业") || content.includes("电梯")) {
+    eventType = "小区物业管理与公共设施隐患";
+    category = "住建管理";
+  }
+
+  return {
+    index: 0,
+    subject,
+    location,
+    eventType,
+    category,
+  };
+}
+
+/**
+ * Extract Node: 全量采用 AI Agent 大模型语义抽取四要素
  */
 export async function extractNode(
   state: TicketRadarState
 ): Promise<Partial<TicketRadarState>> {
-  const rawTickets = state.rawTickets;
+  const rawTickets = state.rawTickets || [];
+  const CHUNK_SIZE = 15;
+  const chunkPromises: Array<Promise<Map<number, ExtractedTicketItem>>> = [];
 
-  const enrichedTickets: EnrichedTicket[] = rawTickets.map((ticket) => {
-    const content = ticket.content;
-    const rawSubject = extractDynamicSubject(content, ticket.subdistrict);
-    const rawLocation = extractDynamicLocation(content, ticket.subdistrict);
-    const { eventType, themes } = extractEventTypeAndThemes(content);
+  // 并发切片提交大模型抽取
+  for (let i = 0; i < rawTickets.length; i += CHUNK_SIZE) {
+    const chunk = rawTickets.slice(i, i + CHUNK_SIZE);
+    chunkPromises.push(extractBatchWithLLM(chunk, i));
+  }
+
+  const chunkResults = await Promise.allSettled(chunkPromises);
+  const extractionMap = new Map<number, ExtractedTicketItem>();
+
+  chunkResults.forEach((res) => {
+    if (res.status === "fulfilled") {
+      res.value.forEach((val, key) => extractionMap.set(key, val));
+    }
+  });
+
+  const enrichedTickets: EnrichedTicket[] = rawTickets.map((ticket, index) => {
+    const fallback = fallbackDynamicExtraction(ticket);
+    const aiExtracted = extractionMap.get(index);
+    const canonicalSubject = aiExtracted?.subject || fallback.subject;
+    const canonicalLocation = aiExtracted?.location || fallback.location;
+    const eventType = aiExtracted?.eventType || fallback.eventType;
+    const category = aiExtracted?.category || fallback.category;
 
     return {
       ...ticket,
-      canonicalSubject: rawSubject,
-      canonicalLocation: rawLocation,
+      canonicalSubject,
+      canonicalLocation,
       eventType,
-      themes,
+      themes: [category],
       entities: [
-        { name: rawSubject, canonicalName: rawSubject, type: "SUBJECT", confidence: 0.95 },
-        { name: rawLocation, canonicalName: rawLocation, type: "LOCATION", confidence: 0.92 },
+        { name: canonicalSubject, canonicalName: canonicalSubject, type: "SUBJECT", confidence: 0.95 },
+        { name: canonicalLocation, canonicalName: canonicalLocation, type: "LOCATION", confidence: 0.92 },
         { name: eventType, canonicalName: eventType, type: "EVENT_TYPE", confidence: 0.94 },
       ],
       relations: [
-        { source: ticket.id, target: rawSubject, relation: "投诉主体" },
-        { source: ticket.id, target: rawLocation, relation: "发生地" },
-        { source: rawSubject, target: eventType, relation: "涉及事件" },
+        { source: ticket.id, target: canonicalSubject, relation: "投诉主体" },
+        { source: ticket.id, target: canonicalLocation, relation: "发生地" },
+        { source: canonicalSubject, target: eventType, relation: "涉及事件" },
       ],
     };
   });

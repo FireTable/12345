@@ -154,7 +154,14 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 animate-in fade-in duration-200"
+      onClick={() => {
+        if (step !== "INGESTING" && step !== "CLUSTERING") {
+          onClose();
+        }
+      }}
+    >
       <div
         className="w-full max-w-xl bg-card border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col text-foreground transition-all"
         onClick={(e) => e.stopPropagation()}

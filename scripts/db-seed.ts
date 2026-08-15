@@ -1,8 +1,10 @@
 import fs from "fs";
 import path from "path";
-import { loadEnvConfig } from "@next/env";
+import nextEnv from "@next/env";
 
+const { loadEnvConfig } = (nextEnv as any).default || nextEnv;
 loadEnvConfig(process.cwd());
+
 
 import { db } from "../db/client";
 import { ticketsTable } from "../db/schema";

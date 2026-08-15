@@ -1,80 +1,67 @@
 import type { TicketRadarState, EnrichedTicket } from "../state";
 
-const SUBJECT_ALIASES: Record<string, string> = {
-  "金科博翠天下工地": "金科博翠天下施工项目部",
-  "博翠天下工地": "金科博翠天下施工项目部",
-  "博翠天下建筑工地": "金科博翠天下施工项目部",
-  "金科施工队": "金科博翠天下施工项目部",
-  "大良万达商场": "顺德万达广场",
-  "大良万达广场": "顺德万达广场",
-  "顺德大良万达": "顺德万达广场",
-  "万达商圈餐饮街": "顺德万达广场餐饮区",
-  "万达餐饮店": "顺德万达广场餐饮区",
-  "保利中汇花园物业": "保利中汇物业服务中心",
-  "中汇花园物业管理处": "保利中汇物业服务中心",
-  "保利中汇物业": "保利中汇物业服务中心",
-  "顺峰山公园南门流动摊贩": "顺峰山南门流动摊区",
-  "顺峰公园南门摆摊": "顺峰山南门流动摊区",
-  "南门无证摆卖": "顺峰山南门流动摊区",
-  "华侨城欢乐海岸摩天轮": "顺德华侨城欢乐海岸PLUS",
-  "华侨城欢乐海岸": "顺德华侨城欢乐海岸PLUS",
-  "顺德欢乐海岸": "顺德华侨城欢乐海岸PLUS",
-  "大良逢沙小学后门无证烧烤": "逢沙大道夜市无证烧烤群",
-  "逢沙小学旁烧烤摊": "逢沙大道夜市无证烧烤群",
-  "逢沙村道烧烤大排档": "逢沙大道夜市无证烧烤群",
-  "容桂文海路供水管道": "容桂文海西路市政主供水管网",
-  "文海路水管": "容桂文海西路市政主供水管网",
-  "容桂文海路爆水管": "容桂文海西路市政主供水管网",
-  "北滘碧桂园总部三期地下车库": "碧桂园总部三期物业工程部",
-  "碧桂园三期地库漏水": "碧桂园总部三期物业工程部",
-  "碧桂园总部3期车库": "碧桂园总部三期物业工程部",
-};
-
-const LOCATION_ALIASES: Record<string, string> = {
-  "大良逢沙村": "大良街道逢沙社区",
-  "逢沙村委会旁": "大良街道逢沙社区",
-  "逢沙大道": "大良街道逢沙大道",
-  "大良南国东路": "大良街道南国东路",
-  "顺德南国路": "大良街道南国东路",
-  "容桂文海路": "容桂街道文海西路",
-  "北滘新城": "北滘镇新城核心区",
-  "顺峰山南门": "大良街道顺峰山公园南门广场",
-};
-
-export function resolveCanonicalSubject(surfaceName: string): string {
-  const cleaned = surfaceName.trim().replace(/[“”"''`]/g, "");
-  if (SUBJECT_ALIASES[cleaned]) return SUBJECT_ALIASES[cleaned];
-  for (const [alias, canonical] of Object.entries(SUBJECT_ALIASES)) {
-    if (cleaned.includes(alias) || alias.includes(cleaned)) return canonical;
-  }
-  return cleaned;
-}
-
-export function resolveCanonicalLocation(surfaceLoc: string): string {
-  const cleaned = surfaceLoc.trim().replace(/[“”"''`]/g, "");
-  if (LOCATION_ALIASES[cleaned]) return LOCATION_ALIASES[cleaned];
-  for (const [alias, canonical] of Object.entries(LOCATION_ALIASES)) {
-    if (cleaned.includes(alias) || alias.includes(cleaned)) return canonical;
-  }
-  return cleaned;
+/**
+ * 动态实体归一化：消除多余标点与空格，自动匹配长全称
+ */
+function normalizeEntityName(name: string): string {
+  return name
+    .trim()
+    .replace(/[“”"''`]/g, "")
+    .replace(/\s+/g, "")
+    .replace(/（[^）]*）|\([^)]*\)/g, "");
 }
 
 /**
- * Canonical Alignment Node: normalizes subjects and locations across all enriched tickets
+ * Canonical Alignment Node: 基于动态语义与公共词根自动对齐同义实体（杜绝硬编码字典）
  */
 export async function canonicalNode(
   state: TicketRadarState
 ): Promise<Partial<TicketRadarState>> {
-  const enriched = state.enrichedTickets.map((t) => {
-    const canonicalSubject = resolveCanonicalSubject(t.canonicalSubject);
-    const canonicalLocation = resolveCanonicalLocation(t.canonicalLocation);
+  const enrichedTickets = state.enrichedTickets;
+
+  // 1. 统计当前批次中所有出现的主体词频与代表性名称
+  const subjectFrequency = new Map<string, { count: number; bestName: string }>();
+  for (const t of enrichedTickets) {
+    const raw = normalizeEntityName(t.canonicalSubject);
+    if (!raw) continue;
+
+    let matchedKey = raw;
+    // 动态查找是否存在包含关系的已有主体（优先保留更详细具体的名称）
+    for (const key of subjectFrequency.keys()) {
+      if (key.includes(raw) || raw.includes(key)) {
+        matchedKey = key.length > raw.length ? key : raw;
+        break;
+      }
+    }
+
+    const current = subjectFrequency.get(matchedKey) || { count: 0, bestName: t.canonicalSubject };
+    subjectFrequency.set(matchedKey, {
+      count: current.count + 1,
+      bestName: t.canonicalSubject.length >= current.bestName.length ? t.canonicalSubject : current.bestName,
+    });
+  }
+
+  // 2. 映射对齐到最标准的主体名称
+  const enriched = enrichedTickets.map((t) => {
+    const raw = normalizeEntityName(t.canonicalSubject);
+    let canonicalSubject = t.canonicalSubject;
+
+    for (const [key, val] of subjectFrequency.entries()) {
+      if (key.includes(raw) || raw.includes(key)) {
+        canonicalSubject = val.bestName;
+        break;
+      }
+    }
+
+    const canonicalLocation = t.canonicalLocation.trim();
+
     return {
       ...t,
       canonicalSubject,
       canonicalLocation,
       entities: t.entities.map((e) => {
-        if (e.type === "SUBJECT") return { ...e, canonicalName: canonicalSubject };
-        if (e.type === "LOCATION") return { ...e, canonicalName: canonicalLocation };
+        if (e.type === "SUBJECT") return { ...e, name: t.canonicalSubject, canonicalName: canonicalSubject };
+        if (e.type === "LOCATION") return { ...e, name: t.canonicalLocation, canonicalName: canonicalLocation };
         return e;
       }),
       relations: [
@@ -87,5 +74,6 @@ export async function canonicalNode(
 
   return {
     enrichedTickets: enriched,
+    status: "extracting",
   };
 }

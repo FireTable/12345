@@ -26,16 +26,19 @@ const HEADER_MAP: Record<string, string> = {
   诉求渠道: "channel",
 };
 
-const TOWNS = ["大良", "容桂", "伦教", "勒流", "陈村", "北滘", "乐从", "龙江", "杏坛", "均安"];
-
-function extractSubdistrict(content: string, title: string): string {
-  const text = (title || "") + (content || "");
-  for (const t of TOWNS) {
-    if (text.includes(t)) {
-      return t.endsWith("街道") || t.endsWith("镇") ? t : `${t}街道`;
-    }
+/**
+ * 通用行政区划与镇街动态抽取（根据中文行政特征通用匹配）
+ */
+function extractDynamicSubdistrict(content: string, title: string, fallbackSubdistrict?: string): string {
+  if (fallbackSubdistrict && fallbackSubdistrict.trim()) {
+    return fallbackSubdistrict.trim();
   }
-  return "大良街道";
+  const text = (title || "") + " " + (content || "");
+  const match = text.match(/([^\s，。、（）]{2,10}?(?:街道|镇|乡|区|开发区|新城))/);
+  if (match && match[1]) {
+    return match[1].trim();
+  }
+  return "综合辖区";
 }
 
 const DATE_REGEX = /(\d{4}年\d{1,2}月\d{1,2}日|\d{1,2}月\d{1,2}日)[\s\S]{0,10}?(\d{1,2}[:：]\d{1,2}(?:[:：]\d{1,2})?)/;
@@ -122,7 +125,7 @@ export async function POST(req: Request) {
       const ticketNo = String(
         normalized.ticketNo || `GD-UPLOAD-${Date.now()}-${String(idx + 1).padStart(6, "0")}`
       );
-      const subdistrict = extractSubdistrict(content, title);
+      const subdistrict = extractDynamicSubdistrict(content, title, normalized.subdistrict);
       const createTime = extractDate(content);
 
       let channel = normalized.channel || "市民服务热线";
@@ -136,7 +139,7 @@ export async function POST(req: Request) {
         content,
         citizenName: normalized.citizenName || "市民*",
         citizenPhone: normalized.citizenPhone || `138****${String((idx * 137) % 10000).padStart(4, "0")}`,
-        district: normalized.district || "顺德区",
+        district: normalized.district || "所属辖区",
         subdistrict,
         channel,
         status: "PENDING",

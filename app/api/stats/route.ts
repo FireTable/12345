@@ -50,7 +50,7 @@ export async function GET() {
         mediumRiskCount,
         lowRiskCount,
         compressionRatio: compressionRatio || 95,
-        topSubject: themes[0]?.canonicalSubject || "大良街道重点诉求责任主体",
+        topSubject: themes[0]?.canonicalSubject || "暂无重点多频诉求",
         avgResponseTimeSavedHours: 5.2,
       },
     });
