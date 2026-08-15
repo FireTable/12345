@@ -23,7 +23,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "大良街道",
     content: "博翠天下工地凌晨违规施工扰民！几台大型挖掘机和搅拌车一直在响，严重违反夜间施工管理规定，请城管立即去现场查处并出具处罚决定。",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
   {
@@ -47,7 +47,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "大良街道",
     content: "投诉金科博翠天下施工项目部无证夜间超时施工，噪音分贝超标，请生态环境部门进行噪音检测，责令停工。",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
   {
@@ -71,7 +71,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "大良街道",
     content: "金科博翠天下楼盘施工方晚上11点还在倒水泥，大货车连续进出鸣笛，严重影响附近锦绣嘉园业主的作息。",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
   {
@@ -95,7 +95,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "大良街道",
     content: "金科博翠天下项目深夜工程车柴油机噪音过大，请求环保和城管执法队联合督办。",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
   {
@@ -119,7 +119,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "大良街道",
     content: "博翠天下工地的泥头车深夜在逢沙路段狂飙按喇叭，工地内还在持续施工，太猖獗了！",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
   {
@@ -143,7 +143,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "大良街道",
     content: "逢沙村委会旁金科博翠天下工地半夜突击施工，吊臂运转声震天响，已经严重影响居民生活。",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
   {
@@ -167,7 +167,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "大良街道",
     content: "博翠天下工地连续三天夜间施工噪音扰民，要求监管部门约谈施工单位负责人并暂停夜间审批资质。",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
 
@@ -181,7 +181,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "容桂街道",
     content: "容桂文海西路路面突发爆水管，水涌得像喷泉一样，整条主干道全部积水，几辆小轿车被淹熄火，请水务局和交警火速派人抢修和封路！",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
   {
@@ -217,7 +217,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "容桂街道",
     content: "由于文海西路主供水管破裂，我们容桂天佑城周边几个小区突然全部停水，做饭洗漱都无法进行，请问什么时候能恢复供水？",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
   {
@@ -229,7 +229,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "容桂街道",
     content: "容桂街道文海西路水管爆裂积水深达半米，公交车无法通行，导致上班早高峰大堵车，请加急处置。",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
   {
@@ -253,7 +253,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "容桂街道",
     content: "容桂文海路爆水管停水，家里有瘫痪老人急需用水，希望水务集团尽快安排应急送水车进社区支援！",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
   {
@@ -291,7 +291,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "大良街道",
     content: "保利中汇花园4栋客梯频繁发生滑梯下坠事故，今天从18楼直接急降到12楼，里面还有孕妇被吓得大哭，物业管理处推诿不换零件，请市监局特种设备科介入严查！",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
   {
@@ -315,7 +315,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "大良街道",
     content: "保利中汇物业服务中心收着高昂物业费，小区电梯故障频发，本月已有5次困人记录，业主生命安全受到威胁，强烈要求立案调查。",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
   {
@@ -339,7 +339,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "大良街道",
     content: "保利中汇物业电梯今天早上又坏了，上班高峰期整栋楼30多层只剩一部货梯，排队半小时，要求督促物业限期彻底大修。",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
   {
@@ -363,7 +363,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "大良街道",
     content: "中汇花园4栋电梯安全问题严重，市监局此前责令整改但物业仍未落实，请复查并依法对物业公司进行行政处罚。",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
 
@@ -377,7 +377,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "大良街道",
     content: "大良顺峰山公园南门广场每晚聚集几十个无证流动摊贩，卖臭豆腐、烤鱿鱼，油烟弥漫，把人行道和盲道全堵死了，散步根本走不过去。",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
   {
@@ -413,7 +413,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "大良街道",
     content: "顺峰山公园南门无证摆卖屡禁不止，城管队员一来他们就跑，城管一走又聚回来，希望建立常态化定点执勤机制。",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
   {
@@ -425,7 +425,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "大良街道",
     content: "顺峰山南门流动摊区使用未经检验的液化气罐明火烹饪，存在重大消防安全隐患，请应急和消防大队严查无证燃气用具。",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
   {
@@ -461,7 +461,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "大良街道",
     content: "顺峰山南门流动摊贩占道经营问题长期存在，希望政数局协同城管、交警部门出台长效治理方案，划定合规便民疏导点。",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
 
@@ -475,7 +475,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "大良街道",
     content: "顺德大良万达商场后街餐饮店的油烟净化器形同虚设，浓烈呛鼻的烧烤油烟直接排入小区通风井，高层住户根本不敢开窗户。",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
   {
@@ -511,7 +511,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "大良街道",
     content: "万达商圈餐饮街泔水桶随意摆放在公共通道，污水横流蚊蝇滋生，万达物业管理不到位，请卫健和城管部门督办整改。",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
   {
@@ -535,7 +535,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "大良街道",
     content: "万达广场餐饮区商户将厨房油水直接倾倒至市政雨水井，造成地下管道严重板结堵塞，请求水务排污执法队立案查处。",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
 
@@ -549,7 +549,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "大良街道",
     content: "大良逢沙小学后门无证烧烤摊每晚摆到凌晨3点，食客喝醉酒大喊大叫划拳，满地油烟垃圾，小孩明天要上学无法睡觉，求城管快来抓！",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
   {
@@ -585,7 +585,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "大良街道",
     content: "逢沙大道夜市无证烧烤群屡次在城管巡逻后卷土重来，建议公安与城管开展联合夜查行动，依法暂扣经营工具。",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
   {
@@ -611,7 +611,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "北滘镇",
     content: "北滘碧桂园总部三期地下车库B2层顶板持续大面积渗水漏水，水滴落在私家车漆面上形成顽固水垢，物业工程部报修一周无任何行动。",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
   {
@@ -647,7 +647,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "北滘镇",
     content: "北滘碧桂园总部三期物业工程部挪用公共维修基金维修地库防水迟迟不公布账目明细，业主代表要求街道物管办介入审计。",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
 
@@ -661,7 +661,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "大良街道",
     content: "顺德华侨城欢乐海岸PLUS周边私人圈地设置临时停车场，无物价局备案公示牌，进场一口价收取50元且不给发票，涉嫌乱收费，请发改物价和市监局查处！",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
   {
@@ -697,7 +697,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "大良街道",
     content: "华侨城欢乐海岸周边临时收费停车场拒收电子支付强制现金交易，严重影响顺德国家级旅游度假区形象，要求市监局从严处罚并退还乱收费用。",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
 
@@ -711,7 +711,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "勒流街道",
     content: "勒流街道建设路中段有一棵大榕树树枝断裂挂在半空，随时可能掉落砸伤行人，请园林绿化处尽快派人修剪。",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
   {
@@ -759,7 +759,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "龙江镇",
     content: "反映龙江镇仙塘村某家具厂下班时间叉车违规横穿公路运送海绵，未设警示标志，请交警大队前往纠正违章。",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
   {
@@ -783,7 +783,7 @@ export const MOCK_RAW_TICKETS: RawTicket[] = [
     district: "顺德区",
     subdistrict: "乐从镇",
     content: "咨询乐从家具城商户营业执照跨区变更法人的办理流程及线上提交材料清单，请政务服务中心提供指引。",
-    channel: "12345热线电话",
+    channel: "市民服务热线",
     status: "PENDING",
   },
 ];

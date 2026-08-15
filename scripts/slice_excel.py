@@ -10,7 +10,7 @@ import os
 import json
 
 def main():
-    default_path = "/Users/FireTable/Downloads/政数局资料-顺德区12345热线工单 simple.xlsx"
+    default_path = os.environ.get("EXCEL_INPUT_PATH", os.path.join(os.getcwd(), "input", "tickets.xlsx"))
     input_path = sys.argv[1] if len(sys.argv) > 1 else default_path
     limit = int(sys.argv[2]) if len(sys.argv) > 2 else 200
 

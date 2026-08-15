@@ -9,7 +9,8 @@ import * as XLSX from "xlsx";
  */
 async function main() {
   const defaultPath =
-    "/Users/FireTable/Downloads/政数局资料-顺德区12345热线工单 simple.xlsx";
+    process.env.EXCEL_INPUT_PATH ||
+    path.resolve(process.cwd(), "input", "tickets.xlsx");
 
   const inputFilePath = process.argv[2] || defaultPath;
   const limit = parseInt(process.argv[3], 10) || 200;
