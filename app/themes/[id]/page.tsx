@@ -328,32 +328,29 @@ function ThemeDetailInner() {
                   key={m.ticketId || m.id}
                   id={`ticket-${m.id}`}
                   data-ticket-id={m.id}
-                  className={`member-item transition-all duration-300 relative rounded-xl border p-4 mb-3.5 cursor-pointer ${
-                    isTarget ? "ticket-target-card" : "border-slate-200/90 bg-white hover:border-slate-300"
+                  className={`member-item transition-all duration-300 relative rounded-xl p-4 mb-3.5 cursor-pointer ${
+                    isTarget
+                      ? "border border-blue-500 bg-blue-50/35 ticket-target-card"
+                      : "border border-slate-200/90 bg-white hover:border-slate-300"
                   }`}
                   style={
                     isTarget
                       ? {
-                          boxShadow: isPulsing
-                            ? "0 0 0 3px rgba(37, 99, 235, 0.9), 0 0 25px 6px rgba(37, 99, 235, 0.45)"
-                            : "0 0 0 2px rgba(37, 99, 235, 0.85), 0 4px 16px rgba(37, 99, 235, 0.15)",
-                          borderColor: "#2563eb",
-                          backgroundColor: isPulsing ? "rgba(239, 246, 255, 0.95)" : "rgba(239, 246, 255, 0.5)",
-                          animation: isPulsing ? "ticketBorderPulse 1.3s ease-in-out infinite" : "none",
+                          animation: isPulsing ? "ticketBorderPulse 1.8s ease-in-out infinite" : "none",
                         }
                       : {}
                   }
                   onClick={() => toggleExpand(m.ticketId || m.id)}
                 >
-                  {/* 目标工单呼吸动画徽标 */}
+                  {/* 目标工单浮动徽标 */}
                   {isTarget && (
                     <div
-                      className={`absolute -top-3.5 right-4 z-20 flex items-center gap-1.5 bg-blue-600 text-white text-[11px] font-bold px-3.5 py-1 rounded-full shadow-lg border border-white/50 ${
+                      className={`absolute -top-3 right-4 z-20 flex items-center gap-1.5 bg-blue-600 text-white text-[11px] font-medium px-3 py-0.5 rounded-full shadow-sm border border-white/80 ${
                         isPulsing ? "animate-bounce" : ""
                       }`}
                     >
-                      <Zap className="h-3.5 w-3.5 text-amber-300 fill-amber-300" />
-                      🎯 当前定位工单 {isPulsing ? "• 聚焦呼吸中 (>=6s)" : "• 已聚焦"}
+                      <Target className={`h-3 w-3 ${isPulsing ? "animate-spin" : ""}`} />
+                      <span>🎯 当前定位工单</span>
                     </div>
                   )}
 
