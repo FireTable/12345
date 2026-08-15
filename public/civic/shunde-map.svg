@@ -11,24 +11,33 @@
     .region {
       cursor: pointer;
       stroke: #ffffff;
-      stroke-width: 2.4;
+      stroke-width: 2.5;
       stroke-linejoin: round;
       stroke-linecap: round;
       vector-effect: non-scaling-stroke;
-      transition: filter 160ms ease, opacity 160ms ease, stroke 160ms ease;
+      transition: filter 160ms ease, opacity 160ms ease, stroke 160ms ease, stroke-width 160ms ease;
     }
 
     .region:hover,
-    .region:focus {
-      filter: brightness(1.04) saturate(1.08);
-      stroke: #1e5aff;
-      stroke-width: 3;
+    .region:focus,
+    .region.is-hovered {
+      filter: brightness(1.05) saturate(1.1);
+      stroke: #1E5AFF;
+      stroke-width: 4;
+      stroke-linejoin: round;
+      stroke-linecap: round;
       outline: none;
+    }
+
+    .region.is-selected {
+      stroke: #0F172A !important;
+      stroke-width: 4.5 !important;
+      filter: brightness(1.08) drop-shadow(0 2px 8px rgba(0,0,0,0.25));
     }
 
     .region-label {
       pointer-events: none;
-      fill: #123a64;
+      fill: #0F172A;
       font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
       font-size: 16px;
       font-weight: 700;
@@ -36,14 +45,14 @@
       dominant-baseline: middle;
       paint-order: stroke fill;
       stroke: #ffffff;
-      stroke-width: 3;
+      stroke-width: 3.5;
       stroke-linejoin: round;
     }
 
     .region-label--inverse {
       fill: #ffffff;
-      stroke: #2f6fb8;
-      stroke-width: 3;
+      stroke: #1E3A8A;
+      stroke-width: 3.5;
     }
   </style>
 

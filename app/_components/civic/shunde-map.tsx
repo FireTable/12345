@@ -39,6 +39,17 @@ export function ShundeMap({ counts, clusterCounts = {}, selected = "", onSelect 
     };
   }, []);
 
+  function bringToFront(el: SVGElement) {
+    const parent = el.parentElement;
+    if (!parent) return;
+    const labelsGroup = parent.querySelector("g");
+    if (labelsGroup && el.nextElementSibling !== labelsGroup) {
+      parent.insertBefore(el, labelsGroup);
+    } else if (!labelsGroup && parent.lastElementChild !== el) {
+      parent.appendChild(el);
+    }
+  }
+
   useEffect(() => {
     const host = hostRef.current;
     if (!host || !ready) return;
@@ -48,7 +59,11 @@ export function ShundeMap({ counts, clusterCounts = {}, selected = "", onSelect 
       const name = poly.dataset.name || "";
       const count = counts[name] || 0;
       poly.style.fill = isEmpty ? "#E5E7EB" : mapColorByShare(count, max);
-      poly.classList.toggle("is-selected", Boolean(selected) && selected === name);
+      const isSel = Boolean(selected) && selected === name;
+      poly.classList.toggle("is-selected", isSel);
+      if (isSel) {
+        bringToFront(poly);
+      }
     });
   }, [counts, selected, ready]);
 
@@ -60,6 +75,7 @@ export function ShundeMap({ counts, clusterCounts = {}, selected = "", onSelect 
       setTip(null);
       return;
     }
+    bringToFront(region);
     const name = region.dataset.name || "";
     const rect = wrap.getBoundingClientRect();
     setTip({
@@ -76,6 +92,7 @@ export function ShundeMap({ counts, clusterCounts = {}, selected = "", onSelect 
     const region = target?.closest?.(".region") as SVGElement | null;
     if (!region || !onSelect) return;
     const name = region.dataset.name || "";
+    bringToFront(region);
     onSelect(selected === name ? "" : name);
   }
 
