@@ -49,6 +49,7 @@ dist/
 logs/
 .env
 .env.local
+.env.vps
 .env.development.local
 .env.test.local
 .env.production.local

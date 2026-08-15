@@ -129,7 +129,6 @@ export default function TicketsPage() {
       <div className="page-hero">
         <div>
           <div className="page-hero__title">
-            <span>📋</span>
             工单中心
           </div>
           <div className="page-hero__sub">

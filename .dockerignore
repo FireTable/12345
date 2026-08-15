@@ -1,0 +1,36 @@
+# Build artifacts & deps
+node_modules
+.next
+out
+dist
+build
+*.tsbuildinfo
+
+# Env (mount via docker -e or secret, never bake in)
+.env
+.env.local
+.env.*.local
+
+# Logs / dumps / runtime state
+logs
+*.log
+db/dumps
+output
+
+# Git / IDE / OS
+.git
+.gitignore
+.DS_Store
+.vscode
+.idea
+*.swp
+*.swo
+
+# Tests & docs
+scripts/test-accuracy-pipeline.ts
+docs
+README.md
+
+# Tooling that shouldn't reach the image
+.claude
+skills-lock.json

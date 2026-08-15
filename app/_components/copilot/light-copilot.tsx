@@ -1,19 +1,18 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   X,
   Send,
   Sparkles,
   BotMessageSquare,
-  Building2,
-  FileSpreadsheet,
-  AlertTriangle,
-  Lightbulb,
 } from "lucide-react";
 import type { MultiFrequencyTheme, OverallStats } from "@/backend/state";
 import { Button } from "@/app/_components/ui/button";
 import { Input } from "@/app/_components/ui/input";
+import "./copilot-md.css";
 
 interface LightCopilotProps {
   isOpen: boolean;
@@ -48,6 +47,13 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
   ]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [streamingId, setStreamingId] = useState<string | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  function scrollToBottom() {
+    const el = listRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }
 
   // Lock background body scroll when Copilot drawer is open
   React.useEffect(() => {
@@ -73,9 +79,21 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
       timestamp: new Date().toLocaleTimeString(),
     };
 
+    const aiId = `a-${Date.now()}`;
     setMessages((prev) => [...prev, userMsg]);
     if (!customText) setInput("");
     setIsTyping(true);
+    setStreamingId(aiId);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: aiId,
+        role: "assistant",
+        content: "",
+        timestamp: new Date().toLocaleTimeString(),
+      },
+    ]);
+    requestAnimationFrame(scrollToBottom);
 
     try {
       const res = await fetch("/api/copilot", {
@@ -83,30 +101,37 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: text, threadId: "copilot-thread" }),
       });
-      const json = await res.json();
 
-      let replyContent =
-        json.data?.reply ||
-        `基于当前工单图谱，系统已关联到重点多频事件。建议优先处置高风险事件。`;
+      if (!res.ok || !res.body) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || `HTTP ${res.status}`);
+      }
 
-      const aiMsg: Message = {
-        id: `a-${Date.now()}`,
-        role: "assistant",
-        content: replyContent,
-        timestamp: new Date().toLocaleTimeString(),
-      };
-
-      setMessages((prev) => [...prev, aiMsg]);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let acc = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        acc += decoder.decode(value, { stream: true });
+        const next = acc;
+        setMessages((prev) => prev.map((m) => (m.id === aiId ? { ...m, content: next } : m)));
+        scrollToBottom();
+      }
+      acc += decoder.decode();
+      setMessages((prev) => prev.map((m) => (m.id === aiId ? { ...m, content: acc || "（空回复）" } : m)));
     } catch (err) {
-      const aiMsg: Message = {
-        id: `a-${Date.now()}`,
-        role: "assistant",
-        content: "抱歉，研判引擎分析超时，请稍后重试。",
-        timestamp: new Date().toLocaleTimeString(),
-      };
-      setMessages((prev) => [...prev, aiMsg]);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === aiId
+            ? { ...m, content: m.content || "抱歉，研判引擎分析超时，请稍后重试。" }
+            : m
+        )
+      );
     } finally {
       setIsTyping(false);
+      setStreamingId(null);
+      requestAnimationFrame(scrollToBottom);
     }
   };
 
@@ -171,30 +196,40 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
         </div>
 
         {/* Message History */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 overscroll-contain">
-          {messages.map((m) => (
-            <div
-              key={m.id}
-              className={`flex flex-col ${
-                m.role === "user" ? "items-end" : "items-start"
-              }`}
-            >
+        <div ref={listRef} className="flex-1 overflow-y-auto p-4 space-y-4 overscroll-contain">
+          {messages.map((m) => {
+            const streaming = streamingId === m.id;
+            return (
               <div
-                className={`max-w-[88%] rounded-xl p-3.5 text-xs leading-relaxed ${
-                  m.role === "user"
-                    ? "bg-blue-600 text-white rounded-br-none shadow-xs"
-                    : "bg-slate-100 text-slate-900 border border-slate-200 rounded-bl-none shadow-2xs whitespace-pre-wrap"
+                key={m.id}
+                className={`flex flex-col ${
+                  m.role === "user" ? "items-end" : "items-start"
                 }`}
               >
-                {m.content}
+                <div
+                  className={`max-w-[88%] rounded-xl p-3.5 text-xs leading-relaxed ${
+                    m.role === "user"
+                      ? "bg-blue-600 text-white rounded-br-none shadow-xs"
+                      : "bg-slate-100 text-slate-900 border border-slate-200 rounded-bl-none shadow-2xs"
+                  }`}
+                >
+                  {m.content || streaming ? (
+                    <div className={m.role === "user" ? "copilot-md copilot-md--user" : "copilot-md"}>
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content || ""}</ReactMarkdown>
+                      {streaming ? <span className="copilot-caret" aria-hidden /> : null}
+                    </div>
+                  ) : (
+                    <span className="text-slate-400">…</span>
+                  )}
+                </div>
+                <span className="text-[10px] text-slate-400 mt-1 px-1 font-mono">
+                  {m.timestamp}
+                </span>
               </div>
-              <span className="text-[10px] text-slate-400 mt-1 px-1 font-mono">
-                {m.timestamp}
-              </span>
-            </div>
-          ))}
+            );
+          })}
 
-          {isTyping && (
+          {isTyping && !streamingId && (
             <div className="flex items-center gap-2 text-slate-500 text-xs py-2">
               <Sparkles className="w-3.5 h-3.5 text-blue-600 animate-spin" />
               <span>Agent 正在遍历图谱进行归因研判...</span>

@@ -1,0 +1,74 @@
+# docker compose for ticket-radar (VPS deployment, 由小蠢改造)
+# ============================================================
+# 改动 vs 原版 (老大确认的方案):
+#   - 删除 caddy service (复用 langgraph-app-caddy-1)
+#   - 删除 postgres host port (用 stack 内网, 不占 host 端口)
+#   - app service 改名为 ticket-radar-app (避免跟 langgraph-app 的 `app` DNS 冲突)
+#   - 加入 external network langgraph-app_default (让 caddy 能解析)
+#
+# 部署命令 (VPS 上, 必须用 --env-file 让 ${POSTGRES_PASSWORD} 能插值):
+#   cd /opt/12345-stack
+#   docker compose --env-file .env.vps up -d
+#   docker compose --env-file .env.vps logs -f ticket-radar-app
+#
+# 首次部署 checklist (详见 DEPLOY.md):
+#   1. rsync 代码到 VPS /opt/12345-stack/
+#   2. cp .env.vps.example .env.vps && 编辑填入密钥
+#   3. ssh root@VPS 'cd /opt/12345-stack && docker compose --env-file .env.vps up -d --build'
+#   4. Caddyfile 加 vhost: 12345.firetable.tech → ticket-radar-app:3100
+#   5. docker exec langgraph-app-caddy-1 caddy reload --config /etc/caddy/Caddyfile
+# ============================================================
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: 12345-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ticket_radar
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ticket_radar"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - default
+
+  app:
+    # Service renamed: ticket-radar-app (避免 DNS clash with langgraph-app 的 `app`)
+    image: ticket-radar:v0.1.0
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: 12345-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/ticket_radar
+      NODE_ENV: production
+      PORT: 3100
+      HOSTNAME: 0.0.0.0
+    # 远程部署从 .env.vps 注入 OPENAI_* / EMBEDDING_* / RERANK_*
+    env_file:
+      - .env.vps
+    expose:
+      - "3100"
+    # No host port mapping — caddy reaches ticket-radar-app:3100 via langgraph-app_default
+    networks:
+      - default
+      - langgraph-app_default
+
+volumes:
+  pgdata:
+
+networks:
+  default:
+    name: 12345_default
+  langgraph-app_default:
+    external: true

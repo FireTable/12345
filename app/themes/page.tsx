@@ -134,7 +134,7 @@ export default function ThemesPage() {
     <>
       <section className="page-hero">
         <div>
-          <h1 className="page-hero__title">📋 多频工单</h1>
+          <h1 className="page-hero__title">多频工单</h1>
           <div className="page-hero__sub">AI 识别的多频工单群组 · 每行为一个群组，包含多条关联工单</div>
         </div>
         <div className="page-hero__actions">

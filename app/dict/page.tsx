@@ -199,7 +199,6 @@ export default function DictionaryManagementPage() {
       <div className="page-hero">
         <div>
           <div className="page-hero__title">
-            <span>📚</span>
             标准字典与知识库
           </div>
           <div className="page-hero__desc">

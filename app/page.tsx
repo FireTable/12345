@@ -97,7 +97,7 @@ export default function DashboardPage() {
     <>
       <section className="page-hero">
         <div>
-          <h1 className="page-hero__title">📊 工单数据总览</h1>
+          <h1 className="page-hero__title">工单数据总览</h1>
           <div className="page-hero__sub flex items-center gap-2">
             <span className="status-dot status-dot--finished" style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#52C41A" }} />
             <span>接口运行正常 · {ov?.dateRange || "全部时间"} · 实时研判</span>
