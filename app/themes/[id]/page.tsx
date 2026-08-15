@@ -354,28 +354,17 @@ function ThemeDetailInner() {
                   key={m.ticketId || m.id}
                   id={`ticket-${m.id}`}
                   data-ticket-id={m.id}
-                  className={`member-item transition-all duration-300 relative rounded-xl p-4 mb-3.5 cursor-pointer ${
+                  className={`member-item transition-colors relative rounded-xl p-4 mb-3.5 cursor-pointer ${
                     isTarget
-                      ? "border border-blue-500 bg-blue-50/35 ticket-target-card"
+                      ? "border border-blue-500 bg-blue-50/25"
                       : "border border-slate-200/90 bg-white hover:border-slate-300"
                   }`}
-                  style={
-                    isTarget
-                      ? {
-                          animation: isPulsing ? "ticketBorderPulse 1.8s ease-in-out infinite" : "none",
-                        }
-                      : {}
-                  }
                   onClick={() => toggleExpand(m.ticketId || m.id)}
                 >
                   {/* 目标工单浮动徽标 */}
                   {isTarget && (
-                    <div
-                      className={`absolute -top-3 right-4 z-20 flex items-center gap-1.5 bg-blue-600 text-white text-[11px] font-medium px-3 py-0.5 rounded-full shadow-sm border border-white/80 ${
-                        isPulsing ? "animate-bounce" : ""
-                      }`}
-                    >
-                      <Target className={`h-3 w-3 ${isPulsing ? "animate-spin" : ""}`} />
+                    <div className="absolute -top-3 right-4 z-20 flex items-center gap-1.5 bg-blue-600 text-white text-[11px] font-medium px-3 py-0.5 rounded-full shadow-xs border border-white">
+                      <Target className="h-3 w-3" />
                       <span>🎯 当前定位工单</span>
                     </div>
                   )}
