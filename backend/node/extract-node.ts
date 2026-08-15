@@ -11,7 +11,7 @@ interface ExtractedTicketItem {
 }
 
 /**
- * 批次调用大模型进行纯 AI 语义四要素抽取与核心诉求标题提炼（完全基于 LLM 理解）
+ * 批次调用大模型进行严格、精准的 AI 语义实体抽取与核心诉求标题提炼
  */
 async function extractBatchWithLLM(
   tickets: RawTicket[],
@@ -22,20 +22,40 @@ async function extractBatchWithLLM(
 
   try {
     const chat = getChatModel(0);
-    const prompt = `你是一位政务热线智能工单研判 Agent。请对以下 ${tickets.length} 条市民热线工单进行结构化要素抽取与核心诉求标题提炼。完全依靠语义理解提取被诉主体、发生地点、事件核心特征、民生类别并生成一句话标准摘要标题。
+    const prompt = `你是一位政务热线顶级智能工单研判专家。请对以下 ${tickets.length} 条市民热线工单进行精准的实体识别、微观地点抽取、事件分类与摘要标题提炼。
+
+【核心抽取规则 - 严谨区分物理实体，严禁混淆】：
+1. subject（被诉具体对象/责任主体）：
+   - 若涉及机动车违停/违章，必须提取精确车牌号作为主体（如 "粤E SD221车辆"、"粤EY6501车辆"），绝不可泛化为模糊的"车主"或"小车"！
+   - 若涉及商家/企业/民宿/物业，必须提取具体字号全称（如 "招财宝民宿"、"林榢主题公寓"、"万象美食城"、"某某物业管理处"）。
+   - 若涉及市政公共设施（无特定企业），提取具体设施对象（如 "市政排污管网"、"市政供水管网"、"路面交通信号设施"）。
+   - 严禁提取空泛无意义词汇（如"车主"、"商家"、"市民"、"某单位"、"责任主体"、"当事人"）！
+
+2. location（精准事发微观地点）：
+   - 必须提取到最精确的物理空间（包含：镇街 + 路段/巷号 + 具体门牌号/小区/地标），例如："顺德区容桂街道扁滘富豪路三街2号门口"、"顺德区北滘镇碧桂园西苑翠堤岸10号"。
+   - 严禁只填宽泛的"顺德区"或"容桂街道"！
+
+3. eventType（核心事件类型）：
+   - 8-15字政务标准问题定性（如 "机动车违规停放阻碍商铺经营"、"夜间营业音响喧哗与商业噪音扰民"、"市政排污管道水位过高导致污水反涌"）。
+
+4. summarizeTitle（一句话高清诉求标题）：
+   - 12-25字标准公文诉求标题（如 "关于容桂街道扁滘富豪路三街2号粤ESD221违停挪车诉求"）。
+
+5. category：
+   - 严格限定以下分类之一："市容秩序" | "生态环保" | "住建管理" | "市场监管" | "公共安全" | "交通出行" | "综合民生"
 
 工单列表：
 ${tickets.map((t, idx) => `[${idx + 1}] 工单号: ${t.ticketNo} | 原始标题: ${t.title || "无"} | 所属辖区: ${t.subdistrict || "未指定"}\n诉求正文: ${t.content || ""}`).join("\n\n")}
 
-请严格输出纯 JSON 数组（不要有 markdown 代码块以外的任何文字）：
+请严格输出纯 JSON 数组（不要输出任何额外文字或解释）：
 [
   {
     "index": 1,
-    "summarizeTitle": "提炼的一句话标准诉求标题（12-25字，如：关于xx街道xx路夜间餐饮油烟排放扰民诉求）",
-    "subject": "被诉主体/责任单位名称（如商家名/物业公司/项目部/经营者/职能部门）",
-    "location": "标准发生地点（包含行政区/镇街/道路/小区/地标）",
-    "eventType": "事件类型核心提炼（6-15字）",
-    "category": "市容秩序|生态环保|住建管理|市场监管|公共安全|交通出行|综合民生"
+    "summarizeTitle": "...",
+    "subject": "...",
+    "location": "...",
+    "eventType": "...",
+    "category": "..."
   }
 ]`;
 
@@ -71,18 +91,40 @@ function fallbackDynamicExtraction(ticket: RawTicket): ExtractedTicketItem {
   const content = typeof ticket?.content === "string" ? ticket.content : "";
   const subdistrict = ticket?.subdistrict || "";
 
-  // 通用动态主体识别
-  const matchSubj = content.match(/(?:在|位于|投诉|反映|名称[：:])([^\s，。、（）]{2,25}?(?:民宿|公寓|酒店|酒馆|酒吧|KTV|烧烤店|大排档|快餐店|美食城|商场|便利店|超市|体验馆|俱乐部|桌球室|茶庄|饭店|有限公司|项目部|工程部|施工方|物业|花园|小区|苑|居委会|公司|中心|店))/);
-  const subject = matchSubj && matchSubj[1] ? matchSubj[1] : (subdistrict ? `${subdistrict}重点涉事方` : "重点诉求责任主体");
+  // 1. 车牌专用精确识别（如 粤E SD221 或 粤EY6501）
+  const matchPlate = content.match(/(?:车牌[号为：:\s]*|小车|车辆|车牌[：:\s]*)([粤京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼][A-Z][\s]?[A-Z0-9]{4,6}[A-Z0-9挂学警港澳]?)/);
+  const plateSubject = matchPlate && matchPlate[1] ? `${matchPlate[1].replace(/\s+/g, "").toUpperCase()}车辆` : "";
 
-  // 通用动态地点识别（行政区/镇街/路/巷/社区）
-  const matchLoc = content.match(/([^\s，。、（）]{2,25}?(?:区|县|镇|街道|社区|村|路|街|巷|大道|广场|公园|中心|城|站|门|大厦|居))/);
-  const location = matchLoc && matchLoc[1] ? matchLoc[1] : (subdistrict || "事发辖区所在地");
+  // 2. 商家/企业/机构主体识别（严防把"执法部门/政府部门"当作被诉主体）
+  let orgSubject = "";
+  const matchSubj = content.match(/(?:在|位于|投诉|反映|名称[：:])([^\s，。、（）]{2,25}?(?:民宿|公寓|酒店|酒馆|酒吧|KTV|烧烤店|大排档|快餐店|美食城|商场|便利店|超市|体验馆|俱乐部|桌球室|茶庄|饭店|有限公司|工程部|施工方|物业(?:管理处)?|花园|小区|苑|自建房|大厦))/);
+  if (matchSubj && matchSubj[1]) {
+    const candidate = matchSubj[1].trim();
+    if (!candidate.includes("部门") && !candidate.includes("居委") && !candidate.includes("街道办")) {
+      orgSubject = candidate;
+    }
+  }
+
+  const subject = plateSubject || orgSubject || (subdistrict ? `${subdistrict}特定涉事方` : "特定诉求涉事方");
+
+  // 3. 通用动态微观地点识别（必须包含路/街/巷/号/小区/广场等，且严防"部门"伪装为"门"）
+  let location = subdistrict ? `${subdistrict}辖区` : "顺德区事发地";
+  const matchLoc = content.match(/([^\s，。、（）]{2,25}?(?:街道|镇)?[^\s，。、（）]{2,20}?(?:路|大道|大街|巷|横街|横巷|新村|广场|公园|中心|城|大厦|小区|花园|公寓|自建房|\d+号(?:门口|附近)?))/);
+  if (matchLoc && matchLoc[1]) {
+    const locCand = matchLoc[1].replace(/^(?:市民|诉求人|致电|反映|在|位于|我是)/, "").trim();
+    const badWords = ["部门", "希望", "反映", "致电", "要求", "执法", "电话", "介入", "处理", "情况", "问题"];
+    if (!badWords.some((w) => locCand.includes(w)) && locCand.length >= 4) {
+      location = locCand;
+    }
+  }
 
   let eventType = "综合民生诉求跟进";
   let category = "综合民生";
 
-  if (content.includes("噪音") || content.includes("扰民") || content.includes("音乐") || content.includes("喧哗")) {
+  if (plateSubject || content.includes("违停") || content.includes("乱停") || content.includes("停放") || content.includes("挪车")) {
+    eventType = "机动车违规停放阻碍通行";
+    category = "交通出行";
+  } else if (content.includes("噪音") || content.includes("扰民") || content.includes("音乐") || content.includes("喧哗")) {
     eventType = "夜间营业音响喧哗与商业噪音扰民";
     category = "生态环保";
   } else if (content.includes("烟花") || content.includes("爆竹")) {

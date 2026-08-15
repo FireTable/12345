@@ -1,5 +1,10 @@
 import { ChatOpenAI } from "@langchain/openai";
 import { Embeddings, type EmbeddingsParams } from "@langchain/core/embeddings";
+import { loadEnvConfig } from "@next/env";
+
+try {
+  loadEnvConfig(process.cwd());
+} catch (e) {}
 
 const DEFAULT_HEADERS = {
   "User-Agent":
@@ -41,8 +46,8 @@ export function getChatModel(temperature: number = 0.2): ChatOpenAI {
       baseURL,
       defaultHeaders: DEFAULT_HEADERS,
     },
-    maxRetries: 2,
-    timeout: 45000,
+    maxRetries: 1,
+    timeout: 15000,
   });
 }
 

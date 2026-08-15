@@ -33,6 +33,8 @@ export async function POST(req: Request) {
     const tickets: RawTicket[] = rows.map((r) => ({
       id: r.id,
       ticketNo: r.ticketNo,
+      title: r.title || undefined,
+      summarizeTitle: r.summarizeTitle || undefined,
       createTime: r.createTime
         ? r.createTime.toISOString().slice(0, 19).replace("T", " ")
         : "2025-01-01 00:00:00",
