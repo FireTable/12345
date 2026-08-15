@@ -27,20 +27,23 @@ export async function POST(req: Request) {
     }
 
     const threadId = body.threadId || `cluster-${Date.now()}`;
+    const taskId = body.taskId || threadId || `task-${Date.now()}`;
 
-    // 1. Fetch tickets from PostgreSQL
-    const rows = await db
-      .select()
-      .from(ticketsTable)
-      .orderBy(desc(ticketsTable.createTime))
-      .limit(600);
-
-    if (!rows || rows.length === 0) {
+    const countRes = await db.select({ count: sql<number>`count(*)` }).from(ticketsTable);
+    const totalTickets = Number(countRes[0]?.count || 0);
+    if (totalTickets === 0) {
       return NextResponse.json(
         { success: false, error: "数据库中暂无工单数据，请先点击「上传入库」导入工单表格" },
         { status: 400 }
       );
     }
+    initTaskProgress(taskId, totalTickets);
+
+    // All tickets: extract-node skips rows that already have confidence.
+    const rows = await db
+      .select()
+      .from(ticketsTable)
+      .orderBy(desc(ticketsTable.createTime));
 
     const tickets: RawTicket[] = rows.map((r) => ({
       id: r.id,
@@ -69,11 +72,6 @@ export async function POST(req: Request) {
       status: (r.status as any) || "PENDING",
     }));
 
-    // 2. Total count in DB
-    const countRes = await db.select({ count: sql<number>`count(*)` }).from(ticketsTable);
-    const totalTickets = Number(countRes[0]?.count || 0);
-
-    const taskId = body.taskId || threadId || `task-${Date.now()}`;
     initTaskProgress(taskId, tickets.length);
 
     // 3. Run LangGraph JS Pipeline

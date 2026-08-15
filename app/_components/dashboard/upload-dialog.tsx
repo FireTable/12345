@@ -190,7 +190,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
         stage: "EXTRACTING",
         stageText: "正在初始化 Agent 多频研判流水线...",
         percent: 0,
-        total: report?.insertedCount || 300,
+        total: report?.insertedCount || 0,
         processed: 0,
         extractedCount: 0,
         themeCount: 0,
@@ -198,6 +198,15 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
         failedCount: 0,
         updatedAt: Date.now(),
       });
+      void fetch("/api/overview")
+        .then((r) => r.json())
+        .then((j) => {
+          const n = Number(j.totalWorkorders || 0);
+          if (n > 0) {
+            setTaskProgress((prev) => ({ ...prev, total: prev.total || n }));
+          }
+        })
+        .catch(() => {});
     }
 
     // 进度轮询：读内存与DB进度，6s 请求一次，结束即停。
@@ -213,6 +222,8 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
           setTaskProgress((prev) => ({
             ...prev,
             ...pJson.data,
+            total: pJson.data.total || prev.total,
+            processed: pJson.data.processed || prev.processed,
           }));
           const st = pJson.data.status;
           if (st === "COMPLETED" || st === "FAILED") {
@@ -479,9 +490,13 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                   </div>
 
                   <div className="text-right">
-                    <span className="text-lg font-bold font-mono text-primary">
-                      {taskProgress.percent}%
-                    </span>
+                    {taskProgress.total > 0 || taskProgress.percent > 0 ? (
+                      <span className="text-lg font-bold font-mono text-primary">
+                        {taskProgress.percent}%
+                      </span>
+                    ) : (
+                      <Loader2 className="w-5 h-5 animate-spin text-primary ml-auto" />
+                    )}
                   </div>
                 </div>
 
@@ -495,13 +510,20 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
 
                 {/* Real Pipeline Flow Metrics */}
                 {(() => {
-                  const totalTickets = taskProgress.total || report?.insertedCount || 300;
+                  const totalTickets = taskProgress.total || report?.insertedCount || 0;
                   const processedTickets = taskProgress.processed || 0;
                   const themeCount = taskProgress.themeCount || 0;
                   const reviewCount = taskProgress.reviewCount || 0;
                   const isDone = taskProgress.status === "COMPLETED";
                   const stageText = taskProgress.stageText || "";
                   const percent = taskProgress.percent || 0;
+                  const awaiting = !isDone && totalTickets === 0;
+                  const metricOrWait = (n: number) =>
+                    awaiting ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                    ) : (
+                      n.toLocaleString("zh-CN")
+                    );
 
                   const step1Done = totalTickets > 0;
 
@@ -538,8 +560,8 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                             <Clock className="w-3 h-3 text-muted-foreground/40 shrink-0" />
                           )}
                         </div>
-                        <p className="text-sm font-bold font-mono text-foreground">
-                          {totalTickets}
+                        <p className="text-sm font-bold font-mono text-foreground min-h-5 flex items-center">
+                          {metricOrWait(totalTickets)}
                         </p>
                       </motion.div>
 
@@ -619,7 +641,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                             step2Active ? "text-primary" : "text-foreground"
                           }`}
                         >
-                          {processedTickets}
+                          {metricOrWait(processedTickets)}
                         </p>
                       </motion.div>
 
@@ -699,7 +721,11 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                             step3Active || reviewCount > 0 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"
                           }`}
                         >
-                          {reviewCount}
+                          {awaiting ? (
+                            <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                          ) : (
+                            reviewCount.toLocaleString("zh-CN")
+                          )}
                         </p>
                       </motion.div>
 
@@ -779,7 +805,11 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                             step4Active ? "text-primary" : step4Done ? "text-primary" : "text-muted-foreground"
                           }`}
                         >
-                          {themeCount}
+                          {awaiting ? (
+                            <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                          ) : (
+                            themeCount.toLocaleString("zh-CN")
+                          )}
                         </p>
                       </motion.div>
                     </div>

@@ -261,7 +261,7 @@
 .info-row__value { color: var(--c-ink); flex: 1; }
 .content-box { padding: 12px 16px; background: var(--c-surface-2); border-radius: 8px; border-left: 3px solid var(--c-brand); font-size: 13px; line-height: 1.7; color: var(--c-ink-2); max-height: 200px; overflow-y: auto; }
 
-.map-wrap { position: relative; width: 100%; height: 460px; }
+.map-wrap { position: relative; width: 100%; height: 100%; }
 .map-svg { width: 100%; height: 100%; display: block; }
 .map-wrap .region.is-selected { stroke: #1F2329; stroke-width: 2; }
 .map-empty {
@@ -284,7 +284,7 @@
 .map-legend__row { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--c-ink-2); }
 .map-legend__color { width: 14px; height: 12px; border-radius: 2px; }
 
-.quadrant-wrap { display: flex; flex-direction: column; height: 460px; }
+.quadrant-wrap { display: flex; flex-direction: column; width: 100%; height: 100%; }
 .quadrant-grid { position: relative; flex: 1; width: 100%; min-height: 360px; margin: 4px 0; }
 .quad { position: absolute; width: 50%; height: 50%; padding: 14px 16px; }
 .quad--tl { top: 0; left: 0; background: rgba(255, 125, 0, 0.06); }

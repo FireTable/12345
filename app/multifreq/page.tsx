@@ -221,7 +221,7 @@ function MultifreqInner() {
             <div className="card__title">顺德区多频工单地理透势</div>
             <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>点击镇街筛选 · 悬停查看详情</div>
           </div>
-          <div className="card__body" style={{ padding: 8, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 460 }}>
+          <div className="card__body" style={{ padding: 8, paddingTop: 40, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 460 }}>
             <ShundeMap
               counts={ov?.regionDistribution || {}}
               clusterCounts={clusterByRegion}
@@ -266,7 +266,7 @@ function MultifreqInner() {
           <thead>
             <tr>
               <th style={{ width: 55 }}>排名</th>
-              <th style={{ width: 85 }}>辖区</th>
+              <th style={{ width: 213 }}>辖区</th>
               <th style={{ width: 95 }}>业务类型</th>
               <th style={{ width: 125 }}>研判模式</th>
               <th>代表性诉求标题</th>
