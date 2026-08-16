@@ -22,7 +22,8 @@
     "db:studio": "drizzle-kit studio",
     "test:mobile-layout": "tsx scripts/verify-mobile-layout.ts",
     "test:api-perf": "tsx scripts/verify-api-perf.ts",
-    "test:pitch-assets": "tsx scripts/verify-pitch-assets.ts"
+    "test:pitch-assets": "tsx scripts/verify-pitch-assets.ts",
+    "docs:pdf": "tsx scripts/generate-pitch-pdfs.ts"
   },
   "dependencies": {
     "@langchain/core": "^0.3.40",
