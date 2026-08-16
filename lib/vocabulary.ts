@@ -207,6 +207,31 @@ export const STANDARD_CATEGORIES = [
 
 export type StandardCategoryName = (typeof STANDARD_CATEGORIES)[number]["category"];
 
+const STANDARD_CATEGORY_SET = new Set<string>(STANDARD_CATEGORIES.map((c) => c.category));
+
+/** 模型/入库近义词 → 7 大法定分类 */
+const CATEGORY_ALIASES: Record<string, StandardCategoryName> = {
+  交通管理: "交通出行",
+  交通运输: "交通出行",
+  交通: "交通出行",
+  社会保障: "劳动社保",
+  社保: "劳动社保",
+  医疗保障: "劳动社保",
+  医保: "劳动社保",
+  人才就业: "劳动社保",
+  就业: "劳动社保",
+  政务: "社会治理",
+  公共服务: "社会治理",
+  教育: "社会治理",
+};
+
+export function canonicalizeCategory(name?: string | null): StandardCategoryName | null {
+  if (!name) return null;
+  const clean = name.trim();
+  if (STANDARD_CATEGORY_SET.has(clean)) return clean as StandardCategoryName;
+  return CATEGORY_ALIASES[clean] ?? null;
+}
+
 /**
  * 检验一个输入字符串（镇街名、地点或诉求正文）是否包含合法的顺德 10 大法定镇街或其所属社区
  */

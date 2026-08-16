@@ -76,28 +76,34 @@ export function buildTicketAgentPatch(
   };
 }
 
+function clip(value: string | null | undefined, max: number): string {
+  const s = (value ?? "").trim();
+  if (s.length <= max) return s;
+  return s.slice(0, max);
+}
+
 export function buildThemePersistRow(theme: MultiFrequencyTheme): ThemePersistRow {
   return {
-    id: theme.id,
-    title: theme.title,
-    canonicalSubject: theme.canonicalSubject,
-    canonicalLocation: theme.canonicalLocation,
-    eventType: theme.eventType,
-    category: theme.category,
-    riskLevel: theme.riskLevel,
+    id: clip(theme.id, 64),
+    title: clip(theme.title, 255) || "未命名主题",
+    canonicalSubject: clip(theme.canonicalSubject, 255) || "相关主体",
+    canonicalLocation: clip(theme.canonicalLocation, 255) || "顺德区",
+    eventType: clip(theme.eventType, 128) || "民生诉求",
+    category: clip(theme.category, 64) || "城市管理",
+    riskLevel: clip(theme.riskLevel, 32) || "LOW",
     riskReason: theme.riskReason || null,
     ticketCount: theme.ticketCount,
     timeSpanHours: theme.timeSpanHours,
     aiSummary: theme.aiSummary || null,
     recommendedAction: theme.recommendedAction || null,
-    patternType: theme.patternType || null,
-    civicMode: theme.civicMode || civicModeFromPattern(theme.patternType) || null,
+    patternType: theme.patternType ? clip(theme.patternType, 32) : null,
+    civicMode: clip(theme.civicMode || civicModeFromPattern(theme.patternType) || null, 16) || null,
     aiConfidence: theme.aiConfidence ?? null,
     firstAt: parseThemeDate(theme.firstOccurrence),
     lastAt: parseThemeDate(theme.lastOccurrence),
-    handlingStatus: theme.handlingStatus || "未处理",
+    handlingStatus: clip(theme.handlingStatus, 16) || "未处理",
     handlingProgress: theme.handlingProgress ?? 0,
-    handlingOwner: theme.handlingOwner || null,
+    handlingOwner: theme.handlingOwner ? clip(theme.handlingOwner, 64) : null,
     featuresJson: theme.features ? JSON.stringify(theme.features) : null,
     radarJson: theme.radar ? JSON.stringify(theme.radar) : null,
     trendPct: theme.trendPct ?? null,
@@ -139,7 +145,10 @@ export async function persistClusterResult(input: {
 
   const themeRecords = themes.map(buildThemePersistRow);
   if (themeRecords.length > 0) {
-    await db.insert(themesTable).values(themeRecords);
+    const THEME_CHUNK = 40;
+    for (let i = 0; i < themeRecords.length; i += THEME_CHUNK) {
+      await db.insert(themesTable).values(themeRecords.slice(i, i + THEME_CHUNK));
+    }
 
     const ticketThemeMappings: Array<{ ticketId: string; themeId: string }> = [];
     for (const theme of themes) {

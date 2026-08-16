@@ -47,6 +47,7 @@ yarn-error.log*
 output/
 dist/
 logs/
+.cache/
 db/dumps/
 docs/pitch/
 .env

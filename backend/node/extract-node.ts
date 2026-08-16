@@ -13,7 +13,7 @@ import {
 } from "../prompt";
 import { adminFromLocation, explicitAdmin } from "@/lib/admin-area";
 import { normalizeAliasesInText, resolveEntityAlias } from "@/lib/alias-dict";
-import { canonicalizeTownship } from "@/lib/vocabulary";
+import { canonicalizeCategory, canonicalizeTownship } from "@/lib/vocabulary";
 import { needsArbitration, arbitrateSingleTicket } from "./arbitrator-node";
 import { updateTaskProgress } from "@/lib/task-progress";
 import { db } from "@/db/client";
@@ -289,7 +289,7 @@ export async function extractNode(
               address: val.location,
               district: area.district || orig.district || null,
               subdistrict: area.subdistrict || orig.subdistrict || null,
-              sourceCategory: val.category,
+              sourceCategory: canonicalizeCategory(val.category) || val.category,
               confidence: val.confidence,
             })
             .where(eq(ticketsTable.id, orig.id))
@@ -314,12 +314,14 @@ export async function extractNode(
     await queue.addAll(chunkTasks);
   }
 
-  // 2. 二级 AI 仲裁介入：对低置信度 (< 60) 或存在歧义的工单进行二次消歧与事实纠偏
+  // 2. 二级 AI 仲裁：只对「本轮新抽取」的工单做。已落库的抽取结果直接进聚类。
   const arbitrationTasks: Array<() => Promise<void>> = [];
   const lowConfidenceIndices: number[] = [];
   let completedArbitrations = 0;
+  const newlyExtracted = new Set(pendingIdx);
 
   normalizedRawTickets.forEach((ticket, idx) => {
+    if (!newlyExtracted.has(idx)) return;
     const item = extractionMap.get(idx) || fallbackDynamicExtraction(ticket);
     if (needsArbitration(item, ticket)) {
       lowConfidenceIndices.push(idx);
@@ -358,7 +360,8 @@ export async function extractNode(
     const rawSubject = aiExtracted?.subject || fallback.subject;
     const rawLocation = aiExtracted?.location || fallback.location;
     const eventType = aiExtracted?.eventType || fallback.eventType;
-    const category = aiExtracted?.category || fallback.category;
+    const category =
+      canonicalizeCategory(aiExtracted?.category || fallback.category) || "城市管理";
     const confidence =
       typeof aiExtracted?.confidence === "number"
         ? aiExtracted.confidence
