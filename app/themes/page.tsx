@@ -15,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/app/_components/ui/select";
+import { TablePager } from "@/app/_components/civic/table-pager";
 
 type Cluster = {
   id: string;
@@ -54,8 +55,8 @@ export default function ThemesPage() {
   const [mode, setMode] = useState("");
   const [urgency, setUrgency] = useState("");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
   const [ready, setReady] = useState(false);
-  const pageSize = 15;
 
   function load() {
     fetch("/api/clusters")
@@ -104,7 +105,8 @@ export default function ThemesPage() {
   }, [rows, tab, region, mode, urgency, kw]);
 
   const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const pageData = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const currentPage = Math.min(page, pages);
+  const pageData = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   function exportCsv() {
     const header = ["编号", "模式", "镇街", "类型", "代表标题", "工单数", "未处理", "紧急度", "持续天数", "置信度", "状态"];
@@ -221,6 +223,7 @@ export default function ThemesPage() {
                   className={`filter-tab${tab === t.key ? " is-active" : ""}`}
                   onClick={() => {
                     setTab(t.key);
+                    setPage(1);
                     load();
                   }}
                 >
@@ -233,13 +236,21 @@ export default function ThemesPage() {
             <div className="filter-bar">
               <div className="search-input">
                 <span>⌕</span>
-                <input placeholder="搜索群组 · 镇街 / 类型 / 标题关键词" value={kw} onChange={(e) => setKw(e.target.value)} />
+                <input
+                  placeholder="搜索群组 · 镇街 / 类型 / 标题关键词"
+                  value={kw}
+                  onChange={(e) => {
+                    setKw(e.target.value);
+                    setPage(1);
+                  }}
+                />
               </div>
               <div className="filter-bar__divider" />
               <Select
                 value={region || "all"}
                 onValueChange={(val) => {
                   setRegion(val === "all" ? "" : val);
+                  setPage(1);
                   load();
                 }}
               >
@@ -259,6 +270,7 @@ export default function ThemesPage() {
                 value={mode || "all"}
                 onValueChange={(val) => {
                   setMode(val === "all" ? "" : val);
+                  setPage(1);
                   load();
                 }}
               >
@@ -276,6 +288,7 @@ export default function ThemesPage() {
                 value={urgency || "all"}
                 onValueChange={(val) => {
                   setUrgency(val === "all" ? "" : val);
+                  setPage(1);
                   load();
                 }}
               >
@@ -383,22 +396,19 @@ export default function ThemesPage() {
             </div>
             {filtered.length === 0 && <div className="empty-hint">暂无群组。请先触发聚类研判。</div>}
             {filtered.length > 0 && (
-              <div className="pagination">
-                <div className="pagination__info">
-                  共 <b>{filtered.length}</b> 个多频群组 · 当前第 <b>{page}</b>/<b>{pages}</b> 页
-                </div>
-                <div className="pagination__controls">
-                  <button type="button" className="page-btn" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-                    ‹
-                  </button>
-                  <button type="button" className="page-btn is-active">
-                    {page}
-                  </button>
-                  <button type="button" className="page-btn" disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>
-                    ›
-                  </button>
-                </div>
-              </div>
+              <TablePager
+                page={currentPage}
+                pages={pages}
+                total={filtered.length}
+                pageSize={pageSize}
+                pageSizeOptions={[10, 15, 20, 50]}
+                itemLabel="个多频群组"
+                onPageChange={setPage}
+                onPageSizeChange={(n) => {
+                  setPageSize(n);
+                  setPage(1);
+                }}
+              />
             )}
           </div>
         </>

@@ -142,6 +142,27 @@ export function SkTable({ cols, rows = 8 }: { cols: number; rows?: number }) {
   );
 }
 
+export function SkPager() {
+  return (
+    <div className="pagination" aria-hidden>
+      <div className="pagination__info" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <SkBone w={88} h={12} />
+        <SkBone w={72} h={12} />
+      </div>
+      <div className="pagination__controls">
+        <SkBone w={72} h={30} />
+        <SkBone w={30} h={30} />
+        <SkBone w={30} h={30} />
+        <SkBone w={30} h={30} />
+        <SkBone w={30} h={30} />
+        <SkBone w={30} h={30} />
+        <SkBone w={30} h={30} />
+        <SkBone w={88} h={30} />
+      </div>
+    </div>
+  );
+}
+
 export function SkMapPane({ height = 280 }: { height?: number }) {
   return <div className="sk-chart sk-chart--map" style={{ height }} aria-hidden />;
 }
@@ -185,6 +206,7 @@ export function SkTickets() {
           </div>
         </div>
         <SkTable cols={9} rows={8} />
+        <SkPager />
       </div>
     </div>
   );
@@ -202,6 +224,7 @@ export function SkThemes() {
           </div>
         </div>
         <SkTable cols={11} rows={8} />
+        <SkPager />
       </div>
     </div>
   );
@@ -236,6 +259,7 @@ export function SkDict() {
       <SkStatCards />
       <div className="card list-card">
         <SkTable cols={6} rows={8} />
+        <SkPager />
       </div>
     </div>
   );

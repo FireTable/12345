@@ -407,6 +407,13 @@
 }
 .page-btn.is-active { background: var(--c-brand); border-color: var(--c-brand); color: #fff; }
 .page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.page-btn--ellipsis {
+  border-color: transparent;
+  background: transparent;
+  cursor: default;
+  color: var(--c-ink-3);
+}
+.page-btn--ellipsis:hover { background: transparent; color: var(--c-ink-3); }
 .page-size-select { height: 30px; padding: 0 26px 0 10px; border: 1px solid var(--c-border); border-radius: 6px; background: var(--c-surface); font-size: 13px; appearance: none; }
 .page-jump { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--c-ink-3); }
 .page-jump input { width: 50px; height: 30px; padding: 0 6px; border: 1px solid var(--c-border); border-radius: 6px; text-align: center; }

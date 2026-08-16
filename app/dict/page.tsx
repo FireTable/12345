@@ -24,6 +24,7 @@ import {
 } from "@/app/_components/ui/select";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/app/_components/ui/confirm-dialog";
+import { TablePager } from "@/app/_components/civic/table-pager";
 
 interface TownshipItem {
   name: string;
@@ -72,6 +73,8 @@ export default function DictionaryManagementPage() {
   // 搜索与过滤
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
 
   // 新增别名弹窗与表单
   const [showAddModal, setShowAddModal] = useState(false);
@@ -193,6 +196,9 @@ export default function DictionaryManagementPage() {
     if (typeFilter !== "all" && a.type !== typeFilter) return false;
     return true;
   });
+  const aliasPages = Math.max(1, Math.ceil(filteredAliases.length / pageSize));
+  const aliasPage = Math.min(page, aliasPages);
+  const pagedAliases = filteredAliases.slice((aliasPage - 1) * pageSize, aliasPage * pageSize);
 
   return (
     <>
@@ -309,7 +315,10 @@ export default function DictionaryManagementPage() {
             key={t.key}
             type="button"
             className={`filter-tab${activeTab === t.key ? " is-active" : ""}`}
-            onClick={() => setActiveTab(t.key as any)}
+            onClick={() => {
+              setActiveTab(t.key as any);
+              setPage(1);
+            }}
           >
             {t.label}
             <span className="filter-tab__count">
@@ -331,11 +340,20 @@ export default function DictionaryManagementPage() {
             <input
               placeholder="搜索别名 · 俗称 / 规范全称关键词"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setPage(1);
+              }}
             />
           </div>
           <div className="filter-bar__divider" />
-          <Select value={typeFilter} onValueChange={setTypeFilter}>
+          <Select
+            value={typeFilter}
+            onValueChange={(val) => {
+              setTypeFilter(val);
+              setPage(1);
+            }}
+          >
             <SelectTrigger className="w-[140px] h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
               <SelectValue placeholder="类型：全部" />
             </SelectTrigger>
@@ -373,7 +391,7 @@ export default function DictionaryManagementPage() {
                     </td>
                   </tr>
                 ) : (
-                  filteredAliases.map((item) => (
+                  pagedAliases.map((item) => (
                     <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
                       <td className="px-4 py-3 font-medium">
                         <span className="rounded bg-amber-50 border border-amber-200/80 px-2 py-0.5 text-[11px] font-mono text-amber-800 font-semibold">
@@ -434,6 +452,21 @@ export default function DictionaryManagementPage() {
               </tbody>
             </table>
           </div>
+          {filteredAliases.length > 0 && (
+            <TablePager
+              page={aliasPage}
+              pages={aliasPages}
+              total={filteredAliases.length}
+              pageSize={pageSize}
+              pageSizeOptions={[10, 15, 20, 50]}
+              itemLabel="条别名"
+              onPageChange={setPage}
+              onPageSizeChange={(n) => {
+                setPageSize(n);
+                setPage(1);
+              }}
+            />
+          )}
         </div>
       )}
 

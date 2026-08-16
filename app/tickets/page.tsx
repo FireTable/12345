@@ -15,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/app/_components/ui/select";
+import { TablePager } from "@/app/_components/civic/table-pager";
 
 type Row = {
   id: string;
@@ -52,7 +53,6 @@ export default function TicketsPage() {
   const [region, setRegion] = useState("");
   const [category, setCategory] = useState("");
   const [time, setTime] = useState("");
-  const [jump, setJump] = useState("1");
   const [drawer, setDrawer] = useState<Row | null>(null);
   const [data, setData] = useState<{
     total: number;
@@ -99,8 +99,6 @@ export default function TicketsPage() {
 
   const s = data.stats;
   const pages = Math.max(1, Math.ceil(data.total / size));
-  const start = data.total === 0 ? 0 : (page - 1) * size + 1;
-  const end = Math.min(page * size, data.total);
   const pendingShare = s.total ? (((s.pending + s.progress) / s.total) * 100).toFixed(1) : "0";
   const finishShare = s.total ? ((s.finished / s.total) * 100).toFixed(0) : "0";
 
@@ -364,51 +362,19 @@ export default function TicketsPage() {
         </table>
         </div>
         {data.data.length === 0 && <div className="empty-hint">暂无工单</div>}
-        <div className="pagination">
-          <div className="pagination__info">
-            共 <b>{data.total}</b> 条 · 当前 <b>{start}</b>-<b>{end}</b>
-          </div>
-          <div className="pagination__controls">
-            <Select
-              value={String(size)}
-              onValueChange={(val) => {
-                setSize(Number(val));
-                setPage(1);
-              }}
-            >
-              <SelectTrigger className="w-[88px] h-[30px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] rounded-md font-medium">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="10">10/页</SelectItem>
-                <SelectItem value="20">20/页</SelectItem>
-                <SelectItem value="50">50/页</SelectItem>
-              </SelectContent>
-            </Select>
-            <button type="button" className="page-btn" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-              ‹
-            </button>
-            <button type="button" className="page-btn is-active">
-              {page}
-            </button>
-            <button type="button" className="page-btn" disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>
-              ›
-            </button>
-            <span className="page-jump">
-              跳至
-              <input
-                type="number"
-                min={1}
-                value={jump}
-                onChange={(e) => setJump(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") setPage(Math.min(pages, Math.max(1, Number(jump) || 1)));
-                }}
-              />
-              页
-            </span>
-          </div>
-        </div>
+        <TablePager
+          page={page}
+          pages={pages}
+          total={data.total}
+          pageSize={size}
+          pageSizeOptions={[10, 20, 50]}
+          itemLabel="条"
+          onPageChange={setPage}
+          onPageSizeChange={(n) => {
+            setSize(n);
+            setPage(1);
+          }}
+        />
       </div>
       </>
       )}
