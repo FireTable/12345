@@ -38,11 +38,17 @@
    - 告别千篇一律的“现场核实并处理”式套话；
    - 深度结合基层权责清单，精准指定**牵头部门**（如交警中队）、**协办部门**（如综合执法办）、**响应时限**（如1小时到场）与**法定办理路径**，可直接转化为标准政务公文。
 
-6. **🛡️ 政务信创纯离线与隐私脱敏保障**
+6. **🔒 权威认证与全链路安全路由守卫 (Better Auth)**
+   - 深度集成 **Better Auth** 生产级身份认证框架与 Drizzle ORM PostgreSQL 适配器；
+   - **全局路由守卫**：内置 Next.js Middleware 鉴权拦截，除 `/login` 与公共静态资源外，全站核心研判页面及 API 均受 session cookie 保护；
+   - **默认管理员**：内置 `admin` / `admin` 系统管理员账号与一键 Seeder（`pnpm db:seed-admin`），支持用户名/密码安全登录与会话持久化；
+   - **一体化 Header**：统一 34px 高度度量衡，集成**高清演示视频点播弹窗**（支持 6 大核心模块快速切换与独立播放）、**GitHub 官方源码仓库直达**及**一体化管理员状态与退出卡片**。
+
+7. **🛡️ 政务信创纯离线与隐私脱敏保障**
    - 内置 `anonymizer.ts` 全流程脱敏处理器，对姓名、手机、身份证等关键 PII 自动掩码；
    - 支持 Docker 一键部署与政务内网 **本地模型纯离线推理 (vLLM / Ollama)**，数据 100% 不出域，满足等保与政务合规红线。
 
-7. **🎨 统一定制 Civic Light 政务级设计体系**
+8. **🎨 统一定制 Civic Light 政务级设计体系**
    - 全站五大核心模块（**数据总览**、**多频工单**、**工单透势**、**工单中心**、**标准字典**）统一遵循 Civic Light 设计语言；
    - 包含顺德 10 镇街 SVG 态势地图、紧急×重要四象限透势图，右下角悬浮 **AI 研判副驾驶 (Copilot)** 支持实时自然语言问数与建议生成。
 
@@ -175,7 +181,7 @@ pnpm install
 ```
 
 ### 2. 配置环境变量
-复制根目录的 `.env.example` 为 `.env.local`，并配置 PostgreSQL 数据库连接与模型 API Key：
+复制根目录的 `.env.example` 为 `.env.local`，并配置 PostgreSQL 数据库连接、模型 API Key 与认证密钥：
 ```ini
 # PostgreSQL Database Connection URL (Drizzle ORM)
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ticket_radar
@@ -184,17 +190,24 @@ DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ticket_radar
 OPENAI_API_KEY=your_api_key_here
 OPENAI_BASE_URL=https://www.78code.cc/v1
 OPENAI_MODEL=gpt-5.6-terra
+
+# Better Auth 生产级认证配置
+BETTER_AUTH_SECRET=your_32_character_random_secret_here
+BETTER_AUTH_URL=http://localhost:3000
 ```
 
 ### 3. 初始化数据库结构与标准词汇表
 ```bash
-# 1. 执行数据库迁移（自动创建 tickets, themes, vocabularies, aliases 等全部表）
+# 1. 执行数据库迁移（自动创建 tickets, themes, vocabularies, aliases, user, session 等全部表）
 pnpm db:migrate
 
 # 2. 一键初始化顺德区 10 大法定镇街、社区与 72+ 条别名映射知识库
 pnpm db:vocab
 
-# 3. （可选）写入内置样本工单数据
+# 3. 初始化系统默认管理员账号 (admin / admin)
+pnpm db:seed-admin
+
+# 4. （可选）写入内置样本工单数据
 pnpm db:seed
 ```
 
@@ -208,6 +221,8 @@ npx tsx scripts/test-accuracy-pipeline.ts
 pnpm dev
 ```
 在浏览器中访问 [http://localhost:3000](http://localhost:3000) 即可开始使用！
+- **系统登录账号**：`admin`
+- **系统登录密码**：`admin`
 
 ---
 
@@ -219,6 +234,7 @@ pnpm dev
 | `pnpm build` | 编译 Next.js 生产版本构建 |
 | `pnpm db:migrate` | 运行 Drizzle SQL 数据库迁移 |
 | `pnpm db:vocab` | 一键初始化/同步标准政务词汇表与别名知识库 |
+| `pnpm db:seed-admin` | 初始化/重置默认系统管理员账号 (`admin` / `admin`) |
 | `pnpm db:seed` | 导入样例脱敏工单数据 |
 | `pnpm db:studio` | 打开 Drizzle Studio 可视化数据管理面板 |
 | `npx tsc --noEmit` | 执行 TypeScript 全局静态类型检查 |

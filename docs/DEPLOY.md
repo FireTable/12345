@@ -51,16 +51,17 @@ pnpm install
 
 # 2. 配置本地环境变量
 cp .env.example .env.local
-# 编辑 .env.local 填入本地 DATABASE_URL 与 API Key
+# 编辑 .env.local 填入本地 DATABASE_URL、API Key 与 BETTER_AUTH_SECRET
 
-# 3. 初始化数据库结构与词典
-pnpm db:migrate   # 执行数据库迁移
-pnpm db:vocab     # 导入顺德 10 大镇街与法定词汇库
-pnpm db:seed      # 导入 200 条脱敏样例工单
+# 3. 初始化数据库结构、词典与系统管理员
+pnpm db:migrate     # 执行数据库迁移 (包含业务表与 Auth 认证表)
+pnpm db:vocab       # 导入顺德 10 大镇街与法定词汇库
+pnpm db:seed-admin  # 初始化默认系统管理员 (admin / admin)
+pnpm db:seed        # 导入 200 条脱敏样例工单
 
 # 4. 启动 Next.js 极速热重载开发服务器
 pnpm dev
-# 浏览器访问: http://localhost:3000
+# 浏览器访问: http://localhost:3000 (使用 admin / admin 登录)
 ```
 
 ---
@@ -72,6 +73,10 @@ pnpm dev
 # ---------- 数据库配置 (必须包含 POSTGRES_PASSWORD 用于 docker-compose 变量插值) ----------
 POSTGRES_PASSWORD=<生成高强度密码: openssl rand -hex 16>
 DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/ticket_radar
+
+# ---------- Better Auth 生产级认证配置 ----------
+BETTER_AUTH_SECRET=<生成32位随机密钥: openssl rand -hex 32>
+BETTER_AUTH_URL=https://<your-domain>
 
 # ---------- 大模型接口配置 (支持 DeepSeek / 本地 vLLM) ----------
 OPENAI_API_KEY=sk-***

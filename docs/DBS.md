@@ -293,12 +293,55 @@ erDiagram
 
 ---
 
+### 8. 用户与认证体系表 (Better Auth Security Schema)
+> 生产级用户认证与会话状态持久化表体系。
+
+#### (1) 用户信息表：`user` (`userTable`)
+| 字段名 | 数据库类型 | 约束 | 描述 |
+| :--- | :--- | :--- | :--- |
+| `id` | `TEXT` | `PRIMARY KEY` | 用户唯一标识 UUID |
+| `name` | `TEXT` | `NOT NULL` | 用户姓名/昵称（如 `系统管理员`） |
+| `email` | `TEXT` | `NOT NULL, UNIQUE` | 登录邮箱/主标识 |
+| `email_verified`| `BOOLEAN` | `NOT NULL, DEFAULT false` | 邮箱是否已校验 |
+| `image` | `TEXT` | `NULLABLE` | 用户头像 URL |
+| `role` | `TEXT` | `NOT NULL, DEFAULT 'user'` | 权限角色 (`admin` / `user` / `operator`) |
+| `username` | `TEXT` | `UNIQUE, NULLABLE` | 用户名标识 (如 `admin`) |
+| `created_at` | `TIMESTAMP` | `NOT NULL, DEFAULT NOW` | 创建时间 |
+| `updated_at` | `TIMESTAMP` | `NOT NULL, DEFAULT NOW` | 更新时间 |
+
+#### (2) 会话表：`session` (`sessionTable`)
+| 字段名 | 数据库类型 | 约束 | 描述 |
+| :--- | :--- | :--- | :--- |
+| `id` | `TEXT` | `PRIMARY KEY` | 会话唯一 ID |
+| `expires_at` | `TIMESTAMP` | `NOT NULL` | 会话过期时间戳 |
+| `token` | `TEXT` | `NOT NULL, UNIQUE` | Session Token 密钥 |
+| `ip_address` | `TEXT` | `NULLABLE` | 客户端登录 IP |
+| `user_agent` | `TEXT` | `NULLABLE` | 客户端浏览器 User-Agent |
+| `user_id` | `TEXT` | `NOT NULL, REFERENCES user(id)` | 关联用户 ID (级联删除) |
+| `created_at` | `TIMESTAMP` | `NOT NULL, DEFAULT NOW` | 创建时间 |
+| `updated_at` | `TIMESTAMP` | `NOT NULL, DEFAULT NOW` | 更新时间 |
+
+#### (3) 账号凭据表：`account` (`accountTable`)
+| 字段名 | 数据库类型 | 约束 | 描述 |
+| :--- | :--- | :--- | :--- |
+| `id` | `TEXT` | `PRIMARY KEY` | 凭据唯一 ID |
+| `account_id` | `TEXT` | `NOT NULL` | 凭据提供商内部账号 ID |
+| `provider_id` | `TEXT` | `NOT NULL` | 认证提供商 (`credential` / `username` 等) |
+| `user_id` | `TEXT` | `NOT NULL, REFERENCES user(id)` | 关联用户 ID (级联删除) |
+| `password` | `TEXT` | `NULLABLE` | 加密哈希密码 (scrypt/bcrypt 密文) |
+| `issuer` | `TEXT` | `NULLABLE` | 认证颁发者 |
+| `created_at` | `TIMESTAMP` | `NOT NULL, DEFAULT NOW` | 创建时间 |
+| `updated_at` | `TIMESTAMP` | `NOT NULL, DEFAULT NOW` | 更新时间 |
+
+---
+
 ## 三、数据库脚本与运维常用命令
 
 | 业务目标 | 对应 NPM 命令 | 底层脚本路径 | 说明 |
 | :--- | :--- | :--- | :--- |
 | **数据库迁移** | `pnpm db:migrate` | `scripts/db-migrate.ts` | 执行 `db/migrations/` 下的 SQL 迁移脚本 |
 | **全量词库填充** | `pnpm db:vocab` | `scripts/seed-vocabulary.ts` | 导入顺德 10 大镇街、村居及预置别名知识库 |
+| **管理员账号初始化** | `pnpm db:seed-admin` | `scripts/seed-admin.ts` | 初始化/重置默认系统管理员账号 (`admin` / `admin`) |
 | **脱敏样例工单** | `pnpm db:seed` | `scripts/db-seed.ts` | 写入 200 条真实脱敏抽样工单用于冒烟演示 |
 | **数据备份导出** | `pnpm db:export` | `scripts/db-export.ts` | 导出全库数据为 `db/dumps/ticket_radar_data.json` |
 | **数据离线恢复** | `pnpm db:import` | `scripts/db-import.ts` | 从 json dump 快速全量恢复库数据 |

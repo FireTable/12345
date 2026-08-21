@@ -4,6 +4,20 @@ Work branch: `feat/civic-ui-landing`
 Reference: `/Users/FireTable/Downloads/frontend/`  
 Rule: pages read persisted or aggregated data. No `Math.random` trends, no `log10(count)` fake confidence, no hardcoded 北滘 +186% insight as live copy.
 
+## 2026-08-21 — Better Auth 安全认证集成与 Header 交互一体化重构
+
+- **Better Auth 生产级安全认证迁移**：
+  - 集成 `better-auth`、`@better-auth-ui/react` 与 `@better-auth-ui/core`，采用 Drizzle ORM PostgreSQL 适配器持久化 `user`、`session`、`account`、`verification` 认证表。
+  - 启用 `username()` 插件，支持用户名密码体系，并编写幂等初始化脚本 `scripts/seed-admin.ts`（`pnpm db:seed-admin`），内置默认系统管理员账号 `admin` / `admin`。
+  - 编写 Next.js 全局中间件 `middleware.ts` 路由守卫，除 `/login` 与公共资源外，未登录一律 307 重定向至登录页。
+  - 开发 Civic Light 定制风格登录页（`/login`），支持一键填充默认管理员凭证与即时错误反馈。
+- **Header 顶栏交互一体化升级**：
+  - **全景演示视频点播弹窗 (`VideoModal`)**：Header 右侧新增胶卷图标按钮，内置 6 大模块演示视频点播列表；使用 `createPortal` 挂载，并采用固定 640px 视窗、16:9 比例锁定与缓冲遮罩，彻底杜绝视频切换时的布局闪烁。
+  - **GitHub 官方源码仓库直达**：标准 16px 矢量图标，修复 Hover 时的深黑背景色与颜色层叠冲突，统一为 Civic Light 浅灰悬停主题。
+  - **用户信息与退出操作合并**：将原先分散的系统管理员标签与退出按钮合并为一体化 `.navbar-user-card`（`[👤 系统管理员] [管理员标签] | [🚪 退出]`），统一 34px 高度与 8px 圆角度量，全站顶部右侧操作栏整洁统一。
+
+---
+
 ## 2026-08-15 — start
 
 - Created `feat/civic-ui-landing` from `main`.

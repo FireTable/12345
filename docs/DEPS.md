@@ -47,6 +47,13 @@
 | **`react-force-graph-2d`** | `^1.26.1` | 实体拓扑与共性网络力导向图可视化 | **MIT** | [vasturiano/react-force-graph](https://github.com/vasturiano/react-force-graph) |
 | **`xlsx`** / **`papaparse`** | `^0.18.5` / `^5.5.2` | Excel / CSV 批量工单解析与导出支持 | **Apache-2.0** / **MIT** | [SheetJS](https://sheetjs.com/) / [PapaParse](https://github.com/mholt/PapaParse) |
 
+### 4. 身份认证与安全防护 (Better Auth)
+| 依赖库名称 | 版本号 | 用途说明 | 开源许可证 | 官方仓库 / 主页 |
+| :--- | :--- | :--- | :--- | :--- |
+| **`better-auth`** | `^1.1.21` | **生产级认证核心**：支持用户名/密码、Drizzle ORM 适配器、Session 会话管理与密码加盐哈希 | **MIT** | [better-auth/better-auth](https://github.com/better-auth/better-auth) |
+| **`@better-auth-ui/react`** | `^0.1.13` | Better Auth 官方 React UI 组件库与客户端 Hook | **MIT** | [better-auth/better-auth](https://github.com/better-auth/better-auth) |
+| **`@better-auth-ui/core`** | `^0.1.13` | Better Auth UI 核心逻辑与上下文状态管理 | **MIT** | [better-auth/better-auth](https://github.com/better-auth/better-auth) |
+
 ---
 
 ## 二、前端与业务组件架构映射表
