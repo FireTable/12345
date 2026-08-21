@@ -227,3 +227,5 @@ export const taskProgressTable = pgTable(
 export type TaskProgressRecord = typeof taskProgressTable.$inferSelect;
 export type NewTaskProgressRecord = typeof taskProgressTable.$inferInsert;
 
+export * from "@/lib/auth/schema";
+
