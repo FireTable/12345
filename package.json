@@ -9,7 +9,6 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "slice": "tsx scripts/slice-excel.ts",
     "ingest": "tsx scripts/ingest-full-dataset.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/db-migrate.ts",
@@ -20,11 +19,7 @@
     "db:export": "tsx scripts/db-export.ts",
     "db:import": "tsx scripts/db-import.ts",
     "db:clear": "tsx scripts/db-clear.ts",
-    "db:studio": "drizzle-kit studio",
-    "test:mobile-layout": "tsx scripts/verify-mobile-layout.ts",
-    "test:api-perf": "tsx scripts/verify-api-perf.ts",
-    "test:pitch-assets": "tsx scripts/verify-pitch-assets.ts",
-    "docs:pdf": "tsx scripts/generate-pitch-pdfs.ts"
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
     "@better-auth-ui/core": "^1.7.6",
