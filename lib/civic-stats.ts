@@ -246,54 +246,75 @@ export function buildInsights(
     riskLevel?: string | null;
   }>
 ) {
-  const byMode = (m: string) =>
-    themes
-      .filter((t) => t.patternType === m || (m === "GROUP_GATHERING" && !t.patternType))
-      .sort((a, b) => (b.ticketCount || 0) - (a.ticketCount || 0));
-
-  const gather = byMode("GROUP_GATHERING")[0] || byMode("DIVERGE")[0];
-  const repeat = byMode("INDIVIDUAL_REPEAT")[0];
-  const diverge = byMode("DIVERGE")[0];
-  const drop = [...themes]
-    .filter((t) => typeof t.trendPct === "number" && (t.trendPct as number) < 0)
-    .sort((a, b) => (a.trendPct || 0) - (b.trendPct || 0))[0];
+  if (!themes || themes.length === 0) return [];
 
   const cards: Array<{ tag: string; tone: string; title: string; text: string; href?: string }> = [];
-  if (gather) {
+  const usedThemeIds = new Set<string>();
+
+  // 1. 寻找最高频的“空间聚集”重点主题 (GROUP_GATHERING / SPATIAL_BURST)
+  const gatherTheme = themes
+    .filter((t) => (t.patternType === "GROUP_GATHERING" || t.patternType === "SPATIAL_BURST" || !t.patternType) && !usedThemeIds.has(t.id))
+    .sort((a, b) => (b.ticketCount || 0) - (a.ticketCount || 0))[0];
+
+  if (gatherTheme) {
+    usedThemeIds.add(gatherTheme.id);
     cards.push({
       tag: "聚集",
       tone: "danger",
-      title: gather.title || `${gather.canonicalLocation || ""} · ${gather.category || ""}`,
-      text: `${gather.ticketCount || 0} 件${gather.category || ""}，${gather.recommendedAction || "建议尽快派单处置。"}`,
-      href: `/themes/${gather.id}`,
+      title: gatherTheme.title || `${gatherTheme.canonicalLocation || "顺德"} · ${gatherTheme.category || "民生"}诉求聚集`,
+      text: `${gatherTheme.canonicalLocation || ""}集中出现 ${gatherTheme.ticketCount || 0} 件${gatherTheme.category || ""}诉求，建议多部门现场联合处置。`,
+      href: `/themes/${gatherTheme.id}`,
     });
   }
-  if (repeat) {
-    cards.push({
-      tag: "重复",
-      tone: "warning",
-      title: repeat.canonicalSubject || repeat.title || "个体重复诉求",
-      text: `${repeat.ticketCount || 0} 次重复反映，建议上升优先级并闭环跟踪。`,
-      href: `/themes/${repeat.id}`,
-    });
-  }
-  if (diverge) {
+
+  // 2. 寻找最高频的“主体发散”重点主题 (DIVERGE)
+  const divergeTheme = themes
+    .filter((t) => t.patternType === "DIVERGE" && !usedThemeIds.has(t.id))
+    .sort((a, b) => (b.ticketCount || 0) - (a.ticketCount || 0))[0];
+
+  if (divergeTheme) {
+    usedThemeIds.add(divergeTheme.id);
     cards.push({
       tag: "发散",
       tone: "info",
-      title: diverge.canonicalSubject || diverge.title || "同主体多类型问题",
-      text: `${diverge.canonicalLocation || ""} 出现多类问题共 ${diverge.ticketCount || 0} 件，建议现场核查与源头治理。`,
-      href: `/themes/${diverge.id}`,
+      title: divergeTheme.title || `${divergeTheme.canonicalSubject || "涉事主体"} 多类型问题发散`,
+      text: `涉及同一主体共 ${divergeTheme.ticketCount || 0} 件跨业务诉求，建议开展源头合规指导与督促整改。`,
+      href: `/themes/${divergeTheme.id}`,
     });
   }
-  if (drop) {
+
+  // 3. 寻找“高风险/重复反映”重点主题
+  const repeatOrUrgentTheme = themes
+    .filter((t) => (t.riskLevel === "HIGH" || t.patternType === "INDIVIDUAL_REPEAT") && !usedThemeIds.has(t.id))
+    .sort((a, b) => (b.ticketCount || 0) - (a.ticketCount || 0))[0] ||
+    themes.filter((t) => !usedThemeIds.has(t.id)).sort((a, b) => (b.ticketCount || 0) - (a.ticketCount || 0))[0];
+
+  if (repeatOrUrgentTheme) {
+    usedThemeIds.add(repeatOrUrgentTheme.id);
     cards.push({
-      tag: "下降",
-      tone: "success",
-      title: `${drop.category || drop.title || "该类"}投诉下降 ${Math.abs(drop.trendPct || 0)}%`,
-      text: `近 7 日相对前 7 日下降 ${Math.abs(drop.trendPct || 0)}%，建议持续观察。`,
-      href: `/themes/${drop.id}`,
+      tag: "重复",
+      tone: "warning",
+      title: repeatOrUrgentTheme.title || `${repeatOrUrgentTheme.canonicalSubject || "重点区域"} 多次重复诉求`,
+      text: `累计已产生 ${repeatOrUrgentTheme.ticketCount || 0} 次高频反映，建议上升处置优先级并实施全周期闭环跟踪。`,
+      href: `/themes/${repeatOrUrgentTheme.id}`,
     });
   }
+
+  // 4. 寻找“协同处置 / 综合治理”第 4 席主题 (补齐 4 列网格)
+  const fourthTheme = themes
+    .filter((t) => !usedThemeIds.has(t.id))
+    .sort((a, b) => (b.ticketCount || 0) - (a.ticketCount || 0))[0];
+
+  if (fourthTheme) {
+    usedThemeIds.add(fourthTheme.id);
+    cards.push({
+      tag: fourthTheme.patternType === "DIVERGE" ? "发散" : "聚集",
+      tone: fourthTheme.category === "公共安全" ? "danger" : fourthTheme.category === "市场监管" ? "info" : "warning",
+      title: fourthTheme.title || `${fourthTheme.canonicalLocation || "属地片区"} · ${fourthTheme.category || "民生"}集中研判`,
+      text: `${fourthTheme.canonicalLocation || "属地"}汇聚 ${fourthTheme.ticketCount || 0} 件工单，已匹配公文级协同建议与处置路径。`,
+      href: `/themes/${fourthTheme.id}`,
+    });
+  }
+
   return cards;
 }
