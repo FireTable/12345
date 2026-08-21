@@ -1019,7 +1019,7 @@
   border-color: #ffa39e !important;
 }
 
-/* Header Right Action Buttons (Video & GitHub Pure Icon Buttons) */
+/* Header Right Action Buttons (Pure Icon Buttons) */
 .navbar .navbar-icon-btn,
 .navbar-icon-btn {
   display: inline-flex;
@@ -1033,88 +1033,72 @@
   border: 1px solid var(--c-border);
   text-decoration: none !important;
   cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  transition: all 0.15s ease;
   flex-shrink: 0;
   box-sizing: border-box;
 }
 
-.navbar .navbar-icon-btn svg,
-.navbar-icon-btn svg {
-  display: block;
-  fill: currentColor !important;
-  color: inherit !important;
-}
-
-.navbar .navbar-icon-btn--video,
-.navbar-icon-btn--video {
+.navbar .navbar-icon-btn--video {
   color: #1677ff !important;
   background: #f0f7ff;
   border-color: #bae0ff;
 }
 
-.navbar .navbar-icon-btn--video:hover,
-.navbar-icon-btn--video:hover {
+.navbar .navbar-icon-btn--video:hover {
   background: #e6f4ff !important;
   color: #0958d9 !important;
   border-color: #91caff !important;
-  box-shadow: 0 2px 6px rgba(22, 119, 255, 0.15);
 }
 
-.navbar .navbar-icon-btn--github,
-.navbar-icon-btn--github {
-  color: #4e5969 !important;
-  background: #f6f8fa;
-  border-color: #d0d7de;
+.navbar .navbar-icon-btn--github {
+  color: #24292f !important;
+  background: var(--c-surface);
+  border-color: var(--c-border);
 }
 
-.navbar .navbar-icon-btn--github:hover,
-.navbar-icon-btn--github:hover {
-  background: #e9ecef !important;
-  color: #1f2329 !important;
-  border-color: #adb5bd !important;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+.navbar .navbar-icon-btn--github:hover {
+  background: #f0f2f5 !important;
+  color: #24292f !important;
+  border-color: #c9cdd4 !important;
 }
 
 /* ==================================================================
-   Video Modal Styles
+   Video Modal Styles (Rock-solid Fixed Layout, 0-Flicker)
    ================================================================== */
 .video-modal-backdrop {
   position: fixed;
   inset: 0;
   z-index: 1000;
-  background: rgba(15, 23, 42, 0.65);
-  backdrop-filter: blur(8px);
+  background: rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 24px;
-  animation: fadeIn 0.2s ease;
 }
 
 .video-modal-content {
   width: 100%;
-  max-width: 1100px;
-  max-height: 90vh;
+  max-width: 1060px;
+  height: 640px;
+  max-height: calc(100vh - 48px);
   background: #ffffff;
   border-radius: 16px;
   border: 1px solid rgba(22, 119, 255, 0.18);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.28);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: modalScaleUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-@keyframes modalScaleUp {
-  from { opacity: 0; transform: scale(0.96) translateY(8px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
 .video-modal-header {
+  height: 60px;
+  flex-shrink: 0;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
+  padding: 0 20px;
   border-bottom: 1px solid var(--c-border-soft);
   background: #fafbfc;
 }
@@ -1126,8 +1110,8 @@
 }
 
 .video-modal-icon-badge {
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   border-radius: 8px;
   background: var(--c-brand-soft);
   color: var(--c-brand);
@@ -1137,7 +1121,7 @@
 }
 
 .video-modal-title {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--c-ink);
 }
@@ -1145,7 +1129,7 @@
 .video-modal-subtitle {
   font-size: 12px;
   color: var(--c-ink-3);
-  margin-top: 2px;
+  margin-top: 1px;
 }
 
 .video-modal-close-btn {
@@ -1159,7 +1143,7 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
 }
 
 .video-modal-close-btn:hover {
@@ -1168,17 +1152,21 @@
 }
 
 .video-modal-body {
+  flex: 1;
+  height: calc(100% - 60px);
   display: grid;
-  grid-template-columns: 1fr 320px;
-  min-height: 520px;
-  max-height: calc(90vh - 72px);
+  grid-template-columns: 1fr 300px;
   overflow: hidden;
 }
 
 @media (max-width: 900px) {
+  .video-modal-content {
+    height: auto;
+    max-height: 90vh;
+  }
   .video-modal-body {
     grid-template-columns: 1fr;
-    max-height: none;
+    height: auto;
     overflow-y: auto;
   }
 }
@@ -1186,40 +1174,55 @@
 .video-player-container {
   display: flex;
   flex-direction: column;
-  background: #0f172a;
-  min-height: 0;
-  width: 100%;
+  height: 100%;
+  background: #000000;
+  overflow: hidden;
 }
 
 .video-screen-wrap {
+  flex: 1;
   width: 100%;
-  aspect-ratio: 16 / 9;
-  max-height: 480px;
+  height: 100%;
   background: #000000;
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  contain: strict;
 }
 
 .video-element {
   width: 100%;
   height: 100%;
-  max-height: 480px;
-  aspect-ratio: 16 / 9;
-  background: #000000;
   object-fit: contain;
+  background: #000000;
   outline: none;
   display: block;
 }
 
+.video-buffering-indicator {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  z-index: 10;
+  animation: fadeIn 0.15s ease;
+}
+
 .video-info-card {
-  padding: 16px 20px;
+  height: 92px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  padding: 12px 20px;
   background: #ffffff;
   border-top: 1px solid var(--c-border-soft);
-  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .video-info-top {

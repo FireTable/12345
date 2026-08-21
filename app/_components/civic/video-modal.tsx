@@ -66,6 +66,7 @@ export function VideoModal({
 }) {
   const [mounted, setMounted] = useState(false);
   const [activeVideo, setActiveVideo] = useState<DemoVideo>(DEMO_VIDEOS[0]);
+  const [isBuffering, setIsBuffering] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
@@ -95,6 +96,7 @@ export function VideoModal({
   // Handle switching video without destroying video DOM element
   const handleSelectVideo = (vid: DemoVideo) => {
     if (vid.id === activeVideo.id) return;
+    setIsBuffering(true);
     setActiveVideo(vid);
     if (videoRef.current) {
       videoRef.current.src = vid.src;
@@ -149,16 +151,23 @@ export function VideoModal({
               <video
                 ref={videoRef}
                 src={activeVideo.src}
-                width={1280}
-                height={720}
                 controls
                 autoPlay
                 playsInline
                 preload="auto"
                 className="video-element"
+                onWaiting={() => setIsBuffering(true)}
+                onPlaying={() => setIsBuffering(false)}
+                onCanPlay={() => setIsBuffering(false)}
+                onLoadedData={() => setIsBuffering(false)}
               >
                 您的浏览器不支持 HTML5 视频播放。
               </video>
+              {isBuffering && (
+                <div className="video-buffering-indicator">
+                  <div className="login-spinner" style={{ width: 28, height: 28, borderWidth: 3 }} />
+                </div>
+              )}
             </div>
             <div className="video-info-card">
               <div className="video-info-top">
