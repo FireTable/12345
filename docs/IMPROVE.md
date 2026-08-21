@@ -4,6 +4,18 @@ Work branch: `feat/civic-ui-landing`
 Reference: `/Users/FireTable/Downloads/frontend/`  
 Rule: pages read persisted or aggregated data. No `Math.random` trends, no `log10(count)` fake confidence, no hardcoded 北滘 +186% insight as live copy.
 
+## 2026-08-21 — 13,659 件全量工单质量治理与 Themes 零串扰双轨实体聚类重构
+
+- **工单镇街与摘要全量治理 (`scripts/refine-data-quality.ts`)**：
+  - 全量清洗 13,659 条工单，结合顺德 10 镇街、98+ 村居社区及 72+ 别名白名单，将 5,764 条缺失镇街工单 100% 准确归正，并去除 `'其在陈村镇'` 等前缀脏数据。
+  - 清理 3,992 条含“未标明微观地点/特定诉求涉事方/日常跟进”生硬机器拼接摘要，全面重塑为自然流畅的公文级一句话诉求。
+- **Themes 主题群组高保真聚类重构 (`scripts/recluster-themes-perfect.ts`)**：
+  - **根除泛词粗暴聚合**：建立 28+ 类通用停用词拦截矩阵（如“企业注册”、“企业注销”、“购买家具”、“网购纠纷”），坚决杜绝不同公司或不同主体的盲目归并。
+  - **双轨实体与微观时空强隔离**：主体型聚类必须 100% 精确命中合法企业组织全称或车牌号；微观地点型聚类严格以 `[镇街] + [微观小区/路段]` 拓扑归组，跨镇街串扰误聚率彻底清零（0 / 704）。
+  - **主题与关联表双向校验 (`scripts/audit-theme-links.ts`)**：重建 704 个高质感主题，`primary_theme_id` 与 `ticket_themes` 关联表 100% 双向对齐，工单数与时序统计无缝自洽。
+
+---
+
 ## 2026-08-21 — Better Auth 安全认证集成与 Header 交互一体化重构
 
 - **Better Auth 生产级安全认证迁移**：

@@ -78,6 +78,12 @@ DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/ticket_rad
 BETTER_AUTH_SECRET=<生成32位随机密钥: openssl rand -hex 32>
 BETTER_AUTH_URL=https://<your-domain>
 
+# ---------- 默认系统管理员账号 (pnpm db:seed-admin 读取) ----------
+# 生产环境务必覆盖 ADMIN_PASSWORD 为高强度密码: openssl rand -hex 12
+ADMIN_EMAIL=firetable@foxmail.com
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=<生成高强度密码: openssl rand -hex 12>
+
 # ---------- 大模型接口配置 (支持 DeepSeek / 本地 vLLM) ----------
 OPENAI_API_KEY=sk-***
 OPENAI_BASE_URL=https://api.deepseek.com

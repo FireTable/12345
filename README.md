@@ -194,7 +194,14 @@ OPENAI_MODEL=gpt-5.6-terra
 # Better Auth 生产级认证配置
 BETTER_AUTH_SECRET=your_32_character_random_secret_here
 BETTER_AUTH_URL=http://localhost:3000
+
+# 默认系统管理员账号 (pnpm db:seed-admin 读取;生产请覆盖 ADMIN_PASSWORD)
+ADMIN_EMAIL=admin@civic.local
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=admin
 ```
+
+> 注：`pnpm db:seed-admin` 通过 `process.env` 读取上述 `ADMIN_*`。本地开发若直接 `pnpm db:seed-admin` 而未在 shell 里 source `.env.local`,将使用代码内置默认值 `admin@civic.local / admin / admin`。生产环境务必用 `.env.vps` 覆盖后执行。
 
 ### 3. 初始化数据库结构与标准词汇表
 ```bash
