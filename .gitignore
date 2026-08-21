@@ -50,7 +50,7 @@ logs/
 .cache/
 db/dumps/
 docs/pitch/
-super-agent/
+docs/super-agent/
 .env
 .env.local
 .env.vps
