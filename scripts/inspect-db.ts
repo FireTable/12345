@@ -88,11 +88,10 @@ async function inspect() {
   allThemes.slice(0, 15).forEach((t, i) => {
     console.log(`\n[#${i + 1}] ID: ${t.id}`);
     console.log(`  标题: ${t.title}`);
-    console.log(`  镇街: ${t.subdistrict} | 分类: ${t.category} | 模式: ${t.patternType}`);
-    console.log(`  工单数: ${t.ticketCount} | 置信度: ${t.aiConfidence} | 紧急度: ${t.urgency}`);
-    console.log(`  牵头部门: ${t.leadDepartment} | 协办部门: ${t.coDepartments}`);
-    console.log(`  处置路径: ${t.handlingPath}`);
-    console.log(`  处置建议: ${t.actionSuggestion}`);
+    console.log(`  镇街: ${t.canonicalLocation} | 分类: ${t.category} | 模式: ${t.patternType}`);
+    console.log(`  工单数: ${t.ticketCount} | 置信度: ${t.aiConfidence} | 风险等级: ${t.riskLevel}`);
+    console.log(`  处置负责方: ${t.handlingOwner}`);
+    console.log(`  处置建议: ${t.recommendedAction}`);
   });
 
   // 7. 检查是否有异常或乱码的工单标题/摘要

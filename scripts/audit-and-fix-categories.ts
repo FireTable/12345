@@ -1,7 +1,7 @@
 import { db } from "../db/client";
 import { sql, eq } from "drizzle-orm";
 import { ticketsTable, themesTable, ticketThemesTable } from "../db/schema";
-import { CIVIC_CATEGORIES } from "../lib/vocabulary";
+import { CIVIC_CATEGORIES } from "../lib/civic-cluster";
 
 /**
  * 权威政务 7 大诉求分类规则判定器

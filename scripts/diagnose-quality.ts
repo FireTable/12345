@@ -74,7 +74,7 @@ async function main() {
   if (badTitleThemes.length > 0) {
     console.log("\n❌ 发现的不规范 Themes 标题样例:");
     badTitleThemes.slice(0, 10).forEach(bt => {
-      console.log(`  - [${bt.id}] "${bt.title}" (镇街: ${bt.subdistrict}, 工单数: ${bt.ticketCount}, 建议: ${bt.actionSuggestion?.slice(0, 40)}...)`);
+      console.log(`  - [${bt.id}] "${bt.title}" (镇街: ${bt.canonicalLocation}, 工单数: ${bt.ticketCount}, 建议: ${bt.recommendedAction?.slice(0, 40)}...)`);
     });
   }
 

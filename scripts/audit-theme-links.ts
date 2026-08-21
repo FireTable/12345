@@ -55,7 +55,7 @@ async function main() {
         crossTownSamples.push({
           themeId: th.id,
           themeTitle: th.title,
-          themeTown: th.subdistrict,
+          themeTown: th.canonicalLocation,
           towns,
           tickets: linkedTickets.map(tk => `[${tk.subdistrict}] ${tk.ticketNo}: ${tk.title}`)
         });

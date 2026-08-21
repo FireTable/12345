@@ -1,7 +1,8 @@
 import { db } from "../db/client";
 import { sql, eq, inArray } from "drizzle-orm";
 import { ticketsTable, themesTable, ticketThemesTable } from "../db/schema";
-import { SHUNDE_TOWNSHIPS, CIVIC_CATEGORIES } from "../lib/vocabulary";
+import { SHUNDE_TOWNSHIPS } from "../lib/vocabulary";
+import { CIVIC_CATEGORIES } from "../lib/civic-cluster";
 
 // 常见泛词/通用动词短语停用词（坚决杜绝作为主体聚合）
 const GENERIC_STOP_WORDS = new Set([

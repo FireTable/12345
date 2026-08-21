@@ -1,7 +1,8 @@
 import { db } from "../db/client";
 import { sql, eq, inArray } from "drizzle-orm";
 import { ticketsTable, themesTable, ticketThemesTable } from "../db/schema";
-import { SHUNDE_TOWNSHIPS, CIVIC_CATEGORIES } from "../lib/vocabulary";
+import { SHUNDE_TOWNSHIPS } from "../lib/vocabulary";
+import { CIVIC_CATEGORIES } from "../lib/civic-cluster";
 
 // 顺德 10 大法定镇街全称列表
 const VALID_TOWNSHIPS = [
@@ -300,7 +301,7 @@ async function runRefinement() {
       handlingPath = "三方现场协调会 → 督促物业企业履行合同义务 → 动用物业维修基金 → 行业信用扣分";
     }
 
-    let actionSuggestion = th.actionSuggestion;
+    let actionSuggestion = th.recommendedAction;
     if (!actionSuggestion || actionSuggestion.length < 20 || actionSuggestion.includes("未标明")) {
       actionSuggestion = `建议由【${leadDept}】牵头，联合【${coDepts}】于24小时内赶赴${dominantTown}涉事现场开展实地排查；督促相关主体严格落实整改，72小时内反馈阶段性办理成效并做好诉求人解释答复。`;
     }
@@ -308,14 +309,14 @@ async function runRefinement() {
     await db.update(themesTable)
       .set({
         title: cleanThemeTitle,
-        subdistrict: dominantTown,
+        canonicalLocation: dominantTown,
         category: dominantCat,
+        eventType: dominantCat,
         ticketCount: linkedTickets.length,
-        urgency: hasUrgent ? "URGENT" : "NORMAL",
-        leadDepartment: leadDept,
-        coDepartments: coDepts,
-        handlingPath: handlingPath,
-        actionSuggestion: actionSuggestion,
+        riskLevel: hasUrgent ? "HIGH" : (linkedTickets.length >= 5 ? "MEDIUM" : "LOW"),
+        handlingOwner: leadDept,
+        aiSummary: actionSuggestion,
+        recommendedAction: actionSuggestion,
         firstAt: earliestTime || undefined,
         lastAt: latestTime || undefined
       })
