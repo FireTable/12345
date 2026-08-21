@@ -147,17 +147,18 @@ export function CivicNav() {
               </a>
 
               {session?.user ? (
-                <div className="navbar-user-box">
-                  <div className="navbar-user-tag" title={session.user.email}>
-                    <User size={13} />
-                    <span>{session.user.name || (session.user as any).username || "管理员"}</span>
-                    <span className="navbar-user-role">
-                      {(session.user as any).role === "admin" ? "管理员" : "经办员"}
-                    </span>
-                  </div>
+                <div className="navbar-user-card" title={session.user.email}>
+                  <User size={14} className="navbar-user-icon" />
+                  <span className="navbar-user-name">
+                    {session.user.name || (session.user as any).username || "管理员"}
+                  </span>
+                  <span className="navbar-user-role">
+                    {(session.user as any).role === "admin" ? "管理员" : "经办员"}
+                  </span>
+                  <span className="navbar-user-divider" />
                   <button
                     type="button"
-                    className="navbar-logout-btn"
+                    className="navbar-user-logout-btn"
                     onClick={handleSignOut}
                     title="退出登录"
                   >
@@ -166,7 +167,7 @@ export function CivicNav() {
                   </button>
                 </div>
               ) : (
-                <Link href="/login" className="navbar-logout-btn" style={{ textDecoration: "none" }}>
+                <Link href="/login" className="navbar-icon-btn" style={{ textDecoration: "none", width: "auto", padding: "0 12px" }}>
                   <span>登录</span>
                 </Link>
               )}

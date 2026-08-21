@@ -970,56 +970,74 @@
   color: var(--c-ink-3);
 }
 
-/* Navbar User Badge and Actions */
-.navbar-user-box {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.navbar-user-tag {
+/* Unified Navbar User Card with Integrated Logout (Consistent 34px Height & 8px Radius) */
+.navbar-user-card {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 99px;
-  background: var(--c-surface-2);
-  border: 1px solid var(--c-border-soft);
-  font-size: 12px;
-  color: var(--c-ink-2);
+  gap: 8px;
+  height: 34px;
+  padding: 0 4px 0 10px;
+  border-radius: 8px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  box-sizing: border-box;
+  font-size: 13px;
+  color: var(--c-ink);
+  transition: all 0.15s ease;
+}
+
+.navbar-user-icon {
+  color: var(--c-ink-3);
+  flex-shrink: 0;
+}
+
+.navbar-user-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--c-ink);
+  white-space: nowrap;
 }
 
 .navbar-user-role {
   background: var(--c-brand-soft);
   color: var(--c-brand-dark);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
-  padding: 1px 6px;
+  padding: 2px 6px;
   border-radius: 4px;
+  white-space: nowrap;
 }
 
-.navbar-logout-btn {
+.navbar-user-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--c-border);
+  flex-shrink: 0;
+  margin: 0 2px;
+}
+
+.navbar-user-logout-btn {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 5px 10px;
+  height: 26px;
+  padding: 0 8px;
   font-size: 12px;
   color: var(--c-ink-3) !important;
-  background: var(--c-surface);
-  border: 1px solid var(--c-border);
-  border-radius: 6px;
+  background: transparent;
+  border: none;
+  border-radius: 5px;
   cursor: pointer;
   transition: all 0.15s ease;
-  text-decoration: none !important;
+  white-space: nowrap;
 }
 
-.navbar-logout-btn:hover {
+.navbar-user-logout-btn:hover {
   background: #fff1f0 !important;
   color: var(--c-danger) !important;
-  border-color: #ffa39e !important;
 }
 
-/* Header Right Action Buttons (Pure Icon Buttons) */
+/* Header Right Action Buttons (Pure Icon Buttons, Consistent 34px Height & 8px Radius) */
 .navbar .navbar-icon-btn,
 .navbar-icon-btn {
   display: inline-flex;
