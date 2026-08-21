@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { X, Play, Film, CheckCircle2, ExternalLink } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { X, Play, Film, ExternalLink } from "lucide-react";
 
 export interface DemoVideo {
   id: string;
@@ -63,17 +64,57 @@ export function VideoModal({
   isOpen: boolean;
   onClose: () => void;
 }) {
+  const [mounted, setMounted] = useState(false);
   const [activeVideo, setActiveVideo] = useState<DemoVideo>(DEMO_VIDEOS[0]);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
-  if (!isOpen) return null;
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
-  return (
+  // Lock body scroll and handle Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
+  // Handle switching video without destroying video DOM element
+  const handleSelectVideo = (vid: DemoVideo) => {
+    if (vid.id === activeVideo.id) return;
+    setActiveVideo(vid);
+    if (videoRef.current) {
+      videoRef.current.src = vid.src;
+      videoRef.current.load();
+      videoRef.current.play().catch(() => {
+        // Autoplay may be blocked by browser policy without user gesture
+      });
+    }
+  };
+
+  if (!mounted || !isOpen) return null;
+
+  return createPortal(
     <div className="video-modal-backdrop" onClick={onClose}>
       <div
         className="video-modal-content"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
+        aria-labelledby="video-modal-title"
       >
         {/* Modal Header */}
         <div className="video-modal-header">
@@ -82,7 +123,9 @@ export function VideoModal({
               <Film size={18} />
             </div>
             <div>
-              <div className="video-modal-title">系统功能演示视频</div>
+              <div id="video-modal-title" className="video-modal-title">
+                系统功能演示视频
+              </div>
               <div className="video-modal-subtitle">
                 民声智理 · 顺德 12345 AI 智能研判系统演示全集
               </div>
@@ -102,16 +145,21 @@ export function VideoModal({
         <div className="video-modal-body">
           {/* Main Video Area */}
           <div className="video-player-container">
-            <video
-              key={activeVideo.src}
-              src={activeVideo.src}
-              controls
-              autoPlay
-              playsInline
-              className="video-element"
-            >
-              您的浏览器不支持 HTML5 视频播放。
-            </video>
+            <div className="video-screen-wrap">
+              <video
+                ref={videoRef}
+                src={activeVideo.src}
+                width={1280}
+                height={720}
+                controls
+                autoPlay
+                playsInline
+                preload="auto"
+                className="video-element"
+              >
+                您的浏览器不支持 HTML5 视频播放。
+              </video>
+            </div>
             <div className="video-info-card">
               <div className="video-info-top">
                 <span className="video-tag-pill">{activeVideo.tag}</span>
@@ -145,7 +193,7 @@ export function VideoModal({
                     key={vid.id}
                     type="button"
                     className={`video-playlist-item${isActive ? " is-active" : ""}`}
-                    onClick={() => setActiveVideo(vid)}
+                    onClick={() => handleSelectVideo(vid)}
                   >
                     <div className="video-item-index">
                       {isActive ? <Play size={12} fill="currentColor" /> : idx + 1}
@@ -164,6 +212,7 @@ export function VideoModal({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
