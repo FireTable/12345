@@ -87,3 +87,32 @@
 @keyframes copilot-caret {
   50% { opacity: 0; }
 }
+
+/* ponytail: 三个圆点循环 loading,从 0.6 → 1.2 倍缩放错峰,生成中状态。*/
+.copilot-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #2563eb;
+  animation: copilot-dot-pulse 1.2s ease-in-out infinite;
+}
+.copilot-dot--1 { animation-delay: 0s; }
+.copilot-dot--2 { animation-delay: 0.15s; }
+.copilot-dot--3 { animation-delay: 0.3s; }
+@keyframes copilot-dot-pulse {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40% { transform: scale(1.2); opacity: 1; }
+}
+
+/* ponytail: shadcn Tooltip 默认深色,覆写成 think 浮层的浅色卡片样式。*/
+.copilot-think-tooltip {
+  background: #ffffff !important;
+  color: #475569 !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 8px 24px -4px rgba(15, 23, 42, 0.12) !important;
+  padding: 10px 12px !important;
+  font-size: 11px !important;
+  line-height: 1.55 !important;
+  border-radius: 8px !important;
+}
