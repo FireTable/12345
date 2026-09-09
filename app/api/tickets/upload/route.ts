@@ -1,66 +1,7 @@
 import { NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import Papa from "papaparse";
-import { db } from "@/db/client";
-import { ticketsTable } from "@/db/schema";
-import { inArray } from "drizzle-orm";
-import { desensitizeContent } from "@/backend/anonymizer";
-import { AGENT_TICKET_NULLS } from "@/lib/civic-persist";
-import { invalidateCivicAggregates } from "@/lib/civic-cache";
-
-const HEADER_MAP: Record<string, string> = {
-  序号: "index",
-  工单编号: "ticketNo",
-  单号: "ticketNo",
-  标题: "title",
-  工单标题: "title",
-  内容: "content",
-  工单内容: "content",
-  诉求内容: "content",
-  诉求人: "citizenName",
-  联系电话: "citizenPhone",
-  电话: "citizenPhone",
-  登记时间: "createTime",
-  所属区域: "district",
-  区: "district",
-  所属镇街: "subdistrict",
-  街道: "subdistrict",
-  镇街: "subdistrict",
-  诉求渠道: "channel",
-  工单类型: "sourceCategory",
-  类型: "sourceCategory",
-  分类: "sourceCategory",
-  办结时间: "closedAt",
-  办结日期: "closedAt",
-  办结状态: "closureStatus",
-};
-
-function optionalText(value: unknown): string | null {
-  if (value == null) return null;
-  const text = String(value).trim();
-  return text || null;
-}
-
-const DATE_REGEX = /(\d{4}年\d{1,2}月\d{1,2}日|\d{1,2}月\d{1,2}日)[\s\S]{0,10}?(\d{1,2}[:：]\d{1,2}(?:[:：]\d{1,2})?)/;
-
-function extractDate(content: string): Date {
-  const match = content.match(DATE_REGEX);
-  if (match) {
-    try {
-      const nowYear = new Date().getFullYear();
-      let datePart = match[1].replace("年", "-").replace("月", "-").replace("日", "");
-      if (!datePart.includes("-20") && !datePart.startsWith("20")) {
-        datePart = `${nowYear}-${datePart}`;
-      }
-      const timePart = match[2].replace("：", ":");
-      const d = new Date(`${datePart} ${timePart}`);
-      if (!isNaN(d.getTime())) return d;
-    } catch (e) {
-      // Fallback
-    }
-  }
-  return new Date();
-}
+import { buildRecordsFromRows, insertRecordsBatch } from "@/lib/ticket-ingest";
 
 export async function POST(req: Request) {
   const startTime = Date.now();
@@ -101,111 +42,13 @@ export async function POST(req: Request) {
       });
     }
 
-    // 2. Normalize and validate records
-    const validRecords: any[] = [];
-    let failedCount = 0;
-
-    for (let idx = 0; idx < rawRows.length; idx++) {
-      const r = rawRows[idx];
-      const normalized: Record<string, any> = {};
-      for (const [k, v] of Object.entries(r)) {
-        const trimmedKey = k.trim();
-        const mappedKey = HEADER_MAP[trimmedKey] || trimmedKey;
-        normalized[mappedKey] = typeof v === "string" ? v.replace(/12345/g, "市民服务热线") : v;
-      }
-
-      const content = String(normalized.content || normalized.title || "").trim();
-      const title = String(normalized.title || "").trim();
-
-      if (!content && !title) {
-        failedCount++;
-        continue;
-      }
-
-      const ticketNo = String(
-        normalized.ticketNo || `GD-UPLOAD-${Date.now()}-${String(idx + 1).padStart(6, "0")}`
-      );
-      const createTime = extractDate(content);
-
-      let channel = normalized.channel || "市民服务热线";
-      if (title.includes("小程序")) channel = "微信小程序";
-      else if (title.includes("公众号")) channel = "微信公众号";
-
-      const closedAtRaw = normalized.closedAt;
-      let closedAt: Date | null = null;
-      if (closedAtRaw instanceof Date && !isNaN(closedAtRaw.getTime())) {
-        closedAt = closedAtRaw;
-      } else if (closedAtRaw) {
-        const parsed = new Date(String(closedAtRaw));
-        if (!isNaN(parsed.getTime())) closedAt = parsed;
-      }
-      const closureRaw = String(normalized.closureStatus || "").trim();
-      const closureStatus = closedAt
-        ? closureRaw.includes("重开") || closureRaw.toUpperCase() === "REOPENED"
-          ? "REOPENED"
-          : "RESOLVED"
-        : null;
-
-      validRecords.push({
-        id: `tk-${Date.now()}-${idx + 1}`,
-        ticketNo,
-        title: title || "",
-        content,
-        maskedContent: desensitizeContent(content),
-        citizenName: normalized.citizenName || "热线市民",
-        citizenPhone: normalized.citizenPhone || "",
-        ingestDistrict: optionalText(normalized.district),
-        ingestSubdistrict: optionalText(normalized.subdistrict),
-        ingestCategory: optionalText(normalized.sourceCategory),
-        ...AGENT_TICKET_NULLS,
-        urgency: "NORMAL",
-        channel,
-        status: "PENDING",
-        createTime,
-        closedAt,
-        closureStatus,
-        isFakeClosure: false,
-      });
-    }
-
-    // 3. Batch Chunking into PostgreSQL
-    // ponytail: 500/批，22 字段上限 ~11k 参数，PG max_params=32767 安全区
-    const BATCH_SIZE = 500;
-    let insertedCount = 0;
-    let duplicateCount = 0;
-
-    for (let i = 0; i < validRecords.length; i += BATCH_SIZE) {
-      const chunk = validRecords.slice(i, i + BATCH_SIZE);
-      try {
-        const ticketNos = chunk.map((c) => c.ticketNo);
-        const existing = await db
-          .select({ ticketNo: ticketsTable.ticketNo })
-          .from(ticketsTable)
-          .where(inArray(ticketsTable.ticketNo, ticketNos));
-
-        const existingSet = new Set(existing.map((e) => e.ticketNo));
-        duplicateCount += existingSet.size;
-
-        const newRecords = chunk.filter((c) => !existingSet.has(c.ticketNo));
-
-        if (newRecords.length > 0) {
-          // ponytail: 锁定 ticketNo 唯一约束去重，用 returning 拿到 DB 真插入数，
-          // 不再用 catch 静默累加避免「API 报成功 / DB 没进」的不一致
-          const inserted = await db
-            .insert(ticketsTable)
-            .values(newRecords)
-            .onConflictDoNothing({ target: ticketsTable.ticketNo })
-            .returning({ id: ticketsTable.id });
-          insertedCount += inserted.length;
-        }
-      } catch (dbErr: any) {
-        console.error(`[upload] chunk ${i}-${i + BATCH_SIZE} 失败:`, dbErr?.message || dbErr);
-        failedCount += chunk.length;
-      }
-    }
+    // 2. Normalize and 3. Batch insert (delegated to shared lib)
+    const { records, failedCount: normalizedFailed } = buildRecordsFromRows(rawRows, "GD-UPLOAD");
+    const { insertedCount, duplicateCount, failedCount: batchFailed } =
+      await insertRecordsBatch(records);
+    const failedCount = normalizedFailed + batchFailed;
 
     const durationMs = Date.now() - startTime;
-    invalidateCivicAggregates();
 
     return NextResponse.json({
       success: true,
