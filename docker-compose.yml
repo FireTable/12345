@@ -40,7 +40,7 @@ services:
 
   app:
     # Service renamed: ticket-radar-app (避免 DNS clash with langgraph-app 的 `app`)
-    image: minsheng-zhili:v0.1.2
+    image: ticket-radar:v0.1.2
     build:
       context: .
       dockerfile: Dockerfile
