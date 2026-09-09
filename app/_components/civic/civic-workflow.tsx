@@ -54,6 +54,18 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
 
   const loadTicketStatus = useCallback(async () => {
     try {
+      // ponytail: 未登录态先打公开端点拿到工单数,登录态再升级到 /api/overview。
+      const pub = await fetch("/api/public/overview")
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null);
+      if (pub && typeof pub.totalWorkorders === "number") {
+        setTicketStatus({
+          total: pub.totalWorkorders,
+          analyzed: pub.analyzedCount || 0,
+          loaded: true,
+        });
+        return;
+      }
       const res = await fetch("/api/overview");
       const data = await res.json();
       if (data.success) {
@@ -111,16 +123,23 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
 
   const openCopilot = useCallback(async () => {
     try {
+      // ponytail: 未登录态 overview/clusters 返 401,优先打 /api/public/* 拿公开数据;
+      // 公开端点也挂了再退到 ticketStatus(本地已加载的态),最后兜底 0。
       const [ov, cl] = await Promise.all([
-        fetch("/api/overview").then((r) => r.json()),
-        fetch("/api/clusters").then((r) => r.json()),
+        fetch("/api/public/overview")
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+        fetch("/api/clusters").then((r) => (r.ok ? r.json() : null)).catch(() => null),
       ]);
-      const list = cl.topClusters || [];
+      const fallbackOv = ov || { totalWorkorders: ticketStatus.total, multiFreqCount: 0, multiFreqClusters: 0 };
+      const list = cl?.topClusters || [];
+      const totalTickets = fallbackOv.totalWorkorders || 0;
+      const themeCount = fallbackOv.multiFreqClusters || list.length || 0;
       setStats({
         ...emptyStats,
-        totalTickets: ov.totalWorkorders || 0,
-        multiFrequencyTickets: ov.multiFreqCount || 0,
-        themeCount: ov.multiFreqClusters || list.length,
+        totalTickets,
+        multiFrequencyTickets: fallbackOv.multiFreqCount || 0,
+        themeCount,
         highRiskCount: list.filter((c: { urgency?: string }) => c.urgency === "urgent").length,
       });
       setThemes(
@@ -158,7 +177,7 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
       /* 打开助手仍可用，只是开场统计可能为空 */
     }
     setCopilotOpen(true);
-  }, []);
+  }, [ticketStatus.total]);
 
   return (
     <CivicWorkflowContext.Provider
