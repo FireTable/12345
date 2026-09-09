@@ -11,13 +11,15 @@ function decodeSseDelta(payload: string): string {
   if (!payload || payload === "[DONE]") return "";
   try {
     const json = JSON.parse(payload);
-    const delta = json?.choices?.[0]?.delta?.content;
-    if (typeof delta === "string") return delta;
-    if (Array.isArray(delta)) {
-      return delta.map((p: { text?: string }) => p?.text || "").join("");
+    // ponytail: 同时支持 OpenAI 兼容 SSE (choices[0].delta.content) 和 ollama 原生
+    // /api/generate (jsonl: {response: "..."})。reasoning_content / thinking 是模型内部思考,
+    // 永远不外泄给用户。
+    if (typeof json?.response === "string") return json.response;
+    const choice = json?.choices?.[0];
+    if (choice?.delta?.content && typeof choice.delta.content === "string") {
+      return choice.delta.content;
     }
-    const content = json?.choices?.[0]?.message?.content;
-    return typeof content === "string" ? content : "";
+    return "";
   } catch {
     return "";
   }
@@ -55,9 +57,29 @@ export async function POST(req: Request) {
     const baseURL = (process.env.OPENAI_BASE_URL || "http://127.0.0.1:8080/v1").replace(/\/$/, "");
     const model = process.env.OPENAI_MODEL || "MiniCPM4.1-8B-MLX";
 
+    // ponytail: 走 ollama /api/generate + raw 模式,绕过 ollama 内置 chat template 强制注入的
+    // thinking envelope(qwen3/minicpm 都中招),让模型直接出答复。
+    // 非 ollama 端点(OpenAI 兼容 /v1/chat/completions)走标准 chat 路径。
+    const isOllama = baseURL.includes("11434");
+    const upstreamURL = isOllama ? `${baseURL.replace(/\/v1$/, "")}/api/generate` : `${baseURL}/chat/completions`;
+    const upstreamBody = isOllama
+      ? JSON.stringify({
+          model,
+          prompt: `<|im_start|>user\n${systemPrompt}<|im_end|>\n<|im_start|>assistant\n`,
+          stream: true,
+          raw: true,
+          options: { temperature: 0.3, num_predict: 1024 },
+        })
+      : JSON.stringify({
+          model,
+          temperature: 0.3,
+          stream: true,
+          messages: [{ role: "user", content: systemPrompt }],
+        });
+
     const abort = new AbortController();
     const killer = setTimeout(() => abort.abort(), 60000);
-    const upstream = await fetch(`${baseURL}/chat/completions`, {
+    const upstream = await fetch(upstreamURL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -65,12 +87,7 @@ export async function POST(req: Request) {
         "User-Agent":
           "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       },
-      body: JSON.stringify({
-        model,
-        temperature: 0.3,
-        stream: true,
-        messages: [{ role: "user", content: systemPrompt }],
-      }),
+      body: upstreamBody,
       signal: abort.signal,
     }).finally(() => clearTimeout(killer));
 
@@ -82,37 +99,47 @@ export async function POST(req: Request) {
       );
     }
 
+    // ponytail: 用 TransformStream + 直接 pipe ollama body,避开 Next.js dev mode 对自定义
+    // ReadableStream 的 buffering bug;同时关掉 instrumentation hint,让 stream 真走 chunked。
+    if (!upstream.body) {
+      return NextResponse.json(
+        { success: false, error: "upstream returned no body" },
+        { status: 502 }
+      );
+    }
+    const { readable, writable } = new TransformStream();
+    const writer = writable.getWriter();
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
-    const reader = upstream.body.getReader();
     let carry = "";
 
-    const readable = new ReadableStream({
-      async pull(controller) {
-        const { done, value } = await reader.read();
-        if (done) {
-          carry += decoder.decode();
-          if (carry.startsWith("data:")) {
-            const text = decodeSseDelta(carry.replace(/^data:\s*/, "").trim());
-            if (text) controller.enqueue(encoder.encode(text));
+    void (async () => {
+      const reader = upstream.body!.getReader();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            carry += decoder.decode();
+            const text = decodeSseDelta(carry.trim());
+            if (text) await writer.write(encoder.encode(text));
+            break;
           }
-          controller.close();
-          return;
+          carry += decoder.decode(value, { stream: true });
+          const lines = carry.split(/\r?\n/);
+          carry = lines.pop() || "";
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            const body = trimmed.startsWith("data:") ? trimmed.replace(/^data:\s*/, "").trim() : trimmed;
+            if (body === "[DONE]") continue;
+            const text = decodeSseDelta(body);
+            if (text) await writer.write(encoder.encode(text));
+          }
         }
-        carry += decoder.decode(value, { stream: true });
-        const lines = carry.split(/\r?\n/);
-        carry = lines.pop() || "";
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith("data:")) continue;
-          const text = decodeSseDelta(trimmed.replace(/^data:\s*/, "").trim());
-          if (text) controller.enqueue(encoder.encode(text));
-        }
-      },
-      cancel() {
-        void reader.cancel();
-      },
-    });
+      } finally {
+        try { await writer.close(); } catch { /* already closed */ }
+      }
+    })();
 
     return new Response(readable, {
       headers: {
