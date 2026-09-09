@@ -55,6 +55,13 @@ export const DEMO_VIDEOS: DemoVideo[] = [
     src: "/videos/标准字典.mp4",
     tag: "📖 权威白名单",
   },
+  {
+    id: "collapse",
+    title: "AI 折叠工单演示",
+    desc: "AI 自动将相似工单折叠聚合，批量处置提升审核与研判效率",
+    src: "/videos/折叠功能.mp4",
+    tag: "🪗 AI 折叠",
+  },
 ];
 
 export function VideoModal({
