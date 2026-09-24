@@ -53,13 +53,15 @@ export function CivicNav() {
     <>
     <nav className="navbar">
       <div className="navbar__brand" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-        <Link href="/" style={{ display: "flex", alignItems: "center", gap: "8px", textDecoration: "none", color: "inherit" }}>
+        <Link href="/" style={{ display: "flex", alignItems: "center", textDecoration: "none", color: "inherit" }}>
           <div className="brand-logo">民声智理</div>
-          <span className="brand-text-full">
-            {activeRegion ? `${activeRegion.name} ` : ""}12345 AI 智能研判系统
-          </span>
         </Link>
         <RegionSelector />
+        <Link href="/" style={{ display: "flex", alignItems: "center", textDecoration: "none", color: "inherit" }}>
+          <span className="brand-text-full">
+            12345 AI 智能研判系统
+          </span>
+        </Link>
       </div>
 
       {isLoginPage ? (
