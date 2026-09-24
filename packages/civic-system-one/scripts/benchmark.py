@@ -313,8 +313,8 @@ def print_comparison_table(metrics_list):
 def main():
     parser = argparse.ArgumentParser(description="@civic/system-one Unified Benchmark")
     parser.add_argument("--file", type=str, default="", help="Path to input Excel or jsonl dataset")
-    parser.add_argument("--mode", type=str, choices=["sample", "full"], default="sample", help="Benchmark mode: sample (300) or full (128k)")
-    parser.add_argument("--sample-size", type=int, default=300, help="Number of samples to evaluate in sample mode")
+    parser.add_argument("--mode", type=str, choices=["sample", "full"], default="sample", help="Benchmark mode: sample (3,000) or full (128k)")
+    parser.add_argument("--sample-size", type=int, default=3000, help="Number of samples to evaluate in sample mode (default: 3000)")
     parser.add_argument("--engine", type=str, choices=["all", "mps", "onnx", "base"], default="all", help="Engine to benchmark")
     parser.add_argument("--audit", type=int, default=15, help="Number of records to spot-check audit (0 to disable)")
     parser.add_argument("--output", type=str, default="", help="Optional path to output json report")
