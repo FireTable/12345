@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useRegion } from "./region-context";
-import { MapPin, ChevronDown, Check, Settings, Plus, Sparkles, Building2 } from "lucide-react";
+import { MapPin, ChevronDown, Check, Settings } from "lucide-react";
 
 export function RegionSelector() {
   const { activeRegion, regions, switchRegion } = useRegion();
@@ -99,14 +99,8 @@ export function RegionSelector() {
                   onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isSelected ? "#F1F5F9" : "#F8FAFC")}
                   onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = isSelected ? "#F8FAFC" : "transparent")}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <Building2 style={{ width: "15px", height: "15px", color: isSelected ? "#2563EB" : "#94A3B8" }} />
-                    <div>
-                      <div style={{ fontWeight: 600 }}>{r.city} · {r.name}</div>
-                      <div style={{ fontSize: "11px", color: "#94A3B8" }}>12345 政务服务热线</div>
-                    </div>
-                  </div>
-                  {isSelected && <Check style={{ width: "15px", height: "15px", color: "#2563EB" }} />}
+                  <span>{r.city} · {r.name}</span>
+                  {isSelected && <Check style={{ width: "14px", height: "14px", color: "#2563EB", flexShrink: 0 }} />}
                 </button>
               );
             })}
@@ -123,15 +117,15 @@ export function RegionSelector() {
               gap: "8px",
               padding: "8px 12px",
               fontSize: "12px",
-              fontWeight: 600,
+              fontWeight: 500,
               color: "#475569",
               textDecoration: "none",
             }}
             onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#F8FAFC")}
             onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
           >
-            <Settings style={{ width: "13px", height: "13px", color: "#64748B" }} />
-            <span>⚙️ 站点管理中心 (SuperAdmin)</span>
+            <Settings style={{ width: "14px", height: "14px", color: "#64748B" }} />
+            <span>站点管理中心</span>
           </Link>
         </div>
       )}
