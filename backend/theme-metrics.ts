@@ -3,9 +3,8 @@ import { RULES, negativeTermsPattern } from "./rules";
 
 const NEGATIVE_RE = negativeTermsPattern();
 
-// 通用镇街/街道识别模式（支持区/县/镇/街道/乡后缀，并兼容顺德及广州等核心辖区）
-const GENERAL_TOWNSHIP_RE =
-  /(?:街道|镇|乡|区)$|(?:大良|容桂|伦教|勒流|陈村|北滘|乐从|龙江|杏坛|均安|琶洲|凤阳|赤岗|新港|江南中|昌岗|滨江|素社|海幢|南华西|龙凤|沙园|南石头|瑞宝|江海|南洲|华洲|官洲)/;
+// 通用行政区划模式（包含区/县/镇/街道/乡后缀或标准区划简称，无硬编码地名）
+const GENERAL_TOWNSHIP_RE = /(?:街道|镇|乡|区|县)$|^[\u4e00-\u9fff]{2,8}$/;
 
 export const MODE_META: Record<
   CivicMode,

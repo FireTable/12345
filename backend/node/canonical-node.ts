@@ -36,14 +36,13 @@ function isSamePhysicalEntity(a: string, b: string): boolean {
     return plateA !== null && plateB !== null && plateA === plateB;
   }
 
-  // 2. 严禁对通用虚词进行包含归并
-  const genericTokens = ["车主", "小车", "车辆", "商户", "商家", "店主", "业主", "物业", "公司", "项目部", "涉事方", "责任主体"];
-  if (genericTokens.includes(cleanA) || genericTokens.includes(cleanB)) {
+  // 2. 实体名称长度过短 (<= 2 字) 严禁做包含归并，避免误合并
+  if (cleanA.length <= 2 || cleanB.length <= 2) {
     return false;
   }
 
-  // 3. 专有商业字号前缀对齐（字号长度至少 >= 3，且核心词根完全吻合）
-  if (cleanA.length >= 3 && cleanB.length >= 3) {
+  // 3. 专有商业字号前缀对齐（字号长度至少 >= 4，且核心词根完全吻合）
+  if (cleanA.length >= 4 && cleanB.length >= 4) {
     if (cleanA.startsWith(cleanB) || cleanB.startsWith(cleanA)) {
       return true;
     }

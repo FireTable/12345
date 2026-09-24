@@ -27,6 +27,7 @@ import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { useRegion, RegionInfo } from "@/app/_components/civic/region-context";
 import { ConfirmDialog } from "@/app/_components/ui/confirm-dialog";
 import { toast } from "sonner";
+import { resolveApiError } from "@/lib/api-codes";
 
 interface RegionWithStats extends RegionInfo {
   ticketCount: number;
@@ -158,7 +159,7 @@ export default function AdminRegionsPage() {
 
       const data = await res.json();
       if (!data.success) {
-        throw new Error(data.error || "AI 提取政务区划失败");
+        throw new Error(resolveApiError(data, "AI 提取政务区划失败"));
       }
 
       setScoutResult(data.data);
@@ -197,7 +198,7 @@ export default function AdminRegionsPage() {
       });
       const data1 = await res1.json();
       if (!data1.success) {
-        throw new Error(data1.error || "创建地区 Schema 失败");
+        throw new Error(resolveApiError(data1, "创建地区 Schema 失败"));
       }
 
       // 2. 批量写入该 Schema 的字典与别名
@@ -212,7 +213,7 @@ export default function AdminRegionsPage() {
       });
       const data2 = await res2.json();
       if (!data2.success) {
-        throw new Error(data2.error || "字典同步失败");
+        throw new Error(resolveApiError(data2, "字典同步失败"));
       }
 
       toast.success(`🎉 站点【${scoutForm.city} · ${scoutForm.district}】纳管初始化完毕！`);
@@ -244,7 +245,7 @@ export default function AdminRegionsPage() {
         toast.success(`已将【${region.name}】设为全局默认站点`);
         fetchRegions();
       } else {
-        toast.error(data.error || "设置失败");
+        toast.error(resolveApiError(data, "设置失败"));
       }
     } catch (e: any) {
       toast.error("操作异常");
@@ -265,7 +266,7 @@ export default function AdminRegionsPage() {
         setDeletingRegion(null);
         fetchRegions();
       } else {
-        toast.error(data.error || "删除失败");
+        toast.error(resolveApiError(data, "删除失败"));
       }
     } catch (e: any) {
       toast.error("删除异常");
@@ -313,7 +314,7 @@ export default function AdminRegionsPage() {
         setPreviewSvg(null);
         fetchRegions();
       } else {
-        toast.error(data.error || "地图上传失败");
+        toast.error(resolveApiError(data, "地图上传失败"));
       }
     } catch (e: any) {
       toast.error("上传异常");

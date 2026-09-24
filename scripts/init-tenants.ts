@@ -164,18 +164,18 @@ async function main() {
   const haizhuPreset: PresetData = JSON.parse(fs.readFileSync(haizhuPresetPath, "utf-8"));
 
   // 2. 注册顺德站点
-  console.log("📍 [1/2] 注册并初始化【佛山市顺德区】(Schema: region_shunde)...");
+  console.log("📍 [1/2] 注册并初始化【佛山市顺德区】(Schema: region_fs_shunde)...");
   await registerRegion(sql, {
     id: shundePreset.id,
     name: shundePreset.name,
     city: shundePreset.city,
     province: shundePreset.province,
-    schemaName: "region_shunde",
+    schemaName: "region_fs_shunde",
     svgMapPath: "/civic/shunde-map.svg",
     description: "顺德区 10 大法定镇街政务研判站点",
     isDefault: true,
   });
-  await seedVocabForSchema("region_shunde", shundePreset);
+  await seedVocabForSchema("region_fs_shunde", shundePreset);
 
   // 3. 注册广州海珠站点
   console.log("\n📍 [2/2] 注册并初始化【广州市海珠区】(Schema: region_gz_haizhu)...");

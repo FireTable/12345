@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { getChatModel } from "@/backend/model";
+import { apiSuccess, apiError, ApiCode } from "@/lib/api-codes";
 
 /**
  * POST /api/admin/regions/ai-scout
@@ -15,10 +16,7 @@ export async function POST(req: NextRequest) {
     const { province = "广东省", city = "广州市", district = "海珠区" } = body;
 
     if (!district || !city) {
-      return NextResponse.json(
-        { success: false, error: "请提供城市与区县名称，例如：广州市 天河区" },
-        { status: 400 }
-      );
+      return apiError(ApiCode.INVALID_PARAMS, undefined, 400);
     }
 
     const prompt = `你是中国民政政务区划、城市网格化管理与 12345 政务服务热线体系专家。
@@ -100,18 +98,10 @@ export async function POST(req: NextRequest) {
     }
 
     if (!parsed || !Array.isArray(parsed.townships)) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "AI 生成内容格式解析失败，请重试",
-          rawText: text.slice(0, 500),
-        },
-        { status: 500 }
-      );
+      return apiError(ApiCode.AI_PARSE_FAILED, undefined, 500);
     }
 
-    return NextResponse.json({
-      success: true,
+    return apiSuccess({
       meta: {
         province,
         city,
@@ -119,13 +109,10 @@ export async function POST(req: NextRequest) {
         townshipCount: parsed.townships.length,
         departmentCount: parsed.departments?.length || 0,
       },
-      data: parsed,
+      ...parsed,
     });
   } catch (error: any) {
     console.error("[api/admin/regions/ai-scout] Error:", error);
-    return NextResponse.json(
-      { success: false, error: error.message || "AI 智能提取政务区划失败" },
-      { status: 500 }
-    );
+    return apiError(ApiCode.AI_SCOUT_FAILED, error.message, 500);
   }
 }

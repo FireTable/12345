@@ -68,11 +68,11 @@ export function RegionSelector() {
             zIndex: 9999,
           }}
         >
-          <div style={{ padding: "6px 12px", fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-            切换运行地区站点 (Schema 隔离)
+          <div style={{ padding: "8px 12px 6px", fontSize: "11px", fontWeight: 600, color: "#64748B", letterSpacing: "0.3px" }}>
+            切换业务辖区
           </div>
 
-          <div style={{ maxHeight: "200px", overflowY: "auto" }}>
+          <div style={{ maxHeight: "240px", overflowY: "auto" }}>
             {regions.map((r) => {
               const isSelected = r.id === activeRegion.id;
               return (
@@ -100,13 +100,13 @@ export function RegionSelector() {
                   onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = isSelected ? "#F8FAFC" : "transparent")}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <Building2 style={{ width: "14px", height: "14px", color: isSelected ? "#2563EB" : "#94A3B8" }} />
+                    <Building2 style={{ width: "15px", height: "15px", color: isSelected ? "#2563EB" : "#94A3B8" }} />
                     <div>
-                      <div>{r.city} · {r.name}</div>
-                      <div style={{ fontSize: "10px", color: "#94A3B8", fontFamily: "monospace" }}>{r.schemaName}</div>
+                      <div style={{ fontWeight: 600 }}>{r.city} · {r.name}</div>
+                      <div style={{ fontSize: "11px", color: "#94A3B8" }}>12345 政务服务热线</div>
                     </div>
                   </div>
-                  {isSelected && <Check style={{ width: "14px", height: "14px", color: "#2563EB" }} />}
+                  {isSelected && <Check style={{ width: "15px", height: "15px", color: "#2563EB" }} />}
                 </button>
               );
             })}

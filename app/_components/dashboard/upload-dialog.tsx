@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import type { MultiFrequencyTheme, OverallStats, GraphData } from "@/backend/state";
 import type { TaskProgress } from "@/lib/task-progress";
 import { claimClusterTask, releaseClusterTask } from "@/lib/cluster-client";
+import { resolveApiError } from "@/lib/api-codes";
 
 interface UploadDialogProps {
   isOpen: boolean;
@@ -165,9 +166,10 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
         if (onDatabaseUpdated) onDatabaseUpdated();
         toast.success(`后端解析入库完成！共处理 ${json.data.totalParsed} 条工单`);
       } else {
-        setErrorMessage(json.error || "后端解析失败，请检查文件格式");
+        const errorText = resolveApiError(json, "后端解析失败，请检查文件格式");
+        setErrorMessage(errorText);
         setStep("ERROR");
-        toast.error(`上传入库失败: ${json.error || "未知错误"}`);
+        toast.error(`上传入库失败: ${errorText}`);
       }
     } catch (err: any) {
       setErrorMessage(err.message || "网络通信异常，请重试");
@@ -204,9 +206,10 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
         if (onDatabaseUpdated) onDatabaseUpdated();
         toast.success(`粘贴入库完成！共处理 ${json.data.totalParsed} 条工单`);
       } else {
-        setErrorMessage(json.error || "后端粘贴解析失败");
+        const errorText = resolveApiError(json, "后端粘贴解析失败");
+        setErrorMessage(errorText);
         setStep("ERROR");
-        toast.error(`粘贴入库失败: ${json.error || "未知错误"}`);
+        toast.error(`粘贴入库失败: ${errorText}`);
       }
     } catch (err: any) {
       setErrorMessage(err.message || "网络通信异常，请重试");
@@ -315,9 +318,10 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
       } else {
         onClusteringChange?.(false);
         releaseClusterTask(taskId);
-        setErrorMessage(clusterJson.error || "Agent 智能聚类失败");
+        const errorText = resolveApiError(clusterJson, "Agent 智能聚类失败");
+        setErrorMessage(errorText);
         setStep("ERROR");
-        toast.error("智能聚类失败，请重试");
+        toast.error(errorText);
       }
     } catch (err: any) {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);

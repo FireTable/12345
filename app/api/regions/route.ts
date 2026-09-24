@@ -32,11 +32,11 @@ export async function GET() {
         error: error.message || "Failed to load regions",
         regions: [
           {
-            id: "shunde",
+            id: "fs_shunde",
             name: "顺德区",
             city: "佛山市",
             province: "广东省",
-            schemaName: "region_shunde",
+            schemaName: "region_fs_shunde",
             svgMapPath: "/civic/shunde-map.svg",
             isDefault: true,
           },

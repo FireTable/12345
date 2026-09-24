@@ -26,6 +26,7 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/app/_components/ui/confirm-dialog";
 import { TablePager } from "@/app/_components/civic/table-pager";
 import { useRegion } from "@/app/_components/civic/region-context";
+import { resolveApiError } from "@/lib/api-codes";
 
 interface TownshipItem {
   name: string;
@@ -175,7 +176,7 @@ export default function DictionaryManagementPage() {
         setNewCanonical("");
         fetchData();
       } else {
-        toast.error(data.error || "添加失败");
+        toast.error(resolveApiError(data, "添加失败"));
       }
     } catch (e) {
       toast.error("添加请求异常");
@@ -197,7 +198,7 @@ export default function DictionaryManagementPage() {
         setPendingDelete(null);
         fetchData();
       } else {
-        toast.error("删除失败");
+        toast.error(resolveApiError(data, "删除失败"));
       }
     } catch (e) {
       toast.error("删除异常");

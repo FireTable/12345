@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { sql, getRegionDb, getAllRegions } from "@/db/client";
 import { destroyRegionTenant } from "@/lib/tenant/schema-manager";
 import { invalidateVocabCache } from "@/lib/vocabulary";
+import { ApiCode, apiSuccess, apiError } from "@/lib/api-codes";
 
 /**
  * GET /api/admin/regions/[id]
@@ -15,17 +16,11 @@ export async function GET(
     const { id } = await params;
     const { region } = await getRegionDb(id);
     if (!region) {
-      return NextResponse.json(
-        { success: false, error: `未找到地区 ID 为 [${id}] 的站点` },
-        { status: 404 }
-      );
+      return apiError(ApiCode.REGION_NOT_FOUND, undefined, 404);
     }
-    return NextResponse.json({ success: true, region });
+    return apiSuccess({ region });
   } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 500 }
-    );
+    return apiError(ApiCode.INTERNAL_ERROR, error.message, 500);
   }
 }
 
@@ -42,32 +37,20 @@ export async function DELETE(
     const all = await getAllRegions();
 
     if (all.length <= 1) {
-      return NextResponse.json(
-        { success: false, error: "系统至少需要保留一个地区站点，严禁全部删除" },
-        { status: 400 }
-      );
+      return apiError(ApiCode.FORBIDDEN, "系统至少需保留一个地区站点", 400);
     }
 
     const ok = await destroyRegionTenant(sql, id);
     if (!ok) {
-      return NextResponse.json(
-        { success: false, error: `删除失败，未找到该地区站点` },
-        { status: 404 }
-      );
+      return apiError(ApiCode.REGION_NOT_FOUND, undefined, 404);
     }
 
     invalidateVocabCache(id);
 
-    return NextResponse.json({
-      success: true,
-      message: `已成功彻底销毁地区站点 [${id}] 及其独立的物理 Schema 数据库`,
-    });
+    return apiSuccess({ id }, `已成功销毁站点 [${id}]`);
   } catch (error: any) {
     console.error("[admin/regions/[id]] DELETE failed:", error);
-    return NextResponse.json(
-      { success: false, error: error.message || "删除地区站点失败" },
-      { status: 500 }
-    );
+    return apiError(ApiCode.REGION_DROP_FAILED, error.message, 500);
   }
 }
 
@@ -103,14 +86,8 @@ export async function PATCH(
 
     invalidateVocabCache(id);
 
-    return NextResponse.json({
-      success: true,
-      message: "地区站点信息已更新",
-    });
+    return apiSuccess({ id });
   } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || "更新失败" },
-      { status: 500 }
-    );
+    return apiError(ApiCode.INTERNAL_ERROR, error.message, 500);
   }
 }

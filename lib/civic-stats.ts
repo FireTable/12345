@@ -261,7 +261,7 @@ export function buildInsights(
     cards.push({
       tag: "聚集",
       tone: "danger",
-      title: gatherTheme.title || `${gatherTheme.canonicalLocation || "顺德"} · ${gatherTheme.category || "民生"}诉求聚集`,
+      title: gatherTheme.title || `${gatherTheme.canonicalLocation || "辖区"} · ${gatherTheme.category || "民生"}诉求聚集`,
       text: `${gatherTheme.canonicalLocation || ""}集中出现 ${gatherTheme.ticketCount || 0} 件${gatherTheme.category || ""}诉求，建议多部门现场联合处置。`,
       href: `/themes/${gatherTheme.id}`,
     });

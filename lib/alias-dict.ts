@@ -219,12 +219,7 @@ export function registerAlias(alias: string, canonical: string, regionIdOrSchema
   const cleanAlias = (alias || "").trim();
   const cleanCanonical = (canonical || "").trim();
 
-  if (!cleanAlias || !cleanCanonical || cleanAlias === cleanCanonical) {
-    return false;
-  }
-
-  const blacklist = ["车主", "小车", "车辆", "商户", "商家", "市民", "某单位", "当事人", "某人"];
-  if (blacklist.includes(cleanAlias)) {
+  if (!cleanAlias || !cleanCanonical || cleanAlias === cleanCanonical || cleanAlias.length <= 1) {
     return false;
   }
 

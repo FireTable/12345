@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { getRegionDb } from "@/db/client";
 import { vocabulariesTable, aliasesTable, type AliasRecord, type VocabularyRecord } from "@/db/schema";
 import { eq, desc, ilike, or } from "drizzle-orm";
 import { normalizeAliasesInText, registerAlias, getAllAliases } from "@/lib/alias-dict";
 import { getRegionVocabulary } from "@/lib/vocabulary";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
+import { apiSuccess, apiError, ApiCode } from "@/lib/api-codes";
 
 export async function GET(req: NextRequest) {
   try {
@@ -68,8 +69,7 @@ export async function GET(req: NextRequest) {
       manualAliasCount: aliases.filter((a) => a.source === "MANUAL").length,
     };
 
-    return NextResponse.json({
-      success: true,
+    return apiSuccess({
       region: {
         id: region?.id || regionId,
         name: region?.name || regionVocab.regionName,
@@ -84,10 +84,7 @@ export async function GET(req: NextRequest) {
     });
   } catch (err: any) {
     console.error("[api/dict] GET error:", err);
-    return NextResponse.json(
-      { success: false, error: err.message || "Failed to fetch vocabulary" },
-      { status: 500 }
-    );
+    return apiError(ApiCode.INTERNAL_ERROR, err.message, 500);
   }
 }
 
@@ -102,8 +99,7 @@ export async function POST(req: NextRequest) {
     if (action === "normalize") {
       const text = String(body.text || "");
       const normalized = normalizeAliasesInText(text);
-      return NextResponse.json({
-        success: true,
+      return apiSuccess({
         original: text,
         normalized,
       });
@@ -113,10 +109,7 @@ export async function POST(req: NextRequest) {
     if (action === "add_alias") {
       const { alias, canonical, type } = body;
       if (!alias || !canonical) {
-        return NextResponse.json(
-          { success: false, error: "别名与规范名称均不能为空" },
-          { status: 400 }
-        );
+        return apiError(ApiCode.INVALID_PARAMS, "别名与规范名称均不能为空", 400);
       }
 
       const cleanAlias = String(alias).trim();
@@ -146,7 +139,7 @@ export async function POST(req: NextRequest) {
           });
       } catch (e) {}
 
-      return NextResponse.json({ success: true, message: "别名添加成功" });
+      return apiSuccess({ alias: cleanAlias, canonical: cleanCanonical });
     }
 
     // 3. 删除别名
@@ -157,14 +150,11 @@ export async function POST(req: NextRequest) {
       } else if (alias) {
         await tenantDb.delete(aliasesTable).where(eq(aliasesTable.alias, alias));
       }
-      return NextResponse.json({ success: true, message: "别名已删除" });
+      return apiSuccess();
     }
 
-    return NextResponse.json({ success: false, error: "Unknown action" }, { status: 400 });
+    return apiError(ApiCode.BAD_REQUEST, "Unknown action", 400);
   } catch (err: any) {
-    return NextResponse.json(
-      { success: false, error: err.message || "Operation failed" },
-      { status: 500 }
-    );
+    return apiError(ApiCode.INTERNAL_ERROR, err.message, 500);
   }
 }

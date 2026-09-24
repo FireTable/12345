@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { sql, getRegionDb } from "@/db/client";
 import fs from "fs";
 import path from "path";
+import { apiSuccess, apiError, ApiCode } from "@/lib/api-codes";
 
 /**
  * POST /api/admin/regions/[id]/upload-map
@@ -15,30 +16,21 @@ export async function POST(
     const { id } = await params;
     const { region } = await getRegionDb(id);
     if (!region) {
-      return NextResponse.json(
-        { success: false, error: `未找到地区 ID 为 [${id}] 的站点` },
-        { status: 404 }
-      );
+      return apiError(ApiCode.REGION_NOT_FOUND, undefined, 404);
     }
 
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
 
     if (!file) {
-      return NextResponse.json(
-        { success: false, error: "请上传 SVG 地图文件" },
-        { status: 400 }
-      );
+      return apiError(ApiCode.FILE_EMPTY, undefined, 400);
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const textContent = buffer.toString("utf-8");
 
     if (!textContent.includes("<svg") || !textContent.includes("</svg>")) {
-      return NextResponse.json(
-        { success: false, error: "文件格式非法，必须为标准矢量 SVG 格式" },
-        { status: 400 }
-      );
+      return apiError(ApiCode.FILE_INVALID_FORMAT, undefined, 400);
     }
 
     const mapsDir = path.resolve(process.cwd(), "public", "maps");
@@ -58,16 +50,12 @@ export async function POST(
       WHERE id = ${id};
     `;
 
-    return NextResponse.json({
-      success: true,
-      message: `SVG 行政区划地图上传成功并已绑定至 [${region.name}]`,
+    return apiSuccess({
       svgMapPath: relativeUrl,
+      regionId: id,
     });
   } catch (error: any) {
     console.error("[admin/regions/upload-map] Error:", error);
-    return NextResponse.json(
-      { success: false, error: error.message || "上传地图失败" },
-      { status: 500 }
-    );
+    return apiError(ApiCode.FILE_UPLOAD_FAILED, error.message, 500);
   }
 }

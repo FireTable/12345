@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { runTicketRadarPipeline } from "@/backend/agent";
 import { db, getRegionDb } from "@/db/client";
 import { ticketsTable } from "@/db/schema";
@@ -8,15 +8,13 @@ import { persistClusterResult } from "@/lib/civic-persist";
 import { sql, desc } from "drizzle-orm";
 import type { RawTicket } from "@/backend/state";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
+import { apiSuccess, apiError, ApiCode } from "@/lib/api-codes";
 
 let clusterRunning = false;
 
 export async function POST(req: NextRequest) {
   if (clusterRunning) {
-    return NextResponse.json(
-      { success: false, error: "研判任务已在运行，请等待当前进度结束" },
-      { status: 409 }
-    );
+    return apiError(ApiCode.TASK_RUNNING, undefined, 409);
   }
   clusterRunning = true;
   try {
@@ -36,10 +34,7 @@ export async function POST(req: NextRequest) {
     const countRes = await tenantDb.select({ count: sql<number>`count(*)` }).from(ticketsTable);
     const totalTickets = Number(countRes[0]?.count || 0);
     if (totalTickets === 0) {
-      return NextResponse.json(
-        { success: false, error: "当前地区数据库中暂无工单数据，请先点击「上传入库」导入工单表格" },
-        { status: 400 }
-      );
+      return apiError(ApiCode.TASK_EMPTY_DATA, undefined, 400);
     }
     initTaskProgress(taskId, totalTickets);
 
@@ -110,45 +105,33 @@ export async function POST(req: NextRequest) {
       ? Math.round(((totalTickets - result.themes.length) / totalTickets) * 100)
       : 95;
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        themes: result.themes,
-        stats: {
-          totalTickets,
-          multiFrequencyTickets,
-          multiFrequencyRate: totalTickets > 0 ? Math.min(100, Math.round((multiFrequencyTickets / totalTickets) * 100)) : 38,
-          themeCount: result.themes.length,
-          highRiskCount,
-          mediumRiskCount,
-          lowRiskCount,
-          compressionRatio,
-          topSubject: result.themes[0]?.canonicalSubject || "暂无重点多频诉求",
-          avgResponseTimeSavedHours: 5.2,
-        },
-        graphData: {
-          nodes: macroNodes,
-          links: macroLinks,
-        },
+    return apiSuccess({
+      themes: result.themes,
+      stats: {
+        totalTickets,
+        multiFrequencyTickets,
+        multiFrequencyRate: totalTickets > 0 ? Math.min(100, Math.round((multiFrequencyTickets / totalTickets) * 100)) : 38,
+        themeCount: result.themes.length,
+        highRiskCount,
+        mediumRiskCount,
+        lowRiskCount,
+        compressionRatio,
+        topSubject: result.themes[0]?.canonicalSubject || "暂无重点多频诉求",
+        avgResponseTimeSavedHours: 5.2,
+      },
+      graphData: {
+        nodes: macroNodes,
+        links: macroLinks,
       },
     });
   } catch (err: any) {
     console.error("Cluster route error:", err);
-    return NextResponse.json(
-      { success: false, error: err.message || "Cluster failed" },
-      { status: 500 }
-    );
+    return apiError(ApiCode.TASK_EXECUTION_FAILED, err.message, 500);
   } finally {
     clusterRunning = false;
   }
 }
 
 export async function GET() {
-  return NextResponse.json(
-    {
-      success: false,
-      error: "研判只能 POST /api/cluster 启动一次；进度请 GET /api/cluster/progress",
-    },
-    { status: 405 }
-  );
+  return apiError(ApiCode.BAD_REQUEST, "研判只能 POST /api/cluster 启动一次；进度请 GET /api/cluster/progress", 405);
 }

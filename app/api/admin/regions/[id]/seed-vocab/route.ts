@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { sql, getRegionDb } from "@/db/client";
 import { invalidateVocabCache } from "@/lib/vocabulary";
+import { apiSuccess, apiError, ApiCode } from "@/lib/api-codes";
 
 /**
  * POST /api/admin/regions/[id]/seed-vocab
@@ -17,10 +18,7 @@ export async function POST(
 
     const { region, schemaName } = await getRegionDb(id);
     if (!region) {
-      return NextResponse.json(
-        { success: false, error: `未找到地区 ID 为 [${id}] 的站点` },
-        { status: 404 }
-      );
+      return apiError(ApiCode.REGION_NOT_FOUND, undefined, 404);
     }
 
     console.log(`[seed-vocab] 开始为 [${schemaName}] 导入 ${townships.length} 个镇街, ${departments.length} 个部门...`);
@@ -137,15 +135,15 @@ export async function POST(
 
     invalidateVocabCache(id);
 
-    return NextResponse.json({
-      success: true,
-      message: `已成功为 [${region.name}] 导入 ${townships.length} 个镇街、${departments.length} 个部门与 ${categories.length} 个诉求分类`,
+    return apiSuccess({
+      regionId: id,
+      regionName: region.name,
+      townshipCount: townships.length,
+      departmentCount: departments.length,
+      categoryCount: categories.length,
     });
   } catch (error: any) {
     console.error("[admin/regions/seed-vocab] Error:", error);
-    return NextResponse.json(
-      { success: false, error: error.message || "字典导入失败" },
-      { status: 500 }
-    );
+    return apiError(ApiCode.VOCAB_SEED_FAILED, error.message, 500);
   }
 }

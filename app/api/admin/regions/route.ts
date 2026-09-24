@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { sql, getAllRegions } from "@/db/client";
 import { registerRegion } from "@/lib/tenant/schema-manager";
 import { invalidateVocabCache } from "@/lib/vocabulary";
+import { ApiCode, apiSuccess, apiError } from "@/lib/api-codes";
 
 /**
  * GET /api/admin/regions
@@ -41,16 +42,10 @@ export async function GET() {
       })
     );
 
-    return NextResponse.json({
-      success: true,
-      regions: statsList,
-    });
+    return apiSuccess({ regions: statsList });
   } catch (error: any) {
     console.error("[admin/regions] GET failed:", error);
-    return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 500 }
-    );
+    return apiError(ApiCode.INTERNAL_ERROR, error.message, 500);
   }
 }
 
@@ -65,10 +60,7 @@ export async function POST(req: NextRequest) {
     const { id, name, city, province, svgMapPath, description, isDefault } = body;
 
     if (!id || !name || !city) {
-      return NextResponse.json(
-        { success: false, error: "缺少必要参数: id, name, city 为必填项" },
-        { status: 400 }
-      );
+      return apiError(ApiCode.INVALID_PARAMS, "缺少必要参数: id, name, city 为必填项", 400);
     }
 
     // 格式化标识符
@@ -88,23 +80,21 @@ export async function POST(req: NextRequest) {
 
     invalidateVocabCache(cleanId);
 
-    return NextResponse.json({
-      success: true,
-      message: `成功初始化地区站点 [${name}] 并创建 PostgreSQL Schema [${schemaName}]`,
-      region: {
-        id: cleanId,
-        name,
-        city,
-        province: province || "广东省",
-        schemaName,
-        svgMapPath,
+    return apiSuccess(
+      {
+        region: {
+          id: cleanId,
+          name,
+          city,
+          province: province || "广东省",
+          schemaName,
+          svgMapPath,
+        },
       },
-    });
+      `成功初始化地区站点 [${name}]`
+    );
   } catch (error: any) {
     console.error("[admin/regions] POST failed:", error);
-    return NextResponse.json(
-      { success: false, error: error.message || "创建地区站点失败" },
-      { status: 500 }
-    );
+    return apiError(ApiCode.REGION_INIT_FAILED, error.message, 500);
   }
 }

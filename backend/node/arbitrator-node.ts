@@ -23,25 +23,20 @@ export function needsArbitration(
   rawTicket?: RawTicket,
   vocab?: RegionVocabulary
 ): boolean {
-  // 1. 置信度低于阈值 (60)
+  // 1. 置信度低于阈值 (60) 自动触发仲裁
   if (item.confidence < 60) return true;
 
-  // 2. 主体为泛化虚词
-  const genericTokens = ["车主", "小车", "车辆", "商户", "商家", "市民", "某单位", "当事人", "特定诉求涉事方", "特定涉事方"];
-  if (genericTokens.includes(item.subject.trim())) return true;
-
-  // 3. 地点未明确或仅填写了宽泛区名
-  if (
-    !item.location ||
-    item.location === "未标明微观地点" ||
-    item.location === "所属辖区" ||
-    item.location === "顺德区" ||
-    (vocab && item.location === vocab.regionName)
-  ) {
+  // 2. 主体为空或极短非实体 (<= 2 字)
+  if (!item.subject || item.subject.trim().length <= 2) {
     return true;
   }
 
-  // 4. 抽取出的地点无法在当前辖区法定镇街/街道白名单中锚定
+  // 3. 地点未明确或仅填写了该站点的宽泛行政区名
+  if (!item.location || (vocab && item.location.trim() === vocab.regionName)) {
+    return true;
+  }
+
+  // 4. 抽取出的地点无法在当前辖区法定镇街/街道标准库中锚定
   const township = rawTicket?.subdistrict || item.location;
   if (!isValidTownship(township, vocab)) {
     return true;

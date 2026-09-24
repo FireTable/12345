@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import * as XLSX from "xlsx";
 import Papa from "papaparse";
 import { buildRecordsFromRows, insertRecordsBatch } from "@/lib/ticket-ingest";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
+import { apiSuccess, apiError, ApiCode } from "@/lib/api-codes";
 
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
@@ -13,7 +14,7 @@ export async function POST(req: NextRequest) {
     const file = formData.get("file") as File | null;
 
     if (!file) {
-      return NextResponse.json({ success: false, error: "未接收到上传文件" }, { status: 400 });
+      return apiError(ApiCode.FILE_EMPTY, undefined, 400);
     }
 
     const fileName = file.name.toLowerCase();
@@ -37,10 +38,12 @@ export async function POST(req: NextRequest) {
     }
 
     if (rawRows.length === 0) {
-      return NextResponse.json({
-        success: true,
-        message: "表格为空",
-        data: { totalParsed: 0, insertedCount: 0, duplicateCount: 0, failedCount: 0, durationMs: 0 },
+      return apiSuccess({
+        totalParsed: 0,
+        insertedCount: 0,
+        duplicateCount: 0,
+        failedCount: 0,
+        durationMs: 0,
       });
     }
 
@@ -52,22 +55,15 @@ export async function POST(req: NextRequest) {
 
     const durationMs = Date.now() - startTime;
 
-    return NextResponse.json({
-      success: true,
-      message: `后端处理完成: 共解析 ${rawRows.length} 条，入库 ${insertedCount} 条，重复过滤 ${duplicateCount} 条，异常 ${failedCount} 条`,
-      data: {
-        totalParsed: rawRows.length,
-        insertedCount,
-        duplicateCount,
-        failedCount,
-        durationMs,
-      },
+    return apiSuccess({
+      totalParsed: rawRows.length,
+      insertedCount,
+      duplicateCount,
+      failedCount,
+      durationMs,
     });
   } catch (err: any) {
     console.error("Backend file upload error:", err);
-    return NextResponse.json(
-      { success: false, error: err.message || "后端文件解析失败" },
-      { status: 500 }
-    );
+    return apiError(ApiCode.FILE_UPLOAD_FAILED, err.message, 500);
   }
 }

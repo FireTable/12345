@@ -95,7 +95,7 @@ async function extractBatchWithLLM(
   tickets.forEach((ticket, idx) => {
     const globalIdx = startIndex + idx;
     if (!result.has(globalIdx)) {
-      result.set(globalIdx, fallbackDynamicExtraction(ticket));
+      result.set(globalIdx, fallbackDynamicExtraction(ticket, vocab?.categories?.[0]?.category || "综合民生"));
     }
   });
 
@@ -105,90 +105,33 @@ async function extractBatchWithLLM(
 /**
  * 通用正则兜底提取器（当网络离线时备用，通用中文模式，零特定地名硬编码）
  */
-function fallbackDynamicExtraction(ticket: RawTicket): ExtractedTicketItem {
+function fallbackDynamicExtraction(ticket: RawTicket, defaultCategory = "综合民生"): ExtractedTicketItem {
   const content = typeof ticket?.content === "string" ? ticket.content : "";
   const subdistrict = explicitAdmin(ticket?.subdistrict) || "";
+  const district = explicitAdmin(ticket?.district) || "";
 
-  // 1. 车牌专用精确识别（如 粤E SD221 或 粤EY6501）
+  // 1. 车牌号基础识别
   const matchPlate = content.match(/(?:车牌[号为：:\s]*|小车|车辆|车牌[：:\s]*)([粤京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼][A-Z][\s]?[A-Z0-9]{4,6}[A-Z0-9挂学警港澳]?)/);
   const plateSubject = matchPlate && matchPlate[1] ? `${matchPlate[1].replace(/\s+/g, "").toUpperCase()}车辆` : "";
 
-  // 2. 商家/企业/机构主体识别（严防把"执法部门/政府部门"当作被诉主体）
-  let orgSubject = "";
-  const matchSubj = content.match(/(?:在|位于|投诉|反映|名称[：:])([^\s，。、（）]{2,25}?(?:民宿|公寓|酒店|酒馆|酒吧|KTV|烧烤店|大排档|快餐店|美食城|商场|便利店|超市|体验馆|俱乐部|桌球室|茶庄|饭店|有限公司|工程部|施工方|物业(?:管理处)?|花园|小区|苑|自建房|大厦))/);
-  if (matchSubj && matchSubj[1]) {
-    const candidate = matchSubj[1].trim();
-    if (!candidate.includes("部门") && !candidate.includes("居委") && !candidate.includes("街道办")) {
-      orgSubject = candidate;
-    }
-  }
+  // 2. 涉事主体（优先车牌或直接实体）
+  const subject = plateSubject || "涉事方";
 
-  const hasSpecificSubject = Boolean(plateSubject || orgSubject);
-  const subject = plateSubject || orgSubject || (subdistrict ? `${subdistrict}特定涉事方` : "特定诉求涉事方");
+  // 3. 地点兜底（优先工单已有镇街/区县信息）
+  const location = subdistrict ? `${subdistrict}` : (district || "辖区");
 
-  // 3. 通用动态微观地点识别（必须包含路/街/巷/号/小区/广场等，且严防"部门"伪装为"门"）
-  let location = subdistrict ? `${subdistrict}辖区` : "未标明微观地点";
-  let hasSpecificLocation = false;
-  const matchLoc = content.match(/([^\s，。、（）]{2,25}?(?:街道|镇)?[^\s，。、（）]{2,20}?(?:路|大道|大街|巷|横街|横巷|新村|广场|公园|中心|城|大厦|小区|花园|公寓|自建房|\d+号(?:门口|附近)?))/);
-  if (matchLoc && matchLoc[1]) {
-    const locCand = matchLoc[1].replace(/^(?:市民|诉求人|致电|反映|在|位于|我是)/, "").trim();
-    const badWords = ["部门", "希望", "反映", "致电", "要求", "执法", "电话", "介入", "处理", "情况", "问题"];
-    if (!badWords.some((w) => locCand.includes(w)) && locCand.length >= 4) {
-      location = locCand;
-      hasSpecificLocation = true;
-    }
-  }
-
-  let eventType = "城市管理日常诉求跟进";
-  let category = "城市管理";
-
-  if (plateSubject || content.includes("违停") || content.includes("乱停") || content.includes("停放") || content.includes("挪车")) {
-    eventType = "机动车违规停放阻碍通行";
-    category = "交通出行";
-  } else if (content.includes("噪音") || content.includes("扰民") || content.includes("音乐") || content.includes("喧哗")) {
-    eventType = "夜间营业音响喧哗与商业噪音扰民";
-    category = "生态环境";
-  } else if (content.includes("烟花") || content.includes("爆竹")) {
-    eventType = "违规燃放/售卖烟花爆竹扰民";
-    category = "公共安全";
-  } else if (content.includes("油烟") || content.includes("排气") || content.includes("异味")) {
-    eventType = "餐饮油烟直排与空气污染";
-    category = "生态环境";
-  } else if (content.includes("水管") || content.includes("下水道") || content.includes("排污")) {
-    eventType = "市政排污管道与供水抢修问题";
-    category = "城市管理";
-  } else if (content.includes("小贩") || content.includes("摆摊") || content.includes("占道")) {
-    eventType = "流动摊贩占道经营与路面堵塞";
-    category = "城市管理";
-  } else if (content.includes("退款") || content.includes("收费") || content.includes("欺诈") || content.includes("虚假宣传")) {
-    eventType = "消费纠纷与违规收费维权";
-    category = "市场监管";
-  } else if (content.includes("物业") || content.includes("电梯")) {
-    eventType = "小区物业管理与公共设施隐患";
-    category = "城市管理";
-  } else if (content.includes("工资") || content.includes("欠薪") || content.includes("社保") || content.includes("劳资") || content.includes("劳动合同")) {
-    eventType = "劳资纠纷与劳动社保权益维护";
-    category = "劳动社保";
-  }
-
-  // 评估规则兜底时的置信度得分
-  let fallbackConfidence = 50;
-  if (hasSpecificSubject && hasSpecificLocation) {
-    fallbackConfidence = 85;
-  } else if (hasSpecificSubject || hasSpecificLocation) {
-    fallbackConfidence = 70;
-  } else {
-    fallbackConfidence = 45;
-  }
+  // 4. 分类与诉求类型：直接继承工单自带分类或站点默认分类，绝不在代码中通过关键字死逻辑硬编码
+  const category = (ticket?.sourceCategory as any) || defaultCategory;
+  const eventType = ticket?.title || ticket?.sourceCategory || "民生诉求跟进";
 
   return {
     index: 0,
-    summarizeTitle: `关于${location}${subject}${eventType}的诉求`,
+    summarizeTitle: ticket?.title || content.slice(0, 30),
     subject,
     location,
     eventType,
-    category: (category as any) || "城市管理",
-    confidence: fallbackConfidence,
+    category,
+    confidence: 50,
   };
 }
 
