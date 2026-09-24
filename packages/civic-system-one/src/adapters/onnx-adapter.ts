@@ -7,55 +7,63 @@ import type {
   CivicEvaluateOptions,
 } from "../types";
 import { CATEGORY_NAME_MAP } from "../presets/categories";
-import { buildCivicQuestions, buildCivicCriteria } from "../presets/criteria";
 import * as fs from "node:fs";
 import * as path from "node:path";
-
-import * as os from "node:os";
 import { fileURLToPath } from "node:url";
 
 export interface ONNXAdapterOptions {
   modelDir?: string;
+  vocabPath?: string;
   intraOpNumThreads?: number;
 }
 
+const CATEGORY_KEYS: CivicCategory[] = [
+  "urban_management",
+  "traffic",
+  "market_reg",
+  "environment",
+  "labor_social",
+  "public_safety",
+  "social_governance",
+];
+
+const INTENT_KEYS: CivicIntent[] = [
+  "INQUIRY",
+  "COMPLAINT",
+  "SUGGESTION",
+  "REMINDER",
+  "COMMENDATION",
+];
+
+const URGENCY_KEYS: (0 | 1 | 2 | 3)[] = [0, 1, 2, 3];
+const SLA_MAP: Record<0 | 1 | 2 | 3, 0 | 2 | 24 | 120> = {
+  0: 0,
+  1: 120,
+  2: 24,
+  3: 2,
+};
+
 export class ONNXAdapter implements DecisionAdapter {
   readonly name = "onnx" as const;
-  private modelDir: string;
   private onnxModelPath: string;
+  private vocabPath: string;
+  private session: any = null;
+  private tokenToId: Map<string, number> = new Map();
+  private ort: any = null;
 
   constructor(options?: ONNXAdapterOptions) {
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
     const packageModelDir = path.resolve(__dirname, "../../models/civic-laya-onnx");
-    const cwdModelDir = path.join(process.cwd(), "models", "civic-laya-onnx");
-    const userCacheDir = path.join(
-      os.homedir(),
-      ".cache",
-      "receptron-laya",
-      "receptron--laya-onnx",
-      "main"
-    );
+    const packageVocabPath = path.resolve(__dirname, "../../models/vocab_civic.json");
 
-    const defaultDir =
-      fs.existsSync(packageModelDir)
-        ? packageModelDir
-        : fs.existsSync(cwdModelDir)
-        ? cwdModelDir
-        : userCacheDir;
-
-    this.modelDir = options?.modelDir || process.env.LAYA_ONNX_DIR || defaultDir;
-    
-    // Support both model.onnx (Civic System-One standard) and laya.onnx (legacy Laya standard)
-    const candidateModelOnnx = path.join(this.modelDir, "model.onnx");
-    const candidateLayaOnnx = path.join(this.modelDir, "laya.onnx");
-    this.onnxModelPath = fs.existsSync(candidateModelOnnx) ? candidateModelOnnx : candidateLayaOnnx;
+    const modelDir = options?.modelDir || packageModelDir;
+    this.onnxModelPath = path.join(modelDir, "model.onnx");
+    this.vocabPath = options?.vocabPath || packageVocabPath;
   }
-
-  private layaInstance: any = null;
 
   async isAvailable(): Promise<boolean> {
     try {
-      if (!fs.existsSync(this.onnxModelPath)) {
+      if (!fs.existsSync(this.onnxModelPath) || !fs.existsSync(this.vocabPath)) {
         return false;
       }
       return true;
@@ -64,195 +72,191 @@ export class ONNXAdapter implements DecisionAdapter {
     }
   }
 
-  async getLayaRunner(): Promise<any> {
-    if (this.layaInstance) return this.layaInstance;
+  private async initSession(): Promise<any> {
+    if (this.session) return this.session;
+
+    // Load vocab
+    if (this.tokenToId.size === 0 && fs.existsSync(this.vocabPath)) {
+      const vocabRaw = fs.readFileSync(this.vocabPath, "utf-8");
+      const vocabData = JSON.parse(vocabRaw);
+      const tokens: string[] = vocabData.tokens || [];
+      tokens.forEach((tok, idx) => this.tokenToId.set(tok, idx));
+    }
+
+    // Dynamic import onnxruntime-node
     try {
-      // 动态载入 @receptron/laya
       // @ts-ignore
-      const { Laya } = await import("@receptron/laya");
-      this.layaInstance = await Laya.load({
-        modelDir: this.modelDir,
-      });
-      return this.layaInstance;
-    } catch {
+      this.ort = await import("onnxruntime-node");
+      const sessionOptions = {
+        intraOpNumThreads: 4,
+        graphOptimizationLevel: "all",
+      };
+      this.session = await this.ort.InferenceSession.create(
+        this.onnxModelPath,
+        sessionOptions
+      );
+      return this.session;
+    } catch (err) {
+      console.warn("[ONNXAdapter] Failed to initialize onnxruntime-node session:", err);
       return null;
     }
   }
 
-  async evaluate(ticket: CivicTicketInput, options?: CivicEvaluateOptions): Promise<CivicSystemOneDecision> {
-    const t0 = performance.now();
-    const content = (ticket.title ? `${ticket.title}。\n` : "") + ticket.content;
-    const questions = buildCivicQuestions(options);
+  private encodeStr(text: string, maxLen: number): number[] {
+    const ids: number[] = [];
+    const t = text.trim();
+    let i = 0;
+    const n = t.length;
 
-    const laya = await this.getLayaRunner();
-    if (laya && typeof laya.systemOne === "function") {
-      try {
-        const result = await laya.systemOne(content, questions);
-        const latencyMs = Number((performance.now() - t0).toFixed(2));
-        const answers = result.answers || {};
-
-        const intentAns = answers.intent;
-        const categoryAns = answers.category;
-        const urgencyAns = answers.urgency;
-        const stabilityAns = answers.stability_risk;
-        const reasonableAns = answers.is_reasonable;
-
-        const intent = (intentAns?.choice || "COMPLAINT") as CivicIntent;
-        const intentProbability = intentAns?.probabilities?.[intent] ?? 0.95;
-
-        const category = (categoryAns?.choice || "social_governance") as CivicCategory;
-        const categoryProbability = categoryAns?.probabilities?.[category] ?? 0.90;
-        const categoryDistribution = categoryAns?.probabilities ?? { [category]: categoryProbability };
-
-        const urgencyScore = typeof urgencyAns?.score === "number" ? urgencyAns.score : 1.0;
-        const urgencyLevel = (Math.min(3, Math.max(0, Math.round(urgencyScore)))) as 0 | 1 | 2 | 3;
-        const slaHours = urgencyLevel === 0 ? 0 : urgencyLevel === 3 ? 2 : urgencyLevel === 2 ? 24 : 120;
-
-        const stabilityRiskProb = stabilityAns?.noul ?? 0.01;
-        const stabilityRisk = stabilityRiskProb > 0.5;
-
-        const isReasonableProb = reasonableAns?.noul ?? 0.95;
-        const isReasonable = isReasonableProb >= 0.5;
-
-        const topCatProbs = Object.values(categoryDistribution as Record<string, number>).sort((a, b) => b - a);
-        const isMarginal = topCatProbs.length >= 2 && (topCatProbs[0] - topCatProbs[1]) < 0.25;
-        const crossDepartmentRisk = isMarginal || (
-          (category === "urban_management" && content.includes("交警")) ||
-          (category === "traffic" && content.includes("绿化"))
-        );
-
-        return {
-          intent,
-          intentProbability,
-          category,
-          categoryName: options?.categoryNameMap?.[category] || CATEGORY_NAME_MAP[category] || category,
-          categoryProbability,
-          categoryDistribution,
-          urgencyLevel,
-          urgencyScore,
-          slaHours,
-          stabilityRisk,
-          stabilityRiskProbability: stabilityRiskProb,
-          isReasonable,
-          crossDepartmentRisk,
-          adapterUsed: "onnx",
-          latencyMs,
-        };
-      } catch (err) {
-        console.warn("[ONNXAdapter] Live Laya.systemOne call encountered error, using native parser:", err);
-      }
-    }
-
-    // 默认推断解析路径
-    const text = content.toLowerCase();
-
-    // 1. 意图
-    let intent: CivicIntent = "COMPLAINT";
-    if (text.includes("请问") || text.includes("咨询") || text.includes("网点") || text.includes("流程")) {
-      intent = "INQUIRY";
-    } else if (text.includes("建议") || text.includes("优化") || text.includes("希望增设")) {
-      intent = "SUGGESTION";
-    } else if (text.includes("催办") || text.includes("还没处理") || text.includes("多次反映")) {
-      intent = "REMINDER";
-    } else if (text.includes("表扬") || text.includes("感谢")) {
-      intent = "COMMENDATION";
-    }
-
-    // 2. 类别 (优先动态匹配属地自定义分类)
-    let category: CivicCategory = "social_governance";
-    if (options?.categories && Object.keys(options.categories).length > 0) {
-      let bestScore = -1;
-      for (const [catKey, criteriaDesc] of Object.entries(options.categories as Record<string, string>)) {
-        let score = 0;
-        const phrases = String(criteriaDesc).split(/[、，, ·/；;]+/);
-        for (const phrase of phrases) {
-          const p = phrase.trim().toLowerCase();
-          if (p.length >= 2 && text.includes(p)) {
-            score += 5;
-          }
-          // 2字子词滑窗加权
-          for (let i = 0; i <= p.length - 2; i++) {
-            const sub = p.slice(i, i + 2);
-            if (text.includes(sub)) {
-              score += 1;
-            }
-          }
-        }
-        if (score > bestScore) {
-          bestScore = score;
-          category = catKey;
-        }
-      }
-    } else {
-      if (text.includes("欠薪") || text.includes("工资") || text.includes("劳动") || text.includes("工伤")) {
-        category = "labor_social";
-      } else if (text.includes("噪音") || text.includes("油烟") || text.includes("排污") || text.includes("恶臭")) {
-        category = "environment";
-      } else if (text.includes("退款") || text.includes("假冒") || text.includes("虚假宣传") || text.includes("超市")) {
-        category = "market_reg";
-      } else if (text.includes("违停") || text.includes("拥堵") || text.includes("红绿灯") || text.includes("车牌")) {
-        category = "traffic";
-      } else if (text.includes("电动车") || text.includes("飞线") || text.includes("消防通道") || text.includes("易燃")) {
-        category = "public_safety";
-      } else if (text.includes("水管") || text.includes("爆裂") || text.includes("占道") || text.includes("物业") || text.includes("电梯")) {
-        category = "urban_management";
+    while (i < n && ids.length < maxLen) {
+      if (i + 4 <= n && this.tokenToId.has(t.slice(i, i + 4))) {
+        ids.push(this.tokenToId.get(t.slice(i, i + 4))!);
+        i += 4;
+      } else if (i + 3 <= n && this.tokenToId.has(t.slice(i, i + 3))) {
+        ids.push(this.tokenToId.get(t.slice(i, i + 3))!);
+        i += 3;
+      } else if (i + 2 <= n && this.tokenToId.has(t.slice(i, i + 2))) {
+        ids.push(this.tokenToId.get(t.slice(i, i + 2))!);
+        i += 2;
+      } else if (this.tokenToId.has(t[i])) {
+        ids.push(this.tokenToId.get(t[i])!);
+        i += 1;
       } else {
-        category = "social_governance";
+        i += 1;
       }
     }
 
-    // 3. 紧迫度
-    let urgencyLevel: 0 | 1 | 2 | 3 = 1;
-    let slaHours: 0 | 2 | 24 | 120 | 360 = 120;
-    if (intent === "INQUIRY") {
-      urgencyLevel = 0;
-      slaHours = 0;
-    } else if (text.includes("爆裂") || text.includes("困人") || text.includes("冲塌") || text.includes("险情")) {
-      urgencyLevel = 3;
-      slaHours = 2;
-    } else if (text.includes("瘫痪") || text.includes("大面积") || text.includes("严重")) {
-      urgencyLevel = 2;
-      slaHours = 24;
+    return ids.length > 0 ? ids : [1];
+  }
+
+  private softmax(logits: number[]): number[] {
+    const maxVal = Math.max(...logits);
+    const exps = logits.map((val) => Math.exp(val - maxVal));
+    const sumExps = exps.reduce((acc, val) => acc + val, 0);
+    return exps.map((val) => val / sumExps);
+  }
+
+  async evaluate(
+    ticket: CivicTicketInput,
+    options?: CivicEvaluateOptions
+  ): Promise<CivicSystemOneDecision> {
+    const t0 = performance.now();
+    const session = await this.initSession();
+
+    if (!session || !this.ort) {
+      throw new Error(
+        `[ONNXAdapter] Model session unavailable at ${this.onnxModelPath}`
+      );
     }
 
-    // 4. 涉稳红线
-    const stabilityRisk =
-      text.includes("跳楼") ||
-      text.includes("报复") ||
-      text.includes("自残") ||
-      text.includes("串联") ||
-      text.includes("堵路上访");
+    const title = ticket.title || "";
+    const body = ticket.content || "";
 
-    // 5. 合理性
-    const isReasonable = !(text.includes("赔偿1个亿") || text.includes("全是饭桶"));
+    // Pure Dual-Stream Tokenization
+    const titleTokens = this.encodeStr(title, 32);
+    const bodyTokens = this.encodeStr(body, 128);
 
-    // 6. 跨部门交叉风险
-    const crossDepartmentRisk =
-      (category === "urban_management" && text.includes("交通")) ||
-      (category === "environment" && text.includes("物业")) ||
-      (category === "traffic" && text.includes("绿化"));
+    const titleIds = new BigInt64Array(32).fill(0n);
+    const titleMask = new Float32Array(32).fill(0);
+    titleTokens.forEach((tok, idx) => {
+      titleIds[idx] = BigInt(tok);
+      titleMask[idx] = 1.0;
+    });
 
+    const bodyIds = new BigInt64Array(128).fill(0n);
+    const bodyMask = new Float32Array(128).fill(0);
+    bodyTokens.forEach((tok, idx) => {
+      bodyIds[idx] = BigInt(tok);
+      bodyMask[idx] = 1.0;
+    });
+
+    const feeds = {
+      title_ids: new this.ort.Tensor("int64", titleIds, [1, 32]),
+      title_mask: new this.ort.Tensor("float32", titleMask, [1, 32]),
+      body_ids: new this.ort.Tensor("int64", bodyIds, [1, 128]),
+      body_mask: new this.ort.Tensor("float32", bodyMask, [1, 128]),
+    };
+
+    // 100% Pure Neural Network Inference
+    const outputs = await session.run(feeds);
     const latencyMs = Number((performance.now() - t0).toFixed(2));
-    const categoryName = options?.categoryNameMap?.[category] || CATEGORY_NAME_MAP[category] || category;
+
+    const catLogits = Array.from(outputs.category_logits.data as Float32Array);
+    const intLogits = Array.from(outputs.intent_logits.data as Float32Array);
+    const urgLogits = Array.from(outputs.urgency_logits.data as Float32Array);
+    const stabLogits = Array.from(outputs.stability_logits.data as Float32Array);
+
+    const catProbs = this.softmax(catLogits);
+    const intProbs = this.softmax(intLogits);
+    const urgProbs = this.softmax(urgLogits);
+    const stabProbs = this.softmax(stabLogits);
+
+    // 1. Category
+    let bestCatIdx = 0;
+    let secCatIdx = 1;
+    const sortedCatIndices = catProbs
+      .map((p, idx) => ({ p, idx }))
+      .sort((a, b) => b.p - a.p);
+    bestCatIdx = sortedCatIndices[0].idx;
+    secCatIdx = sortedCatIndices[1]?.idx ?? 0;
+
+    const category = CATEGORY_KEYS[bestCatIdx];
+    const categoryProbability = catProbs[bestCatIdx];
+    const categoryDistribution: Record<string, number> = {};
+    CATEGORY_KEYS.forEach((key, idx) => {
+      categoryDistribution[key] = Number(catProbs[idx].toFixed(4));
+    });
+
+    // Cross-Department Risk derived purely from probability margin
+    const margin = sortedCatIndices[0].p - (sortedCatIndices[1]?.p ?? 0);
+    const crossDepartmentRisk = margin < 0.35;
+
+    // 2. Intent
+    const bestIntIdx = intProbs.indexOf(Math.max(...intProbs));
+    const intent = INTENT_KEYS[bestIntIdx] || "COMPLAINT";
+    const intentProbability = intProbs[bestIntIdx];
+
+    // 3. Urgency
+    const bestUrgIdx = urgProbs.indexOf(Math.max(...urgProbs));
+    let urgencyLevel = URGENCY_KEYS[bestUrgIdx] ?? 1;
+    const urgencyScore = bestUrgIdx;
+
+    // 4. Stability Risk
+    const stabilityRisk = stabProbs[0] > stabProbs[1]; // Index 0 is YES, Index 1 is NO
+    const stabilityRiskProbability = stabProbs[0];
+
+    // Interlock: escalate to Level 3 if stability risk is triggered
+    if (stabilityRisk) {
+      urgencyLevel = 3;
+    }
+    const slaHours = SLA_MAP[urgencyLevel];
 
     return {
       intent,
-      intentProbability: 0.91,
+      intentProbability: Number(intentProbability.toFixed(4)),
       category,
-      categoryName,
-      categoryProbability: 0.89,
-      categoryDistribution: {
-        [category]: 0.89,
-      },
+      categoryName:
+        options?.categoryNameMap?.[category] ||
+        CATEGORY_NAME_MAP[category] ||
+        category,
+      categoryProbability: Number(categoryProbability.toFixed(4)),
+      categoryDistribution,
       urgencyLevel,
-      urgencyScore: urgencyLevel * 0.92,
+      urgencyScore: Number(urgencyScore.toFixed(2)),
       slaHours,
       stabilityRisk,
-      stabilityRiskProbability: stabilityRisk ? 0.96 : 0.02,
-      isReasonable,
+      stabilityRiskProbability: Number(stabilityRiskProbability.toFixed(4)),
+      isReasonable: true,
       crossDepartmentRisk,
       adapterUsed: "onnx",
       latencyMs,
     };
+  }
+
+  async close(): Promise<void> {
+    if (this.session && typeof this.session.release === "function") {
+      await this.session.release();
+      this.session = null;
+    }
   }
 }

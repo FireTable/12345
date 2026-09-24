@@ -29,5 +29,8 @@
     "mps"
   ],
   "author": "FireTable",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "onnxruntime-node": "^1.30.0"
+  }
 }

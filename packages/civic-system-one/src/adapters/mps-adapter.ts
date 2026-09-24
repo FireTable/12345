@@ -93,13 +93,10 @@ export class MPSAdapter implements DecisionAdapter {
       const isReasonableProb = reasonableAns?.noul ?? 0.95;
       const isReasonable = isReasonableProb >= 0.5;
 
-      // 权责交叉预警：多分类熵值发散或特定跨界分类
+      // 权责交叉预警：多分类置信度边缘差距收窄 (自然指示跨界风险)
       const topCatProbs = Object.values(categoryDistribution as Record<string, number>).sort((a, b) => b - a);
       const isMarginal = topCatProbs.length >= 2 && (topCatProbs[0] - topCatProbs[1]) < 0.25;
-      const crossDepartmentRisk = isMarginal || (
-        (category === "urban_management" && content.includes("交警")) ||
-        (category === "traffic" && content.includes("绿化"))
-      );
+      const crossDepartmentRisk = isMarginal;
 
       return {
         intent,
