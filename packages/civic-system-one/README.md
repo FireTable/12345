@@ -119,7 +119,6 @@ afshinm/laya-mps (Base ModernBERT 1.68GB)     | 10,000   | 876.20 s    | 87.6197
 - [train.py](file:///Users/FireTable/OpenClaw/Code/12345/packages/civic-system-one/scripts/train.py)：**训练主管线**（交叉注意力架构、类别焦点损失权重、余弦学习率衰减）
 - [benchmark.py](file:///Users/FireTable/OpenClaw/Code/12345/packages/civic-system-one/scripts/benchmark.py)：**统一压测工具**（默认 10,000 条样本，集成深层质检审核流）
 - [generate-full-train-set.ts](file:///Users/FireTable/OpenClaw/Code/12345/packages/civic-system-one/scripts/generate-full-train-set.ts)：**政务数据精准生成器**（源头消除标签噪声，规范 7 类法定领域）
-- [test_regression_14.py](file:///Users/FireTable/OpenClaw/Code/12345/packages/civic-system-one/scripts/test_regression_14.py)：**历史 14 大盲区回归测试集**
 - [build_civic_vocab.py](file:///Users/FireTable/OpenClaw/Code/12345/packages/civic-system-one/scripts/build_civic_vocab.py)：政务分词词表构建脚本
 
 ---
@@ -150,12 +149,6 @@ python3 packages/civic-system-one/scripts/engine.py
 # 默认执行 10,000 条工单压测与 25 条随机等距深度质检
 python3 packages/civic-system-one/scripts/benchmark.py
 
-# 仅测试 V4 ONNX 生产模型
-python3 packages/civic-system-one/scripts/benchmark.py --engine v4-onnx
-```
-
-### 3. 运行 14 个历史盲点回归测试
-
-```bash
-python3 packages/civic-system-one/scripts/test_regression_14.py
+# 仅测试生产 ONNX 模型
+python3 packages/civic-system-one/scripts/benchmark.py --engine onnx
 ```
