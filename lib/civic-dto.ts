@@ -24,10 +24,44 @@ export function mapTicketStatus(status?: string | null): "PENDING" | "IN_PROGRES
   return "PENDING";
 }
 
+/**
+ * 校验是否为脱敏/匿名市民通用占位称谓
+ */
+const ANONYMIZED_CITIZEN_RE = /^(?:市民\*?|热线市民|当事人|匿名|某市民|无)$/;
+export function isAnonymizedCitizen(name?: string | null): boolean {
+  if (!name) return true;
+  const trimmed = name.trim();
+  return !trimmed || ANONYMIZED_CITIZEN_RE.test(trimmed);
+}
+
+export function normalizeStatusCode(status?: string | null): "PENDING" | "IN_PROGRESS" | "RESOLVED" {
+  if (!status) return "PENDING";
+  const s = status.trim().toUpperCase();
+  if (s === "RESOLVED" || s === "FINISHED" || s === "已办结" || s === "办结") return "RESOLVED";
+  if (s === "IN_PROGRESS" || s === "PROCESSING" || s === "DISPATCHED" || s === "处置中" || s === "处理中") return "IN_PROGRESS";
+  return "PENDING";
+}
+
 export function handlingColor(label?: string | null): string {
-  if (label === "已办结" || label === "RESOLVED") return "#52C41A";
-  if (label === "处置中" || label === "IN_PROGRESS") return "#1677FF";
+  const code = normalizeStatusCode(label);
+  if (code === "RESOLVED") return "#52C41A";
+  if (code === "IN_PROGRESS") return "#1677FF";
   return "#F53F3F";
+}
+
+/**
+ * 统一样式分类徽章映射 (支持标准民生分类与动态扩展)
+ */
+export function getCategoryBadgeClass(category?: string | null): string {
+  if (!category) return "badge-pill--default";
+  const cat = category.trim();
+  if (/(?:生态|环境|环保|河道|水污染)/.test(cat)) return "badge-pill--success";
+  if (/(?:劳动|社保|劳资|欠薪|工伤)/.test(cat)) return "badge-pill--warning";
+  if (/(?:市场|市监|消费|物价|欺诈)/.test(cat)) return "badge-pill--danger";
+  if (/(?:城市|城管|市政|环卫|违建)/.test(cat)) return "badge-pill--info";
+  if (/(?:交通|交警|出行|道路|拥堵)/.test(cat)) return "badge-pill--primary";
+  if (/(?:安全|消防|燃气|应急)/.test(cat)) return "badge-pill--danger";
+  return "badge-pill--default";
 }
 
 export function toClusterDto(theme: {
@@ -151,6 +185,7 @@ export function toClusterDto(theme: {
     mode_icon: meta.icon,
     ai_confidence: theme.aiConfidence ?? null,
     status: {
+      code: normalizeStatusCode(theme.handlingStatus),
       label: theme.handlingStatus || "未处理",
       progress: theme.handlingProgress ?? 0,
       owner: theme.handlingOwner || "",

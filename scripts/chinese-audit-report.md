@@ -5,20 +5,20 @@
 ## 📊 统计汇总
 - **扫描目录**: `backend/`, `lib/`, `app/api/`
 - **涉及代码文件数**: 69 个
-- **含非注释中文代码行**: 2486 行
+- **含非注释中文代码行**: 2375 行
 
 ### 分类分布
 
 | 类别 | 描述 | 出现行数 | 建议治理方案 |
 | :--- | :--- | :--- | :--- |
-| **中文拼装模板** | 字符串插值拼接（如 `微观地点【${loc}】...集中出现`） | 138 行 | 彻底交由 LLM 或动态模板引擎生成，消除写死句式 |
-| **规则与判断逻辑** | 包含特定中文词的 `includes` / 正则分支 | 92 行 | 移除特定词死判断，改为纯数据驱动或模型抽取 |
-| **默认兜底中文** | 缺省回退词（如 `|| "城市管理"`, `|| "热线市民"`） | 103 行 | 动态回退到当前站点的 `vocab.categories[0]` |
+| **中文拼装模板** | 字符串插值拼接（如 `微观地点【${loc}】...集中出现`） | 136 行 | 彻底交由 LLM 或动态模板引擎生成，消除写死句式 |
+| **规则与判断逻辑** | 包含特定中文词的 `includes` / 正则分支 | 44 行 | 移除特定词死判断，改为纯数据驱动或模型抽取 |
+| **默认兜底中文** | 缺省回退词（如 `|| "城市管理"`, `|| "热线市民"`） | 102 行 | 动态回退到当前站点的 `vocab.categories[0]` |
 | **AI 提示词** | 引导大模型的 Prompt 模板与 Few-Shot | 1 行 | 保留或放入提示词配置中心，地名注入动态变量 |
 | **预置字典数据** | 默认顺德/广州预置区划字典 | 0 行 | 移至数据库与独立 JSON 种子文件维护 |
-| **其他常量与消息** | API 返回文案与状态码说明 | 2152 行 | 统一收拢到 `lib/api-codes.ts` |
+| **其他常量与消息** | API 返回文案与状态码说明 | 2092 行 | 统一收拢到 `lib/api-codes.ts` |
 
-## 一、重点排查：中文拼装与硬编码生成逻辑 (138 处)
+## 一、重点排查：中文拼装与硬编码生成逻辑 (136 处)
 
 > 用户重点关注的 `微观点位群发`、`建议属地综合行政执法队...` 等字符串拼装集中于此：
 
@@ -57,8 +57,6 @@ L363: stageText: `要素抽取完成，识别低置信工单 ${lowConfidenceTick
 
 #### `backend/node/summary-node.ts`
 ```typescript
-L57: aiSummary: r.aiSummary || theme.aiSummary || `${theme.canonicalLocation || "辖区"}短时集中反映${theme.ticketCount}件“${theme.eventType}”诉求`,
-L91: aiSummary: r.aiSummary || theme.aiSummary || `${theme.canonicalLocation || "辖区"}短时集中反映${theme.ticketCount}件“${theme.eventType}”诉求`,
 L132: stageText: `正在对 ${enrichedThemes.length} 个多频主题进行批量深度公文研判与协同处置建议生成...`,
 L168: stageText: `AI 正在生成公文级处置建议 (${Math.min(synthesizedCount, enrichedThemes.length)} / ${enrichedThemes.length})...`,
 L182: stageText: `多频研判完成！已聚合 ${enrichedThemes.length} 个多频主题`,
@@ -79,21 +77,22 @@ L256: return `=== [${idx + 1}] 主题 ID: ${theme.id} ===
 L259: - 样例: ${sampleTickets.map((t) => `(${t.subdistrict || "本区"}) ${t.summarizeTitle || t.title}`).join("；")}`;
 L265: themeIndex 与 [1]..[${themes.length}] 一一对应。`;
 L288: `${idx + 1}. 【${t.riskLevel}】${t.title}（${t.ticketCount}单，${t.canonicalLocation}，建议：${t.recommendedAction}）`
+L375: 请全面列出【${province} ${city} ${district}】所有的法定街道/镇，必须全量、真实准确！`;
 ```
 
 #### `backend/theme-metrics.ts`
 ```typescript
 L57: "建议现场核查 + 源头治理，避免问题反复出现",
-L135: { name: "关键词命中", pct: keywordPct, desc: event ? `主题「${event}」覆盖 ${keywordHits}/${n}` : "无统一事件类型" },
-L136: { name: "地理范围", pct: geoPct, desc: loc ? `落在同一地点 ${locHits}/${n}` : "地点未对齐" },
-L137: { name: "时间模式", pct: timePct, desc: `跨度约 ${Math.max(1, Math.round(spanHours))} 小时` },
-L138: { name: "情绪强度", pct: moodPct, desc: moodHits ? `险情/激烈用语 ${moodHits} 条` : "未命中险情词" },
+L137: { name: "关键词命中", pct: keywordPct, desc: event ? `主题「${event}」覆盖 ${keywordHits}/${n}` : "无统一事件类型" },
+L138: { name: "地理范围", pct: geoPct, desc: loc ? `落在同一地点 ${locHits}/${n}` : "地点未对齐" },
+L139: { name: "时间模式", pct: timePct, desc: `跨度约 ${Math.max(1, Math.round(spanHours))} 小时` },
+L140: { name: "情绪强度", pct: moodPct, desc: moodHits ? `险情/激烈用语 ${moodHits} 条` : "未命中险情词" },
 ```
 
 #### `lib/civic-dto.ts`
 ```typescript
-L97: { name: "空间聚集度", pct: theme.patternType === "DIVERGE" ? 84 : 95, desc: `同属${theme.canonicalLocation || "辖区"}物理半径` },
-L129: : `${sampleTowns.slice(0, 2).join(" · ")} 等 ${sampleTowns.length} 镇街`
+L131: { name: "空间聚集度", pct: theme.patternType === "DIVERGE" ? 84 : 95, desc: `同属${theme.canonicalLocation || "辖区"}物理半径` },
+L163: : `${sampleTowns.slice(0, 2).join(" · ")} 等 ${sampleTowns.length} 镇街`
 ```
 
 #### `lib/civic-queries.ts`
@@ -103,14 +102,14 @@ L28: return timeWindow(`近${days}天`, clampTimeRef(latest));
 
 #### `lib/civic-stats.ts`
 ```typescript
-L265: title: gatherTheme.title || `${gatherTheme.canonicalLocation || "辖区"} · ${gatherTheme.category || "民生"}诉求聚集`,
-L266: text: gatherTheme.aiSummary || gatherTheme.recommendedAction || `${gatherTheme.canonicalLocation || "辖区"}出现 ${gatherTheme.ticketCount || 0} 件${gatherTheme.category || ""}相关诉求`,
-L281: title: divergeTheme.title || `${divergeTheme.canonicalSubject || "涉事主体"} 多类型问题发散`,
-L282: text: divergeTheme.aiSummary || divergeTheme.recommendedAction || `涉及同一主体共 ${divergeTheme.ticketCount || 0} 件诉求`,
-L298: title: repeatOrUrgentTheme.title || `${repeatOrUrgentTheme.canonicalSubject || "重点区域"} 多次重复诉求`,
-L299: text: repeatOrUrgentTheme.aiSummary || repeatOrUrgentTheme.recommendedAction || `累计产生 ${repeatOrUrgentTheme.ticketCount || 0} 次高频反映`,
-L314: title: fourthTheme.title || `${fourthTheme.canonicalLocation || "属地片区"} · ${fourthTheme.category || "民生"}集中研判`,
-L315: text: fourthTheme.aiSummary || fourthTheme.recommendedAction || `${fourthTheme.canonicalLocation || "辖区"}汇聚 ${fourthTheme.ticketCount || 0} 件工单`,
+L273: title: gatherTheme.title || `${gatherTheme.canonicalLocation || "辖区"} · ${gatherTheme.category || "民生"}诉求聚集`,
+L274: text: gatherTheme.aiSummary || gatherTheme.recommendedAction || `${gatherTheme.canonicalLocation || "辖区"}出现 ${gatherTheme.ticketCount || 0} 件${gatherTheme.category || ""}相关诉求`,
+L290: title: divergeTheme.title || `${divergeTheme.canonicalSubject || "涉事主体"} 多类型问题发散`,
+L291: text: divergeTheme.aiSummary || divergeTheme.recommendedAction || `涉及同一主体共 ${divergeTheme.ticketCount || 0} 件诉求`,
+L308: title: repeatOrUrgentTheme.title || `${repeatOrUrgentTheme.canonicalSubject || "重点区域"} 多次重复诉求`,
+L309: text: repeatOrUrgentTheme.aiSummary || repeatOrUrgentTheme.recommendedAction || `累计产生 ${repeatOrUrgentTheme.ticketCount || 0} 次高频反映`,
+L325: title: fourthTheme.title || `${fourthTheme.canonicalLocation || "属地片区"} · ${fourthTheme.category || "民生"}集中研判`,
+L326: text: fourthTheme.aiSummary || fourthTheme.recommendedAction || `${fourthTheme.canonicalLocation || "辖区"}汇聚 ${fourthTheme.ticketCount || 0} 件工单`,
 ```
 
 #### `lib/mock-data.ts`
@@ -195,19 +194,19 @@ L150: 第 {table.getState().pagination.pageIndex + 1} 页 / 共{" "}
 
 #### `app/_components/table/ticket-detail-sheet.tsx`
 ```typescript
-L70: toast.success(`已导出主题「${theme.title}」下工单明细！`);
-L75: toast.success(`已成功批量核查确认 ${count} 件多频工单，已生成协同督办派单流转记录！`);
+L71: toast.success(`已导出主题「${theme.title}」下工单明细！`);
+L76: toast.success(`已成功批量核查确认 ${count} 件多频工单，已生成协同督办派单流转记录！`);
 ```
 
 #### `app/admin/regions/page.tsx`
 ```typescript
-L168: `AI 成功梳理出 ${data.data.townships.length} 个法定镇街与 ${data.data.departments?.length || 0} 个协同职能部门！`
-L219: toast.success(`🎉 站点【${scoutForm.city} · ${scoutForm.district}】纳管初始化完毕！`);
-L245: toast.success(`已将【${region.name}】设为全局默认站点`);
-L265: toast.success(`已成功销毁站点【${deletingRegion.name}】及其物理 Schema`);
-L311: toast.success(`SVG 行政地图已成功绑定至【${uploadModalRegion.name}】`);
-L391: sub={`物理空间: ${activeRegion?.schemaName || "未选择"}`}
-L398: sub={`${totalThemes} 个治理主题 / ${totalVocab} 条词典`}
+L151: `AI 成功梳理出 ${data.data.townships.length} 个法定镇街与 ${data.data.departments?.length || 0} 个协同职能部门！`
+L202: toast.success(`🎉 站点【${scoutForm.city} · ${scoutForm.district}】纳管初始化完毕！`);
+L228: toast.success(`已将【${region.name}】设为全局默认站点`);
+L248: toast.success(`已成功销毁站点【${deletingRegion.name}】及其物理 Schema`);
+L294: toast.success(`SVG 行政地图已成功绑定至【${uploadModalRegion.name}】`);
+L374: sub={`物理空间: ${activeRegion?.schemaName || "未选择"}`}
+L381: sub={`${totalThemes} 个治理主题 / ${totalVocab} 条词典`}
 ```
 
 #### `app/api/admin/regions/[id]/route.ts`
@@ -219,11 +218,6 @@ L50: return apiSuccess({ id }, `已成功销毁站点 [${id}]`);
 ```typescript
 L24: console.log(`[seed-vocab] 开始为 [${schemaName}] 导入 ${townships.length} 个镇街, ${departments.length} 个部门...`);
 L128: ${`民生核心分类: ${c.category}`},
-```
-
-#### `app/api/admin/regions/ai-scout/route.ts`
-```typescript
-L84: 请全面列出【${province} ${city} ${district}】所有的法定街道/镇（例如广州天河区包含 21 条街道，海珠区包含 18 条街道，越秀区包含 18 条街道，必须全量、真实准确！）。`;
 ```
 
 #### `app/api/admin/regions/route.ts`
@@ -252,8 +246,8 @@ L276: sub={`${stats.categoryCount} 大法定标准业务大类`}
 
 #### `app/multifreq/page.tsx`
 ```typescript
-L338: {c.communities ? `${c.communities} 个` : `${Math.max(1, Math.ceil(c.count / 3))} 个`}
-L393: setTimeLabel(`近 ${windowDays} 天`);
+L342: {c.communities ? `${c.communities} 个` : `${Math.max(1, Math.ceil(c.count / 3))} 个`}
+L397: setTimeLabel(`近 ${windowDays} 天`);
 ```
 
 #### `app/page.tsx`
@@ -291,8 +285,8 @@ L713: onClick={() => toast.info(row.status?.owner ? `牵头部门：${row.status
 
 #### `app/themes/page.tsx`
 ```typescript
-L138: toast.success(`已导出 ${filtered.length} 个群组`);
-L147: {activeRegion ? `${activeRegion.name} · ` : ""}AI 识别的多频工单群组 · 每行为一个群组，包含多条关联工单
+L140: toast.success(`已导出 ${filtered.length} 个群组`);
+L149: {activeRegion ? `${activeRegion.name} · ` : ""}AI 识别的多频工单群组 · 每行为一个群组，包含多条关联工单
 ```
 
 #### `app/tickets/[id]/page.tsx`
@@ -302,13 +296,13 @@ L82: 所属主题：{row.cluster_info?.title || `${row.region} · ${row.category
 
 #### `app/tickets/page.tsx`
 ```typescript
-L128: toast.success(`已导出本页 ${data.data.length} 条`);
-L139: {activeRegion ? `${activeRegion.name} · ` : ""}全部工单 · 实时同步 · 共 <b style={{ color: "var(--c-ink)" }}>{s.total}</b> 条
-L187: sub={`占总数 ${pendingShare}%`}
-L199: sub={`办结率 ${finishShare}%`}
+L129: toast.success(`已导出本页 ${data.data.length} 条`);
+L140: {activeRegion ? `${activeRegion.name} · ` : ""}全部工单 · 实时同步 · 共 <b style={{ color: "var(--c-ink)" }}>{s.total}</b> 条
+L188: sub={`占总数 ${pendingShare}%`}
+L200: sub={`办结率 ${finishShare}%`}
 ```
 
-## 二、重点排查：规则与判断死逻辑 (92 处)
+## 二、重点排查：规则与判断死逻辑 (44 处)
 
 #### `backend/node/canonical-node.ts`
 ```typescript
@@ -327,54 +321,41 @@ L65: const isMultiSiteEntity = /(?:公司|集团|网点|分行|专卖|连锁|医
 L114: const matchPlate = content.match(/(?:车牌[号为：:\s]*|小车|车辆|车牌[：:\s]*)([粤京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼][A-Z][\s]?[A-Z0-9]{4,6}[A-Z0-9挂学警港澳]?)/);
 ```
 
-#### `backend/theme-metrics.ts`
-```typescript
-L77: .filter((s) => s && s !== "市民*" && s !== "热线市民")
-```
-
 #### `lib/admin-area.ts`
 ```typescript
-L32: if (/未提供|具体|等多处|未标明|未归属|所属|地址/.test(text)) return false;
-L60: if (suffix === "区") {
-L80: if (!tail || tail === "乡") continue;
-L82: if (full === "乡镇") continue;
+L71: if (suffix === "区") {
+L91: if (!tail || tail === "乡") continue;
+L93: if (full === "乡镇") continue;
 ```
 
 #### `lib/civic-dto.ts`
 ```typescript
-L28: if (label === "已办结" || label === "RESOLVED") return "#52C41A";
-L29: if (label === "处置中" || label === "IN_PROGRESS") return "#1677FF";
-L99: { name: "情绪敏感度", pct: theme.riskLevel === "HIGH" ? 90 : 75, desc: "群众切身民生利益诉求" },
-L100: { name: "主体一致性", pct: theme.patternType === "DIVERGE" ? 98 : 92, desc: "指向相同涉事主体或处置单位" },
-L123: .filter((r) => r && r !== "未归属")
-```
-
-#### `lib/civic-queries.ts`
-```typescript
-L358: if (label === "已办结") return 0;
-L359: return pendingByTheme.get(t.id) ?? Math.round((t.ticketCount || 0) * (label === "处置中" ? 0.4 : 0.7));
-L372: label === "已办结"
-L374: : pendingByTheme.get(t.id) ?? Math.round(base.count * (label === "处置中" ? 0.4 : 0.7));
-L404: if (q.tab === "pending") next = next.filter((c) => c.status.label === "未处理");
-L405: else if (q.tab === "progress") next = next.filter((c) => c.status.label === "处置中");
-L406: else if (q.tab === "done") next = next.filter((c) => c.status.label === "已办结");
+L40: if (s === "RESOLVED" || s === "FINISHED" || s === "已办结" || s === "办结") return "RESOLVED";
+L41: if (s === "IN_PROGRESS" || s === "PROCESSING" || s === "DISPATCHED" || s === "处置中" || s === "处理中") return "IN_PROGRESS";
+L58: if (/(?:生态|环境|环保|河道|水污染)/.test(cat)) return "badge-pill--success";
+L59: if (/(?:劳动|社保|劳资|欠薪|工伤)/.test(cat)) return "badge-pill--warning";
+L60: if (/(?:市场|市监|消费|物价|欺诈)/.test(cat)) return "badge-pill--danger";
+L61: if (/(?:城市|城管|市政|环卫|违建)/.test(cat)) return "badge-pill--info";
+L62: if (/(?:交通|交警|出行|道路|拥堵)/.test(cat)) return "badge-pill--primary";
+L63: if (/(?:安全|消防|燃气|应急)/.test(cat)) return "badge-pill--danger";
+L133: { name: "情绪敏感度", pct: theme.riskLevel === "HIGH" ? 90 : 75, desc: "群众切身民生利益诉求" },
+L134: { name: "主体一致性", pct: theme.patternType === "DIVERGE" ? 98 : 92, desc: "指向相同涉事主体或处置单位" },
+L157: .filter((r) => r && r !== "未归属")
 ```
 
 #### `lib/civic-stats.ts`
 ```typescript
-L312: tag: fourthTheme.patternType === "DIVERGE" ? "发散" : "聚集",
-L313: tone: fourthTheme.category === "公共安全" ? "danger" : fourthTheme.category === "市场监管" ? "info" : "warning",
+L323: tag: fourthTheme.patternType === "DIVERGE" ? "发散" : "聚集",
 ```
 
 #### `lib/civic-time.ts`
 ```typescript
-L24: const near = key.match(/^近(\d+)天$/);
-L61: if (!key || key === "全部") return true;
+L24: const near = key.match(/^(?:近|LAST_)?(\d+)(?:天|DAYS?|D)$/i);
+L66: if (!key || key.toUpperCase() === "ALL" || key === "全部") return true;
 ```
 
 #### `lib/ticket-ingest.ts`
 ```typescript
-L86: normalized[mappedKey] = typeof v === "string" ? v.replace(/12345/g, "市民服务热线") : v;
 L114: ? closureRaw.includes("重开") || closureRaw.toUpperCase() === "REOPENED"
 ```
 
@@ -385,104 +366,57 @@ L162: {(session.user as any).role === "admin" ? "管理员" : "经办员"}
 
 #### `app/_components/civic/quadrant.tsx`
 ```typescript
-L56: const pending = clusters.filter((c) => c.status.label !== "已办结");
+L56: const pending = clusters.filter((c) => (c.status as any)?.code ? (c.status as any).code !== "RESOLVED" : c.status.label !== "已办结");
 ```
 
 #### `app/_components/dashboard/upload-dialog.tsx`
 ```typescript
-L634: const step2Active = taskProgress.status === "RUNNING" && (processedTickets < totalTickets && !stageText.includes("仲裁") && !stageText.includes("聚类") && percent < 55);
-L635: const step2Done = isDone || processedTickets >= totalTickets || stageText.includes("仲裁") || stageText.includes("复核") || stageText.includes("聚类") || percent >= 55;
-L638: const step3Active = taskProgress.status === "RUNNING" && (stageText.includes("仲裁") || stageText.includes("复核") || (percent >= 55 && percent < 70 && themeCount === 0 && !stageText.includes("图谱") && !stageText.includes("聚类")));
-L639: const step3Done = isDone || themeCount > 0 || stageText.includes("图谱") || stageText.includes("聚类") || percent >= 70;
-L642: const step4Active = taskProgress.status === "RUNNING" && (stageText.includes("图谱") || stageText.includes("聚类") || percent >= 70) && !isDone && themeCount === 0;
-L1065: {ingestTab === "file" ? "上传并流式入库" : "粘贴文本入库"}
+L1066: {ingestTab === "file" ? "上传并流式入库" : "粘贴文本入库"}
 ```
 
 #### `app/_components/table/ticket-detail-sheet.tsx`
 ```typescript
-L166: {selectedTicketIds.size === tickets.length ? "取消全选" : "全选全部"}
-L274: 诉求人: <strong className="font-medium text-foreground/80">{ticket.citizenName && ticket.citizenName !== "市民*" ? ticket.citizenName : "热线市民"}</strong>
-L278: {ticket.citizenPhone && !ticket.citizenPhone.includes("****") ? ticket.citizenPhone : "未预留电话"}
-```
-
-#### `app/admin/regions/page.tsx`
-```typescript
-L113: if (district.includes("天河")) slug = "gz_tianhe";
-L114: else if (district.includes("越秀")) slug = "gz_yuexiu";
-L115: else if (district.includes("海珠")) slug = "gz_haizhu";
-L116: else if (district.includes("白云")) slug = "gz_baiyun";
-L117: else if (district.includes("黄埔")) slug = "gz_huangpu";
-L118: else if (district.includes("番禺")) slug = "gz_panyu";
-L119: else if (district.includes("南沙")) slug = "gz_nansha";
-L120: else if (district.includes("花都")) slug = "gz_huadu";
-L121: else if (district.includes("增城")) slug = "gz_zengcheng";
-L122: else if (district.includes("从化")) slug = "gz_conghua";
-L123: else if (district.includes("南山")) slug = "sz_nanshan";
-L124: else if (district.includes("福田")) slug = "sz_futian";
-L125: else if (district.includes("顺德")) slug = "shunde";
-L126: else if (district.includes("南海")) slug = "fs_nanhai";
-L127: else if (district.includes("禅城")) slug = "fs_chancheng";
+L167: {selectedTicketIds.size === tickets.length ? "取消全选" : "全选全部"}
+L279: {ticket.citizenPhone && !ticket.citizenPhone.includes("****") ? ticket.citizenPhone : "未预留电话"}
 ```
 
 #### `app/multifreq/page.tsx`
 ```typescript
-L112: const pending = filtered.filter((r) => r.status.label === "未处理");
-L138: if (next === "近 7 天") setWindowDays(7);
-L139: else if (next === "近 30 天") setWindowDays(30);
-L140: else if (next === "近 90 天") setWindowDays(90);
-L286: const riskText = c.urgency === "urgent" ? "紧急" : i < 3 ? "较急" : "普通";
-L349: {top5.length === 0 && <div className="empty-hint">暂无多频群组。请先启动 Agent 研判。</div>}
-L409: if (cat.includes("生态") || cat.includes("环保")) return "badge-pill--success";
-L410: if (cat.includes("劳动") || cat.includes("劳资")) return "badge-pill--warning";
-L411: if (cat.includes("市场") || cat.includes("消费")) return "badge-pill--danger";
-L412: if (cat.includes("城市") || cat.includes("城管")) return "badge-pill--info";
+L113: const pending = filtered.filter((r) => r.status.code ? r.status.code === "PENDING" : r.status.label === "未处理");
+L290: const riskText = c.urgency === "urgent" ? "紧急" : i < 3 ? "较急" : "普通";
+L353: {top5.length === 0 && <div className="empty-hint">暂无多频群组。请先启动 Agent 研判。</div>}
 ```
 
 #### `app/page.tsx`
 ```typescript
-L200: <div className="insight-card__icon">{c.tag === "聚集" ? "🚨" : c.tag === "重复" ? "🔁" : c.tag === "发散" ? "📍" : "📉"}</div>
+L200: <div className="insight-card__icon">{(c as any).type === "GATHERING" || c.tag === "聚集" ? "🚨" : (c as any).type === "REPEAT" || c.tag === "重复" ? "🔁" : (c as any).type === "DIVERGE" || c.tag === "发散" ? "📍" : "📉"}</div>
 L255: {regions.length === 0 && <div className="empty-hint">暂无镇街分布。上传后请启动 Agent 研判，镇街由模型从微观地点切分。</div>}
 ```
 
 #### `app/themes/[id]/page.tsx`
 ```typescript
-L244: if (i === 4 && (row?.status?.label === "已办结" || progress >= 100)) return row?.status?.eta || row?.last_date || "—";
+L244: if (i === 4 && (row?.status?.code === "RESOLVED" || row?.status?.label === "已办结" || progress >= 100)) return row?.status?.eta || row?.last_date || "—";
 L263: `==================== 关联成员工单列表 ====================`,
 L600: {(row.features || []).length === 0 && <div className="empty-hint">暂无特征（尚未落库）</div>}
 ```
 
 #### `app/themes/page.tsx`
 ```typescript
-L83: pending: rows.filter((r) => r.status.label === "未处理").length,
-L84: progress: rows.filter((r) => r.status.label === "处置中").length,
-L85: done: rows.filter((r) => r.status.label === "已办结").length,
-L91: if (tab === "pending" && r.status.label !== "未处理") return false;
-L92: if (tab === "progress" && r.status.label !== "处置中") return false;
-L93: if (tab === "done" && r.status.label !== "已办结") return false;
-L102: const sa = a.status.label === "未处理" ? 0 : a.status.label === "处置中" ? 1 : 2;
-L103: const sb = b.status.label === "未处理" ? 0 : b.status.label === "处置中" ? 1 : 2;
-L334: const sCls = g.status.label === "已办结" ? "status-tag--done" : g.status.label === "处置中" ? "status-tag--progress" : "status-tag--pending";
-L402: {filtered.length === 0 && <div className="empty-hint">暂无群组。请先触发聚类研判。</div>}
+L91: const code = r.status.code || (r.status.label === "已办结" ? "RESOLVED" : r.status.label === "处置中" ? "IN_PROGRESS" : "PENDING");
+L336: const sCls = g.status.code === "RESOLVED" || g.status.label === "已办结" ? "status-tag--done" : g.status.code === "IN_PROGRESS" || g.status.label === "处置中" ? "status-tag--progress" : "status-tag--pending";
+L404: {filtered.length === 0 && <div className="empty-hint">暂无群组。请先触发聚类研判。</div>}
 ```
 
 #### `app/tickets/page.tsx`
 ```typescript
-L367: {data.data.length === 0 && <div className="empty-hint">暂无工单</div>}
-L476: if (u === "URGENT" || u === "urgent") return "紧急";
-L477: if (u === "MEDIUM" || u === "medium" || u === "high" || u === "HIGH") return "较急";
-L482: if (s === "RESOLVED" || s === "DONE" || s === "FINISHED" || s === "已办结") return "已办结";
-L483: if (s === "IN_PROGRESS" || s === "PROGRESS" || s === "处置中" || s === "处理中") return "处理中";
-L488: if (s === "RESOLVED" || s === "DONE" || s === "FINISHED" || s === "已办结") return "finished";
-L489: if (s === "IN_PROGRESS" || s === "PROGRESS" || s === "处置中" || s === "处理中") return "progress";
-L494: if (s === "RESOLVED" || s === "DONE" || s === "FINISHED" || s === "已办结") return "done";
-L495: if (s === "IN_PROGRESS" || s === "PROGRESS" || s === "处置中" || s === "处理中") return "progress";
-L500: if (cat.includes("生态") || cat.includes("环保")) return "badge-pill--success";
-L501: if (cat.includes("劳动") || cat.includes("劳资")) return "badge-pill--warning";
-L502: if (cat.includes("市场") || cat.includes("消费")) return "badge-pill--danger";
-L503: if (cat.includes("城市") || cat.includes("城管")) return "badge-pill--info";
+L368: {data.data.length === 0 && <div className="empty-hint">暂无工单</div>}
+L477: if (u === "URGENT" || u === "urgent") return "紧急";
+L478: if (u === "MEDIUM" || u === "medium" || u === "high" || u === "HIGH") return "较急";
+L484: if (code === "RESOLVED") return "已办结";
+L485: if (code === "IN_PROGRESS") return "处理中";
 ```
 
-## 三、默认兜底与回退中文 (103 处)
+## 三、默认兜底与回退中文 (102 处)
 
 #### `backend/node/cluster-node.ts`
 ```typescript
@@ -522,24 +456,24 @@ L22: defaultCategory: "综合民生",
 
 #### `lib/admin-area.ts`
 ```typescript
-L79: const tail = raw.split(/[省市县旗区]/).pop() || "";
+L90: const tail = raw.split(/[省市县旗区]/).pop() || "";
 ```
 
 #### `lib/alias-dict.ts`
 ```typescript
-L197: if (canonical.startsWith(alias) && (canonical.endsWith("街道") || canonical.endsWith("镇"))) {
-L243: type: cleanCanonical.endsWith("街道") || cleanCanonical.endsWith("镇") ? "TOWNSHIP" : "ENTITY",
+L103: if (canonical.startsWith(alias) && (canonical.endsWith("街道") || canonical.endsWith("镇"))) {
+L149: type: cleanCanonical.endsWith("街道") || cleanCanonical.endsWith("镇") ? "TOWNSHIP" : "ENTITY",
 ```
 
 #### `lib/civic-dto.ts`
 ```typescript
 L15: return raw.replace(/(街道|镇|乡|区|县)$/g, "") || "未归属";
-L133: const type = theme.category || theme.eventType || "综合民生";
-L154: label: theme.handlingStatus || "未处理",
-L208: title: row.summarizeTitle || row.title || "市民诉求",
-L209: category: row.sourceCategory || row.category || "综合民生",
-L210: region: regionLabel(row.subdistrict, row.district) || "辖区",
-L216: channel: row.channel || "市民服务热线",
+L167: const type = theme.category || theme.eventType || "综合民生";
+L189: label: theme.handlingStatus || "未处理",
+L243: title: row.summarizeTitle || row.title || "市民诉求",
+L244: category: row.sourceCategory || row.category || "综合民生",
+L245: region: regionLabel(row.subdistrict, row.district) || "辖区",
+L251: channel: row.channel || "市民服务热线",
 ```
 
 #### `lib/civic-persist.ts`
@@ -550,12 +484,6 @@ L90: canonicalLocation: clip(theme.canonicalLocation, 255) || "本地辖区",
 L91: eventType: clip(theme.eventType, 128) || "民生诉求",
 L92: category: clip(theme.category, 64) || "城市管理",
 L104: handlingStatus: clip(theme.handlingStatus, 16) || "未处理",
-```
-
-#### `lib/civic-queries.ts`
-```typescript
-L357: const label = t.handlingStatus || "未处理";
-L370: const label = base.status.label || "未处理";
 ```
 
 #### `lib/task-progress.ts`
@@ -619,14 +547,15 @@ L587: {taskProgress.stageText || "处理中..."}
 
 #### `app/_components/table/ticket-detail-sheet.tsx`
 ```typescript
-L283: 渠道: {ticket.channel || "市民服务热线"}
+L284: 渠道: {ticket.channel || "市民服务热线"}
 ```
 
 #### `app/admin/regions/page.tsx`
 ```typescript
-L171: toast.error(err.message || "AI 提取失败，请检查网络或重试");
-L229: toast.error(err.message || "创建失败");
-L813: {t.communities?.length || 0} 个重点社区
+L114: const cleanCity = (prev.city || "").replace(/[市盟州地区]/g, "").trim().toLowerCase();
+L154: toast.error(err.message || "AI 提取失败，请检查网络或重试");
+L212: toast.error(err.message || "创建失败");
+L796: {t.communities?.length || 0} 个重点社区
 ```
 
 #### `app/api/admin/regions/[id]/seed-vocab/route.ts`
@@ -722,8 +651,8 @@ L145: <p className="py-1">处置状态：{row.status || "待处理"}</p>
 
 #### `app/tickets/page.tsx`
 ```typescript
-L157: title={analyzing ? "AI 研判执行中..." : disabledReason || undefined}
-L343: {r.content || "暂无诉求正文"}
-L389: <div className="drawer__title">{drawer?.title || "请选择工单"}</div>
+L158: title={analyzing ? "AI 研判执行中..." : disabledReason || undefined}
+L344: {r.content || "暂无诉求正文"}
+L390: <div className="drawer__title">{drawer?.title || "请选择工单"}</div>
 ```
 

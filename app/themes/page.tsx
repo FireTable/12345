@@ -28,7 +28,7 @@ type Cluster = {
   mode_name: string;
   mode_icon: string;
   ai_confidence: number | null;
-  status: { label: string; progress: number; owner: string };
+  status: { code?: "PENDING" | "IN_PROGRESS" | "RESOLVED"; label: string; progress: number; owner: string };
   trend: string;
   first_date: string;
   last_date: string;
@@ -80,17 +80,18 @@ export default function ThemesPage() {
 
   const counts = {
     all: rows.length,
-    pending: rows.filter((r) => r.status.label === "未处理").length,
-    progress: rows.filter((r) => r.status.label === "处置中").length,
-    done: rows.filter((r) => r.status.label === "已办结").length,
+    pending: rows.filter((r) => (r.status.code || "PENDING") === "PENDING").length,
+    progress: rows.filter((r) => r.status.code === "IN_PROGRESS").length,
+    done: rows.filter((r) => r.status.code === "RESOLVED").length,
     urgent: rows.filter((r) => r.urgency === "urgent").length,
   };
 
   const filtered = useMemo(() => {
     const arr = rows.filter((r) => {
-      if (tab === "pending" && r.status.label !== "未处理") return false;
-      if (tab === "progress" && r.status.label !== "处置中") return false;
-      if (tab === "done" && r.status.label !== "已办结") return false;
+      const code = r.status.code || (r.status.label === "已办结" ? "RESOLVED" : r.status.label === "处置中" ? "IN_PROGRESS" : "PENDING");
+      if (tab === "pending" && code !== "PENDING") return false;
+      if (tab === "progress" && code !== "IN_PROGRESS") return false;
+      if (tab === "done" && code !== "RESOLVED") return false;
       if (tab === "urgent" && r.urgency !== "urgent") return false;
       if (region && !r.region.includes(region)) return false;
       if (mode && r.mode !== mode) return false;
@@ -98,9 +99,10 @@ export default function ThemesPage() {
       if (kw && !`${r.type}${r.region}${r.title}${r.code}`.toLowerCase().includes(kw.toLowerCase())) return false;
       return true;
     });
+    const statusOrder: Record<string, number> = { PENDING: 0, IN_PROGRESS: 1, RESOLVED: 2 };
     arr.sort((a, b) => {
-      const sa = a.status.label === "未处理" ? 0 : a.status.label === "处置中" ? 1 : 2;
-      const sb = b.status.label === "未处理" ? 0 : b.status.label === "处置中" ? 1 : 2;
+      const sa = statusOrder[a.status.code || "PENDING"] ?? 0;
+      const sb = statusOrder[b.status.code || "PENDING"] ?? 0;
       if (sa !== sb) return sa - sb;
       return b.count - a.count;
     });
@@ -331,7 +333,7 @@ export default function ThemesPage() {
                 <tbody>
                   {pageData.map((g) => {
                     const u = URGENCY_META[g.urgency];
-                    const sCls = g.status.label === "已办结" ? "status-tag--done" : g.status.label === "处置中" ? "status-tag--progress" : "status-tag--pending";
+                    const sCls = g.status.code === "RESOLVED" || g.status.label === "已办结" ? "status-tag--done" : g.status.code === "IN_PROGRESS" || g.status.label === "处置中" ? "status-tag--progress" : "status-tag--pending";
                     const conf = g.ai_confidence;
                     const confColor = conf == null ? "#86909C" : conf >= 90 ? "#52C41A" : conf >= 85 ? "#1677FF" : "#FF7D00";
                     return (

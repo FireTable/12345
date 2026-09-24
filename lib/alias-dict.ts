@@ -4,101 +4,14 @@
  * 支持多城市独立 Schema 隔离沉淀。
  */
 
-import { SHUNDE_TOWNSHIPS, SHUNDE_DEPARTMENTS } from "./vocabulary";
-import { getRegionDb } from "@/db/client";
-import { aliasesTable } from "@/db/schema";
+import defaultAliasesPreset from "./presets/default-aliases.json";
+export { isAnonymizedCitizen } from "./civic-dto";
 
 /**
  * 预置常见高频别名映射表 (Alias -> Canonical)
+ * 已外置至 lib/presets/default-aliases.json 维护，支持运行时及数据库动态扩展
  */
-const DEFAULT_ALIASES: Record<string, string> = {
-  // 1. 顺德镇街俗称 / 历史旧称 / 片区别名
-  容奇: "容桂街道",
-  桂洲: "容桂街道",
-  容奇镇: "容桂街道",
-  桂洲镇: "容桂街道",
-  容桂区: "容桂街道",
-  德胜新区: "大良街道",
-  德胜新城: "大良街道",
-  顺峰山片区: "大良街道",
-  清晖园片区: "大良街道",
-  逢沙片区: "大良街道",
-  五沙片区: "大良街道",
-  金榜街区: "大良街道",
-  北滘新城: "北滘镇",
-  碧桂园总部片区: "北滘镇",
-  碧桂园社区: "北滘镇碧桂园社区",
-  美的总部片区: "北滘镇",
-  陈村花乡: "陈村镇",
-  花卉世界片区: "陈村镇",
-  潭洲会展片区: "陈村镇",
-  三龙湾陈村: "陈村镇",
-  佛山新城: "乐从镇",
-  乐从家具城: "乐从镇",
-  乐从钢铁世界: "乐从镇",
-  中欧中心片区: "乐从镇",
-  世纪莲片区: "乐从镇",
-  逢简水乡片区: "杏坛镇",
-  顺德高新区: "杏坛镇",
-  李小龙故里: "均安镇",
-  南沙岛片区: "均安镇",
-  仓门夜市片区: "均安镇",
-  长鹿片区: "伦教街道",
-  木工机械城: "伦教街道",
-  五金小镇: "勒流街道",
-  黄连古村: "勒流街道",
-
-  // 2. 顺德核心地标 / 园区 / 商圈规范化
-  顺德欢乐海岸: "华侨城欢乐海岸PLUS",
-  欢乐海岸: "华侨城欢乐海岸PLUS",
-  顺峰山: "顺峰山公园",
-  清晖园: "清晖园博物馆",
-  渔人码头: "容桂渔人码头",
-  金榜街: "金榜上街",
-  逢简: "逢简水乡景区",
-  潭洲会展: "潭洲国际会展中心",
-  世纪莲: "佛山新城世纪莲体育中心",
-  中欧中心: "佛山中欧中心",
-  罗浮宫: "罗浮宫国际家具博览中心",
-  工业设计城: "广东工业设计城",
-
-  // 3. 广州核心地标 / 街道别名规范化
-  琶醍: "广州琶醍啤酒文化创意艺术区",
-  琶醍夜市: "广州琶醍啤酒文化创意艺术区",
-  琶洲展馆: "中国进出口商品交易会展馆（广交会展馆）",
-  广交会展馆: "中国进出口商品交易会展馆（广交会展馆）",
-  小蛮腰: "广州塔",
-  中大布市: "广州国际轻纺城（中大布匹市场）",
-  中大布匹市场: "广州国际轻纺城（中大布匹市场）",
-  康乐村: "凤阳街道康乐村片区",
-  鹭江村: "凤阳街道鹭江村片区",
-  江南西: "江南西商业步行街",
-  太古仓: "太古仓码头文创园",
-  海珠湿地: "海珠国家湿地公园",
-  小洲艺术村: "小洲村",
-  生物岛: "广州国际生物岛",
-
-  // 4. 常见政务部门口语简称规范化
-  交警: "公安交警大队",
-  城管: "综合行政执法队",
-  执法队: "综合行政执法队",
-  市监局: "市场监督管理局",
-  市监所: "辖区市场监督管理所",
-  环保局: "生态环境分局",
-  人社局: "人力资源和社会保障局",
-  住建局: "住房城乡建设局",
-  城建办: "城市建设办公室",
-  应急局: "应急管理局",
-  应急办: "应急管理办公室",
-  消防队: "消防救援大队",
-  派出所: "辖区派出所",
-  综治办: "平安法治办公室 / 综合治理办公室",
-  居委会: "社区居民委员会",
-  村委会: "村民委员会",
-  消委会: "消费者委员会",
-  消协: "消费者委员会",
-  政数局: "政务服务和数据管理局",
-};
+const DEFAULT_ALIASES: Record<string, string> = defaultAliasesPreset as Record<string, string>;
 
 // 内存中活跃沉淀的别名映射表（默认环境）
 const runtimeAliasMap: Map<string, string> = new Map<string, string>(
@@ -108,15 +21,6 @@ const runtimeAliasMap: Map<string, string> = new Map<string, string>(
 // 区域别名缓存（按 regionId 隔离）
 const regionAliasCache = new Map<string, { map: Map<string, string>; loadedAt: number }>();
 const ALIAS_CACHE_TTL = 30 * 1000;
-
-// 自动载入预置镇街的别名
-SHUNDE_TOWNSHIPS.forEach((t) => {
-  t.aliases.forEach((alias) => {
-    if (!runtimeAliasMap.has(alias)) {
-      runtimeAliasMap.set(alias, t.fullName);
-    }
-  });
-});
 
 /**
  * 获取当前所有已注册的别名知识库映射
@@ -145,6 +49,8 @@ export async function getRegionAliasMap(regionIdOrSchema?: string | null): Promi
   const map = new Map<string, string>(Object.entries(DEFAULT_ALIASES));
 
   try {
+    const { getRegionDb } = await import("@/db/client");
+    const { aliasesTable } = await import("@/db/schema");
     const { db: tenantDb } = await getRegionDb(regionIdOrSchema);
     const rows = await tenantDb.select().from(aliasesTable);
     for (const r of rows) {

@@ -8,6 +8,7 @@ import { FileText, Clock, CheckCircle2, Flame, ExternalLink, Layers } from "luci
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { SkTickets } from "@/app/_components/civic/skeletons";
 import { isTownLabel } from "@/lib/admin-area";
+import { normalizeStatusCode, getCategoryBadgeClass } from "@/lib/civic-dto";
 import {
   Select,
   SelectContent,
@@ -479,27 +480,26 @@ function urgencyLabel(u: string) {
 }
 
 function statusLabel(s: string) {
-  if (s === "RESOLVED" || s === "DONE" || s === "FINISHED" || s === "已办结") return "已办结";
-  if (s === "IN_PROGRESS" || s === "PROGRESS" || s === "处置中" || s === "处理中") return "处理中";
+  const code = normalizeStatusCode(s);
+  if (code === "RESOLVED") return "已办结";
+  if (code === "IN_PROGRESS") return "处理中";
   return "待处理";
 }
 
 function statusDot(s: string) {
-  if (s === "RESOLVED" || s === "DONE" || s === "FINISHED" || s === "已办结") return "finished";
-  if (s === "IN_PROGRESS" || s === "PROGRESS" || s === "处置中" || s === "处理中") return "progress";
+  const code = normalizeStatusCode(s);
+  if (code === "RESOLVED") return "finished";
+  if (code === "IN_PROGRESS") return "progress";
   return "pending";
 }
 
 function statusTag(s: string) {
-  if (s === "RESOLVED" || s === "DONE" || s === "FINISHED" || s === "已办结") return "done";
-  if (s === "IN_PROGRESS" || s === "PROGRESS" || s === "处置中" || s === "处理中") return "progress";
+  const code = normalizeStatusCode(s);
+  if (code === "RESOLVED") return "done";
+  if (code === "IN_PROGRESS") return "progress";
   return "pending";
 }
 
 function catPill(cat: string) {
-  if (cat.includes("生态") || cat.includes("环保")) return "badge-pill--success";
-  if (cat.includes("劳动") || cat.includes("劳资")) return "badge-pill--warning";
-  if (cat.includes("市场") || cat.includes("消费")) return "badge-pill--danger";
-  if (cat.includes("城市") || cat.includes("城管")) return "badge-pill--info";
-  return "badge-pill--default";
+  return getCategoryBadgeClass(cat);
 }

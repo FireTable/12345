@@ -249,7 +249,14 @@ export function buildInsights(
 ) {
   if (!themes || themes.length === 0) return [];
 
-  const cards: Array<{ tag: string; tone: string; title: string; text: string; href?: string }> = [];
+  const cards: Array<{
+    type: "GATHERING" | "DIVERGE" | "REPEAT" | "ANALYSIS";
+    tag: string;
+    tone: string;
+    title: string;
+    text: string;
+    href?: string;
+  }> = [];
   const usedThemeIds = new Set<string>();
 
   // 1. 寻找最高频的“空间聚集”重点主题 (GROUP_GATHERING / SPATIAL_BURST)
@@ -260,6 +267,7 @@ export function buildInsights(
   if (gatherTheme) {
     usedThemeIds.add(gatherTheme.id);
     cards.push({
+      type: "GATHERING",
       tag: "聚集",
       tone: "danger",
       title: gatherTheme.title || `${gatherTheme.canonicalLocation || "辖区"} · ${gatherTheme.category || "民生"}诉求聚集`,
@@ -276,6 +284,7 @@ export function buildInsights(
   if (divergeTheme) {
     usedThemeIds.add(divergeTheme.id);
     cards.push({
+      type: "DIVERGE",
       tag: "发散",
       tone: "info",
       title: divergeTheme.title || `${divergeTheme.canonicalSubject || "涉事主体"} 多类型问题发散`,
@@ -293,6 +302,7 @@ export function buildInsights(
   if (repeatOrUrgentTheme) {
     usedThemeIds.add(repeatOrUrgentTheme.id);
     cards.push({
+      type: "REPEAT",
       tag: "重复",
       tone: "warning",
       title: repeatOrUrgentTheme.title || `${repeatOrUrgentTheme.canonicalSubject || "重点区域"} 多次重复诉求`,
@@ -309,8 +319,9 @@ export function buildInsights(
   if (fourthTheme) {
     usedThemeIds.add(fourthTheme.id);
     cards.push({
+      type: fourthTheme.patternType === "DIVERGE" ? "DIVERGE" : "GATHERING",
       tag: fourthTheme.patternType === "DIVERGE" ? "发散" : "聚集",
-      tone: fourthTheme.category === "公共安全" ? "danger" : fourthTheme.category === "市场监管" ? "info" : "warning",
+      tone: fourthTheme.riskLevel === "HIGH" ? "danger" : fourthTheme.riskLevel === "LOW" ? "info" : "warning",
       title: fourthTheme.title || `${fourthTheme.canonicalLocation || "属地片区"} · ${fourthTheme.category || "民生"}集中研判`,
       text: fourthTheme.aiSummary || fourthTheme.recommendedAction || `${fourthTheme.canonicalLocation || "辖区"}汇聚 ${fourthTheme.ticketCount || 0} 件工单`,
       href: `/themes/${fourthTheme.id}`,

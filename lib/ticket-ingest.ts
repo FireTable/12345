@@ -83,7 +83,7 @@ export function buildRecordsFromRows(
     for (const [k, v] of Object.entries(r)) {
       const trimmedKey = k.trim();
       const mappedKey = HEADER_MAP[trimmedKey] || trimmedKey;
-      normalized[mappedKey] = typeof v === "string" ? v.replace(/12345/g, "市民服务热线") : v;
+      normalized[mappedKey] = v;
     }
 
     const content = String(normalized.content || normalized.title || "").trim();

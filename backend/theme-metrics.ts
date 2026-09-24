@@ -59,6 +59,8 @@ export const MODE_META: Record<
   },
 };
 
+import { isAnonymizedCitizen } from "@/lib/civic-dto";
+
 export function civicModeFromPattern(pattern?: PatternType | null): CivicMode {
   if (pattern === "INDIVIDUAL_REPEAT") return "repeat";
   if (pattern === "DIVERGE") return "diverge";
@@ -74,7 +76,7 @@ export function inferPatternType(tickets: EnrichedTicket[]): PatternType {
   const callers = new Set(
     tickets
       .map((t) => (t.citizenPhone || t.citizenName || "").trim())
-      .filter((s) => s && s !== "市民*" && s !== "热线市民")
+      .filter((s) => s && !isAnonymizedCitizen(s))
   );
   if (callers.size === 1) return "INDIVIDUAL_REPEAT";
   return "GROUP_GATHERING";

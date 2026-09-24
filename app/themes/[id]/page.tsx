@@ -67,7 +67,7 @@ type ClusterDetail = {
   trend: string;
   features: Array<{ name: string; pct: number; desc: string }>;
   radar: number[];
-  status: { label: string; progress: number; owner: string; color: string; eta: string };
+  status: { code?: "PENDING" | "IN_PROGRESS" | "RESOLVED"; label: string; progress: number; owner: string; color: string; eta: string };
   members?: Member[];
   ungrouped?: boolean;
 };
@@ -241,7 +241,7 @@ function ThemeDetailInner() {
     const progress = row?.status?.progress || 0;
     if (i === 0) return row?.first_date || "—";
     if (i === 2 && progress >= 40) return row?.last_date || "—";
-    if (i === 4 && (row?.status?.label === "已办结" || progress >= 100)) return row?.status?.eta || row?.last_date || "—";
+    if (i === 4 && (row?.status?.code === "RESOLVED" || row?.status?.label === "已办结" || progress >= 100)) return row?.status?.eta || row?.last_date || "—";
     return "—";
   }
 

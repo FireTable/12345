@@ -54,7 +54,7 @@ async function enrichThemeBatchWithLLM(
               return {
                 riskLevel: finalRisk,
                 riskReason: r.riskReason || theme.riskReason,
-                aiSummary: r.aiSummary || theme.aiSummary || `${theme.canonicalLocation || "辖区"}短时集中反映${theme.ticketCount}件“${theme.eventType}”诉求`,
+                aiSummary: r.aiSummary || theme.aiSummary || "",
                 recommendedAction: r.recommendedAction || DEFAULT_RECOMMENDED_ACTION,
               };
             });
@@ -88,7 +88,7 @@ async function enrichThemeBatchWithLLM(
             return {
               riskLevel: finalRisk,
               riskReason: r.riskReason || theme.riskReason,
-              aiSummary: r.aiSummary || theme.aiSummary || `${theme.canonicalLocation || "辖区"}短时集中反映${theme.ticketCount}件“${theme.eventType}”诉求`,
+              aiSummary: r.aiSummary || theme.aiSummary || "",
               recommendedAction: r.recommendedAction || DEFAULT_RECOMMENDED_ACTION,
             };
           });

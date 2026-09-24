@@ -197,7 +197,7 @@ export default function DashboardPage() {
             <div className="insight-grid">
               {ov.insights.map((c) => (
                 <Link key={c.title} href={c.href || "/themes"} className={`insight-card insight-card--${c.tone}`}>
-                  <div className="insight-card__icon">{c.tag === "聚集" ? "🚨" : c.tag === "重复" ? "🔁" : c.tag === "发散" ? "📍" : "📉"}</div>
+                  <div className="insight-card__icon">{(c as any).type === "GATHERING" || c.tag === "聚集" ? "🚨" : (c as any).type === "REPEAT" || c.tag === "重复" ? "🔁" : (c as any).type === "DIVERGE" || c.tag === "发散" ? "📍" : "📉"}</div>
                   <div>
                     <div className="insight-card__title">{c.title}</div>
                     <div className="insight-card__text">{c.text}</div>

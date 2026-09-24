@@ -107,35 +107,18 @@ export default function AdminRegionsPage() {
     fetchRegions();
   }, []);
 
-  // 监听城市区县变化自动推荐英文 ID
+  // 监听城市区县变化自动推荐英文 ID（全动态生成，无任何城市区县死逻辑写死）
   const handleDistrictChange = (district: string) => {
-    let slug = "region";
-    if (district.includes("天河")) slug = "gz_tianhe";
-    else if (district.includes("越秀")) slug = "gz_yuexiu";
-    else if (district.includes("海珠")) slug = "gz_haizhu";
-    else if (district.includes("白云")) slug = "gz_baiyun";
-    else if (district.includes("黄埔")) slug = "gz_huangpu";
-    else if (district.includes("番禺")) slug = "gz_panyu";
-    else if (district.includes("南沙")) slug = "gz_nansha";
-    else if (district.includes("花都")) slug = "gz_huadu";
-    else if (district.includes("增城")) slug = "gz_zengcheng";
-    else if (district.includes("从化")) slug = "gz_conghua";
-    else if (district.includes("南山")) slug = "sz_nanshan";
-    else if (district.includes("福田")) slug = "sz_futian";
-    else if (district.includes("顺德")) slug = "shunde";
-    else if (district.includes("南海")) slug = "fs_nanhai";
-    else if (district.includes("禅城")) slug = "fs_chancheng";
-    else {
-      slug = district
-        .toLowerCase()
-        .replace(/区|市|县|镇/g, "")
-        .trim();
-    }
-    setScoutForm((prev) => ({
-      ...prev,
-      district,
-      id: prev.id === "gz_tianhe" || prev.id.startsWith("gz_") || prev.id.startsWith("sz_") ? slug : prev.id,
-    }));
+    setScoutForm((prev) => {
+      const cleanDistrict = district.replace(/[区县市旗镇街道]/g, "").trim().toLowerCase();
+      const cleanCity = (prev.city || "").replace(/[市盟州地区]/g, "").trim().toLowerCase();
+      const dynamicSlug = cleanDistrict ? `${cleanCity ? cleanCity.slice(0, 4) + "_" : ""}${cleanDistrict}` : "region_new";
+      return {
+        ...prev,
+        district,
+        id: prev.id.startsWith("region") || prev.id.startsWith("gz_") || prev.id.startsWith("fs_") || !prev.id ? dynamicSlug : prev.id,
+      };
+    });
   };
 
   // AI 智能抓取政务区划

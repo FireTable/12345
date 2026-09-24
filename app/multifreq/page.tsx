@@ -8,6 +8,7 @@ import { QuadrantBoard } from "@/app/_components/civic/quadrant";
 import type { ClusterUrgency } from "@/lib/civic-cluster";
 import { clampTimeRef, formatYmd, inTimeWindow } from "@/lib/civic-time";
 import { isTownLabel } from "@/lib/admin-area";
+import { getCategoryBadgeClass } from "@/lib/civic-dto";
 import { Clock, TrendingUp, Flame, Layers } from "lucide-react";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { SkMultifreq } from "@/app/_components/civic/skeletons";
@@ -29,7 +30,7 @@ type Cluster = {
   mode_name: string;
   mode_icon: string;
   ai_confidence: number | null;
-  status: { label: string };
+  status: { code?: "PENDING" | "IN_PROGRESS" | "RESOLVED"; label: string };
   trend: string;
   title: string;
   urgency: ClusterUrgency;
@@ -109,7 +110,7 @@ function MultifreqInner() {
     });
   }, [rows, region, confMin, minCount, timeLabel]);
 
-  const pending = filtered.filter((r) => r.status.label === "未处理");
+  const pending = filtered.filter((r) => r.status.code ? r.status.code === "PENDING" : r.status.label === "未处理");
   const urgent = filtered.filter((r) => r.urgency === "urgent");
   const latestStr = rows.reduce((acc, r) => {
     const d = r.last_date || r.first_date || "";
@@ -131,13 +132,16 @@ function MultifreqInner() {
   const top5 = [...filtered].sort((a, b) => b.count - a.count).slice(0, 5);
 
   function cycleTime() {
-    const times = ["近 7 天", "近 30 天", "近 90 天", "全部"];
-    const idx = times.indexOf(timeLabel);
-    const next = times[idx === -1 ? 0 : (idx + 1) % times.length];
-    setTimeLabel(next);
-    if (next === "近 7 天") setWindowDays(7);
-    else if (next === "近 30 天") setWindowDays(30);
-    else if (next === "近 90 天") setWindowDays(90);
+    const intervals = [
+      { days: 7, label: "近 7 天" },
+      { days: 30, label: "近 30 天" },
+      { days: 90, label: "近 90 天" },
+      { days: 0, label: "全部" },
+    ];
+    const idx = intervals.findIndex((t) => t.label === timeLabel);
+    const nextItem = intervals[idx === -1 ? 0 : (idx + 1) % intervals.length];
+    setTimeLabel(nextItem.label);
+    setWindowDays(nextItem.days);
     load();
   }
 
@@ -405,10 +409,5 @@ function MultifreqInner() {
 }
 
 function catPill(cat?: string) {
-  if (!cat) return "badge-pill--default";
-  if (cat.includes("生态") || cat.includes("环保")) return "badge-pill--success";
-  if (cat.includes("劳动") || cat.includes("劳资")) return "badge-pill--warning";
-  if (cat.includes("市场") || cat.includes("消费")) return "badge-pill--danger";
-  if (cat.includes("城市") || cat.includes("城管")) return "badge-pill--info";
-  return "badge-pill--default";
+  return getCategoryBadgeClass(cat);
 }

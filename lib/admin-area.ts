@@ -18,6 +18,17 @@ const DISTRICT_NOISE =
 
 const DISTRICT_PREFIX_SKIP = ["小", "园", "社", "景", "街", "片"];
 const DISTRICT_STEM_SKIP = ["开发", "高新", "示范", "管理", "协作", "市辖"];
+const NON_GEOGRAPHIC_STEMS = [
+  "未提供",
+  "未标明",
+  "未归属",
+  "未指定",
+  "等多处",
+  "多处",
+  "具体",
+  "所属",
+  "地址",
+];
 
 export function explicitAdmin(value?: string | null): string | null {
   const text = (value || "").trim();
@@ -25,11 +36,11 @@ export function explicitAdmin(value?: string | null): string | null {
   return text;
 }
 
-/** 筛选项只用像镇街的短名，丢掉「未提供具体…」「…等多处」这类碎片。 */
+/** 筛选项只用像镇街的短名，丢掉无实际地理意义的碎片。 */
 export function isTownLabel(name?: string | null): boolean {
   const text = (name || "").trim();
-  if (!text || text.length > 6) return false;
-  if (/未提供|具体|等多处|未标明|未归属|所属|地址/.test(text)) return false;
+  if (!text || text.length > 6 || PLACEHOLDER_ADMIN.has(text)) return false;
+  if (NON_GEOGRAPHIC_STEMS.some((stem) => text.includes(stem))) return false;
   return /^[\u4e00-\u9fff]{2,6}$/.test(text);
 }
 

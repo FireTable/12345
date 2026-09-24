@@ -172,3 +172,37 @@ export function resolveApiError(resData: any, fallback = "操作失败，请重�
   }
   return resData.message || resData.error || fallback;
 }
+
+/**
+ * 研判流水线各阶段标准枚举与多语言说明
+ */
+export enum PipelineStage {
+  PARSING = "PARSING",
+  EXTRACTING = "EXTRACTING",
+  CLUSTERING = "CLUSTERING",
+  SYNTHESIZING = "SYNTHESIZING",
+  COMPLETED = "COMPLETED",
+}
+
+export const STAGE_MESSAGES: Record<"zh" | "en", Record<PipelineStage, string>> = {
+  zh: {
+    [PipelineStage.PARSING]: "正在解析待研判工单数据...",
+    [PipelineStage.EXTRACTING]: "AI 正在提取工单微观地点、涉事主体与核心诉求要素...",
+    [PipelineStage.CLUSTERING]: "正在执行多频特征匹配与知识图谱连通子图聚类...",
+    [PipelineStage.SYNTHESIZING]: "正在生成公文级处置建议与深层成因分析...",
+    [PipelineStage.COMPLETED]: "研判流水线执行完毕",
+  },
+  en: {
+    [PipelineStage.PARSING]: "Parsing ticket dataset...",
+    [PipelineStage.EXTRACTING]: "Extracting ticket entities, micro-locations and event types...",
+    [PipelineStage.CLUSTERING]: "Building multi-frequency knowledge graph and clustering...",
+    [PipelineStage.SYNTHESIZING]: "Generating official action recommendations...",
+    [PipelineStage.COMPLETED]: "Analysis pipeline completed",
+  },
+};
+
+export function getStageMessage(stage: PipelineStage, lang: "zh" | "en" = "zh"): string {
+  const dict = STAGE_MESSAGES[lang] || STAGE_MESSAGES.zh;
+  return dict[stage] || "";
+}
+

@@ -629,18 +629,19 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                     );
 
                   const step1Done = totalTickets > 0;
+                  const currentStage = taskProgress.stage;
 
                   // 步骤 2: 要素抽取
-                  const step2Active = taskProgress.status === "RUNNING" && (processedTickets < totalTickets && !stageText.includes("仲裁") && !stageText.includes("聚类") && percent < 55);
-                  const step2Done = isDone || processedTickets >= totalTickets || stageText.includes("仲裁") || stageText.includes("复核") || stageText.includes("聚类") || percent >= 55;
+                  const step2Active = taskProgress.status === "RUNNING" && currentStage === "EXTRACTING";
+                  const step2Done = isDone || ["CLUSTERING", "SYNTHESIZING", "COMPLETED"].includes(currentStage) || (totalTickets > 0 && processedTickets >= totalTickets);
 
-                  // 步骤 3: 低置信复核 (二级 AI 仲裁纠偏)
-                  const step3Active = taskProgress.status === "RUNNING" && (stageText.includes("仲裁") || stageText.includes("复核") || (percent >= 55 && percent < 70 && themeCount === 0 && !stageText.includes("图谱") && !stageText.includes("聚类")));
-                  const step3Done = isDone || themeCount > 0 || stageText.includes("图谱") || stageText.includes("聚类") || percent >= 70;
+                  // 步骤 3: 智能复核与图谱分析
+                  const step3Active = taskProgress.status === "RUNNING" && currentStage === "CLUSTERING";
+                  const step3Done = isDone || ["SYNTHESIZING", "COMPLETED"].includes(currentStage) || themeCount > 0;
 
-                  // 步骤 4: 多频主题聚类
-                  const step4Active = taskProgress.status === "RUNNING" && (stageText.includes("图谱") || stageText.includes("聚类") || percent >= 70) && !isDone && themeCount === 0;
-                  const step4Done = isDone || themeCount > 0;
+                  // 步骤 4: 多频主题聚类与公文研判
+                  const step4Active = taskProgress.status === "RUNNING" && currentStage === "SYNTHESIZING";
+                  const step4Done = isDone || currentStage === "COMPLETED" || themeCount > 0;
 
                   return (
                     <div className="flex items-center justify-between gap-1 pt-1 select-none">

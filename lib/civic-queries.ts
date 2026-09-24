@@ -2,7 +2,7 @@ import { getRegionDb, type DB } from "@/db/client";
 import { ticketsTable, themesTable, ticketThemesTable } from "@/db/schema";
 import { and, desc, eq, gte, isNotNull, lt, sql, type SQL } from "drizzle-orm";
 import { explicitAdmin, isTownLabel } from "@/lib/admin-area";
-import { regionLabel, toClusterDto } from "@/lib/civic-dto";
+import { regionLabel, toClusterDto, normalizeStatusCode } from "@/lib/civic-dto";
 import { CIVIC_CATEGORIES, deriveClusterUrgency, spanDays, urgentCutFromUnprocessed } from "@/lib/civic-cluster";
 import {
   buildInsights,
@@ -354,9 +354,9 @@ export async function loadClusterBundle(regionId?: string) {
   }
 
   const pendingValues = themeRows.map((t) => {
-    const label = t.handlingStatus || "未处理";
-    if (label === "已办结") return 0;
-    return pendingByTheme.get(t.id) ?? Math.round((t.ticketCount || 0) * (label === "处置中" ? 0.4 : 0.7));
+    const code = normalizeStatusCode(t.handlingStatus);
+    if (code === "RESOLVED") return 0;
+    return pendingByTheme.get(t.id) ?? Math.round((t.ticketCount || 0) * (code === "IN_PROGRESS" ? 0.4 : 0.7));
   });
   const cut = urgentCutFromUnprocessed(pendingValues);
 
@@ -367,11 +367,11 @@ export async function loadClusterBundle(regionId?: string) {
       lastAt: t.lastAt,
       tickets: samplesByTheme.get(t.id) || [],
     });
-    const label = base.status.label || "未处理";
+    const code = base.status.code || normalizeStatusCode(base.status.label);
     const unprocessed =
-      label === "已办结"
+      code === "RESOLVED"
         ? 0
-        : pendingByTheme.get(t.id) ?? Math.round(base.count * (label === "处置中" ? 0.4 : 0.7));
+        : pendingByTheme.get(t.id) ?? Math.round(base.count * (code === "IN_PROGRESS" ? 0.4 : 0.7));
     return {
       ...base,
       unprocessed,
@@ -399,11 +399,11 @@ export function filterClusterDtos(
   let next = dtos;
   if (q.mode) next = next.filter((c) => c.mode === q.mode);
   if (q.region) next = next.filter((c) => c.region.includes(q.region!));
-  if (q.status) next = next.filter((c) => c.status.label === q.status);
+  if (q.status) next = next.filter((c) => c.status.code === normalizeStatusCode(q.status) || c.status.label === q.status);
   if (q.urgency) next = next.filter((c) => c.urgency === q.urgency);
-  if (q.tab === "pending") next = next.filter((c) => c.status.label === "未处理");
-  else if (q.tab === "progress") next = next.filter((c) => c.status.label === "处置中");
-  else if (q.tab === "done") next = next.filter((c) => c.status.label === "已办结");
+  if (q.tab === "pending") next = next.filter((c) => c.status.code === "PENDING");
+  else if (q.tab === "progress") next = next.filter((c) => c.status.code === "IN_PROGRESS");
+  else if (q.tab === "done") next = next.filter((c) => c.status.code === "RESOLVED");
   else if (q.tab === "urgent") next = next.filter((c) => c.urgency === "urgent");
   if (q.keyword) {
     const kw = q.keyword.toLowerCase();

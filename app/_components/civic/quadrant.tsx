@@ -53,7 +53,7 @@ function hash01(id: string, salt: number): number {
 
 export function QuadrantBoard({ clusters }: { clusters: QuadCluster[] }) {
   const router = useRouter();
-  const pending = clusters.filter((c) => c.status.label !== "已办结");
+  const pending = clusters.filter((c) => (c.status as any)?.code ? (c.status as any).code !== "RESOLVED" : c.status.label !== "已办结");
 
   // Per-quadrant counts for the corner labels
   const grouped: Record<Q, number> = { tl: 0, tr: 0, bl: 0, br: 0 };
