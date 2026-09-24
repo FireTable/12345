@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@/app/_components/ui/select";
 import { TablePager } from "@/app/_components/civic/table-pager";
+import { useRegion } from "@/app/_components/civic/region-context";
 
 type Cluster = {
   id: string;
@@ -47,6 +48,7 @@ const TABS = [
 
 export default function ThemesPage() {
   const router = useRouter();
+  const { activeRegion } = useRegion();
   const [rows, setRows] = useState<Cluster[]>([]);
   const [regions, setRegions] = useState<string[]>([]);
   const [tab, setTab] = useState("all");
@@ -59,7 +61,8 @@ export default function ThemesPage() {
   const [ready, setReady] = useState(false);
 
   function load() {
-    fetch("/api/clusters")
+    const regParam = activeRegion?.id ? `?region=${encodeURIComponent(activeRegion.id)}` : "";
+    fetch(`/api/clusters${regParam}`)
       .then((r) => r.json())
       .then((j) => {
         setRows(j.topClusters || []);
@@ -73,7 +76,7 @@ export default function ThemesPage() {
     load();
     window.addEventListener("civic-data-refresh", load);
     return () => window.removeEventListener("civic-data-refresh", load);
-  }, []);
+  }, [activeRegion?.id]);
 
   const counts = {
     all: rows.length,
@@ -140,7 +143,9 @@ export default function ThemesPage() {
       <section className="page-hero">
         <div>
           <h1 className="page-hero__title">多频工单</h1>
-          <div className="page-hero__sub">AI 识别的多频工单群组 · 每行为一个群组，包含多条关联工单</div>
+          <div className="page-hero__sub">
+            {activeRegion ? `${activeRegion.name} · ` : ""}AI 识别的多频工单群组 · 每行为一个群组，包含多条关联工单
+          </div>
         </div>
         <div className="page-hero__actions">
           <button type="button" className="btn btn--default" onClick={exportCsv}>

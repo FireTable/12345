@@ -1,14 +1,17 @@
 import { NextResponse } from "next/server";
 import { MOCK_RAW_TICKETS } from "@/lib/mock-data";
-import { db } from "@/db/client";
+import { getRegionDb } from "@/db/client";
 import { ticketsTable } from "@/db/schema";
 import { sql, inArray } from "drizzle-orm";
 import type { RawTicket } from "@/backend/state";
 import { desensitizeContent } from "@/backend/anonymizer";
+import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const dbRows = await db.select().from(ticketsTable).limit(500);
+    const regionId = await resolveRequestRegionId(req);
+    const { db: tenantDb } = await getRegionDb(regionId);
+    const dbRows = await tenantDb.select().from(ticketsTable).limit(500);
     if (dbRows && dbRows.length > 0) {
       const tickets: RawTicket[] = dbRows.map((r) => ({
         id: r.id,
@@ -81,10 +84,13 @@ export async function POST(req: Request) {
     let duplicateCount = 0;
 
     try {
+      const regionId = await resolveRequestRegionId(req);
+      const { db: tenantDb } = await getRegionDb(regionId);
+
       if (validRecords.length > 0) {
         // Collect ticket numbers to check duplicates
         const ticketNos = validRecords.map((r) => r.ticketNo);
-        const existingRows = await db
+        const existingRows = await tenantDb
           .select({ ticketNo: ticketsTable.ticketNo })
           .from(ticketsTable)
           .where(inArray(ticketsTable.ticketNo, ticketNos.slice(0, 1000)));
@@ -96,7 +102,7 @@ export async function POST(req: Request) {
 
         if (recordsToInsert.length > 0) {
           // Batch insert newly unique tickets
-          await db
+          await tenantDb
             .insert(ticketsTable)
             .values(recordsToInsert)
             .onConflictDoNothing({ target: ticketsTable.ticketNo });

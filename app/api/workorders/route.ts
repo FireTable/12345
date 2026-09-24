@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server";
-import { db } from "@/db/client";
+import { NextRequest, NextResponse } from "next/server";
+import { getRegionDb } from "@/db/client";
 import { ticketsTable } from "@/db/schema";
 import { and, desc, eq, gte, ilike, isNotNull, lt, or, sql } from "drizzle-orm";
 import { toWorkorderDto } from "@/lib/civic-dto";
@@ -7,9 +7,13 @@ import { clampPage, clampSize } from "@/lib/api-bounds";
 import { cacheGetOrLoad } from "@/lib/civic-cache";
 import { loadWorkorderStats } from "@/lib/civic-queries";
 import { clampTimeRef, timeWindow } from "@/lib/civic-time";
+import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   try {
+    const regionId = await resolveRequestRegionId(req);
+    const { db: tenantDb } = await getRegionDb(regionId);
+
     const { searchParams } = new URL(req.url);
     const page = clampPage(searchParams.get("page"));
     const size = clampSize(searchParams.get("size"));
@@ -22,7 +26,7 @@ export async function GET(req: Request) {
     const time = searchParams.get("time") || "";
     const multifreq = searchParams.get("multifreq") || "";
 
-    const { value: snap } = await cacheGetOrLoad("workorders:stats", () => loadWorkorderStats());
+    const { value: snap } = await cacheGetOrLoad(`workorders:stats:${regionId}`, () => loadWorkorderStats(regionId));
     const { stats, latest, facets } = snap;
 
     const filters = [];
@@ -74,8 +78,8 @@ export async function GET(req: Request) {
     }
 
     const where = filters.length ? and(...filters) : undefined;
-    const countQ = db.select({ count: sql<number>`count(*)` }).from(ticketsTable);
-    const listQ = db
+    const countQ = tenantDb.select({ count: sql<number>`count(*)` }).from(ticketsTable);
+    const listQ = tenantDb
       .select()
       .from(ticketsTable)
       .orderBy(desc(ticketsTable.createTime))

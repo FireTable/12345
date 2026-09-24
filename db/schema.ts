@@ -10,6 +10,35 @@ import {
 } from "drizzle-orm/pg-core";
 
 /**
+ * 0. 区域/站点注册花名册表 (Regions Registry Table, in public schema)
+ */
+export const regionsTable = pgTable(
+  "regions",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    name: varchar("name", { length: 128 }).notNull(),
+    city: varchar("city", { length: 128 }).notNull(),
+    province: varchar("province", { length: 128 }).default("广东省").notNull(),
+    schemaName: varchar("schema_name", { length: 64 }).notNull().unique(),
+    svgMapPath: varchar("svg_map_path", { length: 255 }),
+    categoryConfigJson: text("category_config_json"),
+    status: varchar("status", { length: 32 }).default("ACTIVE").notNull(),
+    isDefault: boolean("is_default").default(false).notNull(),
+    description: text("description"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_regions_city").on(table.city),
+    index("idx_regions_status").on(table.status),
+    index("idx_regions_schema_name").on(table.schemaName),
+  ]
+);
+
+export type RegionRecord = typeof regionsTable.$inferSelect;
+export type NewRegionRecord = typeof regionsTable.$inferInsert;
+
+/**
  * 1. 工单主表 (Tickets Table)
  */
 export const ticketsTable = pgTable(
@@ -23,6 +52,8 @@ export const ticketsTable = pgTable(
     maskedContent: text("masked_content"),
     citizenName: varchar("citizen_name", { length: 64 }),
     citizenPhone: varchar("citizen_phone", { length: 64 }),
+    province: varchar("province", { length: 64 }),
+    city: varchar("city", { length: 64 }),
     district: varchar("district", { length: 64 }),
     subdistrict: varchar("subdistrict", { length: 64 }),
     sourceCategory: varchar("source_category", { length: 64 }),

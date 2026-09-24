@@ -12,11 +12,11 @@ import {
   type ExtractedTicketItem,
 } from "../prompt";
 import { adminFromLocation, explicitAdmin } from "@/lib/admin-area";
-import { normalizeAliasesInText, resolveEntityAlias } from "@/lib/alias-dict";
-import { canonicalizeCategory, canonicalizeTownship } from "@/lib/vocabulary";
+import { getRegionAliasMap, normalizeAliasesInText, resolveEntityAlias } from "@/lib/alias-dict";
+import { canonicalizeCategory, canonicalizeTownship, getRegionVocabulary, type RegionVocabulary } from "@/lib/vocabulary";
 import { needsArbitration, arbitrateSingleTicket } from "./arbitrator-node";
 import { updateTaskProgress } from "@/lib/task-progress";
-import { db } from "@/db/client";
+import { getRegionDb } from "@/db/client";
 import { ticketsTable } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import PQueue from "p-queue";
@@ -28,12 +28,13 @@ export const LOW_CONFIDENCE_THRESHOLD = 60;
  */
 async function extractBatchWithLLM(
   tickets: RawTicket[],
-  startIndex: number
+  startIndex: number,
+  vocab?: RegionVocabulary
 ): Promise<Map<number, ExtractedTicketItem>> {
   const result = new Map<number, ExtractedTicketItem>();
   if (tickets.length === 0) return result;
 
-  const prompt = buildBatchExtractionPrompt(tickets);
+  const prompt = buildBatchExtractionPrompt(tickets, vocab);
 
   try {
     const chat = getChatModel(0);
@@ -203,6 +204,11 @@ export async function extractNode(
   const extractionMap = new Map<number, ExtractedTicketItem>();
   const queue = new PQueue({ concurrency: llmConcurrency() });
 
+  // 加载当前运行站点的动态词库与别名映射，以及专属 Schema 数据库客户端
+  const regionVocab = await getRegionVocabulary(state.regionId);
+  const aliasMap = await getRegionAliasMap(state.regionId);
+  const { db: tenantDb } = await getRegionDb(state.regionId);
+
   if (taskId) {
     updateTaskProgress(taskId, {
       stage: "EXTRACTING",
@@ -228,9 +234,9 @@ export async function extractNode(
   // 1. 全文别名标准化预处理
   const normalizedRawTickets = rawTickets.map((t) => ({
     ...t,
-    title: normalizeAliasesInText(t.title),
-    content: normalizeAliasesInText(t.content),
-    subdistrict: normalizeAliasesInText(t.subdistrict),
+    title: normalizeAliasesInText(t.title, aliasMap),
+    content: normalizeAliasesInText(t.content, aliasMap),
+    subdistrict: normalizeAliasesInText(t.subdistrict, aliasMap),
   }));
 
   // 1.1 检查已抽取过的工单（断点续抽/跳过已处理），直接载入并跳过 LLM
@@ -242,7 +248,7 @@ export async function extractNode(
         index: 1,
         summarizeTitle: ticket.summarizeTitle,
         subject: ticket.title || fallback.subject || "相关主体",
-        location: ticket.address || ticket.subdistrict || fallback.location || "顺德区",
+        location: ticket.address || ticket.subdistrict || fallback.location || regionVocab.regionName,
         eventType: ticket.sourceCategory || fallback.eventType || "民生诉求",
         category: (ticket.sourceCategory as any) || fallback.category || "城市管理",
         confidence: ticket.confidence,
@@ -264,7 +270,7 @@ export async function extractNode(
     });
   }
 
-  // 1.2 对尚未抽取的工单加入并发队列（按未抽取下标打包，避免 CHUNK>1 时把已抽取条目整批跳过）
+  // 1.2 对尚未抽取的工单加入并发队列
   const pendingIdx: number[] = [];
   for (let i = 0; i < normalizedRawTickets.length; i++) {
     if (!extractionMap.has(i)) pendingIdx.push(i);
@@ -274,16 +280,16 @@ export async function extractNode(
     const chunk = idxs.map((i) => normalizedRawTickets[i]);
     const indexMap = idxs;
     chunkTasks.push(async () => {
-      const packed = await extractBatchWithLLM(chunk, 0);
+      const packed = await extractBatchWithLLM(chunk, 0, regionVocab);
       packed.forEach((val, packedIdx) => {
         const key = indexMap[packedIdx];
         if (key === undefined) return;
         extractionMap.set(key, val);
-        // 单条实时持久化至 PostgreSQL 数据库，保证中途关闭或刷新永不丢失进度
+        // 单条实时持久化至目标 Schema 对应的 PostgreSQL 数据库，保证中途关闭或刷新永不丢失进度
         const orig = normalizedRawTickets[key];
         if (orig && orig.id) {
           const area = adminFromLocation(val.location, orig);
-          db.update(ticketsTable)
+          tenantDb.update(ticketsTable)
             .set({
               summarizeTitle: val.summarizeTitle,
               address: val.location,
@@ -323,10 +329,10 @@ export async function extractNode(
   normalizedRawTickets.forEach((ticket, idx) => {
     if (!newlyExtracted.has(idx)) return;
     const item = extractionMap.get(idx) || fallbackDynamicExtraction(ticket);
-    if (needsArbitration(item, ticket)) {
+    if (needsArbitration(item, ticket, regionVocab)) {
       lowConfidenceIndices.push(idx);
       arbitrationTasks.push(async () => {
-        const corrected = await arbitrateSingleTicket(ticket, item);
+        const corrected = await arbitrateSingleTicket(ticket, item, regionVocab, aliasMap);
         extractionMap.set(idx, corrected);
         completedArbitrations++;
         if (taskId) {
@@ -367,10 +373,13 @@ export async function extractNode(
         ? aiExtracted.confidence
         : fallback.confidence;
 
-    const canonicalSubject = resolveEntityAlias(rawSubject);
-    const canonicalLocation = resolveEntityAlias(rawLocation);
+    const canonicalSubject = resolveEntityAlias(rawSubject, aliasMap);
+    const canonicalLocation = resolveEntityAlias(rawLocation, aliasMap);
     const area = adminFromLocation(canonicalLocation, ticket);
-    const subdistrict = canonicalizeTownship(area.subdistrict || ticket.subdistrict) || area.subdistrict || undefined;
+    const subdistrict =
+      canonicalizeTownship(area.subdistrict || ticket.subdistrict, regionVocab) ||
+      area.subdistrict ||
+      undefined;
 
     return {
       ...ticket,

@@ -1,15 +1,19 @@
-import { NextResponse } from "next/server";
-import { db } from "@/db/client";
+import { NextRequest, NextResponse } from "next/server";
+import { getRegionDb } from "@/db/client";
 import { ticketsTable, themesTable } from "@/db/schema";
 import { eq, or } from "drizzle-orm";
 import { toWorkorderDto } from "@/lib/civic-dto";
 import { MODE_META, civicModeFromPattern } from "@/backend/theme-metrics";
 import type { CivicMode, PatternType } from "@/backend/state";
+import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const rows = await db
+    const regionId = await resolveRequestRegionId(req);
+    const { db: tenantDb } = await getRegionDb(regionId);
+
+    const rows = await tenantDb
       .select()
       .from(ticketsTable)
       .where(or(eq(ticketsTable.id, id), eq(ticketsTable.ticketNo, id)))
@@ -19,7 +23,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
     let cluster_info = null;
     if (row.primaryThemeId) {
-      const themes = await db.select().from(themesTable).where(eq(themesTable.id, row.primaryThemeId)).limit(1);
+      const themes = await tenantDb.select().from(themesTable).where(eq(themesTable.id, row.primaryThemeId)).limit(1);
       const th = themes[0];
       if (th) {
         const mode = (th.civicMode as CivicMode) || civicModeFromPattern(th.patternType as PatternType);

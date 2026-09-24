@@ -46,7 +46,13 @@ export async function cacheGetOrLoad<T>(
   return { value, hit: false };
 }
 
-export function invalidateCivicAggregates(): void {
+export function invalidateCivicAggregates(regionId?: string): void {
+  if (regionId) {
+    cacheInvalidate(`overview:${regionId}`);
+    cacheInvalidate(`trends:${regionId}`);
+    cacheInvalidate(`workorders:stats:${regionId}`);
+    cacheInvalidate(`clusters:${regionId}`);
+  }
   cacheInvalidate("overview:");
   cacheInvalidate("trends:");
   cacheInvalidate("workorders:");

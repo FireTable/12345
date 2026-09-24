@@ -9,11 +9,13 @@ import { CivicWorkflowProvider } from "@/app/_components/civic/civic-workflow";
 import { Toaster } from "@/app/_components/ui/sonner";
 import { appViewport } from "./viewport";
 
+import { RegionProvider } from "@/app/_components/civic/region-context";
+
 export const viewport = appViewport;
 
 export const metadata: Metadata = {
-  title: "顺德 12345 AI 智能研判系统",
-  description: "顺德 12345 热线多频诉求 AI 智能研判与治理平台",
+  title: "12345 AI 智能研判系统 · 多地 SuperAgent 平台",
+  description: "全国 12345 热线多频诉求 AI 智能研判与多地纳管治理平台",
 };
 
 export default function RootLayout({
@@ -24,11 +26,13 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <body>
-        <CivicWorkflowProvider>
-          <CivicNav />
-          <main className="main">{children}</main>
-          <Toaster />
-        </CivicWorkflowProvider>
+        <RegionProvider>
+          <CivicWorkflowProvider>
+            <CivicNav />
+            <main className="main">{children}</main>
+            <Toaster />
+          </CivicWorkflowProvider>
+        </RegionProvider>
       </body>
     </html>
   );

@@ -3,8 +3,9 @@ import { RULES, negativeTermsPattern } from "./rules";
 
 const NEGATIVE_RE = negativeTermsPattern();
 
-// ponytail: 顺德 10 镇街 inline，不引 @/lib 避免 backend 依赖反转
-const SHUNDE_TOWNSHIP_RE = /(大良|容桂|伦教|勒流|陈村|北滘|乐从|龙江|杏坛|均安)/;
+// 通用镇街/街道识别模式（支持区/县/镇/街道/乡后缀，并兼容顺德及广州等核心辖区）
+const GENERAL_TOWNSHIP_RE =
+  /(?:街道|镇|乡|区)$|(?:大良|容桂|伦教|勒流|陈村|北滘|乐从|龙江|杏坛|均安|琶洲|凤阳|赤岗|新港|江南中|昌岗|滨江|素社|海幢|南华西|龙凤|沙园|南石头|瑞宝|江海|南洲|华洲|官洲)/;
 
 export const MODE_META: Record<
   CivicMode,
@@ -126,7 +127,7 @@ export function deriveThemeMetrics(theme: Pick<
   const townships = new Set(
     tickets
       .map((t) => (t.subdistrict || t.district || "").trim())
-      .filter((s) => s && SHUNDE_TOWNSHIP_RE.test(s))
+      .filter((s) => s && GENERAL_TOWNSHIP_RE.test(s))
   );
   const townshipCount = townships.size;
   const subject = tickets[0]?.canonicalSubject || "";

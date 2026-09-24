@@ -1,12 +1,14 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import Papa from "papaparse";
 import { buildRecordsFromRows, insertRecordsBatch } from "@/lib/ticket-ingest";
+import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   const startTime = Date.now();
 
   try {
+    const regionId = await resolveRequestRegionId(req);
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
 
@@ -45,7 +47,7 @@ export async function POST(req: Request) {
     // 2. Normalize and 3. Batch insert (delegated to shared lib)
     const { records, failedCount: normalizedFailed } = buildRecordsFromRows(rawRows, "GD-UPLOAD");
     const { insertedCount, duplicateCount, failedCount: batchFailed } =
-      await insertRecordsBatch(records);
+      await insertRecordsBatch(records, regionId);
     const failedCount = normalizedFailed + batchFailed;
 
     const durationMs = Date.now() - startTime;

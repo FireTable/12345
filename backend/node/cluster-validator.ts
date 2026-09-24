@@ -5,7 +5,7 @@
 
 import type { MultiFrequencyTheme, EnrichedTicket } from "../state";
 import { RULES } from "../rules";
-import { isValidShundeTownship } from "@/lib/vocabulary";
+import { isValidTownship, type RegionVocabulary } from "@/lib/vocabulary";
 
 export interface ValidationReport {
   passed: boolean;
@@ -17,7 +17,8 @@ export interface ValidationReport {
  */
 export function validateSingleTheme(
   theme: MultiFrequencyTheme,
-  clusterTickets: EnrichedTicket[]
+  clusterTickets: EnrichedTicket[],
+  vocab?: RegionVocabulary
 ): ValidationReport {
   const subject = (theme.canonicalSubject || "").trim();
   const location = (theme.canonicalLocation || "").trim();
@@ -54,7 +55,7 @@ export function validateSingleTheme(
   const distinctTownships = new Set<string>();
   for (const t of clusterTickets) {
     const township = t.subdistrict || t.district;
-    if (township && isValidShundeTownship(township)) {
+    if (township && isValidTownship(township, vocab)) {
       distinctTownships.add(township);
     }
   }
@@ -79,14 +80,15 @@ export function validateSingleTheme(
  */
 export function validateAndFilterThemes(
   themes: MultiFrequencyTheme[],
-  allEnrichedTickets: EnrichedTicket[]
+  allEnrichedTickets: EnrichedTicket[],
+  vocab?: RegionVocabulary
 ): MultiFrequencyTheme[] {
   const validThemes: MultiFrequencyTheme[] = [];
 
   for (const theme of themes) {
     const memberTickets = theme.tickets || [];
 
-    const check = validateSingleTheme(theme, memberTickets);
+    const check = validateSingleTheme(theme, memberTickets, vocab);
     if (check.passed) {
       validThemes.push(theme);
     } else {

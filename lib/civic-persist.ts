@@ -1,4 +1,4 @@
-import { db } from "@/db/client";
+import { getRegionDb } from "@/db/client";
 import { ticketsTable, themesTable, ticketThemesTable } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { adminFromLocation } from "@/lib/admin-area";
@@ -87,7 +87,7 @@ export function buildThemePersistRow(theme: MultiFrequencyTheme): ThemePersistRo
     id: clip(theme.id, 64),
     title: clip(theme.title, 255) || "未命名主题",
     canonicalSubject: clip(theme.canonicalSubject, 255) || "相关主体",
-    canonicalLocation: clip(theme.canonicalLocation, 255) || "顺德区",
+    canonicalLocation: clip(theme.canonicalLocation, 255) || "本地辖区",
     eventType: clip(theme.eventType, 128) || "民生诉求",
     category: clip(theme.category, 64) || "城市管理",
     riskLevel: clip(theme.riskLevel, 32) || "LOW",
@@ -112,15 +112,16 @@ export function buildThemePersistRow(theme: MultiFrequencyTheme): ThemePersistRo
 
 export async function persistTicketAnalysis(
   tickets: EnrichedTicket[],
-  opts?: { themeId?: string | null }
+  opts?: { themeId?: string | null; regionId?: string }
 ) {
   if (tickets.length === 0) return;
+  const { db: tenantDb } = await getRegionDb(opts?.regionId);
   const CHUNK = 40;
   for (let i = 0; i < tickets.length; i += CHUNK) {
     const chunk = tickets.slice(i, i + CHUNK);
     await Promise.all(
       chunk.map((t) =>
-        db
+        tenantDb
           .update(ticketsTable)
           .set(buildTicketAgentPatch(t, opts))
           .where(eq(ticketsTable.id, t.id))
@@ -133,21 +134,23 @@ export async function persistClusterResult(input: {
   tickets: EnrichedTicket[];
   themes: MultiFrequencyTheme[];
   replaceThemes?: boolean;
+  regionId?: string;
 }) {
-  const { tickets, themes, replaceThemes = true } = input;
+  const { tickets, themes, replaceThemes = true, regionId } = input;
+  const { db: tenantDb } = await getRegionDb(regionId);
 
-  await persistTicketAnalysis(tickets, { themeId: null });
+  await persistTicketAnalysis(tickets, { themeId: null, regionId });
 
   if (replaceThemes) {
-    await db.delete(ticketThemesTable);
-    await db.delete(themesTable);
+    await tenantDb.delete(ticketThemesTable);
+    await tenantDb.delete(themesTable);
   }
 
   const themeRecords = themes.map(buildThemePersistRow);
   if (themeRecords.length > 0) {
     const THEME_CHUNK = 40;
     for (let i = 0; i < themeRecords.length; i += THEME_CHUNK) {
-      await db.insert(themesTable).values(themeRecords.slice(i, i + THEME_CHUNK));
+      await tenantDb.insert(themesTable).values(themeRecords.slice(i, i + THEME_CHUNK));
     }
 
     const ticketThemeMappings: Array<{ ticketId: string; themeId: string }> = [];
@@ -157,12 +160,12 @@ export async function persistClusterResult(input: {
       }
     }
     for (let i = 0; i < ticketThemeMappings.length; i += 500) {
-      await db.insert(ticketThemesTable).values(ticketThemeMappings.slice(i, i + 500)).onConflictDoNothing();
+      await tenantDb.insert(ticketThemesTable).values(ticketThemeMappings.slice(i, i + 500)).onConflictDoNothing();
     }
 
     for (const theme of themes) {
       for (const t of theme.tickets || []) {
-        await db
+        await tenantDb
           .update(ticketsTable)
           .set({
             primaryThemeId: theme.id,

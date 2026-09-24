@@ -9,11 +9,13 @@ export { graph };
 export async function runTicketRadarPipeline(
   rawTickets: RawTicket[],
   threadId: string = "default-radar-thread",
-  taskId?: string
+  taskId?: string,
+  regionId?: string
 ): Promise<TicketRadarState> {
   const initialState = {
     rawTickets,
     taskId,
+    regionId,
     status: "idle" as const,
   };
 

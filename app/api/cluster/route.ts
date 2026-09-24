@@ -1,16 +1,17 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { runTicketRadarPipeline } from "@/backend/agent";
-import { db } from "@/db/client";
+import { db, getRegionDb } from "@/db/client";
 import { ticketsTable } from "@/db/schema";
 import { seedReviewQueue } from "@/lib/review-queue";
 import { initTaskProgress } from "@/lib/task-progress";
 import { persistClusterResult } from "@/lib/civic-persist";
 import { sql, desc } from "drizzle-orm";
 import type { RawTicket } from "@/backend/state";
+import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 
 let clusterRunning = false;
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   if (clusterRunning) {
     return NextResponse.json(
       { success: false, error: "研判任务已在运行，请等待当前进度结束" },
@@ -26,26 +27,29 @@ export async function POST(req: Request) {
       // Empty body allowed
     }
 
+    const regionId = await resolveRequestRegionId(req);
+    const { db: tenantDb } = await getRegionDb(regionId);
+
     const threadId = body.threadId || `cluster-${Date.now()}`;
     const taskId = body.taskId || threadId || `task-${Date.now()}`;
 
-    const countRes = await db.select({ count: sql<number>`count(*)` }).from(ticketsTable);
+    const countRes = await tenantDb.select({ count: sql<number>`count(*)` }).from(ticketsTable);
     const totalTickets = Number(countRes[0]?.count || 0);
     if (totalTickets === 0) {
       return NextResponse.json(
-        { success: false, error: "数据库中暂无工单数据，请先点击「上传入库」导入工单表格" },
+        { success: false, error: "当前地区数据库中暂无工单数据，请先点击「上传入库」导入工单表格" },
         { status: 400 }
       );
     }
     initTaskProgress(taskId, totalTickets);
 
     // All tickets: extract-node skips rows that already have confidence.
-    const rows = await db
+    const rows = await tenantDb
       .select()
       .from(ticketsTable)
       .orderBy(desc(ticketsTable.createTime));
 
-    const tickets: RawTicket[] = rows.map((r) => ({
+    const tickets: RawTicket[] = rows.map((r: any) => ({
       id: r.id,
       ticketNo: r.ticketNo,
       title: r.title || undefined,
@@ -74,17 +78,18 @@ export async function POST(req: Request) {
 
     initTaskProgress(taskId, tickets.length);
 
-    // 3. Run LangGraph JS Pipeline
-    const result = await runTicketRadarPipeline(tickets, threadId, taskId);
+    // 3. Run LangGraph JS Pipeline with regionId
+    const result = await runTicketRadarPipeline(tickets, threadId, taskId, regionId);
 
     // 4. Persist extract + cluster agent fields (never overwrite content)
     try {
       await persistClusterResult({
         tickets: result.enrichedTickets || [],
         themes: result.themes || [],
+        regionId,
       });
       if (result.lowConfidenceTickets && result.lowConfidenceTickets.length > 0) {
-        await seedReviewQueue(result.lowConfidenceTickets);
+        await seedReviewQueue(result.lowConfidenceTickets, regionId);
       }
     } catch (persistErr: any) {
       console.warn("Could not persist themes/reviews to DB:", persistErr.message);

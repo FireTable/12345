@@ -10,6 +10,7 @@ import { deriveRiskLevel, scanNegativeSentiment } from "./risk-rules";
 import { RULES } from "../rules";
 import { civicModeFromPattern, deriveThemeMetrics, inferPatternType } from "../theme-metrics";
 import { validateAndFilterThemes } from "./cluster-validator";
+import { getRegionVocabulary } from "@/lib/vocabulary";
 
 function safeParseDate(dateStr: string): Date {
   if (!dateStr) return new Date();
@@ -262,7 +263,8 @@ export async function clusterNode(
   // ==========================================
   // 3. 严格真实性与质量交叉质检（Cluster Validator）
   // ==========================================
-  const validatedThemes = validateAndFilterThemes(themes, enrichedTickets);
+  const regionVocab = await getRegionVocabulary(state.regionId);
+  const validatedThemes = validateAndFilterThemes(themes, enrichedTickets, regionVocab);
 
   // ==========================================
   // 4. 排序与结构输出（高风险与高频次优先）

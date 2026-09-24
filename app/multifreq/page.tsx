@@ -11,6 +11,7 @@ import { isTownLabel } from "@/lib/admin-area";
 import { Clock, TrendingUp, Flame, Layers } from "lucide-react";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { SkMultifreq } from "@/app/_components/civic/skeletons";
+import { useRegion } from "@/app/_components/civic/region-context";
 import {
   Select,
   SelectContent,
@@ -66,6 +67,7 @@ export default function MultifreqPage() {
 function MultifreqInner() {
   const router = useRouter();
   const search = useSearchParams();
+  const { activeRegion } = useRegion();
   const [rows, setRows] = useState<Cluster[]>([]);
   const [ov, setOv] = useState<Overview | null>(null);
   const [region, setRegion] = useState(search.get("region") || "");
@@ -218,7 +220,7 @@ function MultifreqInner() {
       <section className="split-row split-row--map">
         <div className="card">
           <div className="card__header">
-            <div className="card__title">顺德区多频工单地理透势</div>
+            <div className="card__title">{activeRegion ? activeRegion.name : "全区"}多频工单地理透势</div>
             <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>点击镇街筛选 · 悬停查看详情</div>
           </div>
           <div className="card__body" style={{ padding: 8, paddingTop: 40, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 460 }}>

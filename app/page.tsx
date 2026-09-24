@@ -10,6 +10,7 @@ import { RANK_COLORS } from "@/lib/civic-cluster";
 import { FileText, Activity, Sparkles, FolderKanban } from "lucide-react";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { SkDashboard } from "@/app/_components/civic/skeletons";
+import { useRegion } from "@/app/_components/civic/region-context";
 import {
   Select,
   SelectContent,
@@ -38,6 +39,7 @@ type Trends = { daily: Record<string, number>; dailyNewClusters?: Record<string,
 
 export default function DashboardPage() {
   const { openUpload, runCluster, analyzing, isAllAnalyzed, disabledReason } = useCivicWorkflow();
+  const { activeRegion } = useRegion();
   const router = useRouter();
   const [daysRange, setDaysRange] = useState(0);
   const [ov, setOv] = useState<Overview | null>(null);
@@ -45,9 +47,10 @@ export default function DashboardPage() {
   const [ready, setReady] = useState(false);
 
   function load() {
+    const regParam = activeRegion?.id ? `&region=${encodeURIComponent(activeRegion.id)}` : "";
     Promise.all([
-      fetch(`/api/overview?days=${daysRange}`).then((r) => r.json()),
-      fetch(`/api/trends?days=${daysRange}`).then((r) => r.json()),
+      fetch(`/api/overview?days=${daysRange}${regParam}`).then((r) => r.json()),
+      fetch(`/api/trends?days=${daysRange}${regParam}`).then((r) => r.json()),
     ])
       .then(([a, b]) => {
         setOv(a);
@@ -63,7 +66,7 @@ export default function DashboardPage() {
     const onRefresh = () => load();
     window.addEventListener("civic-data-refresh", onRefresh);
     return () => window.removeEventListener("civic-data-refresh", onRefresh);
-  }, [daysRange]);
+  }, [daysRange, activeRegion?.id]);
 
   async function exportOverview() {
     const res = await fetch("/api/clusters");
@@ -104,7 +107,9 @@ export default function DashboardPage() {
           <h1 className="page-hero__title">工单数据总览</h1>
           <div className="page-hero__sub flex items-center gap-2">
             <span className="status-dot status-dot--finished" style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#52C41A" }} />
-            <span>接口运行正常 · {ov?.dateRange || "全部时间"} · 实时研判</span>
+            <span>
+              {activeRegion ? `${activeRegion.city} · ${activeRegion.name}` : "当前辖区"} · 接口正常 · {ov?.dateRange || "全部时间"} · 实时研判
+            </span>
           </div>
         </div>
         <div className="page-hero__actions">

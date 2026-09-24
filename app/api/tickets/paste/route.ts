@@ -1,13 +1,15 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { buildRecordsFromTexts, insertRecordsBatch } from "@/lib/ticket-ingest";
+import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 
 const MAX_LINES = 2000;
 const MAX_LINE_CHARS = 4000;
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   const startTime = Date.now();
 
   try {
+    const regionId = await resolveRequestRegionId(req);
     const body = await req.json().catch(() => null) as { texts?: unknown } | null;
     const rawTexts = Array.isArray(body?.texts) ? body!.texts : null;
     if (!rawTexts) {
@@ -38,7 +40,7 @@ export async function POST(req: Request) {
 
     const { records, failedCount: normalizedFailed } = buildRecordsFromTexts(texts);
     const { insertedCount, duplicateCount, failedCount: batchFailed } =
-      await insertRecordsBatch(records);
+      await insertRecordsBatch(records, regionId);
     const failedCount = normalizedFailed + batchFailed;
 
     const durationMs = Date.now() - startTime;

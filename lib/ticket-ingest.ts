@@ -1,4 +1,4 @@
-import { db } from "@/db/client";
+import { db, getRegionDb } from "@/db/client";
 import { ticketsTable } from "@/db/schema";
 import { inArray } from "drizzle-orm";
 import { desensitizeContent } from "@/backend/anonymizer";
@@ -160,7 +160,7 @@ export function buildRecordsFromTexts(texts: string[]): { records: any[]; failed
 // ponytail: 500/批,22 字段上限 ~11k 参数,PG max_params=32767 安全区
 const BATCH_SIZE = 500;
 
-export async function insertRecordsBatch(records: any[]): Promise<{
+export async function insertRecordsBatch(records: any[], regionId?: string): Promise<{
   insertedCount: number;
   duplicateCount: number;
   failedCount: number;
@@ -169,11 +169,13 @@ export async function insertRecordsBatch(records: any[]): Promise<{
   let duplicateCount = 0;
   let failedCount = 0;
 
+  const { db: targetDb } = await getRegionDb(regionId);
+
   for (let i = 0; i < records.length; i += BATCH_SIZE) {
     const chunk = records.slice(i, i + BATCH_SIZE);
     try {
       const ticketNos = chunk.map((c) => c.ticketNo);
-      const existing = await db
+      const existing = await targetDb
         .select({ ticketNo: ticketsTable.ticketNo })
         .from(ticketsTable)
         .where(inArray(ticketsTable.ticketNo, ticketNos));
@@ -185,7 +187,7 @@ export async function insertRecordsBatch(records: any[]): Promise<{
 
       if (newRecords.length > 0) {
         // ponytail: 锁定 ticketNo 唯一约束去重,用 returning 拿到 DB 真插入数。
-        const inserted = await db
+        const inserted = await targetDb
           .insert(ticketsTable)
           .values(newRecords)
           .onConflictDoNothing({ target: ticketsTable.ticketNo })
@@ -198,6 +200,6 @@ export async function insertRecordsBatch(records: any[]): Promise<{
     }
   }
 
-  invalidateCivicAggregates();
+  invalidateCivicAggregates(regionId);
   return { insertedCount, duplicateCount, failedCount };
 }

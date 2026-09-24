@@ -1,15 +1,18 @@
 /**
  * 别名知识沉淀与自动归一化替换引擎 (Alias Dictionary & Entity Normalization Engine)
  * 能够持续沉淀镇街、微观社区、商户机构及诉求术语的别名映射，实现自动识别与全局替换。
+ * 支持多城市独立 Schema 隔离沉淀。
  */
 
 import { SHUNDE_TOWNSHIPS, SHUNDE_DEPARTMENTS } from "./vocabulary";
+import { getRegionDb } from "@/db/client";
+import { aliasesTable } from "@/db/schema";
 
 /**
- * 预置官方及政务常见高频别名映射表 (Alias -> Canonical)
+ * 预置常见高频别名映射表 (Alias -> Canonical)
  */
 const DEFAULT_ALIASES: Record<string, string> = {
-  // 1. 镇街俗称 / 历史旧称 / 片区别名
+  // 1. 顺德镇街俗称 / 历史旧称 / 片区别名
   容奇: "容桂街道",
   桂洲: "容桂街道",
   容奇镇: "容桂街道",
@@ -58,69 +61,55 @@ const DEFAULT_ALIASES: Record<string, string> = {
   中欧中心: "佛山中欧中心",
   罗浮宫: "罗浮宫国际家具博览中心",
   工业设计城: "广东工业设计城",
-  机器人谷: "博智林机器人谷",
-  甘竹滩: "左滩甘竹滩洪潮发电站历史保护区",
-  仓门夜市: "均安仓门夜市风情街",
-  美的总部: "美的集团全球总部",
-  碧桂园总部: "碧桂园集团总部",
-  万和总部: "广东万和新电气股份有限公司",
-  科达制造: "科达制造股份有限公司",
-  海信家电: "海信家电集团顺德基地",
 
-  // 3. 交通与干道设施
-  顺德客运站: "顺德客运总站",
-  顺德港码头: "顺德客运港",
-  广州7号线西延段: "广州地铁7号线顺德段",
-  佛山3号线: "佛山地铁3号线顺德段",
-  佛山2号线: "佛山地铁2号线顺德段",
-  "105国道": "G105国道顺德段",
-  佛山一环: "佛山一环顺德路段",
+  // 3. 广州核心地标 / 街道别名规范化
+  琶醍: "广州琶醍啤酒文化创意艺术区",
+  琶醍夜市: "广州琶醍啤酒文化创意艺术区",
+  琶洲展馆: "中国进出口商品交易会展馆（广交会展馆）",
+  广交会展馆: "中国进出口商品交易会展馆（广交会展馆）",
+  小蛮腰: "广州塔",
+  中大布市: "广州国际轻纺城（中大布匹市场）",
+  中大布匹市场: "广州国际轻纺城（中大布匹市场）",
+  康乐村: "凤阳街道康乐村片区",
+  鹭江村: "凤阳街道鹭江村片区",
+  江南西: "江南西商业步行街",
+  太古仓: "太古仓码头文创园",
+  海珠湿地: "海珠国家湿地公园",
+  小洲艺术村: "小洲村",
+  生物岛: "广州国际生物岛",
 
-  // 4. 数字政务系统平台
-  粤省事系统: "粤省事政务服务平台",
-  粤省事APP: "粤省事移动政务平台",
-  粤商通系统: "粤商通涉企移动政务平台",
-  顺德政务通: "顺德区政务服务热线系统",
-
-  // 5. 常见责任部门及治理机构别名
-  顺德交警: "佛山市顺德区公安局交通警察大队",
-  交警队: "辖区交警中队",
-  交警大队: "顺德区公安局交通警察大队",
-  城管局: "顺德区综合行政执法局",
-  城管大队: "综合行政执法办公室",
+  // 4. 常见政务部门口语简称规范化
+  交警: "公安交警大队",
+  城管: "综合行政执法队",
   执法队: "综合行政执法队",
-  市监局: "顺德区市场监督管理局",
-  市监所: "市场监督管理所",
-  环监局: "佛山市生态环境局顺德分局",
-  环监所: "生态环境监督管理所",
-  环保局: "佛山市生态环境局顺德分局",
-  人社局: "顺德区人力资源和社会保障局",
-  社保局: "顺德区社会保险基金管理局",
-  医保局: "佛山市医疗保障局顺德分局",
-  住建局: "顺德区住房城乡建设和水务局",
-  城建办: "镇街城市建设和水务办公室",
-  水务办: "镇街城市建设和水务办公室",
-  应急局: "顺德区应急管理局",
-  应急办: "镇街应急管理办公室",
-  消防队: "顺德区消防救援大队",
-  消防救援站: "辖区消防救援站",
+  市监局: "市场监督管理局",
+  市监所: "辖区市场监督管理所",
+  环保局: "生态环境分局",
+  人社局: "人力资源和社会保障局",
+  住建局: "住房城乡建设局",
+  城建办: "城市建设办公室",
+  应急局: "应急管理局",
+  应急办: "应急管理办公室",
+  消防队: "消防救援大队",
   派出所: "辖区派出所",
-  综治办: "镇街综合治理办公室",
+  综治办: "平安法治办公室 / 综合治理办公室",
   居委会: "社区居民委员会",
   村委会: "村民委员会",
-  消委会: "顺德区消费者委员会",
-  消协: "顺德区消费者委员会",
-  劳动仲裁院: "顺德区劳动人事争议仲裁院",
-  劳动监察大队: "顺德区劳动保障监察大队",
-  政数局: "顺德区政务服务和数据管理局",
+  消委会: "消费者委员会",
+  消协: "消费者委员会",
+  政数局: "政务服务和数据管理局",
 };
 
-// 内存中活跃沉淀的别名映射表
+// 内存中活跃沉淀的别名映射表（默认环境）
 const runtimeAliasMap: Map<string, string> = new Map<string, string>(
   Object.entries(DEFAULT_ALIASES)
 );
 
-// 自动将官方 10 大镇街的 aliases 阵列也载入映射
+// 区域别名缓存（按 regionId 隔离）
+const regionAliasCache = new Map<string, { map: Map<string, string>; loadedAt: number }>();
+const ALIAS_CACHE_TTL = 30 * 1000;
+
+// 自动载入预置镇街的别名
 SHUNDE_TOWNSHIPS.forEach((t) => {
   t.aliases.forEach((alias) => {
     if (!runtimeAliasMap.has(alias)) {
@@ -141,12 +130,46 @@ export function getAllAliases(): Record<string, string> {
 }
 
 /**
+ * 动态加载指定地区的别名知识库
+ */
+export async function getRegionAliasMap(regionIdOrSchema?: string | null): Promise<Map<string, string>> {
+  const targetKey = regionIdOrSchema?.trim() || "default";
+  const now = Date.now();
+  if (regionAliasCache.has(targetKey)) {
+    const cached = regionAliasCache.get(targetKey)!;
+    if (now - cached.loadedAt < ALIAS_CACHE_TTL) {
+      return cached.map;
+    }
+  }
+
+  const map = new Map<string, string>(Object.entries(DEFAULT_ALIASES));
+
+  try {
+    const { db: tenantDb } = await getRegionDb(regionIdOrSchema);
+    const rows = await tenantDb.select().from(aliasesTable);
+    for (const r of rows) {
+      if (r.alias && r.canonical) {
+        map.set(r.alias, r.canonical);
+      }
+    }
+  } catch (err) {
+    // 离线使用基础默认别名表
+  }
+
+  regionAliasCache.set(targetKey, { map, loadedAt: now });
+  return map;
+}
+
+/**
  * 实体别名查找与归一化
  * 若存在别名映射，直接替换为规范名称；否则返回清洗后的原名称。
  */
-export function resolveEntityAlias(rawName?: string | null): string {
+export function resolveEntityAlias(rawName?: string | null, customMap?: Map<string, string>): string {
   if (!rawName) return "";
   const trimmed = rawName.trim();
+  if (customMap && customMap.has(trimmed)) {
+    return customMap.get(trimmed)!;
+  }
   if (runtimeAliasMap.has(trimmed)) {
     return runtimeAliasMap.get(trimmed)!;
   }
@@ -156,21 +179,21 @@ export function resolveEntityAlias(rawName?: string | null): string {
 /**
  * 全文别名替换预处理：在文本入模或抽取前，对文本内包含的已知别名进行自动规范化替换
  */
-export function normalizeAliasesInText(text?: string | null): string {
+export function normalizeAliasesInText(text?: string | null, customMap?: Map<string, string>): string {
   if (!text) return "";
   let result = text;
+  const activeMap = customMap || runtimeAliasMap;
 
   // 按别名长度从长到短排序，优先匹配最长/最具体别名
-  const sortedAliases = Array.from(runtimeAliasMap.keys()).sort(
+  const sortedAliases = Array.from(activeMap.keys()).sort(
     (a, b) => b.length - a.length
   );
 
   for (const alias of sortedAliases) {
     if (alias.length >= 2 && result.includes(alias)) {
-      const canonical = runtimeAliasMap.get(alias)!;
+      const canonical = activeMap.get(alias)!;
       if (alias === canonical) continue;
 
-      // 如果别名是规范词的前缀（如 "容桂" vs "容桂街道"），避免将原有的 "容桂街道" 替换为 "容桂街道街道"
       if (canonical.startsWith(alias) && (canonical.endsWith("街道") || canonical.endsWith("镇"))) {
         const suffix = canonical.endsWith("街道") ? "街道" : "镇";
         const re = new RegExp(`${alias}(?!${suffix})`, "g");
@@ -181,7 +204,7 @@ export function normalizeAliasesInText(text?: string | null): string {
     }
   }
 
-  // 清洗意外产生的叠字后缀（如 "街道街道" -> "街道", "镇镇" -> "镇"）
+  // 清洗意外产生的叠字后缀
   result = result
     .replace(/街道街道/g, "街道")
     .replace(/镇镇/g, "镇");
@@ -191,9 +214,8 @@ export function normalizeAliasesInText(text?: string | null): string {
 
 /**
  * 动态沉淀新识别出的别名映射
- * 当系统或人工识别出某实体新的缩写/别称时调用，并在内存及 PostgreSQL 数据库中双向沉淀。
  */
-export function registerAlias(alias: string, canonical: string): boolean {
+export function registerAlias(alias: string, canonical: string, regionIdOrSchema?: string): boolean {
   const cleanAlias = (alias || "").trim();
   const cleanCanonical = (canonical || "").trim();
 
@@ -201,20 +223,23 @@ export function registerAlias(alias: string, canonical: string): boolean {
     return false;
   }
 
-  // 严禁将通用虚词沉淀为别名
   const blacklist = ["车主", "小车", "车辆", "商户", "商家", "市民", "某单位", "当事人", "某人"];
   if (blacklist.includes(cleanAlias)) {
     return false;
   }
 
   runtimeAliasMap.set(cleanAlias, cleanCanonical);
+  if (regionIdOrSchema && regionAliasCache.has(regionIdOrSchema)) {
+    regionAliasCache.get(regionIdOrSchema)!.map.set(cleanAlias, cleanCanonical);
+  }
 
-  // 异步写入数据库沉淀持久化
+  // 异步写入对应 Schema 数据库沉淀持久化
   (async () => {
     try {
-      const { db } = await import("@/db/client");
+      const { getRegionDb } = await import("@/db/client");
       const { aliasesTable } = await import("@/db/schema");
-      await db
+      const { db: tenantDb } = await getRegionDb(regionIdOrSchema);
+      await tenantDb
         .insert(aliasesTable)
         .values({
           id: `ALIAS-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -226,7 +251,7 @@ export function registerAlias(alias: string, canonical: string): boolean {
         })
         .onConflictDoNothing({ target: aliasesTable.alias });
     } catch (e) {
-      // 离线或无 DB 模式下静默忽略
+      // 离线模式静默忽略
     }
   })();
 

@@ -10,6 +10,7 @@ import type { CivicMode } from "@/backend/state";
 import { spanDays } from "@/lib/civic-cluster";
 import { CivicEChart, radarOption } from "@/app/_components/civic/civic-charts";
 import { SkThemeDetail } from "@/app/_components/civic/skeletons";
+import { useRegion } from "@/app/_components/civic/region-context";
 import {
   FileText,
   MapPin,
@@ -107,6 +108,7 @@ function checkIsTarget(m: Member, target: string): boolean {
 }
 
 function ThemeDetailInner() {
+  const { activeRegion } = useRegion();
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -245,8 +247,9 @@ function ThemeDetailInner() {
 
   function exportReport() {
     if (!row) return;
+    const regionName = activeRegion?.name || "辖区";
     const lines = [
-      `【顺德区 12345 热线多频诉求智能研判报告】`,
+      `【${regionName} 12345 热线多频诉求智能研判报告】`,
       `群组编号: ${row.code || row.id}`,
       `归属辖区: ${row.region} · 诉求领域: ${row.type}`,
       `研判模式: ${meta.name}（${meta.tagline}）`,
@@ -254,7 +257,7 @@ function ThemeDetailInner() {
       `时空脉络: ${row.first_date || "—"} 至 ${row.last_date || "—"}（跨度 ${days} 天）`,
       `AI 聚类置信度: ${row.ai_confidence ?? "—"}%`,
       `当前处置状态: ${row.status?.label || "未处理"} (进度 ${row.status?.progress ?? 0}%)`,
-      `牵头承办部门: ${row.status?.owner || "顺德区热线督办组"}`,
+      `牵头承办部门: ${row.status?.owner || `${regionName}热线督办组`}`,
       `协同处置建议: ${row.mode_advice || meta.rule}`,
       "",
       `==================== 关联成员工单列表 ====================`,
@@ -264,7 +267,7 @@ function ThemeDetailInner() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `顺德12345群组研判报告-${row.region}-${row.type}-${row.id}.txt`;
+    a.download = `${regionName}12345群组研判报告-${row.region}-${row.type}-${row.id}.txt`;
     a.click();
     URL.revokeObjectURL(url);
     toast.success("已成功生成并下载群组公文研判报告！");
@@ -301,7 +304,7 @@ function ThemeDetailInner() {
     if (m.region && cluster.region && m.region === cluster.region && m.category && m.category === cluster.type) {
       return `同镇街「${m.region}」且诉求分类「${m.category}」`;
     }
-    if (m.region && cluster.region && m.region === cluster.region) return `同属顺德区「${m.region}」`;
+    if (m.region && cluster.region && m.region === cluster.region) return `同属${activeRegion?.name || "辖区"}「${m.region}」`;
     if (m.category && m.category === cluster.type) return `诉求分类同为「${m.category}」`;
     return `已深度关联主题「${cluster.title || cluster.type}」`;
   }
@@ -579,7 +582,7 @@ function ThemeDetailInner() {
               </div>
               <div className="info-row">
                 <span className="info-row__label">责任部门</span>
-                <span className="info-row__value">{row.status?.owner || "顺德区热线督办组"}</span>
+                <span className="info-row__value">{row.status?.owner || `${activeRegion?.name || ""}热线督办组`}</span>
               </div>
             </div>
           </div>
@@ -697,7 +700,7 @@ function ThemeDetailInner() {
               </div>
               <div className="info-row">
                 <span className="info-row__label">牵头部门</span>
-                <span className="info-row__value">{row.status?.owner || (cluster.ungrouped ? "—" : "顺德区热线督办组")}</span>
+                <span className="info-row__value">{row.status?.owner || (cluster.ungrouped ? "—" : `${activeRegion?.name || ""}热线督办组`)}</span>
               </div>
             </div>
           </div>

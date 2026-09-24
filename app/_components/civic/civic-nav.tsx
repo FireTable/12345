@@ -9,6 +9,8 @@ import { NAV_ITEMS } from "./nav-items";
 import { authClient } from "@/lib/auth/client";
 import { toast } from "sonner";
 import { VideoModal } from "./video-modal";
+import { RegionSelector } from "./region-selector";
+import { useRegion } from "./region-context";
 
 export { NAV_ITEMS };
 
@@ -16,6 +18,7 @@ export function CivicNav() {
   const pathname = usePathname();
   const router = useRouter();
   const { openCopilot, copilotOpen } = useCivicWorkflow();
+  const { activeRegion } = useRegion();
   const [menuOpen, setMenuOpen] = useState(false);
   const [videoModalOpen, setVideoModalOpen] = useState(false);
   const { data: session } = authClient.useSession();
@@ -49,11 +52,14 @@ export function CivicNav() {
   return (
     <>
     <nav className="navbar">
-      <div className="navbar__brand">
-        <Link href="/" className="navbar__brand" style={{ textDecoration: "none", color: "inherit" }}>
+      <div className="navbar__brand" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+        <Link href="/" style={{ display: "flex", alignItems: "center", gap: "8px", textDecoration: "none", color: "inherit" }}>
           <div className="brand-logo">民声智理</div>
-          <span className="brand-text-full">顺德 12345 AI 智能研判系统</span>
+          <span className="brand-text-full">
+            {activeRegion ? `${activeRegion.name} ` : ""}12345 AI 智能研判系统
+          </span>
         </Link>
+        <RegionSelector />
       </div>
 
       {isLoginPage ? (

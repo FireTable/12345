@@ -4,4 +4,5 @@ export const NAV_ITEMS = [
   { href: "/multifreq", key: "multifreq", label: "工单透势" },
   { href: "/tickets", key: "center", label: "工单中心" },
   { href: "/dict", key: "dict", label: "标准字典" },
+  { href: "/admin/regions", key: "regions", label: "站点纳管" },
 ] as const;

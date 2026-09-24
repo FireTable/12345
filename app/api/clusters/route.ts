@@ -4,9 +4,11 @@ import { cacheGetOrLoad } from "@/lib/civic-cache";
 import { filterClusterDtos, loadClusterBundle } from "@/lib/civic-queries";
 import { clampTimeRef, formatYmd } from "@/lib/civic-time";
 import { toClusterDto } from "@/lib/civic-dto";
+import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 
 export async function GET(req: Request) {
   try {
+    const regionId = await resolveRequestRegionId(req);
     const { searchParams } = new URL(req.url);
     const mode = searchParams.get("mode") || "";
     const region = searchParams.get("region") || "";
@@ -15,7 +17,7 @@ export async function GET(req: Request) {
     const urgency = searchParams.get("urgency") || "";
     const tab = searchParams.get("tab") || "";
 
-    const { value: bundle } = await cacheGetOrLoad("clusters:bundle", () => loadClusterBundle());
+    const { value: bundle } = await cacheGetOrLoad(`clusters:bundle:${regionId}`, () => loadClusterBundle(regionId));
     const { themeRows, dtos, samplesByTheme } = bundle;
     const filtered = filterClusterDtos(dtos, { mode, region, keyword, status, urgency, tab });
 

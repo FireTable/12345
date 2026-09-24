@@ -1,4 +1,4 @@
-import { db } from "@/db/client";
+import { getRegionDb, type DB } from "@/db/client";
 import { ticketsTable, themesTable, ticketThemesTable } from "@/db/schema";
 import { and, desc, eq, gte, isNotNull, lt, sql, type SQL } from "drizzle-orm";
 import { explicitAdmin, isTownLabel } from "@/lib/admin-area";
@@ -15,8 +15,8 @@ function asInt(v: unknown): number {
   return Number(v || 0);
 }
 
-async function latestTicketTime(): Promise<Date | null> {
-  const rows = await db
+async function latestTicketTime(tenantDb: DB): Promise<Date | null> {
+  const rows = await tenantDb
     .select({ max: sql<Date | null>`max(${ticketsTable.createTime})` })
     .from(ticketsTable);
   const v = rows[0]?.max;
@@ -36,8 +36,9 @@ function colInWindow(col: typeof ticketsTable.createTime | typeof themesTable.cr
   return parts.length === 1 ? parts[0] : and(...parts);
 }
 
-export async function loadOverview(days: number) {
-  const latest = await latestTicketTime();
+export async function loadOverview(days: number, regionId?: string) {
+  const { db: tenantDb } = await getRegionDb(regionId);
+  const latest = await latestTicketTime(tenantDb);
   const scoped = colInWindow(ticketsTable.createTime, windowForDays(days, latest));
   const analyzed = scoped
     ? and(isNotNull(ticketsTable.confidence), scoped)
@@ -45,7 +46,7 @@ export async function loadOverview(days: number) {
 
   const [totals, themeCountRes, regionRows, categoryRows, regionCategoryRows, monthlyRows, themeInsightRows] =
     await Promise.all([
-      db
+      tenantDb
         .select({
           total: sql<number>`count(*)::int`,
           analyzed: sql<number>`count(*) filter (where ${ticketsTable.confidence} is not null)::int`,
@@ -55,8 +56,8 @@ export async function loadOverview(days: number) {
         })
         .from(ticketsTable)
         .where(scoped),
-      db.select({ count: sql<number>`count(*)::int` }).from(themesTable),
-      db
+      tenantDb.select({ count: sql<number>`count(*)::int` }).from(themesTable),
+      tenantDb
         .select({
           subdistrict: ticketsTable.subdistrict,
           n: sql<number>`count(*)::int`,
@@ -64,7 +65,7 @@ export async function loadOverview(days: number) {
         .from(ticketsTable)
         .where(analyzed)
         .groupBy(ticketsTable.subdistrict),
-      db
+      tenantDb
         .select({
           category: ticketsTable.sourceCategory,
           n: sql<number>`count(*)::int`,
@@ -72,7 +73,7 @@ export async function loadOverview(days: number) {
         .from(ticketsTable)
         .where(analyzed)
         .groupBy(ticketsTable.sourceCategory),
-      db
+      tenantDb
         .select({
           subdistrict: ticketsTable.subdistrict,
           category: ticketsTable.sourceCategory,
@@ -81,7 +82,7 @@ export async function loadOverview(days: number) {
         .from(ticketsTable)
         .where(analyzed)
         .groupBy(ticketsTable.subdistrict, ticketsTable.sourceCategory),
-      db
+      tenantDb
         .select({
           month: sql<string>`to_char(date_trunc('month', ${ticketsTable.createTime} at time zone 'UTC'), 'YYYY-MM')`,
           n: sql<number>`count(*)::int`,
@@ -89,7 +90,7 @@ export async function loadOverview(days: number) {
         .from(ticketsTable)
         .where(scoped ? and(isNotNull(ticketsTable.createTime), scoped) : isNotNull(ticketsTable.createTime))
         .groupBy(sql`1`),
-      db
+      tenantDb
         .select({
           id: themesTable.id,
           title: themesTable.title,
@@ -137,8 +138,9 @@ export async function loadOverview(days: number) {
   };
 }
 
-export async function loadTrends(days: number) {
-  const latest = await latestTicketTime();
+export async function loadTrends(days: number, regionId?: string) {
+  const { db: tenantDb } = await getRegionDb(regionId);
+  const latest = await latestTicketTime(tenantDb);
   const win = windowForDays(days, latest);
   const ticketScoped = colInWindow(ticketsTable.createTime, win);
   const themeScoped = colInWindow(themesTable.createdAt, win);
@@ -150,7 +152,7 @@ export async function loadTrends(days: number) {
     : isNotNull(themesTable.createdAt);
 
   const [dailyRows, clusterDayRows] = await Promise.all([
-    db
+    tenantDb
       .select({
         day: sql<string>`to_char(${ticketsTable.createTime} at time zone 'UTC', 'YYYY-MM-DD')`,
         n: sql<number>`count(*)::int`,
@@ -159,7 +161,7 @@ export async function loadTrends(days: number) {
       .where(ticketWhere)
       .groupBy(sql`1`)
       .orderBy(sql`1`),
-    db
+    tenantDb
       .select({
         day: sql<string>`to_char(${themesTable.createdAt} at time zone 'UTC', 'YYYY-MM-DD')`,
         n: sql<number>`count(*)::int`,
@@ -176,9 +178,10 @@ export async function loadTrends(days: number) {
   };
 }
 
-export async function loadWorkorderStats() {
+export async function loadWorkorderStats(regionId?: string) {
+  const { db: tenantDb } = await getRegionDb(regionId);
   const [agg, regionRows, categoryRows] = await Promise.all([
-    db
+    tenantDb
       .select({
         total: sql<number>`count(*)::int`,
         finished: sql<number>`count(*) filter (where upper(coalesce(${ticketsTable.status}, '')) in ('RESOLVED','FINISHED'))::int`,
@@ -188,14 +191,14 @@ export async function loadWorkorderStats() {
         latest: sql<Date | null>`max(${ticketsTable.createTime})`,
       })
       .from(ticketsTable),
-    db
+    tenantDb
       .select({
         subdistrict: ticketsTable.subdistrict,
       })
       .from(ticketsTable)
       .where(isNotNull(ticketsTable.confidence))
       .groupBy(ticketsTable.subdistrict),
-    db
+    tenantDb
       .select({
         category: ticketsTable.sourceCategory,
       })
@@ -248,11 +251,12 @@ export async function loadWorkorderStats() {
   };
 }
 
-export async function loadClusterBundle() {
-  const themeRows = await db.select().from(themesTable).orderBy(desc(themesTable.ticketCount));
+export async function loadClusterBundle(regionId?: string) {
+  const { db: tenantDb } = await getRegionDb(regionId);
+  const themeRows = await tenantDb.select().from(themesTable).orderBy(desc(themesTable.ticketCount));
 
   const [pendingRows, townRows, sampleRows] = await Promise.all([
-    db
+    tenantDb
       .select({
         themeId: ticketThemesTable.themeId,
         pending: sql<number>`count(*) filter (where ${ticketsTable.status} = 'PENDING')::int`,
@@ -260,7 +264,7 @@ export async function loadClusterBundle() {
       .from(ticketThemesTable)
       .innerJoin(ticketsTable, eq(ticketsTable.id, ticketThemesTable.ticketId))
       .groupBy(ticketThemesTable.themeId),
-    db
+    tenantDb
       .select({
         themeId: ticketThemesTable.themeId,
         subdistrict: ticketsTable.subdistrict,
@@ -268,7 +272,7 @@ export async function loadClusterBundle() {
       .from(ticketThemesTable)
       .innerJoin(ticketsTable, eq(ticketsTable.id, ticketThemesTable.ticketId))
       .groupBy(ticketThemesTable.themeId, ticketsTable.subdistrict),
-    db.execute<{
+    tenantDb.execute<{
       id: string;
       ticket_no: string | null;
       title: string | null;

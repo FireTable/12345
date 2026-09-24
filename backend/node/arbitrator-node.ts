@@ -12,7 +12,7 @@ import {
   type ArbitrationResult,
 } from "../prompt";
 import type { RawTicket } from "../state";
-import { canonicalizeTownship, isValidShundeTownship } from "@/lib/vocabulary";
+import { canonicalizeTownship, isValidTownship, type RegionVocabulary } from "@/lib/vocabulary";
 import { resolveEntityAlias } from "@/lib/alias-dict";
 
 /**
@@ -20,7 +20,8 @@ import { resolveEntityAlias } from "@/lib/alias-dict";
  */
 export function needsArbitration(
   item: ExtractedTicketItem,
-  rawTicket?: RawTicket
+  rawTicket?: RawTicket,
+  vocab?: RegionVocabulary
 ): boolean {
   // 1. 置信度低于阈值 (60)
   if (item.confidence < 60) return true;
@@ -34,14 +35,15 @@ export function needsArbitration(
     !item.location ||
     item.location === "未标明微观地点" ||
     item.location === "所属辖区" ||
-    item.location === "顺德区"
+    item.location === "顺德区" ||
+    (vocab && item.location === vocab.regionName)
   ) {
     return true;
   }
 
-  // 4. 抽取出的地点无法在顺德 10 大法定镇街词汇表中锚定
+  // 4. 抽取出的地点无法在当前辖区法定镇街/街道白名单中锚定
   const township = rawTicket?.subdistrict || item.location;
-  if (!isValidShundeTownship(township)) {
+  if (!isValidTownship(township, vocab)) {
     return true;
   }
 
@@ -53,14 +55,16 @@ export function needsArbitration(
  */
 export async function arbitrateSingleTicket(
   ticket: RawTicket,
-  firstPass: ExtractedTicketItem
+  firstPass: ExtractedTicketItem,
+  vocab?: RegionVocabulary,
+  aliasMap?: Map<string, string>
 ): Promise<ExtractedTicketItem> {
-  const prompt = buildArbitrationPrompt(ticket, firstPass);
+  const prompt = buildArbitrationPrompt(ticket, firstPass, vocab);
 
   const fallbackResult: ExtractedTicketItem = {
     ...firstPass,
-    subject: resolveEntityAlias(firstPass.subject),
-    location: resolveEntityAlias(firstPass.location),
+    subject: resolveEntityAlias(firstPass.subject, aliasMap),
+    location: resolveEntityAlias(firstPass.location, aliasMap),
     confidence: Math.max(firstPass.confidence, 55),
   };
 
@@ -89,12 +93,12 @@ export async function arbitrateSingleTicket(
 
       if (arbitrated && arbitrated.correctedSubject) {
         const validTownship =
-          canonicalizeTownship(arbitrated.correctedTownship) ||
-          canonicalizeTownship(arbitrated.correctedLocation) ||
+          canonicalizeTownship(arbitrated.correctedTownship, vocab) ||
+          canonicalizeTownship(arbitrated.correctedLocation, vocab) ||
           firstPass.location;
 
-        const normalizedSubject = resolveEntityAlias(arbitrated.correctedSubject);
-        const normalizedLocation = resolveEntityAlias(arbitrated.correctedLocation);
+        const normalizedSubject = resolveEntityAlias(arbitrated.correctedSubject, aliasMap);
+        const normalizedLocation = resolveEntityAlias(arbitrated.correctedLocation, aliasMap);
 
         return {
           index: firstPass.index,

@@ -25,6 +25,7 @@ import {
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/app/_components/ui/confirm-dialog";
 import { TablePager } from "@/app/_components/civic/table-pager";
+import { useRegion } from "@/app/_components/civic/region-context";
 
 interface TownshipItem {
   name: string;
@@ -50,13 +51,8 @@ interface AliasItem {
   createdAt: string;
 }
 
-const TABS = [
-  { key: "aliases", label: "别名知识库映射" },
-  { key: "townships", label: "顺德 10 大法定镇街区划" },
-  { key: "categories", label: "7 大民生诉求分类标准" },
-] as const;
-
 export default function DictionaryManagementPage() {
+  const { activeRegion } = useRegion();
   const [activeTab, setActiveTab] = useState<"aliases" | "townships" | "categories">("aliases");
   const [loading, setLoading] = useState(true);
 
@@ -85,19 +81,31 @@ export default function DictionaryManagementPage() {
   const [deleting, setDeleting] = useState(false);
 
   // 实时别名测试工具
-  const [testText, setTestText] = useState("市民在容奇大桥附近反映容桂区某商户违规经营，希望德胜新区的执法队介入。");
+  const [testText, setTestText] = useState(
+    activeRegion?.id === "region_gz_haizhu" || activeRegion?.id === "gz_haizhu"
+      ? "市民在广州塔与磨碟沙附近反映琶洲数字岛某商户油烟扰民，希望赤岗执法队介入。"
+      : "市民在容奇大桥附近反映容桂区某商户违规经营，希望德胜新区的执法队介入。"
+  );
   const [normalizedTestResult, setNormalizedTestResult] = useState("");
 
   const fetchData = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/dict?q=${encodeURIComponent(searchQuery)}`);
+      const regionParam = activeRegion?.id ? `&region=${encodeURIComponent(activeRegion.id)}` : "";
+      const res = await fetch(`/api/dict?q=${encodeURIComponent(searchQuery)}${regionParam}`);
       const data = await res.json();
       if (data.success) {
         setAliases(data.aliases || []);
         setTownships(data.townships || []);
         setCategories(data.categories || []);
-        setStats(data.stats || stats);
+        const totalCommunities =
+          data.townships?.reduce((acc: number, t: any) => acc + (t.communities?.length || 0), 0) || 0;
+        setStats({
+          townshipCount: data.stats?.townshipCount || data.townships?.length || 0,
+          categoryCount: data.stats?.categoryCount || data.categories?.length || 0,
+          aliasCount: data.stats?.aliasCount || data.aliases?.length || 0,
+          communityCount: totalCommunities || data.stats?.communityCount || 0,
+        });
       }
     } catch (err) {
       toast.error("加载词典数据失败");
@@ -108,7 +116,13 @@ export default function DictionaryManagementPage() {
 
   useEffect(() => {
     fetchData();
-  }, [searchQuery]);
+  }, [searchQuery, activeRegion?.id]);
+
+  const tabs = [
+    { key: "aliases", label: "别名知识库映射" },
+    { key: "townships", label: `${activeRegion ? activeRegion.name : ""} ${stats.townshipCount} 大法定镇街区划` },
+    { key: "categories", label: `${stats.categoryCount} 大民生诉求分类标准` },
+  ] as const;
 
   // 执行实时测试替换
   const handleTestReplace = async (text: string) => {
@@ -209,7 +223,8 @@ export default function DictionaryManagementPage() {
             标准字典与知识库
           </div>
           <div className="page-hero__desc">
-            顺德区 10 大法定镇街区划、7 大民生诉求分类标准及 AI 自学习别名沉淀知识库统一管理平台
+            {activeRegion ? `${activeRegion.city} · ${activeRegion.name}` : "当前辖区"}{" "}
+            {stats.townshipCount} 大法定镇街区划、{stats.categoryCount} 大民生诉求分类标准及 AI 自学习别名沉淀知识库统一管理平台
           </div>
         </div>
         <div className="page-hero__actions">
@@ -243,7 +258,7 @@ export default function DictionaryManagementPage() {
           tone="blue"
           label="法定镇街总数"
           value={stats.townshipCount}
-          sub="大良/容桂/北滘/乐从等 10 大辖区"
+          sub={`${townships.slice(0, 4).map((t) => t.name).join("/") || "辖区镇街"} 等 ${stats.townshipCount} 个辖区`}
         />
         <StatCard
           icon={MapPin}
@@ -257,7 +272,7 @@ export default function DictionaryManagementPage() {
           tone="purple"
           label="民生分类体系"
           value={stats.categoryCount}
-          sub="7 大法定标准业务大类"
+          sub={`${stats.categoryCount} 大法定标准业务大类`}
         />
         <StatCard
           icon={Sparkles}
@@ -310,7 +325,7 @@ export default function DictionaryManagementPage() {
 
       {/* 统一 Tab 栏与筛选栏 */}
       <div className="filter-tabs">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.key}
             type="button"

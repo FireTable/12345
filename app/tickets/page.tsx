@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@/app/_components/ui/select";
 import { TablePager } from "@/app/_components/civic/table-pager";
+import { useRegion } from "@/app/_components/civic/region-context";
 
 type Row = {
   id: string;
@@ -46,6 +47,7 @@ const TABS = [
 export default function TicketsPage() {
   const router = useRouter();
   const { openUpload, runCluster, analyzing, isAllAnalyzed, disabledReason } = useCivicWorkflow();
+  const { activeRegion } = useRegion();
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(10);
   const [keyword, setKeyword] = useState("");
@@ -69,6 +71,7 @@ export default function TicketsPage() {
 
   function load() {
     const q = new URLSearchParams({ page: String(page), size: String(size) });
+    if (activeRegion?.id) q.set("regionId", activeRegion.id);
     if (keyword) q.set("keyword", keyword);
     if (tab !== "all") q.set("tab", tab);
     if (region) q.set("region", region);
@@ -95,7 +98,7 @@ export default function TicketsPage() {
     load();
     window.addEventListener("civic-data-refresh", load);
     return () => window.removeEventListener("civic-data-refresh", load);
-  }, [page, size, keyword, tab, region, category, time]);
+  }, [page, size, keyword, tab, region, category, time, activeRegion?.id]);
 
   const s = data.stats;
   const pages = Math.max(1, Math.ceil(data.total / size));
@@ -133,7 +136,7 @@ export default function TicketsPage() {
             工单中心
           </div>
           <div className="page-hero__sub">
-            全部工单 · 实时同步 · 共 <b style={{ color: "var(--c-ink)" }}>{s.total}</b> 条
+            {activeRegion ? `${activeRegion.name} · ` : ""}全部工单 · 实时同步 · 共 <b style={{ color: "var(--c-ink)" }}>{s.total}</b> 条
           </div>
         </div>
         <div className="page-hero__actions">
