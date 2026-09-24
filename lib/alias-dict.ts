@@ -4,19 +4,11 @@
  * 支持多城市独立 Schema 隔离沉淀。
  */
 
-import defaultAliasesPreset from "./presets/default-aliases.json";
+import { loadPresetVocabulary } from "./vocabulary";
 export { isAnonymizedCitizen } from "./civic-dto";
 
-/**
- * 预置常见高频别名映射表 (Alias -> Canonical)
- * 已外置至 lib/presets/default-aliases.json 维护，支持运行时及数据库动态扩展
- */
-const DEFAULT_ALIASES: Record<string, string> = defaultAliasesPreset as Record<string, string>;
-
 // 内存中活跃沉淀的别名映射表（默认环境）
-const runtimeAliasMap: Map<string, string> = new Map<string, string>(
-  Object.entries(DEFAULT_ALIASES)
-);
+const runtimeAliasMap: Map<string, string> = new Map<string, string>();
 
 // 区域别名缓存（按 regionId 隔离）
 const regionAliasCache = new Map<string, { map: Map<string, string>; loadedAt: number }>();
@@ -34,7 +26,7 @@ export function getAllAliases(): Record<string, string> {
 }
 
 /**
- * 动态加载指定地区的别名知识库
+ * 动态加载指定地区的别名知识库（优先查 DB，无 DB 时自动从对应地区预置提炼）
  */
 export async function getRegionAliasMap(regionIdOrSchema?: string | null): Promise<Map<string, string>> {
   const targetKey = regionIdOrSchema?.trim() || "default";
@@ -46,8 +38,9 @@ export async function getRegionAliasMap(regionIdOrSchema?: string | null): Promi
     }
   }
 
-  const map = new Map<string, string>(Object.entries(DEFAULT_ALIASES));
+  const map = new Map<string, string>();
 
+  // 1. 优先从当前租户独立的数据库 aliases 表读取
   try {
     const { getRegionDb } = await import("@/db/client");
     const { aliasesTable } = await import("@/db/schema");
@@ -59,7 +52,29 @@ export async function getRegionAliasMap(regionIdOrSchema?: string | null): Promi
       }
     }
   } catch (err) {
-    // 离线使用基础默认别名表
+    // 数据库连接异常或未初始化
+  }
+
+  // 2. 若数据库无记录（冷启动或离线测试），自动从对应地区出厂字典提炼别名
+  if (map.size === 0) {
+    try {
+      const vocab = loadPresetVocabulary(targetKey);
+      for (const t of vocab.townships) {
+        for (const a of t.aliases || []) {
+          if (a && a !== t.fullName) map.set(a, t.fullName);
+        }
+        for (const lm of t.landmarks || []) {
+          if (lm) map.set(lm, `${t.fullName}${lm}`);
+        }
+      }
+      for (const d of vocab.departments) {
+        if (d.name && d.name !== d.fullName) {
+          map.set(d.name, d.fullName);
+        }
+      }
+    } catch {
+      // 容错忽略
+    }
   }
 
   regionAliasCache.set(targetKey, { map, loadedAt: now });

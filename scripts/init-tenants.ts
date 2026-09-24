@@ -157,7 +157,7 @@ async function main() {
   await ensurePublicRegionsTable(sql);
 
   // 1. 加载预置
-  const shundePresetPath = path.resolve(process.cwd(), "lib/presets/shunde.json");
+  const shundePresetPath = path.resolve(process.cwd(), "lib/presets/foshan_shunde.json");
   const tianhePresetPath = path.resolve(process.cwd(), "lib/presets/guangzhou_tianhe.json");
 
   const shundePreset: PresetData = JSON.parse(fs.readFileSync(shundePresetPath, "utf-8"));
