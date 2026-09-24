@@ -286,7 +286,14 @@ async function main() {
       fullText.includes("企业职工退休") ||
       fullText.includes("异地就医备案") ||
       fullText.includes("医保报销") ||
-      fullText.includes("门诊限额")
+      fullText.includes("门诊限额") ||
+      fullText.includes("灵活就业社保") ||
+      fullText.includes("城乡居民医保") ||
+      fullText.includes("跨省转移社保") ||
+      fullText.includes("社保卡制卡") ||
+      fullText.includes("社保卡激活") ||
+      fullText.includes("失业待遇") ||
+      fullText.includes("劳务中介扣款")
     ) {
       category = "labor_social";
     }
@@ -333,6 +340,13 @@ async function main() {
       fullText.includes("拒开发票") ||
       fullText.includes("不开发票") ||
       fullText.includes("不给发票") ||
+      fullText.includes("美容院") ||
+      fullText.includes("美容针") ||
+      fullText.includes("培训机构退费") ||
+      fullText.includes("早教退学费") ||
+      fullText.includes("健身房退卡") ||
+      fullText.includes("开发商虚假宣传") ||
+      fullText.includes("购房退定金") ||
       fullText.includes("抽油烟机") ||
       (fullText.includes("油烟机") && (fullText.includes("购买") || fullText.includes("维修") || fullText.includes("退货")))
     ) {
