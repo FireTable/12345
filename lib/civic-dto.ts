@@ -42,6 +42,13 @@ export function normalizeStatusCode(status?: string | null): "PENDING" | "IN_PRO
   return "PENDING";
 }
 
+export function getUrgencyLabel(urgency?: string | null): string {
+  const u = (urgency || "").toUpperCase();
+  if (u === "URGENT" || u === "HIGH") return "紧急";
+  if (u === "MEDIUM") return "较急";
+  return "普通";
+}
+
 export function handlingColor(label?: string | null): string {
   const code = normalizeStatusCode(label);
   if (code === "RESOLVED") return "#52C41A";

@@ -8,7 +8,7 @@ import { FileText, Clock, CheckCircle2, Flame, ExternalLink, Layers } from "luci
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { SkTickets } from "@/app/_components/civic/skeletons";
 import { isTownLabel } from "@/lib/admin-area";
-import { normalizeStatusCode, getCategoryBadgeClass } from "@/lib/civic-dto";
+import { normalizeStatusCode, getCategoryBadgeClass, getUrgencyLabel } from "@/lib/civic-dto";
 import {
   Select,
   SelectContent,
@@ -474,9 +474,7 @@ function tabCount(key: string, s: Stats) {
 }
 
 function urgencyLabel(u: string) {
-  if (u === "URGENT" || u === "urgent") return "紧急";
-  if (u === "MEDIUM" || u === "medium" || u === "high" || u === "HIGH") return "较急";
-  return "普通";
+  return getUrgencyLabel(u);
 }
 
 function statusLabel(s: string) {

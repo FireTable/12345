@@ -8,7 +8,7 @@ import { QuadrantBoard } from "@/app/_components/civic/quadrant";
 import type { ClusterUrgency } from "@/lib/civic-cluster";
 import { clampTimeRef, formatYmd, inTimeWindow } from "@/lib/civic-time";
 import { isTownLabel } from "@/lib/admin-area";
-import { getCategoryBadgeClass } from "@/lib/civic-dto";
+import { getCategoryBadgeClass, getUrgencyLabel } from "@/lib/civic-dto";
 import { Clock, TrendingUp, Flame, Layers } from "lucide-react";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { SkMultifreq } from "@/app/_components/civic/skeletons";
@@ -287,7 +287,7 @@ function MultifreqInner() {
           <tbody>
             {top5.map((c, i) => {
               const risk = c.urgency === "urgent" ? "urgent" : i < 3 ? "medium" : "low";
-              const riskText = c.urgency === "urgent" ? "紧急" : i < 3 ? "较急" : "普通";
+              const riskText = getUrgencyLabel(risk);
               const conf = c.ai_confidence;
               return (
                 <tr key={c.id} onClick={() => router.push(`/themes/${c.id}`)}>
