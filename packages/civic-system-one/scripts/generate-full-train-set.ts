@@ -112,7 +112,11 @@ async function main() {
       fullText.includes("特致电表扬") ||
       fullText.includes("特来电感谢") ||
       fullText.includes("态度极佳表扬") ||
-      fullText.includes("深表感谢")
+      fullText.includes("深表感谢") ||
+      fullText.includes("为民办实事") ||
+      fullText.includes("工作态度好") ||
+      fullText.includes("给予表扬") ||
+      fullText.includes("值得点赞")
     ) {
       intent = "COMMENDATION";
     } else if (
@@ -120,6 +124,9 @@ async function main() {
       rawTitle.includes("再办") ||
       rawTitle.includes("催办") ||
       rawTitle.includes("督办") ||
+      rawTitle.includes("回访") ||
+      rawTitle.includes("再次反映") ||
+      fullText.includes("再次反映") ||
       fullText.includes("多次反映未果") ||
       fullText.includes("多次反映无果") ||
       fullText.includes("多次投诉未果") ||
@@ -130,7 +137,11 @@ async function main() {
       fullText.includes("对处理结果表示不满意") ||
       fullText.includes("问题没有解决") ||
       fullText.includes("问题未解决") ||
-      fullText.includes("一直未解决")
+      fullText.includes("一直未解决") ||
+      fullText.includes("至今未解决") ||
+      fullText.includes("至今未处理") ||
+      fullText.includes("仍未处理") ||
+      fullText.includes("仍未解决")
     ) {
       intent = "REMINDER";
     } else if (
@@ -172,9 +183,12 @@ async function main() {
         fullText.includes("希望相关部门指引") ||
         fullText.includes("希望部门能给予指引") ||
         fullText.includes("希望部门告知") ||
+        fullText.includes("咨询民法典") ||
+        fullText.includes("咨询要件") ||
+        fullText.includes("咨询流程") ||
         /希望了解[：:，,\s]*(为何|为什么|如何|怎么|何时|办理流程|申领条件|需要什么|是否有调整|最新政策)/.test(fullText) ||
         /请问.*(如何|怎么|何时|是否|哪里|具体流程|什么资料)/.test(fullText)) &&
-      !/(要求查处|依法查处|限期整改|要求退款|要求退费|要求赔偿|退一赔三|虚假宣传|货不对板|拖欠工资|欠薪|违章建筑|偷排|偷倒|噪音扰民|占道经营|立案调查|强拆)/.test(fullText)
+      !/(要求查处|依法查处|限期整改|要求退款|要求退费|要求赔偿|退一赔三|虚假宣传|货不对板|拖欠工资|欠薪|违章建筑|偷排|偷倒|噪音扰民|占道经营|立案调查|强拆|协助处理系统异常)/.test(fullText)
     ) {
       intent = "INQUIRY";
     } else {
@@ -186,6 +200,7 @@ async function main() {
 
     // (1) 公共安全 (public_safety) - 最高优先级
     if (
+      rawTitle.includes("消防") ||
       fullText.includes("消防通道") ||
       fullText.includes("消防车道") ||
       fullText.includes("疏散通道") ||
@@ -194,6 +209,7 @@ async function main() {
       fullText.includes("消火栓") ||
       fullText.includes("灭火器材") ||
       fullText.includes("灭火器") ||
+      fullText.includes("喷淋设施") ||
       fullText.includes("电动车入户") ||
       fullText.includes("电动自行车在此处充电") ||
       fullText.includes("飞线充电") ||
@@ -239,6 +255,9 @@ async function main() {
       rawTitle.includes("社保") ||
       rawTitle.includes("医保") ||
       rawTitle.includes("工伤") ||
+      rawTitle.includes("失业金") ||
+      rawTitle.includes("失业保险") ||
+      rawTitle.includes("就业") ||
       fullText.includes("拖欠工资") ||
       fullText.includes("不发工资") ||
       fullText.includes("克扣工资") ||
@@ -253,6 +272,9 @@ async function main() {
       fullText.includes("工伤认定") ||
       fullText.includes("工伤赔偿") ||
       fullText.includes("工伤待遇") ||
+      fullText.includes("重点群体就业") ||
+      fullText.includes("就业认定") ||
+      fullText.includes("就业补贴") ||
       fullText.includes("摔伤") ||
       fullText.includes("产假") ||
       fullText.includes("陪产假") ||
@@ -292,8 +314,11 @@ async function main() {
       fullText.includes("跨省转移社保") ||
       fullText.includes("社保卡制卡") ||
       fullText.includes("社保卡激活") ||
+      fullText.includes("社保卡") ||
       fullText.includes("失业待遇") ||
-      fullText.includes("劳务中介扣款")
+      fullText.includes("劳务中介扣款") ||
+      fullText.includes("人社局") ||
+      fullText.includes("医保局")
     ) {
       category = "labor_social";
     }
@@ -302,21 +327,51 @@ async function main() {
       rawTitle.includes("消费") ||
       rawTitle.includes("市监") ||
       rawTitle.includes("工商") ||
+      rawTitle.includes("退费") ||
+      rawTitle.includes("退款") ||
+      rawTitle.includes("发票") ||
+      rawTitle.includes("售后") ||
+      rawTitle.includes("质保") ||
+      rawTitle.includes("保修") ||
+      rawTitle.includes("公司注册") ||
+      rawTitle.includes("变更登记") ||
+      rawTitle.includes("购买") ||
+      rawTitle.includes("网购") ||
+      rawTitle.includes("餐饮") ||
+      rawTitle.includes("饭店") ||
       fullText.includes("退款") ||
       fullText.includes("退费") ||
       fullText.includes("退货") ||
       fullText.includes("换货") ||
+      fullText.includes("退定金") ||
+      fullText.includes("退押金") ||
       fullText.includes("拒绝退款") ||
       fullText.includes("拒绝退货") ||
+      fullText.includes("拒绝退费") ||
+      fullText.includes("不予退费") ||
+      fullText.includes("不予退款") ||
+      fullText.includes("不退款") ||
+      fullText.includes("不退费") ||
+      fullText.includes("不给退款") ||
+      fullText.includes("不给退费") ||
+      fullText.includes("不退定金") ||
+      fullText.includes("不退押金") ||
       fullText.includes("虚假宣传") ||
       fullText.includes("假冒伪劣") ||
       fullText.includes("假货") ||
       fullText.includes("过期食品") ||
       fullText.includes("发霉变质") ||
       fullText.includes("吃出异物") ||
+      fullText.includes("蟑螂") ||
+      fullText.includes("苍蝇") ||
+      fullText.includes("食品安全") ||
+      fullText.includes("食品卫生") ||
+      fullText.includes("餐饮店") ||
+      fullText.includes("餐馆") ||
       fullText.includes("价格欺诈") ||
       fullText.includes("价格过高") ||
       fullText.includes("乱收费") ||
+      fullText.includes("加收费用") ||
       fullText.includes("霸王条款") ||
       fullText.includes("预付卡") ||
       fullText.includes("商家跑路") ||
@@ -332,6 +387,15 @@ async function main() {
       fullText.includes("个体户") ||
       fullText.includes("个体工商户") ||
       fullText.includes("注销公司") ||
+      fullText.includes("公司注册") ||
+      fullText.includes("外资公司") ||
+      fullText.includes("变更登记") ||
+      fullText.includes("企业准入") ||
+      fullText.includes("市场监督管理") ||
+      fullText.includes("市监局") ||
+      fullText.includes("市监所") ||
+      fullText.includes("消委会") ||
+      fullText.includes("消协") ||
       fullText.includes("驾校退款") ||
       fullText.includes("退还科目") ||
       fullText.includes("垄断") ||
@@ -347,8 +411,26 @@ async function main() {
       fullText.includes("健身房退卡") ||
       fullText.includes("开发商虚假宣传") ||
       fullText.includes("购房退定金") ||
+      fullText.includes("拼多多") ||
+      fullText.includes("京东") ||
+      fullText.includes("淘宝") ||
+      fullText.includes("天猫") ||
+      fullText.includes("抖音平台") ||
+      fullText.includes("小红书") ||
+      fullText.includes("美团") ||
+      fullText.includes("饿了么") ||
+      fullText.includes("保修") ||
+      fullText.includes("质保") ||
+      fullText.includes("售后服务") ||
+      fullText.includes("售后") ||
+      fullText.includes("商家") ||
+      fullText.includes("网购") ||
+      fullText.includes("净水器") ||
+      fullText.includes("洗碗机") ||
+      fullText.includes("热水器") ||
+      fullText.includes("燃气灶") ||
       fullText.includes("抽油烟机") ||
-      (fullText.includes("油烟机") && (fullText.includes("购买") || fullText.includes("维修") || fullText.includes("退货")))
+      fullText.includes("抽油烟机维修")
     ) {
       category = "market_reg";
     }
@@ -357,6 +439,8 @@ async function main() {
       rawTitle.includes("环保") ||
       rawTitle.includes("环境") ||
       rawTitle.includes("排污") ||
+      rawTitle.includes("异味") ||
+      rawTitle.includes("恶臭") ||
       fullText.includes("噪音") ||
       fullText.includes("扰民") ||
       fullText.includes("油烟") ||
@@ -391,6 +475,16 @@ async function main() {
       rawTitle.includes("交警") ||
       rawTitle.includes("停车") ||
       rawTitle.includes("交通") ||
+      rawTitle.includes("车管所") ||
+      rawTitle.includes("机动车") ||
+      rawTitle.includes("车辆") ||
+      rawTitle.includes("上牌") ||
+      rawTitle.includes("行车") ||
+      fullText.includes("车管所") ||
+      fullText.includes("机动车注册登记") ||
+      fullText.includes("机动车登记") ||
+      fullText.includes("新车上牌") ||
+      fullText.includes("车辆选号") ||
       fullText.includes("红绿灯") ||
       fullText.includes("交通信号灯") ||
       fullText.includes("绿灯时间") ||
@@ -421,6 +515,8 @@ async function main() {
       fullText.includes("斑马线") ||
       fullText.includes("拥堵") ||
       fullText.includes("堵塞交通") ||
+      fullText.includes("阻碍行车") ||
+      fullText.includes("阻碍通行") ||
       fullText.includes("公交车") ||
       fullText.includes("路口占道停放") ||
       fullText.includes("调头路口") ||
@@ -437,17 +533,27 @@ async function main() {
       rawTitle.includes("城管") ||
       rawTitle.includes("市容") ||
       rawTitle.includes("市政") ||
+      rawTitle.includes("违建") ||
+      rawTitle.includes("占道") ||
+      rawTitle.includes("乱摆卖") ||
+      rawTitle.includes("摆摊") ||
       fullText.includes("违章建筑") ||
       fullText.includes("违建") ||
+      fullText.includes("违法建设") ||
+      fullText.includes("彩钢板房") ||
+      fullText.includes("大棚") ||
       fullText.includes("占道经营") ||
       fullText.includes("流动摊贩") ||
+      fullText.includes("游商") ||
       fullText.includes("走鬼档") ||
       fullText.includes("乱摆卖") ||
+      fullText.includes("摆摊") ||
       fullText.includes("店外经营") ||
       fullText.includes("占道堆放") ||
       fullText.includes("堆放杂物") ||
       fullText.includes("生活垃圾未清理") ||
       fullText.includes("垃圾堆积") ||
+      fullText.includes("垃圾桶满溢") ||
       fullText.includes("环卫保洁") ||
       fullText.includes("绿化养护") ||
       fullText.includes("树木遮挡") ||
@@ -457,6 +563,7 @@ async function main() {
       fullText.includes("停水") ||
       fullText.includes("路面破损") ||
       fullText.includes("人行道破损") ||
+      fullText.includes("地砖破损") ||
       fullText.includes("物业管理") ||
       fullText.includes("物业纠纷") ||
       fullText.includes("物业公司")
