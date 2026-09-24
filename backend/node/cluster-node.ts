@@ -142,14 +142,14 @@ export async function clusterNode(
         civicMode: civicModeFromPattern(patternType),
         riskReason:
           reopenCount > 0
-            ? `疑似假闭环：办结 ${RULES.fakeClosure.windowDays} 天内同主体再次投诉 ${reopenCount} 次`
-            : `重点主体多频诉求：同一涉事主体在 ${timeSpanHours} 小时内集中被市民反映 ${tickets.length} 次`,
+            ? `办结${RULES.fakeClosure.windowDays}天内再次诉求（${reopenCount}次）`
+            : `同一主体短时高频反映（${tickets.length}件）`,
         ticketCount: tickets.length,
         timeSpanHours,
         firstOccurrence: firstTime,
         lastOccurrence: lastTime,
-        aiSummary: `多频研判发现：涉事主体【${subj}】在 ${timeSpanHours} 小时内累计被市民诉求反映 ${tickets.length} 次，集中在【${canonicalLocation}】，主要矛盾焦点为“${eventType}”。`,
-        recommendedAction: `建议转派所属辖区行业主管部门对【${subj}】开展专项核查，2个工作日内责令整改并向市民书面反馈办理进展。`,
+        aiSummary: "",
+        recommendedAction: "",
         tickets,
         relatedSubjects: [subj],
         relatedLocations: distinctLocations,
@@ -236,14 +236,14 @@ export async function clusterNode(
         civicMode: civicModeFromPattern(patternType),
         riskReason:
           reopenCount > 0
-            ? `疑似假闭环：办结 ${RULES.fakeClosure.windowDays} 天内同地点再次投诉 ${reopenCount} 次`
-            : `区域微观点位群发：位于【${microLocation}】在 ${timeSpanHours} 小时内集中出现 ${tickets.length} 件同类诉求`,
+            ? `办结${RULES.fakeClosure.windowDays}天内同一地点再次诉求（${reopenCount}次）`
+            : `同一微观点位短时集中反映（${tickets.length}件）`,
         ticketCount: tickets.length,
         timeSpanHours,
         firstOccurrence: firstTime,
         lastOccurrence: lastTime,
-        aiSummary: `区域态势研判发现：微观地点【${microLocation}】在 ${timeSpanHours} 小时内出现 ${tickets.length} 起“${eventType}”群发反映，涉及【${canonicalSubject}】，呈现明显的空间点位聚集性。`,
-        recommendedAction: `建议属地综合行政执法队联合网格力量对【${microLocation}】点位开展集中现场整治与定点排查。`,
+        aiSummary: "",
+        recommendedAction: "",
         tickets,
         relatedSubjects: distinctSubjects.length > 0 ? distinctSubjects : [canonicalSubject],
         relatedLocations: [microLocation],

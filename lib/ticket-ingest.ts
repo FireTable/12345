@@ -99,9 +99,7 @@ export function buildRecordsFromRows(
     );
     const createTime = extractDate(content);
 
-    let channel = normalized.channel || "市民服务热线";
-    if (title.includes("小程序")) channel = "微信小程序";
-    else if (title.includes("公众号")) channel = "微信公众号";
+    const channel = normalized.channel || normalized.sourceChannel || "市民服务热线";
 
     const closedAtRaw = normalized.closedAt;
     let closedAt: Date | null = null;

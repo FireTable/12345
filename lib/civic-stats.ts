@@ -242,6 +242,7 @@ export function buildInsights(
     trendPct?: number | null;
     canonicalSubject?: string | null;
     canonicalLocation?: string | null;
+    aiSummary?: string | null;
     recommendedAction?: string | null;
     riskLevel?: string | null;
   }>
@@ -262,7 +263,7 @@ export function buildInsights(
       tag: "聚集",
       tone: "danger",
       title: gatherTheme.title || `${gatherTheme.canonicalLocation || "辖区"} · ${gatherTheme.category || "民生"}诉求聚集`,
-      text: `${gatherTheme.canonicalLocation || ""}集中出现 ${gatherTheme.ticketCount || 0} 件${gatherTheme.category || ""}诉求，建议多部门现场联合处置。`,
+      text: gatherTheme.aiSummary || gatherTheme.recommendedAction || `${gatherTheme.canonicalLocation || "辖区"}出现 ${gatherTheme.ticketCount || 0} 件${gatherTheme.category || ""}相关诉求`,
       href: `/themes/${gatherTheme.id}`,
     });
   }
@@ -278,7 +279,7 @@ export function buildInsights(
       tag: "发散",
       tone: "info",
       title: divergeTheme.title || `${divergeTheme.canonicalSubject || "涉事主体"} 多类型问题发散`,
-      text: `涉及同一主体共 ${divergeTheme.ticketCount || 0} 件跨业务诉求，建议开展源头合规指导与督促整改。`,
+      text: divergeTheme.aiSummary || divergeTheme.recommendedAction || `涉及同一主体共 ${divergeTheme.ticketCount || 0} 件诉求`,
       href: `/themes/${divergeTheme.id}`,
     });
   }
@@ -295,7 +296,7 @@ export function buildInsights(
       tag: "重复",
       tone: "warning",
       title: repeatOrUrgentTheme.title || `${repeatOrUrgentTheme.canonicalSubject || "重点区域"} 多次重复诉求`,
-      text: `累计已产生 ${repeatOrUrgentTheme.ticketCount || 0} 次高频反映，建议上升处置优先级并实施全周期闭环跟踪。`,
+      text: repeatOrUrgentTheme.aiSummary || repeatOrUrgentTheme.recommendedAction || `累计产生 ${repeatOrUrgentTheme.ticketCount || 0} 次高频反映`,
       href: `/themes/${repeatOrUrgentTheme.id}`,
     });
   }
@@ -311,7 +312,7 @@ export function buildInsights(
       tag: fourthTheme.patternType === "DIVERGE" ? "发散" : "聚集",
       tone: fourthTheme.category === "公共安全" ? "danger" : fourthTheme.category === "市场监管" ? "info" : "warning",
       title: fourthTheme.title || `${fourthTheme.canonicalLocation || "属地片区"} · ${fourthTheme.category || "民生"}集中研判`,
-      text: `${fourthTheme.canonicalLocation || "属地"}汇聚 ${fourthTheme.ticketCount || 0} 件工单，已匹配公文级协同建议与处置路径。`,
+      text: fourthTheme.aiSummary || fourthTheme.recommendedAction || `${fourthTheme.canonicalLocation || "辖区"}汇聚 ${fourthTheme.ticketCount || 0} 件工单`,
       href: `/themes/${fourthTheme.id}`,
     });
   }

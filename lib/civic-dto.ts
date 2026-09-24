@@ -25,8 +25,8 @@ export function mapTicketStatus(status?: string | null): "PENDING" | "IN_PROGRES
 }
 
 export function handlingColor(label?: string | null): string {
-  if (label === "已办结") return "#52C41A";
-  if (label === "处置中") return "#1677FF";
+  if (label === "已办结" || label === "RESOLVED") return "#52C41A";
+  if (label === "处置中" || label === "IN_PROGRESS") return "#1677FF";
   return "#F53F3F";
 }
 
@@ -206,8 +206,8 @@ export function toWorkorderDto(row: {
     id: row.ticketNo || row.id,
     ticketId: row.id,
     title: row.summarizeTitle || row.title || "市民诉求",
-    category: row.sourceCategory || row.category || "市容城管",
-    region: regionLabel(row.subdistrict, row.district) || "大良",
+    category: row.sourceCategory || row.category || "综合民生",
+    region: regionLabel(row.subdistrict, row.district) || "辖区",
     urgency: row.urgency || "NORMAL",
     status: mapTicketStatus(row.status),
     createdAt: created,

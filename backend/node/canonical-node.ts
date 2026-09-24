@@ -71,7 +71,7 @@ export async function canonicalNode(
       if (isSamePhysicalEntity(group.representative, rawSubject)) {
         group.members.add(rawSubject);
         // 如果当前名称更长、更具体，升级代表名称
-        if (rawSubject.length > group.representative.length && !rawSubject.includes("所属辖区")) {
+        if (rawSubject.length > group.representative.length) {
           group.representative = rawSubject;
         }
         foundGroup = true;
