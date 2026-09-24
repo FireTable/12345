@@ -98,7 +98,6 @@ export async function arbitrateSingleTicket(
         return {
           index: firstPass.index,
           summarizeTitle:
-            arbitrated.summarizeTitle ||
             firstPass.summarizeTitle ||
             [validTownship, normalizedSubject, arbitrated.correctedEventType || firstPass.eventType].filter(Boolean).join(" · "),
           subject: normalizedSubject,
