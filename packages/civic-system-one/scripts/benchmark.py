@@ -37,17 +37,16 @@ except ImportError:
 # Add script directory to sys.path
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(SCRIPT_DIR)
-from train_laya import LayaDecisionModel, CRITERIA_CHOICES
+from train_laya_v2 import LayaDecisionModelV2, FastCivicTokenizer, CRITERIA_CHOICES
 
 DEFAULT_FULL_EXCEL = "/Users/FireTable/Downloads/政数局资料-顺德区12345热线工单（2025年1月至3月）.xlsx"
 DEFAULT_SAMPLE_EXCEL = "/Users/FireTable/Downloads/sample_300.xlsx"
-CHECKPOINT_PATH = os.path.join(SCRIPT_DIR, "../models/civic-laya-checkpoint/best_model.pt")
-ONNX_PATH = os.path.join(SCRIPT_DIR, "../models/civic-laya-onnx/model_full.onnx")
-MLX_WEIGHTS_PATH = os.path.join(SCRIPT_DIR, "../models/civic-laya-mlx/weights.npz")
+VOCAB_PATH = os.path.join(SCRIPT_DIR, "../models/vocab_civic.json")
+CHECKPOINT_PATH = os.path.join(SCRIPT_DIR, "../models/civic-laya-checkpoint-v2/best_model.pt")
+ONNX_PATH = os.path.join(SCRIPT_DIR, "../models/civic-laya-onnx/model_v2.onnx")
+MLX_WEIGHTS_PATH = os.path.join(SCRIPT_DIR, "../models/civic-laya-mlx/weights_v2.npz")
 BASE_LAYA_PATH = os.path.expanduser("~/.cache/receptron-laya/receptron--laya-onnx/main/laya.onnx")
 
-HIDDEN_SIZE = 512
-PROJ_DIM = 256
 BATCH_SIZE = 2048
 
 
@@ -95,29 +94,33 @@ def load_dataset(file_path: str, mode: str = "sample", sample_size: int = 300):
     return records
 
 
-def extract_features_batch(texts, hidden_size=512):
-    n = len(texts)
-    feats = np.zeros((n, hidden_size), dtype=np.float32)
-    for i, s in enumerate(texts):
-        chars = [ord(c) for c in s[:128]]
-        for c_idx, c in enumerate(chars):
-            slot = (c * 31 + c_idx) % hidden_size
-            feats[i, slot] += 1.0
-    norms = np.linalg.norm(feats, axis=1, keepdims=True)
-    norms[norms == 0] = 1.0
-    feats /= norms
-    return feats
+def tokenize_batch(tokenizer, texts, max_len=128):
+    batch_size = len(texts)
+    input_ids = np.zeros((batch_size, max_len), dtype=np.int64)
+    attention_mask = np.zeros((batch_size, max_len), dtype=np.float32)
+    for i, t in enumerate(texts):
+        tokens = tokenizer.encode(t)
+        n = min(len(tokens), max_len)
+        input_ids[i, :n] = tokens[:n]
+        attention_mask[i, :n] = 1.0
+    return input_ids, attention_mask
 
 
 def run_benchmark_mps(records, ckpt_path):
     print(f"\n=======================================================")
-    print(f"🍏 [Engine] @civic/system-one (PyTorch Metal GPU / MPS)")
+    print(f"🍏 [Engine] @civic/system-one V2 (PyTorch Metal GPU / MPS)")
     print(f"=======================================================")
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     print(f"Device: {device}")
 
-    model = LayaDecisionModel(hidden_size=HIDDEN_SIZE, proj_dim=PROJ_DIM)
-    ckpt = torch.load(ckpt_path, map_location="cpu")
+    tokenizer = FastCivicTokenizer(VOCAB_PATH, max_seq_len=128)
+    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+    
+    vocab_size = ckpt.get("vocab_size", len(tokenizer.tokens))
+    emb_dim = ckpt.get("emb_dim", 64)
+    proj_dim = ckpt.get("proj_dim", 256)
+
+    model = LayaDecisionModelV2(vocab_size=vocab_size, emb_dim=emb_dim, proj_dim=proj_dim)
     model.load_state_dict(ckpt["model_state_dict"])
     model.to(device)
     model.eval()
@@ -134,14 +137,15 @@ def run_benchmark_mps(records, ckpt_path):
             end_idx = min(start_idx + batch_size, total_records)
             batch_texts = [r["full_text"] for r in records[start_idx:end_idx]]
 
-            feats_np = extract_features_batch(batch_texts, hidden_size=HIDDEN_SIZE)
-            feats_tensor = torch.from_numpy(feats_np).to(device)
+            inp_np, mask_np = tokenize_batch(tokenizer, batch_texts)
+            inp_t = torch.from_numpy(inp_np).to(device)
+            mask_t = torch.from_numpy(mask_np).to(device)
 
             t0 = time.perf_counter()
-            i_logits = model(feats_tensor, "intent")
-            c_logits = model(feats_tensor, "category")
-            u_logits = model(feats_tensor, "urgency")
-            s_logits = model(feats_tensor, "stability")
+            i_logits = model(inp_t, mask_t, "intent")
+            c_logits = model(inp_t, mask_t, "category")
+            u_logits = model(inp_t, mask_t, "urgency")
+            s_logits = model(inp_t, mask_t, "stability")
 
             if device.type == "mps":
                 torch.mps.synchronize()
@@ -154,7 +158,7 @@ def run_benchmark_mps(records, ckpt_path):
 
     total_time = time.perf_counter() - t_start
     return {
-        "engine": "PyTorch Metal GPU (MPS)",
+        "engine": "PyTorch Metal GPU (MPS V2)",
         "total_records": total_records,
         "total_time_sec": total_time,
         "inf_time_sec": inf_time,
@@ -170,11 +174,12 @@ def run_benchmark_mps(records, ckpt_path):
 
 def run_benchmark_onnx(records, onnx_path):
     print(f"\n=======================================================")
-    print(f"⚡ [Engine] @civic/system-one (ONNX Runtime CPU)")
+    print(f"⚡ [Engine] @civic/system-one V2 (ONNX Runtime CPU)")
     print(f"=======================================================")
     session_options = ort.SessionOptions()
     session_options.intra_op_num_threads = 8
     sess = ort.InferenceSession(onnx_path, session_options, providers=["CPUExecutionProvider"])
+    tokenizer = FastCivicTokenizer(VOCAB_PATH, max_seq_len=128)
 
     total_records = len(records)
     batch_size = min(BATCH_SIZE, total_records)
@@ -187,10 +192,10 @@ def run_benchmark_onnx(records, onnx_path):
         end_idx = min(start_idx + batch_size, total_records)
         batch_texts = [r["full_text"] for r in records[start_idx:end_idx]]
 
-        feats_np = extract_features_batch(batch_texts, hidden_size=HIDDEN_SIZE)
+        inp_np, mask_np = tokenize_batch(tokenizer, batch_texts)
 
         t0 = time.perf_counter()
-        outs = sess.run(None, {"features": feats_np})
+        outs = sess.run(None, {"input_ids": inp_np, "attention_mask": mask_np})
         inf_time += (time.perf_counter() - t0)
 
         all_intents.extend(np.argmax(outs[0], axis=-1).tolist())
@@ -200,7 +205,7 @@ def run_benchmark_onnx(records, onnx_path):
 
     total_time = time.perf_counter() - t_start
     return {
-        "engine": "ONNX Runtime (8-thread CPU)",
+        "engine": "ONNX Runtime (8-thread CPU V2)",
         "total_records": total_records,
         "total_time_sec": total_time,
         "inf_time_sec": inf_time,
