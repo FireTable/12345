@@ -29,15 +29,15 @@ import onnxruntime as ort
 # Add script directory to sys.path
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(SCRIPT_DIR)
-from train_laya_v4 import LayaDecisionModelV4, DualStreamCivicTokenizer, CRITERIA_CHOICES
+from train import LayaDecisionModelV4, DualStreamCivicTokenizer, CRITERIA_CHOICES
 
 DEFAULT_FULL_EXCEL = "/Users/FireTable/Downloads/政数局资料-顺德区12345热线工单（2025年1月至3月）.xlsx"
 DEFAULT_SAMPLE_EXCEL = "/Users/FireTable/Downloads/sample_300.xlsx"
 VOCAB_PATH = os.path.join(SCRIPT_DIR, "../models/vocab_civic.json")
 
-# V4 Paths (Cross-Attention Dual-Stream)
-CHECKPOINT_V4_PATH = os.path.join(SCRIPT_DIR, "../models/civic-laya-checkpoint-v4/best_model.pt")
-ONNX_V4_PATH = os.path.join(SCRIPT_DIR, "../models/civic-laya-onnx/model_v4.onnx")
+# Production Model Paths
+CHECKPOINT_PATH = os.path.join(SCRIPT_DIR, "../models/civic-laya-checkpoint/best_model.pt")
+ONNX_PATH = os.path.join(SCRIPT_DIR, "../models/civic-laya-onnx/model.onnx")
 
 # Base Laya
 BASE_LAYA_PATH = os.path.expanduser("~/.cache/receptron-laya/receptron--laya-onnx/main/laya.onnx")
@@ -337,7 +337,7 @@ def main():
     parser.add_argument("--file", type=str, default="", help="Path to input Excel dataset")
     parser.add_argument("--mode", type=str, choices=["sample", "full"], default="sample", help="Benchmark mode: sample (default: 10000) or full (128k)")
     parser.add_argument("--sample-size", type=int, default=10000, help="Number of samples to evaluate in sample mode (default: 10000)")
-    parser.add_argument("--engine", type=str, choices=["all", "v4-onnx", "v4-mps", "base"], default="all", help="Engine to benchmark")
+    parser.add_argument("--engine", type=str, choices=["all", "onnx", "mps", "base", "v4-onnx", "v4-mps"], default="all", help="Engine to benchmark")
     parser.add_argument("--audit", type=int, default=25, help="Number of records to spot-check audit (0 to disable)")
     parser.add_argument("--output", type=str, default="", help="Optional path to output json report")
     args = parser.parse_args()
@@ -345,15 +345,15 @@ def main():
     records = load_dataset(args.file, mode=args.mode, sample_size=args.sample_size)
     metrics = []
 
-    # 1. V4 Cross-Attention ONNX
-    if args.engine in ["all", "v4-onnx"]:
-        res_v4_onnx = run_benchmark_onnx_v4(records, ONNX_V4_PATH)
-        metrics.append(res_v4_onnx)
+    # 1. Production ONNX
+    if args.engine in ["all", "onnx", "v4-onnx"]:
+        res_onnx = run_benchmark_onnx_v4(records, ONNX_PATH)
+        metrics.append(res_onnx)
 
-    # 2. V4 Cross-Attention MPS
-    if args.engine in ["all", "v4-mps"]:
-        res_v4_mps = run_benchmark_mps_v4(records, CHECKPOINT_V4_PATH)
-        metrics.append(res_v4_mps)
+    # 2. Production MPS
+    if args.engine in ["all", "mps", "v4-mps"]:
+        res_mps = run_benchmark_mps_v4(records, CHECKPOINT_PATH)
+        metrics.append(res_mps)
 
     # 3. Base Laya (only in sample mode or if specifically requested)
     if args.engine in ["all", "base"] and args.mode == "sample":

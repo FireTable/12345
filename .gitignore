@@ -60,9 +60,7 @@ docs/super-agent/
 .env.production.local
 *.tsbuildinfo
 
-# Civic System-One Datasets & Checkpoints
+# Civic System-One Datasets (raw training jsonl)
 packages/civic-system-one/data/
-packages/civic-system-one/models/
-*.onnx
 *.onnx.data
 *.safetensors

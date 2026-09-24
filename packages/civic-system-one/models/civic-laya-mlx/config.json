@@ -1,0 +1,34 @@
+{
+  "architecture": "MLXCivicLayaModel",
+  "device": "apple_silicon_metal",
+  "hidden_size": 384,
+  "proj_dim": 256,
+  "criteria": [
+    [
+      "INQUIRY",
+      "COMPLAINT",
+      "SUGGESTION",
+      "REMINDER",
+      "COMMENDATION"
+    ],
+    [
+      "urban_management",
+      "traffic",
+      "market_reg",
+      "environment",
+      "labor_social",
+      "public_safety",
+      "social_governance"
+    ],
+    [
+      "Level 0",
+      "Level 1",
+      "Level 2",
+      "Level 3"
+    ],
+    [
+      "YES",
+      "NO"
+    ]
+  ]
+}

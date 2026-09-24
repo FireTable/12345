@@ -15,7 +15,7 @@
 +----------------------------------------------------------------------------------------------------------+
 |                                     V1 ~ V4 架构演进与指标飞跃                                            |
 +---------------------+-------------------+---------------------+--------------------+---------------------+
-| 维度                | V1 (Base ModernBERT| V2 (原生单流轻量)    | V3 (双流解耦融合)   | V4 (交叉注意力联合承办)|
+| 维度                | V1 (Base ModernBERT)| V2 (原生单流轻量)    | V3 (双流解耦融合)   | V4 (交叉注意力联合承办)|
 +---------------------+-------------------+---------------------+--------------------+---------------------+
 | 核心架构            | ModernBERT-large  | 15k 词表 + 单流编码  | 双编码器 + 双流池化 | 4头交叉注意力 + 联合承办|
 | 模型体积 (FP32)     | 1,680 MB (1.68GB) | 4.5 MB              | 5.0 MB             | 4.5 MB (精简 99.7%) |
@@ -30,6 +30,7 @@
 ```
 
 ### 1. V1：官方预训练模型阶段 (afshinm/laya-mps Base)
+
 - **实现机制**：直接引入官方 1.68GB 的 ModernBERT-large 架构，依赖统一 Prompt 序列填空。
 - **痛点与瓶颈**：
   1. 领域水土不服：通用大模型缺乏中国政务特有名词认知，政务分类准确率仅 40%~47%；
@@ -37,6 +38,7 @@
   3. 内存开销巨大：占用近 2GB 内存，边缘部署困难。
 
 ### 2. V2：原生轻量化与政务词表构建 (Single-Stream Native Laya)
+
 - **实现机制**：
   1. 基于顺德政数局 128,278 条真实全量工单，挖掘构建 15,000 维政务专用分词词表 (`vocab_civic.json`)；
   2. 设计 4.5MB 的轻量级单流分类神经网络，全面替换 1.68GB 的巨型模型。
@@ -46,6 +48,7 @@
   2. 源头数据回退清洗中，有 7,224 条消费维权纠纷因正则规则回退被系统性误标为 `social_governance`（综合社治）。
 
 ### 3. V3：双流解耦融合架构 (Dual-Stream Contextual Fusion)
+
 - **实现机制**：
   1. 架构上将工单解耦为**标题流 (Title Stream, $\le 32$ 字)** 与 **正文流 (Body Stream, $\le 128$ 字)**，各自独立编码；
   2. 采用双流池化后进行特征投影融合（Concatenation Fusion），领域分类 Top-1 提升至 94.28%；
@@ -53,6 +56,7 @@
 - **遗留瓶颈**：简单的特征拼接无法模拟话务员“**带着标题的问题去正文长篇叙述中寻找证据**”的认知逻辑；单选机制无法应对政务中客观存在的“一单多诉”与多部门交叉权责。
 
 ### 4. V4：交叉注意力机制与双轨联合承办 (Cross-Attention & Joint Dispatch) —— 当前生产基准
+
 - **实现机制**：
   1. **数据源头靶向清洗**：全面重构数据生成引擎，修复 7,224 条脏数据，将市场监管训练样本扩充至 34,884 条，催办样本扩充至 17,447 条；
   2. **4头交叉注意力 (Cross-Attention)**：以标题编码向量作为 **Query**，跨正文编码向量的 **Key/Value** 进行多头注意力检索，使模型自动锁定市民长文中的关键违法违规证据；
@@ -72,7 +76,7 @@
 =======================================================================================================
 📊 BENCHMARK COMPARISON SUMMARY (N = 10,000 真实政务工单)
 =======================================================================================================
-Engine / Model                                | Tickets  | Total Time  | Per-Item     | Throughput     
+Engine / Model                                | Tickets  | Total Time  | Per-Item     | Throughput
 -------------------------------------------------------------------------------------------------------
 ⭐ @civic/system-one V4 Cross-Attention (ONNX) | 10,000   | 0.79 s      | 0.0790 ms    | 12,664.9 TPS
 @civic/system-one V3 ONNX (Dual-Stream 5MB)   | 10,000   | 3.43 s      | 0.3430 ms    |  2,915.6 TPS
@@ -88,13 +92,13 @@ afshinm/laya-mps (Base ModernBERT 1.68GB)     | 10,000   | 876.20 s    | 87.6197
 
 在与训练集严格隔离的 **12,828 条全盲验证集** 上，V4 生产模型实测指标如下：
 
-| 评估维度 (Dimension) | 考核定义与政务业务规则 | 纯单选 Top-1 | 联合承办 Top-2 | 协同池 Top-3 | 达标状态 (≥ 99%) |
-| :--- | :--- | :---: | :---: | :---: | :---: |
-| **1. 涉稳护栏 (Stability Risk)** | 扬言极端维权、聚集堵路、群体安全隐患 | **99.86%** | 100.00% | 100.00% | ✅ **超额达标** |
-| **2. 紧迫等级 (Urgency Triage)** | Level 0 (咨询秒答) ~ Level 3 (特急响应) | 97.06% | **99.84%** | 99.96% | ✅ **超额达标** |
-| **3. 行为意图 (Intent Triage)** | 咨询、投诉、建议、催办、表扬五类行为判定 | 96.87% | **99.75%** | 99.94% | ✅ **超额达标** |
-| **4. 法定领域 (Category Routing)** | 市监、城管、交通、环保、劳社、公安、社治 | 93.09% | **98.45%** | **99.35%** | ✅ **超额达标** |
-| **⭐ 全准则综合均值** | **所有四个维度全口径综合平均准确率** | 96.72% | **99.51%** | **99.70%** | 🏆 **全维度达标** |
+| 评估维度 (Dimension)               | 考核定义与政务业务规则                   | 纯单选 Top-1 | 联合承办 Top-2 | 协同池 Top-3 | 达标状态 (≥ 99%)  |
+| :--------------------------------- | :--------------------------------------- | :----------: | :------------: | :----------: | :---------------: |
+| **1. 涉稳护栏 (Stability Risk)**   | 扬言极端维权、聚集堵路、群体安全隐患     |  **99.86%**  |    100.00%     |   100.00%    |  ✅ **超额达标**  |
+| **2. 紧迫等级 (Urgency Triage)**   | Level 0 (咨询秒答) ~ Level 3 (特急响应)  |    97.06%    |   **99.84%**   |    99.96%    |  ✅ **超额达标**  |
+| **3. 行为意图 (Intent Triage)**    | 咨询、投诉、建议、催办、表扬五类行为判定 |    96.87%    |   **99.75%**   |    99.94%    |  ✅ **超额达标**  |
+| **4. 法定领域 (Category Routing)** | 市监、城管、交通、环保、劳社、公安、社治 |    93.09%    |   **98.45%**   |  **99.35%**  |  ✅ **超额达标**  |
+| **⭐ 全准则综合均值**              | **所有四个维度全口径综合平均准确率**     |    96.72%    |   **99.51%**   |  **99.70%**  | 🏆 **全维度达标** |
 
 ---
 
@@ -103,15 +107,16 @@ afshinm/laya-mps (Base ModernBERT 1.68GB)     | 10,000   | 876.20 s    | 87.6197
 为保证工程结构清爽，历史版本（V1、V2、V3）的实验性代码与过时权重已全部清理归档，**仓库现仅保留 V4 生产版本产物**：
 
 ### 1. 核心模型产物 (`models/`)
+
 - `models/vocab_civic.json`：政务通用词表（15,000 核心词汇，0.5 MB）
-- `models/civic-laya-onnx/model_v4.onnx`：V4 生产级 ONNX 模型（4.5 MB，主推 CPU 8线程极速运行时）
-- `models/civic-laya-onnx/model.onnx`：V4 默认入口软链（4.5 MB）
-- `models/civic-laya-mlx/weights_v4.npz`：V4 Apple Silicon 原生 MLX 浮点权重（4.2 MB）
-- `models/civic-laya-checkpoint-v4/best_model.pt`：PyTorch 原生训练检查点（4.5 MB）
+- `models/civic-laya-onnx/model.onnx`：生产级 ONNX 模型（4.5 MB，主推 CPU 8线程极速运行时）
+- `models/civic-laya-mlx/weights.npz`：Apple Silicon 原生 MLX 浮点权重（4.2 MB）
+- `models/civic-laya-checkpoint/best_model.pt`：PyTorch 原生训练检查点（4.5 MB）
 
 ### 2. 生产脚本清单 (`scripts/`)
-- [engine_v4.py](file:///Users/FireTable/OpenClaw/Code/12345/packages/civic-system-one/scripts/engine_v4.py)：**生产级推理引擎**（支持单单分析、主办+协办联合分派、安全互锁与 0.08ms 极速响应）
-- [train_laya_v4.py](file:///Users/FireTable/OpenClaw/Code/12345/packages/civic-system-one/scripts/train_laya_v4.py)：**V4 训练主管线**（交叉注意力架构、类别焦点损失权重、余弦学习率衰减）
+
+- [engine.py](file:///Users/FireTable/OpenClaw/Code/12345/packages/civic-system-one/scripts/engine.py)：**生产级推理引擎**（支持单单分析、主办+协办联合分派、安全互锁与 0.08ms 极速响应）
+- [train.py](file:///Users/FireTable/OpenClaw/Code/12345/packages/civic-system-one/scripts/train.py)：**训练主管线**（交叉注意力架构、类别焦点损失权重、余弦学习率衰减）
 - [benchmark.py](file:///Users/FireTable/OpenClaw/Code/12345/packages/civic-system-one/scripts/benchmark.py)：**统一压测工具**（默认 10,000 条样本，集成深层质检审核流）
 - [generate-full-train-set.ts](file:///Users/FireTable/OpenClaw/Code/12345/packages/civic-system-one/scripts/generate-full-train-set.ts)：**政务数据精准生成器**（源头消除标签噪声，规范 7 类法定领域）
 - [test_regression_14.py](file:///Users/FireTable/OpenClaw/Code/12345/packages/civic-system-one/scripts/test_regression_14.py)：**历史 14 大盲区回归测试集**
@@ -122,10 +127,13 @@ afshinm/laya-mps (Base ModernBERT 1.68GB)     | 10,000   | 876.20 s    | 87.6197
 ## 🚀 五、 快速上手指南
 
 ### 1. 运行生产推理引擎测试
+
 ```bash
-python3 packages/civic-system-one/scripts/engine_v4.py
+python3 packages/civic-system-one/scripts/engine.py
 ```
+
 **输出样例**：
+
 ```text
 --- Case 1: 劳资纠纷 + 涉稳高风险联动 ---
   工单标题: 市民反映容桂街道海尾社区工业区某厂房拖欠三个月工资
@@ -137,6 +145,7 @@ python3 packages/civic-system-one/scripts/engine_v4.py
 ```
 
 ### 2. 运行 10,000 条样本全量基准压测
+
 ```bash
 # 默认执行 10,000 条工单压测与 25 条随机等距深度质检
 python3 packages/civic-system-one/scripts/benchmark.py
@@ -146,6 +155,7 @@ python3 packages/civic-system-one/scripts/benchmark.py --engine v4-onnx
 ```
 
 ### 3. 运行 14 个历史盲点回归测试
+
 ```bash
 python3 packages/civic-system-one/scripts/test_regression_14.py
 ```

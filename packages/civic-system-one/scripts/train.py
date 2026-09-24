@@ -30,7 +30,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_TRAIN_DATA = os.path.join(SCRIPT_DIR, "../data/civic_train.jsonl")
 DEFAULT_VAL_DATA = os.path.join(SCRIPT_DIR, "../data/civic_val.jsonl")
 VOCAB_PATH = os.path.join(SCRIPT_DIR, "../models/vocab_civic.json")
-OUTPUT_CKPT_DIR = os.path.join(SCRIPT_DIR, "../models/civic-laya-checkpoint-v4")
+OUTPUT_CKPT_DIR = os.path.join(SCRIPT_DIR, "../models/civic-laya-checkpoint")
 
 CRITERIA_CHOICES = {
     "intent": ["INQUIRY", "COMPLAINT", "SUGGESTION", "REMINDER", "COMMENDATION"],

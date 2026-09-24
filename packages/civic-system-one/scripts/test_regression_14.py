@@ -26,10 +26,10 @@ import numpy as np
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(SCRIPT_DIR)
-from train_laya_v4 import DualStreamCivicTokenizer, CRITERIA_CHOICES
+from train import DualStreamCivicTokenizer, CRITERIA_CHOICES
 
 VOCAB_PATH = os.path.join(SCRIPT_DIR, "../models/vocab_civic.json")
-ONNX_V4_PATH = os.path.join(SCRIPT_DIR, "../models/civic-laya-onnx/model_v4.onnx")
+ONNX_PATH = os.path.join(SCRIPT_DIR, "../models/civic-laya-onnx/model.onnx")
 
 TEST_CASES = [
     {
@@ -121,7 +121,7 @@ TEST_CASES = [
 def main():
     print(f"🚀 Initializing V4 Cross-Attention Regression Test (14 Cases)...")
     tokenizer = DualStreamCivicTokenizer(VOCAB_PATH, max_title_len=32, max_body_len=128)
-    sess = ort.InferenceSession(ONNX_V4_PATH, providers=["CPUExecutionProvider"])
+    sess = ort.InferenceSession(ONNX_PATH, providers=["CPUExecutionProvider"])
     cat_keys = CRITERIA_CHOICES["category"]
     
     passed = 0

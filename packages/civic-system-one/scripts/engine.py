@@ -17,7 +17,7 @@ from typing import Dict, Any, List, Optional, Tuple
 import numpy as np
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-ONNX_MODEL_PATH = os.path.join(SCRIPT_DIR, "../models/civic-laya-onnx/model_v4.onnx")
+ONNX_MODEL_PATH = os.path.join(SCRIPT_DIR, "../models/civic-laya-onnx/model.onnx")
 VOCAB_PATH = os.path.join(SCRIPT_DIR, "../models/vocab_civic.json")
 
 CRITERIA_CHOICES = {
