@@ -8,6 +8,16 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "files": [
+    "src",
+    "models",
+    "scripts",
+    "README.md"
+  ],
+  "scripts": {
+    "engine": "python3 scripts/engine.py",
+    "benchmark": "python3 scripts/benchmark.py"
+  },
   "keywords": [
     "12345",
     "civic",

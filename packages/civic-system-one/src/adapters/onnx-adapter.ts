@@ -12,6 +12,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import * as os from "node:os";
+import { fileURLToPath } from "node:url";
 
 export interface ONNXAdapterOptions {
   modelDir?: string;
@@ -24,6 +25,9 @@ export class ONNXAdapter implements DecisionAdapter {
   private onnxModelPath: string;
 
   constructor(options?: ONNXAdapterOptions) {
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const packageModelDir = path.resolve(__dirname, "../../models/civic-laya-onnx");
+    const cwdModelDir = path.join(process.cwd(), "models", "civic-laya-onnx");
     const userCacheDir = path.join(
       os.homedir(),
       ".cache",
@@ -31,15 +35,20 @@ export class ONNXAdapter implements DecisionAdapter {
       "receptron--laya-onnx",
       "main"
     );
-    const localModelDir = path.join(process.cwd(), "models", "civic-laya-onnx");
 
-    this.modelDir =
-      options?.modelDir ||
-      process.env.LAYA_ONNX_DIR ||
-      (fs.existsSync(path.join(userCacheDir, "laya.onnx"))
-        ? userCacheDir
-        : localModelDir);
-    this.onnxModelPath = path.join(this.modelDir, "laya.onnx");
+    const defaultDir =
+      fs.existsSync(packageModelDir)
+        ? packageModelDir
+        : fs.existsSync(cwdModelDir)
+        ? cwdModelDir
+        : userCacheDir;
+
+    this.modelDir = options?.modelDir || process.env.LAYA_ONNX_DIR || defaultDir;
+    
+    // Support both model.onnx (Civic System-One standard) and laya.onnx (legacy Laya standard)
+    const candidateModelOnnx = path.join(this.modelDir, "model.onnx");
+    const candidateLayaOnnx = path.join(this.modelDir, "laya.onnx");
+    this.onnxModelPath = fs.existsSync(candidateModelOnnx) ? candidateModelOnnx : candidateLayaOnnx;
   }
 
   private layaInstance: any = null;
