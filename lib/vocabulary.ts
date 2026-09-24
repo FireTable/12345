@@ -142,30 +142,32 @@ export function loadPresetVocabulary(regionId: string = "shunde"): RegionVocabul
     // ignore
   }
 
-  // 兜底默认顺德词库
+  // 兜底默认从顺德预置文件读取
+  try {
+    const defaultPresetPath = path.resolve(process.cwd(), "lib", "presets", "shunde.json");
+    if (fs.existsSync(defaultPresetPath)) {
+      const parsed = JSON.parse(fs.readFileSync(defaultPresetPath, "utf-8"));
+      return {
+        regionId: parsed.id || "fs_shunde",
+        regionName: parsed.name || "本地辖区",
+        cityName: parsed.city || "本地城市",
+        provinceName: parsed.province || "广东省",
+        townships: parsed.townships || [],
+        departments: parsed.departments || [],
+        categories: parsed.categories || STANDARD_CATEGORIES,
+      };
+    }
+  } catch (e) {
+    // ignore
+  }
+
   return {
-    regionId: "shunde",
-    regionName: "顺德区",
-    cityName: "佛山市",
+    regionId: "fs_shunde",
+    regionName: "本地辖区",
+    cityName: "本地城市",
     provinceName: "广东省",
-    townships: [
-      { name: "大良", fullName: "大良街道", aliases: ["大良", "德胜新区", "清晖园片区"], communities: ["府又社区", "德和社区"], landmarks: ["顺峰山公园", "清晖园"] },
-      { name: "容桂", fullName: "容桂街道", aliases: ["容桂", "容奇", "桂洲"], communities: ["容山社区", "细滘社区"], landmarks: ["容桂渔人码头"] },
-      { name: "伦教", fullName: "伦教街道", aliases: ["伦教", "长鹿片区"], communities: ["常教社区", "三洲村"], landmarks: ["长鹿旅游休博园"] },
-      { name: "勒流", fullName: "勒流街道", aliases: ["勒流", "黄连古村"], communities: ["勒流社区", "黄连村"], landmarks: ["黄连古村落"] },
-      { name: "陈村", fullName: "陈村镇", aliases: ["陈村", "花卉世界"], communities: ["旧圩社区", "潭洲村"], landmarks: ["陈村花卉世界", "潭洲国际会展中心"] },
-      { name: "北滘", fullName: "北滘镇", aliases: ["北滘", "北滘新城"], communities: ["北滘社区", "碧桂园社区"], landmarks: ["美的集团全球总部", "和美术馆"] },
-      { name: "乐从", fullName: "乐从镇", aliases: ["乐从", "佛山新城"], communities: ["乐从社区", "水藤村"], landmarks: ["乐从家具城", "世纪莲体育中心"] },
-      { name: "龙江", fullName: "龙江镇", aliases: ["龙江", "家具制造基地"], communities: ["龙江社区", "龙山社区"], landmarks: ["龙江亚洲国际家具材料交易中心"] },
-      { name: "杏坛", fullName: "杏坛镇", aliases: ["杏坛", "逢简水乡"], communities: ["杏坛社区", "逢简村"], landmarks: ["逢简水乡景区"] },
-      { name: "均安", fullName: "均安镇", aliases: ["均安", "李小龙故里"], communities: ["均安社区", "南沙村"], landmarks: ["李小龙乐园"] },
-    ],
-    departments: [
-      { code: "DEPT-ZFB", name: "综合行政执法队", fullName: "顺德区综合行政执法局 / 镇街综合行政执法办公室", category: "城市管理" },
-      { code: "DEPT-JJ", name: "交警中队", fullName: "佛山市顺德区公安局交通警察大队 / 镇街交警中队", category: "交通出行" },
-      { code: "DEPT-SJS", name: "市场监督管理所", fullName: "顺德区市场监督管理局 / 镇街市场监督管理所", category: "市场监管" },
-      { code: "DEPT-STHJ", name: "生态环境监督管理所", fullName: "佛山市生态环境局顺德分局 / 镇街生态环境所", category: "生态环境" },
-    ],
+    townships: [],
+    departments: [],
     categories: STANDARD_CATEGORIES as any,
   };
 }

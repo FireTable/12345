@@ -94,8 +94,8 @@ function scanFile(filePath: string, results: MatchItem[]) {
 }
 
 function main() {
-  // We scan backend, lib, and app/api
-  const targets = ["backend", "lib", "app/api"];
+  // We scan backend, lib, and the whole app
+  const targets = ["backend", "lib", "app"];
   const allResults: MatchItem[] = [];
 
   for (const target of targets) {

@@ -105,10 +105,10 @@ export async function clusterNode(
 
       const eventType = tickets[0].eventType || "多频诉求跟进";
       const distinctLocations = Array.from(new Set(tickets.map((t) => t.canonicalLocation).filter(Boolean)));
-      const canonicalLocation = distinctLocations.length === 1 ? distinctLocations[0] : `${distinctLocations[0]} 等多处`;
+      const canonicalLocation = distinctLocations.length === 1 ? distinctLocations[0] : distinctLocations.slice(0, 3).join(" / ");
 
       const themeId = `THEME-${themes.length + 1}`;
-      const title = `${subj} — ${eventType}`;
+      const title = `${subj} · ${eventType}`;
 
       tickets.forEach((t) => {
         t.clusterId = themeId;
@@ -198,10 +198,10 @@ export async function clusterNode(
 
       const eventType = tickets[0].eventType || "区域集中诉求";
       const distinctSubjects = Array.from(new Set(tickets.map((t) => t.canonicalSubject).filter(isValidSpecificSubject)));
-      const canonicalSubject = distinctSubjects.length > 0 ? distinctSubjects.join("、") : `${microLocation}周边涉事对象`;
+      const canonicalSubject = distinctSubjects.length > 0 ? distinctSubjects.join("、") : microLocation;
 
       const themeId = `THEME-${themes.length + 1}`;
-      const title = `${microLocation} — ${eventType}群发共性问题`;
+      const title = [microLocation, eventType].filter(Boolean).join(" · ");
 
       tickets.forEach((t) => {
         t.clusterId = themeId;

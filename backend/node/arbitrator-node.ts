@@ -97,7 +97,10 @@ export async function arbitrateSingleTicket(
 
         return {
           index: firstPass.index,
-          summarizeTitle: `关于${validTownship}${normalizedSubject}${arbitrated.correctedEventType || firstPass.eventType}诉求`,
+          summarizeTitle:
+            arbitrated.summarizeTitle ||
+            firstPass.summarizeTitle ||
+            [validTownship, normalizedSubject, arbitrated.correctedEventType || firstPass.eventType].filter(Boolean).join(" · "),
           subject: normalizedSubject,
           location: normalizedLocation,
           eventType: arbitrated.correctedEventType || firstPass.eventType,

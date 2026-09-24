@@ -51,7 +51,7 @@ export const DEMO_VIDEOS: DemoVideo[] = [
   {
     id: "dict",
     title: "标准字典治理",
-    desc: "顺德 10 大镇街/98+村居白名单、别名自学习沉淀与权威实体对齐管理",
+    desc: "法定镇街/社区网格白名单、别名自学习沉淀与权威实体对齐管理",
     src: "/videos/标准字典.mp4",
     tag: "📖 权威白名单",
   },
