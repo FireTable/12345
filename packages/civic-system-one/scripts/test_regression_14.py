@@ -28,9 +28,11 @@ import numpy as np
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(SCRIPT_DIR)
 from train_laya_v2 import FastCivicTokenizer, CRITERIA_CHOICES
+from train_laya_v3 import DualStreamCivicTokenizer
 
 VOCAB_PATH = os.path.join(SCRIPT_DIR, "../models/vocab_civic.json")
 ONNX_V2_PATH = os.path.join(SCRIPT_DIR, "../models/civic-laya-onnx/model_v2.onnx")
+ONNX_V3_PATH = os.path.join(SCRIPT_DIR, "../models/civic-laya-onnx/model_v3.onnx")
 
 TEST_CASES = [
     {
@@ -134,53 +136,80 @@ TEST_CASES = [
 ]
 
 def main():
-    print(f"\n=======================================================")
-    print(f"🎯 Regression Test: 14 Historical Misclassified Hard Cases")
-    print(f"=======================================================")
+    print(f"\n=========================================================================================")
+    print(f"🎯 Regression Test: 14 Historical Misclassified Hard Cases (V2 vs V3 Head-to-Head)")
+    print(f"=========================================================================================")
     
-    tokenizer = FastCivicTokenizer(VOCAB_PATH, max_seq_len=128)
-    sess = ort.InferenceSession(ONNX_V2_PATH, providers=["CPUExecutionProvider"])
+    tokenizer_v2 = FastCivicTokenizer(VOCAB_PATH, max_seq_len=128)
+    tokenizer_v3 = DualStreamCivicTokenizer(VOCAB_PATH, max_title_len=32, max_body_len=128)
+    
+    sess_v2 = ort.InferenceSession(ONNX_V2_PATH, providers=["CPUExecutionProvider"])
+    sess_v3 = ort.InferenceSession(ONNX_V3_PATH, providers=["CPUExecutionProvider"])
     
     cat_keys = CRITERIA_CHOICES["category"]
-    intent_keys = CRITERIA_CHOICES["intent"]
     
-    passed_count = 0
+    v2_passed = 0
+    v3_passed = 0
     total = len(TEST_CASES)
 
-    print(f"{'No.':<4} | {'Ticket ID':<20} | {'Expected Cat':<16} | {'V2 Predicted':<16} | {'Status'}")
-    print("-" * 75)
+    print(f"{'No.':<3} | {'Ticket ID':<20} | {'Expected Cat':<15} | {'V2 Cat':<15} | {'V3 Cat':<15} | {'V3 Status'}")
+    print("-" * 88)
 
     for i, c in enumerate(TEST_CASES):
+        # 1. V2 Inference
         full_text = f"{c['title']}。{c['content']}"
-        tokens = tokenizer.encode(full_text)
-        
-        inp_ids = np.zeros((1, 128), dtype=np.int64)
-        mask = np.zeros((1, 128), dtype=np.float32)
-        n = min(len(tokens), 128)
-        inp_ids[0, :n] = tokens[:n]
-        mask[0, :n] = 1.0
+        tokens_v2 = tokenizer_v2.encode(full_text)
+        inp_v2 = np.zeros((1, 128), dtype=np.int64)
+        mask_v2 = np.zeros((1, 128), dtype=np.float32)
+        n2 = min(len(tokens_v2), 128)
+        inp_v2[0, :n2] = tokens_v2[:n2]
+        mask_v2[0, :n2] = 1.0
+        outs_v2 = sess_v2.run(None, {"input_ids": inp_v2, "attention_mask": mask_v2})
+        pred_cat_v2 = cat_keys[np.argmax(outs_v2[1], axis=-1)[0]]
 
-        outs = sess.run(None, {"input_ids": inp_ids, "attention_mask": mask})
-        # outs: [intent(5), category(7), urgency(4), stability(2)]
-        pred_intent_idx = np.argmax(outs[0], axis=-1)[0]
-        pred_cat_idx = np.argmax(outs[1], axis=-1)[0]
-        
-        pred_cat = cat_keys[pred_cat_idx]
-        pred_intent = intent_keys[pred_intent_idx]
+        # 2. V3 Inference
+        t_tokens, b_tokens = tokenizer_v3.encode(c["title"], c["content"])
+        t_ids = np.zeros((1, 32), dtype=np.int64)
+        t_mask = np.zeros((1, 32), dtype=np.float32)
+        nt = min(len(t_tokens), 32)
+        t_ids[0, :nt] = t_tokens[:nt]
+        t_mask[0, :nt] = 1.0
 
-        cat_ok = (pred_cat == c["expected_cat"])
-        status_str = "✅ PASS" if cat_ok else "❌ FAIL"
-        if cat_ok:
-            passed_count += 1
+        b_ids = np.zeros((1, 128), dtype=np.int64)
+        b_mask = np.zeros((1, 128), dtype=np.float32)
+        nb = min(len(b_tokens), 128)
+        b_ids[0, :nb] = b_tokens[:nb]
+        b_mask[0, :nb] = 1.0
 
-        print(f"{i+1:<4} | {c['id']:<20} | {c['expected_cat']:<16} | {pred_cat:<16} | {status_str}")
+        outs_v3 = sess_v3.run(None, {
+            "title_ids": t_ids,
+            "title_mask": t_mask,
+            "body_ids": b_ids,
+            "body_mask": b_mask
+        })
+        pred_cat_v3 = cat_keys[np.argmax(outs_v3[1], axis=-1)[0]]
 
-    pass_rate = (passed_count / total) * 100.0
-    print(f"\n📊 Regression Test Summary: {passed_count}/{total} Passed ({pass_rate:.1f}%)")
-    if passed_count == total:
+        v2_ok = (pred_cat_v2 == c["expected_cat"])
+        v3_ok = (pred_cat_v3 == c["expected_cat"])
+        if v2_ok:
+            v2_passed += 1
+        if v3_ok:
+            v3_passed += 1
+
+        status_str = "✅ PASS" if v3_ok else "❌ FAIL"
+        if not v2_ok and v3_ok:
+            status_str = "🎉 REPAIRED"
+
+        print(f"{i+1:<3} | {c['id']:<20} | {c['expected_cat']:<15} | {pred_cat_v2:<15} | {pred_cat_v3:<15} | {status_str}")
+
+    print("-" * 88)
+    print(f"📊 Summary:")
+    print(f"   V2 Baseline Pass Rate: {v2_passed}/{total} ({v2_passed/total*100:.1f}%)")
+    print(f"   V3 Dual-Stream Pass Rate: {v3_passed}/{total} ({v3_passed/total*100:.1f}%)")
+    if v3_passed == total:
         print("🏆 ALL 14 HISTORICAL BLINDSPOTS 100% REPAIRED!")
     else:
-        print(f"⚠️ {total - passed_count} cases need attention.")
+        print(f"⚠️ {total - v3_passed} cases need attention.")
 
 if __name__ == "__main__":
     main()

@@ -2,7 +2,7 @@ import * as XLSX from "xlsx";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { CivicAnonymizer } from "@civic/anonymizer";
+import { CivicAnonymizer } from "../../civic-anonymizer/src/index";
 import { buildCivicQuestions, buildCivicCriteria } from "../src/presets/criteria";
 import type { CivicCategory, CivicIntent } from "../src/types";
 
@@ -534,7 +534,9 @@ async function main() {
     urgencyStats[urgency]++;
 
     processedRecords.push({
-      state: cleanContent,
+      title: rawTitle,
+      content: cleanContent,
+      state: rawTitle ? `${rawTitle}。${cleanContent}` : cleanContent,
       questions,
       criteria,
       answers: [intent, category, urgency, stabilityRisk],

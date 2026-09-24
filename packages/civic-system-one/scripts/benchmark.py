@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-@civic/system-one: Unified Benchmark Tool
-=========================================
-Supports both Sample Mode (e.g. 300 samples) and Full-Scale Mode (e.g. 128,278 records).
+@civic/system-one: Unified Benchmark Tool (V2 vs V3 vs Base Laya)
+================================================================
+Supports both Sample Mode (default: 3,000 samples) and Full-Scale Mode (128,278 records).
 Benchmarks across:
-- Engine 1: Apple Silicon Metal GPU (PyTorch MPS)
-- Engine 2: ONNX Runtime (8-thread CPU)
-- Engine 3: Native Apple Silicon MLX (Metal)
-- (Optional) Base ModernBERT-large 1.68GB (afshinm/laya-mps)
+- Engine 1: @civic/system-one V3 Dual-Stream ONNX Runtime (CPU 8-thread)
+- Engine 2: @civic/system-one V3 Dual-Stream PyTorch Metal GPU (MPS)
+- Engine 3: @civic/system-one V2 Single-Stream ONNX Runtime (CPU 8-thread)
+- Engine 4: afshinm/laya-mps (Base ModernBERT-large 1.68GB)
 
 Usage:
-  python3 benchmark.py --mode sample --sample-size 300
-  python3 benchmark.py --mode full --engine all
-  python3 benchmark.py --mode sample --audit 20
+  python3 packages/civic-system-one/scripts/benchmark.py --mode sample --sample-size 3000
+  python3 packages/civic-system-one/scripts/benchmark.py --mode full --engine onnx
+  python3 packages/civic-system-one/scripts/benchmark.py --mode sample --audit 20
 """
 
 import os
@@ -27,35 +27,36 @@ import torch.nn as nn
 import torch.nn.functional as F
 import onnxruntime as ort
 
-try:
-    import mlx.core as mx
-    import mlx.nn as m_nn
-    MLX_AVAILABLE = True
-except ImportError:
-    MLX_AVAILABLE = False
-
 # Add script directory to sys.path
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(SCRIPT_DIR)
 from train_laya_v2 import LayaDecisionModelV2, FastCivicTokenizer, CRITERIA_CHOICES
+from train_laya_v3 import LayaDecisionModelV3, DualStreamCivicTokenizer
 
 DEFAULT_FULL_EXCEL = "/Users/FireTable/Downloads/政数局资料-顺德区12345热线工单（2025年1月至3月）.xlsx"
 DEFAULT_SAMPLE_EXCEL = "/Users/FireTable/Downloads/sample_300.xlsx"
 VOCAB_PATH = os.path.join(SCRIPT_DIR, "../models/vocab_civic.json")
-CHECKPOINT_PATH = os.path.join(SCRIPT_DIR, "../models/civic-laya-checkpoint-v2/best_model.pt")
-ONNX_PATH = os.path.join(SCRIPT_DIR, "../models/civic-laya-onnx/model_v2.onnx")
-MLX_WEIGHTS_PATH = os.path.join(SCRIPT_DIR, "../models/civic-laya-mlx/weights_v2.npz")
+
+# V2 Paths
+CHECKPOINT_V2_PATH = os.path.join(SCRIPT_DIR, "../models/civic-laya-checkpoint-v2/best_model.pt")
+ONNX_V2_PATH = os.path.join(SCRIPT_DIR, "../models/civic-laya-onnx/model_v2.onnx")
+
+# V3 Paths
+CHECKPOINT_V3_PATH = os.path.join(SCRIPT_DIR, "../models/civic-laya-checkpoint-v3/best_model.pt")
+ONNX_V3_PATH = os.path.join(SCRIPT_DIR, "../models/civic-laya-onnx/model_v3.onnx")
+
+# Base Laya
 BASE_LAYA_PATH = os.path.expanduser("~/.cache/receptron-laya/receptron--laya-onnx/main/laya.onnx")
 
-BATCH_SIZE = 2048
+BATCH_SIZE = 1024
 
 
-def load_dataset(file_path: str, mode: str = "sample", sample_size: int = 300):
-    if not os.path.exists(file_path):
-        if mode == "sample" and os.path.exists(DEFAULT_SAMPLE_EXCEL):
-            file_path = DEFAULT_SAMPLE_EXCEL
-        elif os.path.exists(DEFAULT_FULL_EXCEL):
+def load_dataset(file_path: str, mode: str = "sample", sample_size: int = 3000):
+    if not file_path or not os.path.exists(file_path):
+        if os.path.exists(DEFAULT_FULL_EXCEL):
             file_path = DEFAULT_FULL_EXCEL
+        elif mode == "sample" and os.path.exists(DEFAULT_SAMPLE_EXCEL):
+            file_path = DEFAULT_SAMPLE_EXCEL
         else:
             raise FileNotFoundError(f"Dataset file not found: {file_path}")
 
@@ -94,33 +95,95 @@ def load_dataset(file_path: str, mode: str = "sample", sample_size: int = 300):
     return records
 
 
-def tokenize_batch(tokenizer, texts, max_len=128):
-    batch_size = len(texts)
-    input_ids = np.zeros((batch_size, max_len), dtype=np.int64)
-    attention_mask = np.zeros((batch_size, max_len), dtype=np.float32)
-    for i, t in enumerate(texts):
-        tokens = tokenizer.encode(t)
-        n = min(len(tokens), max_len)
-        input_ids[i, :n] = tokens[:n]
-        attention_mask[i, :n] = 1.0
-    return input_ids, attention_mask
-
-
-def run_benchmark_mps(records, ckpt_path):
+# -------------------------------------------------------------
+# Engine 1: V3 Dual-Stream ONNX Runtime (CPU)
+# -------------------------------------------------------------
+def run_benchmark_onnx_v3(records, onnx_path):
     print(f"\n=======================================================")
-    print(f"🍏 [Engine] @civic/system-one V2 (PyTorch Metal GPU / MPS)")
+    print(f"⚡ [Engine] @civic/system-one V3 Dual-Stream (ONNX Runtime CPU)")
+    print(f"=======================================================")
+    session_options = ort.SessionOptions()
+    session_options.intra_op_num_threads = 8
+    sess = ort.InferenceSession(onnx_path, session_options, providers=["CPUExecutionProvider"])
+    tokenizer = DualStreamCivicTokenizer(VOCAB_PATH, max_title_len=32, max_body_len=128)
+
+    total_records = len(records)
+    batch_size = min(BATCH_SIZE, total_records)
+    all_intents, all_cats, all_urgs, all_stabs = [], [], [], []
+
+    t_start = time.perf_counter()
+    inf_time = 0.0
+
+    for start_idx in range(0, total_records, batch_size):
+        end_idx = min(start_idx + batch_size, total_records)
+        b_records = records[start_idx:end_idx]
+        cur_b_size = len(b_records)
+
+        # Batch tokenization
+        t_ids = np.zeros((cur_b_size, 32), dtype=np.int64)
+        t_mask = np.zeros((cur_b_size, 32), dtype=np.float32)
+        b_ids = np.zeros((cur_b_size, 128), dtype=np.int64)
+        b_mask = np.zeros((cur_b_size, 128), dtype=np.float32)
+
+        for i, r in enumerate(b_records):
+            t_toks, b_toks = tokenizer.encode(r["title"], r["content"])
+            nt = min(len(t_toks), 32)
+            nb = min(len(b_toks), 128)
+            t_ids[i, :nt] = t_toks[:nt]
+            t_mask[i, :nt] = 1.0
+            b_ids[i, :nb] = b_toks[:nb]
+            b_mask[i, :nb] = 1.0
+
+        t0 = time.perf_counter()
+        outs = sess.run(None, {
+            "title_ids": t_ids,
+            "title_mask": t_mask,
+            "body_ids": b_ids,
+            "body_mask": b_mask
+        })
+        inf_time += (time.perf_counter() - t0)
+
+        all_intents.extend(np.argmax(outs[0], axis=-1).tolist())
+        all_cats.extend(np.argmax(outs[1], axis=-1).tolist())
+        all_urgs.extend(np.argmax(outs[2], axis=-1).tolist())
+        all_stabs.extend(np.argmax(outs[3], axis=-1).tolist())
+
+    total_time = time.perf_counter() - t_start
+    return {
+        "engine": "@civic/system-one V3 ONNX (Dual-Stream 5MB)",
+        "total_records": total_records,
+        "total_time_sec": total_time,
+        "inf_time_sec": inf_time,
+        "latency_per_record_ms": (total_time / total_records) * 1000,
+        "pure_inf_latency_ms": (inf_time / total_records) * 1000,
+        "throughput_tps": total_records / total_time,
+        "intents": all_intents,
+        "categories": all_cats,
+        "urgencies": all_urgs,
+        "stabilities": all_stabs
+    }
+
+
+# -------------------------------------------------------------
+# Engine 2: V3 Dual-Stream PyTorch Metal GPU (MPS)
+# -------------------------------------------------------------
+def run_benchmark_mps_v3(records, ckpt_path):
+    print(f"\n=======================================================")
+    print(f"🍏 [Engine] @civic/system-one V3 Dual-Stream (PyTorch Metal GPU / MPS)")
     print(f"=======================================================")
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     print(f"Device: {device}")
 
-    tokenizer = FastCivicTokenizer(VOCAB_PATH, max_seq_len=128)
+    tokenizer = DualStreamCivicTokenizer(VOCAB_PATH, max_title_len=32, max_body_len=128)
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-    
-    vocab_size = ckpt.get("vocab_size", len(tokenizer.tokens))
-    emb_dim = ckpt.get("emb_dim", 64)
-    proj_dim = ckpt.get("proj_dim", 256)
 
-    model = LayaDecisionModelV2(vocab_size=vocab_size, emb_dim=emb_dim, proj_dim=proj_dim)
+    model = LayaDecisionModelV3(
+        vocab_size=ckpt.get("vocab_size", len(tokenizer.tokens)),
+        emb_dim=ckpt.get("emb_dim", 64),
+        hidden_dim=ckpt.get("hidden_dim", 128),
+        proj_dim=ckpt.get("proj_dim", 256),
+        num_tf_layers=2
+    )
     model.load_state_dict(ckpt["model_state_dict"])
     model.to(device)
     model.eval()
@@ -135,30 +198,37 @@ def run_benchmark_mps(records, ckpt_path):
     with torch.no_grad():
         for start_idx in range(0, total_records, batch_size):
             end_idx = min(start_idx + batch_size, total_records)
-            batch_texts = [r["full_text"] for r in records[start_idx:end_idx]]
+            b_records = records[start_idx:end_idx]
+            cur_b_size = len(b_records)
 
-            inp_np, mask_np = tokenize_batch(tokenizer, batch_texts)
-            inp_t = torch.from_numpy(inp_np).to(device)
-            mask_t = torch.from_numpy(mask_np).to(device)
+            t_ids = torch.zeros((cur_b_size, 32), dtype=torch.long, device=device)
+            t_mask = torch.zeros((cur_b_size, 32), dtype=torch.float32, device=device)
+            b_ids = torch.zeros((cur_b_size, 128), dtype=torch.long, device=device)
+            b_mask = torch.zeros((cur_b_size, 128), dtype=torch.float32, device=device)
+
+            for i, r in enumerate(b_records):
+                t_toks, b_toks = tokenizer.encode(r["title"], r["content"])
+                nt = min(len(t_toks), 32)
+                nb = min(len(b_toks), 128)
+                t_ids[i, :nt] = torch.tensor(t_toks[:nt], device=device)
+                t_mask[i, :nt] = 1.0
+                b_ids[i, :nb] = torch.tensor(b_toks[:nb], device=device)
+                b_mask[i, :nb] = 1.0
 
             t0 = time.perf_counter()
-            i_logits = model(inp_t, mask_t, "intent")
-            c_logits = model(inp_t, mask_t, "category")
-            u_logits = model(inp_t, mask_t, "urgency")
-            s_logits = model(inp_t, mask_t, "stability")
-
+            outputs = model(t_ids, t_mask, b_ids, b_mask)
             if device.type == "mps":
                 torch.mps.synchronize()
             inf_time += (time.perf_counter() - t0)
 
-            all_intents.extend(i_logits.argmax(dim=-1).cpu().numpy().tolist())
-            all_cats.extend(c_logits.argmax(dim=-1).cpu().numpy().tolist())
-            all_urgs.extend(u_logits.argmax(dim=-1).cpu().numpy().tolist())
-            all_stabs.extend(s_logits.argmax(dim=-1).cpu().numpy().tolist())
+            all_intents.extend(outputs["intent"].argmax(dim=-1).cpu().numpy().tolist())
+            all_cats.extend(outputs["category"].argmax(dim=-1).cpu().numpy().tolist())
+            all_urgs.extend(outputs["urgency"].argmax(dim=-1).cpu().numpy().tolist())
+            all_stabs.extend(outputs["stability"].argmax(dim=-1).cpu().numpy().tolist())
 
     total_time = time.perf_counter() - t_start
     return {
-        "engine": "PyTorch Metal GPU (MPS V2)",
+        "engine": "@civic/system-one V3 Metal MPS (5MB)",
         "total_records": total_records,
         "total_time_sec": total_time,
         "inf_time_sec": inf_time,
@@ -172,9 +242,12 @@ def run_benchmark_mps(records, ckpt_path):
     }
 
 
-def run_benchmark_onnx(records, onnx_path):
+# -------------------------------------------------------------
+# Engine 3: V2 Baseline ONNX Runtime (CPU)
+# -------------------------------------------------------------
+def run_benchmark_onnx_v2(records, onnx_path):
     print(f"\n=======================================================")
-    print(f"⚡ [Engine] @civic/system-one V2 (ONNX Runtime CPU)")
+    print(f"⚡ [Engine] @civic/system-one V2 Baseline (ONNX Runtime CPU)")
     print(f"=======================================================")
     session_options = ort.SessionOptions()
     session_options.intra_op_num_threads = 8
@@ -190,12 +263,20 @@ def run_benchmark_onnx(records, onnx_path):
 
     for start_idx in range(0, total_records, batch_size):
         end_idx = min(start_idx + batch_size, total_records)
-        batch_texts = [r["full_text"] for r in records[start_idx:end_idx]]
+        b_records = records[start_idx:end_idx]
+        cur_b_size = len(b_records)
 
-        inp_np, mask_np = tokenize_batch(tokenizer, batch_texts)
+        inp_ids = np.zeros((cur_b_size, 128), dtype=np.int64)
+        mask = np.zeros((cur_b_size, 128), dtype=np.float32)
+
+        for i, r in enumerate(b_records):
+            tokens = tokenizer.encode(r["full_text"])
+            n = min(len(tokens), 128)
+            inp_ids[i, :n] = tokens[:n]
+            mask[i, :n] = 1.0
 
         t0 = time.perf_counter()
-        outs = sess.run(None, {"input_ids": inp_np, "attention_mask": mask_np})
+        outs = sess.run(None, {"input_ids": inp_ids, "attention_mask": mask})
         inf_time += (time.perf_counter() - t0)
 
         all_intents.extend(np.argmax(outs[0], axis=-1).tolist())
@@ -205,7 +286,7 @@ def run_benchmark_onnx(records, onnx_path):
 
     total_time = time.perf_counter() - t_start
     return {
-        "engine": "ONNX Runtime (8-thread CPU V2)",
+        "engine": "@civic/system-one V2 ONNX (Single-Stream 4.5MB)",
         "total_records": total_records,
         "total_time_sec": total_time,
         "inf_time_sec": inf_time,
@@ -219,6 +300,9 @@ def run_benchmark_onnx(records, onnx_path):
     }
 
 
+# -------------------------------------------------------------
+# Engine 4: Base ModernBERT 1.68GB (afshinm/laya-mps)
+# -------------------------------------------------------------
 def run_benchmark_base_laya(records, base_path, max_records=50):
     if not os.path.exists(base_path):
         print(f"⚠️ Base Laya model not found at {base_path}, skipping.")
@@ -232,7 +316,6 @@ def run_benchmark_base_laya(records, base_path, max_records=50):
     
     total = len(eval_records)
     latencies = []
-    t_start = time.perf_counter()
 
     for r in eval_records:
         t0 = time.perf_counter()
@@ -261,7 +344,7 @@ def run_benchmark_base_laya(records, base_path, max_records=50):
     }
 
 
-def run_audit(records, results_engine, audit_count=20):
+def run_audit(records, results_engine, audit_count=15):
     print(f"\n=======================================================")
     print(f"🔍 Deep Quality Audit ({audit_count} Spot-Checked Records)")
     print(f"=======================================================")
@@ -305,22 +388,22 @@ def print_comparison_table(metrics_list):
     print(f"\n=======================================================")
     print(f"📊 BENCHMARK COMPARISON SUMMARY")
     print(f"=======================================================")
-    header = f"{'Engine / Model':<35} | {'Tickets':<8} | {'Total Time':<11} | {'Per-Item':<12} | {'Throughput':<15}"
+    header = f"{'Engine / Model':<45} | {'Tickets':<8} | {'Total Time':<11} | {'Per-Item':<12} | {'Throughput':<15}"
     print(header)
     print("-" * len(header))
     for m in metrics_list:
         if not m:
             continue
-        print(f"{m['engine']:<35} | {m['total_records']:<8,} | {m['total_time_sec']:<8.2f} s | {m['latency_per_record_ms']:<8.4f} ms | {m['throughput_tps']:<10.1f} TPS")
+        print(f"{m['engine']:<45} | {m['total_records']:<8,} | {m['total_time_sec']:<8.2f} s | {m['latency_per_record_ms']:<8.4f} ms | {m['throughput_tps']:<10.1f} TPS")
     print("=" * len(header) + "\n")
 
 
 def main():
     parser = argparse.ArgumentParser(description="@civic/system-one Unified Benchmark")
-    parser.add_argument("--file", type=str, default="", help="Path to input Excel or jsonl dataset")
-    parser.add_argument("--mode", type=str, choices=["sample", "full"], default="sample", help="Benchmark mode: sample (3,000) or full (128k)")
+    parser.add_argument("--file", type=str, default="", help="Path to input Excel dataset")
+    parser.add_argument("--mode", type=str, choices=["sample", "full"], default="sample", help="Benchmark mode: sample (default: 3000) or full (128k)")
     parser.add_argument("--sample-size", type=int, default=3000, help="Number of samples to evaluate in sample mode (default: 3000)")
-    parser.add_argument("--engine", type=str, choices=["all", "mps", "onnx", "base"], default="all", help="Engine to benchmark")
+    parser.add_argument("--engine", type=str, choices=["all", "v3-onnx", "v3-mps", "v2-onnx", "base"], default="all", help="Engine to benchmark")
     parser.add_argument("--audit", type=int, default=15, help="Number of records to spot-check audit (0 to disable)")
     parser.add_argument("--output", type=str, default="", help="Optional path to output json report")
     args = parser.parse_args()
@@ -328,26 +411,31 @@ def main():
     records = load_dataset(args.file, mode=args.mode, sample_size=args.sample_size)
     metrics = []
 
-    # 1. MPS
-    if args.engine in ["all", "mps"]:
-        res_mps = run_benchmark_mps(records, CHECKPOINT_PATH)
-        metrics.append(res_mps)
+    # 1. V3 ONNX
+    if args.engine in ["all", "v3-onnx"]:
+        res_v3_onnx = run_benchmark_onnx_v3(records, ONNX_V3_PATH)
+        metrics.append(res_v3_onnx)
 
-    # 2. ONNX
-    if args.engine in ["all", "onnx"]:
-        res_onnx = run_benchmark_onnx(records, ONNX_PATH)
-        metrics.append(res_onnx)
+    # 2. V3 MPS
+    if args.engine in ["all", "v3-mps"]:
+        res_v3_mps = run_benchmark_mps_v3(records, CHECKPOINT_V3_PATH)
+        metrics.append(res_v3_mps)
 
-    # 3. Base Laya (only in sample mode or if specifically requested)
+    # 3. V2 ONNX Baseline
+    if args.engine in ["all", "v2-onnx"]:
+        res_v2_onnx = run_benchmark_onnx_v2(records, ONNX_V2_PATH)
+        metrics.append(res_v2_onnx)
+
+    # 4. Base Laya (only in sample mode or if specifically requested)
     if args.engine in ["all", "base"] and args.mode == "sample":
-        res_base = run_benchmark_base_laya(records, BASE_LAYA_PATH, max_records=min(len(records), 300))
+        res_base = run_benchmark_base_laya(records, BASE_LAYA_PATH, max_records=min(len(records), 100))
         if res_base:
             metrics.append(res_base)
 
     # Print summary table
     print_comparison_table(metrics)
 
-    # Audit
+    # Audit with top engine (V3 ONNX)
     if args.audit > 0 and len(metrics) > 0 and "intents" in metrics[0]:
         run_audit(records, metrics[0], audit_count=min(args.audit, len(records)))
 
