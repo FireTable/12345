@@ -217,7 +217,17 @@ async function main() {
       fullText.includes("窨井盖") ||
       fullText.includes("深坑无护栏") ||
       fullText.includes("电梯困人") ||
-      fullText.includes("电梯急坠")
+      fullText.includes("电梯急坠") ||
+      fullText.includes("涉黄") ||
+      fullText.includes("卖淫") ||
+      fullText.includes("嫖娼") ||
+      fullText.includes("聚众赌博") ||
+      fullText.includes("涉赌") ||
+      fullText.includes("吸毒") ||
+      fullText.includes("贩毒") ||
+      fullText.includes("打架斗殴") ||
+      fullText.includes("寻衅滋事") ||
+      fullText.includes("非法拘禁")
     ) {
       category = "public_safety";
     }
@@ -317,6 +327,12 @@ async function main() {
       fullText.includes("注销公司") ||
       fullText.includes("驾校退款") ||
       fullText.includes("退还科目") ||
+      fullText.includes("垄断") ||
+      fullText.includes("反垄断") ||
+      fullText.includes("不正当竞争") ||
+      fullText.includes("拒开发票") ||
+      fullText.includes("不开发票") ||
+      fullText.includes("不给发票") ||
       fullText.includes("抽油烟机") ||
       (fullText.includes("油烟机") && (fullText.includes("购买") || fullText.includes("维修") || fullText.includes("退货")))
     ) {
@@ -372,11 +388,17 @@ async function main() {
       fullText.includes("车辆乱停放") ||
       fullText.includes("占道停车") ||
       fullText.includes("占用车位") ||
+      fullText.includes("私占停车位") ||
+      fullText.includes("霸占车位") ||
+      fullText.includes("霸占停车位") ||
+      fullText.includes("公共停车位") ||
+      fullText.includes("公共车位") ||
       fullText.includes("车位锁") ||
       fullText.includes("地锁") ||
       fullText.includes("违章车辆") ||
       fullText.includes("违章抓拍") ||
       fullText.includes("电子警察") ||
+      fullText.includes("泥头车") ||
       fullText.includes("货车超重") ||
       fullText.includes("超载") ||
       fullText.includes("公路治超") ||
@@ -440,9 +462,9 @@ async function main() {
       fullText.includes("电梯困人") ||
       fullText.includes("燃气严重泄漏") ||
       fullText.includes("煤气大量泄漏") ||
-      fullText.includes("路面塌陷") ||
+      (fullText.includes("路面塌陷") && !/(地砖破损|人行道|路面损坏).*(塌陷)/.test(fullText)) ||
+      fullText.includes("突发地陷") ||
       fullText.includes("随时倒塌") ||
-      fullText.includes("突发险情") ||
       fullText.includes("主干管爆裂") ||
       fullText.includes("水浸入户") ||
       fullText.includes("跳楼") ||
