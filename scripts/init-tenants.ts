@@ -158,10 +158,10 @@ async function main() {
 
   // 1. 加载预置
   const shundePresetPath = path.resolve(process.cwd(), "lib/presets/shunde.json");
-  const haizhuPresetPath = path.resolve(process.cwd(), "lib/presets/guangzhou_haizhu.json");
+  const tianhePresetPath = path.resolve(process.cwd(), "lib/presets/guangzhou_tianhe.json");
 
   const shundePreset: PresetData = JSON.parse(fs.readFileSync(shundePresetPath, "utf-8"));
-  const haizhuPreset: PresetData = JSON.parse(fs.readFileSync(haizhuPresetPath, "utf-8"));
+  const tianhePreset: PresetData = JSON.parse(fs.readFileSync(tianhePresetPath, "utf-8"));
 
   // 2. 注册顺德站点
   console.log("📍 [1/2] 注册并初始化【佛山市顺德区】(Schema: region_fs_shunde)...");
@@ -177,19 +177,19 @@ async function main() {
   });
   await seedVocabForSchema("region_fs_shunde", shundePreset);
 
-  // 3. 注册广州海珠站点
-  console.log("\n📍 [2/2] 注册并初始化【广州市海珠区】(Schema: region_gz_haizhu)...");
+  // 3. 注册广州天河站点
+  console.log("\n📍 [2/2] 注册并初始化【广州市天河区】(Schema: region_gz_tianhe)...");
   await registerRegion(sql, {
-    id: haizhuPreset.id,
-    name: haizhuPreset.name,
-    city: haizhuPreset.city,
-    province: haizhuPreset.province,
-    schemaName: "region_gz_haizhu",
-    svgMapPath: "/maps/haizhu.svg",
-    description: haizhuPreset.description,
+    id: tianhePreset.id,
+    name: tianhePreset.name,
+    city: tianhePreset.city,
+    province: tianhePreset.province,
+    schemaName: "region_gz_tianhe",
+    svgMapPath: tianhePreset.svgMapPath || "",
+    description: tianhePreset.description,
     isDefault: false,
   });
-  await seedVocabForSchema("region_gz_haizhu", haizhuPreset);
+  await seedVocabForSchema("region_gz_tianhe", tianhePreset);
 
   console.log("\n🎉 多租户 Schema 初始化圆满成功！");
   await sql.end();

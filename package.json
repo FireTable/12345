@@ -14,6 +14,7 @@
     "db:migrate": "tsx scripts/db-migrate.ts",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx scripts/db-seed.ts",
+    "db:init-tenants": "tsx scripts/init-tenants.ts",
     "db:seed-admin": "tsx scripts/seed-admin.ts",
     "db:vocab": "tsx scripts/seed-vocabulary.ts",
     "db:export": "tsx scripts/db-export.ts",

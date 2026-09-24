@@ -83,9 +83,9 @@ export default function DictionaryManagementPage() {
 
   // 实时别名测试工具
   const [testText, setTestText] = useState(
-    activeRegion?.id === "region_gz_haizhu" || activeRegion?.id === "gz_haizhu"
-      ? "市民在广州塔与磨碟沙附近反映琶洲数字岛某商户油烟扰民，希望赤岗执法队介入。"
-      : "市民在容奇大桥附近反映容桂区某商户违规经营，希望德胜新区的执法队介入。"
+    activeRegion?.id?.includes("tianhe")
+      ? "市民在花城广场与正佳附近反映体育西商圈某商户噪音扰民，希望猎德综合行政执法队介入。"
+      : "市民在容奇大桥附近反映某商户违规经营，希望属地综合行政执法队介入。"
   );
   const [normalizedTestResult, setNormalizedTestResult] = useState("");
 

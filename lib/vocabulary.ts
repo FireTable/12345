@@ -124,7 +124,7 @@ const VOCAB_CACHE_TTL = 30 * 1000; // 30 秒缓存
 export function loadPresetVocabulary(regionId: string = "shunde"): RegionVocabulary {
   try {
     const presetFile =
-      regionId === "gz_haizhu" ? "guangzhou_haizhu.json" : "shunde.json";
+      regionId === "gz_tianhe" ? "guangzhou_tianhe.json" : "shunde.json";
     const p = path.resolve(process.cwd(), "lib/presets", presetFile);
     if (fs.existsSync(p)) {
       const parsed = JSON.parse(fs.readFileSync(p, "utf-8"));
