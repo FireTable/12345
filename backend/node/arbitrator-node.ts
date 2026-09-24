@@ -14,6 +14,7 @@ import {
 import type { RawTicket } from "../state";
 import { canonicalizeTownship, isValidTownship, type RegionVocabulary } from "@/lib/vocabulary";
 import { resolveEntityAlias } from "@/lib/alias-dict";
+import { anonymize, deanonymize } from "@civic/anonymizer";
 
 /**
  * 判断某工单是否需要二级 AI 介入仲裁
@@ -54,6 +55,7 @@ export async function arbitrateSingleTicket(
   vocab?: RegionVocabulary,
   aliasMap?: Map<string, string>
 ): Promise<ExtractedTicketItem> {
+  const { keymap } = anonymize(ticket.content || "");
   const prompt = buildArbitrationPrompt(ticket, firstPass, vocab);
 
   const fallbackResult: ExtractedTicketItem = {
@@ -84,6 +86,11 @@ export async function arbitrateSingleTicket(
         if (match) {
           arbitrated = JSON.parse(match[0]);
         }
+      }
+
+      if (arbitrated) {
+        // 反向无损还原：若仲裁模型返回的纠偏主体或地点带有 {{LICENSE_PLATE_1}} 等占位符，自动还原为真实要素
+        arbitrated = deanonymize(arbitrated, keymap);
       }
 
       if (arbitrated && arbitrated.correctedSubject) {

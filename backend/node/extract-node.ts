@@ -20,6 +20,7 @@ import { getRegionDb } from "@/db/client";
 import { ticketsTable } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import PQueue from "p-queue";
+import { anonymize, deanonymize } from "@civic/anonymizer";
 
 export const LOW_CONFIDENCE_THRESHOLD = 60;
 
@@ -34,7 +35,34 @@ async function extractBatchWithLLM(
   const result = new Map<number, ExtractedTicketItem>();
   if (tickets.length === 0) return result;
 
-  const prompt = buildBatchExtractionPrompt(tickets, vocab);
+  // 1. 建立本批工单的本地脱敏 Keymap 映射，用于大模型抽取结果的确定性实体还原
+  const keymapByIndex = new Map<number, Record<string, string>>();
+  const maskedTickets: RawTicket[] = tickets.map((t, idx) => {
+    const anon = anonymize(t.content || "");
+    keymapByIndex.set(idx + 1, anon.keymap);
+    return {
+      ...t,
+      maskedContent: anon.text,
+    };
+  });
+
+  const sanitizeItem = (rawItem: any): ExtractedTicketItem => {
+    const idx = Number(rawItem.index) || 1;
+    const km = keymapByIndex.get(idx) || {};
+    // 执行深度反向还原：若模型提取的主体/标题带有 {{LICENSE_PLATE_1}} 等占位符，自动还原为真实车牌/人名
+    const item = deanonymize(rawItem, km);
+    return {
+      index: idx,
+      summarizeTitle: String(item.summarizeTitle || "").trim(),
+      subject: String(item.subject || "").trim(),
+      location: String(item.location || "").trim(),
+      eventType: String(item.eventType || "").trim(),
+      category: item.category || "城市管理",
+      confidence: Number(item.confidence || 85),
+    };
+  };
+
+  const prompt = buildBatchExtractionPrompt(maskedTickets, vocab);
 
   try {
     const chat = getChatModel(0);
@@ -46,15 +74,7 @@ async function extractBatchWithLLM(
         if (structuredRes && Array.isArray(structuredRes.items)) {
           for (const item of structuredRes.items) {
             if (item && typeof item.index === "number") {
-              result.set(startIndex + item.index - 1, {
-                index: item.index,
-                summarizeTitle: String(item.summarizeTitle || "").trim(),
-                subject: String(item.subject || "").trim(),
-                location: String(item.location || "").trim(),
-                eventType: String(item.eventType || "").trim(),
-                category: item.category || "城市管理",
-                confidence: Number(item.confidence || 85),
-              });
+              result.set(startIndex + item.index - 1, sanitizeItem(item));
             }
           }
           if (result.size > 0) return result;
@@ -74,15 +94,7 @@ async function extractBatchWithLLM(
       const items: ExtractedTicketItem[] = Array.isArray(parsed) ? parsed : (parsed.items || []);
       for (const item of items) {
         if (item && typeof item.index === "number") {
-          result.set(startIndex + item.index - 1, {
-            index: item.index,
-            summarizeTitle: String(item.summarizeTitle || "").trim(),
-            subject: String(item.subject || "").trim(),
-            location: String(item.location || "").trim(),
-            eventType: String(item.eventType || "").trim(),
-            category: item.category || "城市管理",
-            confidence: Number(item.confidence || 85),
-          });
+          result.set(startIndex + item.index - 1, sanitizeItem(item));
         }
       }
       if (result.size > 0) return result;
