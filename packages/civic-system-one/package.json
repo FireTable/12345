@@ -1,0 +1,23 @@
+{
+  "name": "@civic/system-one",
+  "version": "1.0.0",
+  "description": "12345 政务工单快思考极速分类、紧迫度评分、涉稳护栏与自适应双引擎决策状态机",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "keywords": [
+    "12345",
+    "civic",
+    "system-1",
+    "decision-engine",
+    "laya",
+    "classifier",
+    "onnx",
+    "mps"
+  ],
+  "author": "FireTable",
+  "license": "MIT"
+}

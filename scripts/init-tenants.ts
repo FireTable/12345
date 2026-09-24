@@ -14,7 +14,7 @@ import {
 
 const url =
   process.env.DATABASE_URL ||
-  "postgresql://FireTable@localhost:5432/ticket_radar";
+  "postgresql://postgres@localhost:5432/ticket_radar";
 
 const sql = postgres(url, { max: 5 });
 

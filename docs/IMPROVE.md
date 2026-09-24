@@ -1,7 +1,7 @@
 # Civic UI landing log
 
 Work branch: `feat/civic-ui-landing`  
-Reference: `/Users/FireTable/Downloads/frontend/`  
+Reference: `design-assets/frontend/`  
 Rule: pages read persisted or aggregated data. No `Math.random` trends, no `log10(count)` fake confidence, no hardcoded 北滘 +186% insight as live copy.
 
 ## 2026-08-21 — 13,659 件全量工单质量治理与 Themes 零串扰双轨实体聚类重构
@@ -121,7 +121,7 @@ Verification this step: `pnpm build` 0 errors; `pnpm exec tsc --noEmit` 0; VPS r
 
 ## 2026-08-15 — 按设计稿还原四页结构
 
-对照 `/Users/FireTable/Downloads/frontend/` 补齐先前只搭了壳的页面：
+对照 `design-assets/frontend/` 补齐先前只搭了壳的页面：
 
 - 工作面板：双轴折线（每日工单 + 多频群组新增）和七类环形图改回 ECharts，镇街 TOP 10 用色条排名，热力表按设计色阶。
 - 工单中心：4 张统计卡 + 全部/待处理/处理中/已办结/紧急/多频聚类 Tab + 镇街/类型/时间筛选 + 行点击抽屉。

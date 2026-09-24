@@ -65,9 +65,16 @@ function extractDate(content: string): Date {
  * 37MB / 12w 条全量数据极速入库脚本
  */
 async function main() {
+  const homedir = process.env.HOME || process.env.USERPROFILE || "";
+  const candidatePaths = [
+    path.join(process.cwd(), "data", "shunde_12345_tickets_simple.xlsx"),
+    path.join(homedir, "Downloads", "政数局资料-顺德区12345热线工单 simple.xlsx"),
+  ];
+  const foundDefault = candidatePaths.find((p) => fs.existsSync(p));
   const defaultPath =
     process.env.EXCEL_INPUT_PATH ||
-    "/Users/FireTable/Downloads/政数局资料-顺德区12345热线工单 simple.xlsx";
+    foundDefault ||
+    "./data/shunde_12345_tickets_simple.xlsx";
 
   const inputFilePath = process.argv[2] || defaultPath;
 

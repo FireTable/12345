@@ -27,6 +27,7 @@ wheels/
 .venv
 venv/
 ENV/
+.gemini
 
 # Node / JS
 node_modules
@@ -58,3 +59,10 @@ docs/super-agent/
 .env.test.local
 .env.production.local
 *.tsbuildinfo
+
+# Civic System-One Datasets & Checkpoints
+packages/civic-system-one/data/
+packages/civic-system-one/models/
+*.onnx
+*.onnx.data
+*.safetensors

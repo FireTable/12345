@@ -10,7 +10,7 @@ if (loadEnvConfig) {
 
 const databaseUrl =
   process.env.DATABASE_URL ||
-  "postgresql://FireTable@localhost:5432/ticket_radar";
+  "postgresql://postgres@localhost:5432/ticket_radar";
 
 const SWALLOW = new Set(["42P07", "42710", "42P06", "42701", "42703"]);
 

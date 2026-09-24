@@ -8,3 +8,11 @@ export * from "./tokenizer";
 export * from "./detectors";
 export * from "./conflict-resolver";
 export * from "./engine";
+
+import { anonymize, deanonymize, batchAnonymize } from "./engine";
+
+export const CivicAnonymizer = {
+  anonymize,
+  deanonymize,
+  batchAnonymize,
+};
