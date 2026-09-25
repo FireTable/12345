@@ -108,7 +108,7 @@ ${buildVocabularyPromptConstraint(vocab)}
 2. location（微观地点）：必须包含"法定镇街/街道 + 路段/小区 + 门牌/地标"（如"某街道某路三街2号门口"），镇街/街道必须属于上述法定白名单，严禁虚构或只填宽泛区名。
 3. eventType（核心事件）：8-15字政务标准定性（如"机动车违规停放阻碍商铺经营"）。
 4. summarizeTitle（诉求标题）：12-25字标准公文标题（如"关于某街道某路某号粤A12345违停挪车诉求"）。
-5. category：严格归入法定分类之一。
+5. category：严格归入法定分类之一。若工单附带【快思考推荐分类】，请优先采纳该推荐，杜绝随意变造分类。
 6. confidence（0-100）：要素明确完整打 85-98 分，主体模糊或诉求歧义打 20-55 分。
 7. 只输出一个 JSON 对象，不要 markdown、不要解释、不要思考过程。格式：
 {"items":[{"index":1,"summarizeTitle":"...","subject":"...","location":"...","eventType":"...","category":"城市管理","confidence":90}]}
@@ -117,7 +117,7 @@ ${buildVocabularyPromptConstraint(vocab)}
 ${tickets
   .map(
     (t, idx) =>
-      `[${idx + 1}] 工单号: ${t.ticketNo} | 登记标题: ${desensitizeContent(t.title || "无")} | 登记辖区: ${t.subdistrict || "未指定"}
+      `[${idx + 1}] 工单号: ${t.ticketNo} | 登记标题: ${desensitizeContent(t.title || "无")} | 登记辖区: ${t.subdistrict || "未指定"}${t.systemOneCategory ? ` | 快思考推荐分类: 【${t.systemOneCategory}】` : ""}${t.systemOneIntent ? ` | 诉求性质: 【${t.systemOneIntent}】` : ""}
 【待处理诉求正文如下】：
 <civic_ticket_text>
 ${ticketBodyForAI(t)}

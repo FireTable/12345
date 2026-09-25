@@ -21,6 +21,7 @@ import { ticketsTable } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import PQueue from "p-queue";
 import { anonymize, deanonymize } from "@civic/anonymizer";
+import { SystemOneEngine } from "@civic/system-one";
 
 export const LOW_CONFIDENCE_THRESHOLD = 60;
 
@@ -194,9 +195,103 @@ export async function extractNode(
     subdistrict: normalizeAliasesInText(t.subdistrict, aliasMap),
   }));
 
-  // 1.1 检查已抽取过的工单（断点续抽/跳过已处理），直接载入并跳过 LLM
+  // 1.1 启动 System-1 极速决策引擎 (自适应 MPS / ONNX 神经编码器，单件时延 <1ms)
+  let fastTrackCount = 0;
+  let stabilityAlertCount = 0;
+  try {
+    const systemOne = await SystemOneEngine.create();
+    if (taskId) {
+      updateTaskProgress(taskId, {
+        stage: "EXTRACTING",
+        stageText: `正在执行 System-1 快思考引擎极速预审 (${normalizedRawTickets.length} 条)...`,
+        total: normalizedRawTickets.length,
+        processed: 0,
+        percent: 5,
+      });
+    }
+
+    for (let i = 0; i < normalizedRawTickets.length; i++) {
+      const ticket = normalizedRawTickets[i];
+      try {
+        const decision = await systemOne.evaluate({
+          title: ticket.title,
+          content: ticket.content,
+          subdistrict: ticket.subdistrict,
+        });
+
+        ticket.systemOneCategory = decision.categoryName;
+        ticket.systemOneIntent = decision.intent;
+        ticket.systemOneUrgencyTier = decision.urgencyLevel;
+        ticket.systemOneSlaHours = decision.slaHours;
+        ticket.systemOneStabilityRisk = decision.stabilityRisk;
+        ticket.systemOneConfidence = decision.categoryProbability;
+        ticket.urgency = decision.stabilityRisk || decision.urgencyLevel === 3
+          ? "URGENT"
+          : decision.urgencyLevel === 2
+          ? "MEDIUM"
+          : "NORMAL";
+
+        if (decision.stabilityRisk) {
+          stabilityAlertCount++;
+        }
+
+        // 1.2 高置信度业务咨询 (INQUIRY, 0h SLA) 与催办件 (REMINDER) 免 LLM 直通车
+        const isFastTrackIntent = decision.intent === "INQUIRY" || decision.intent === "REMINDER";
+        if (isFastTrackIntent && decision.intentProbability >= 0.80 && !extractionMap.has(i)) {
+          const area = adminFromLocation(ticket.subdistrict || "", ticket);
+          const targetCategory = canonicalizeCategory(decision.categoryName) || "城市管理";
+          const eventType = `${decision.categoryName}${decision.intent === "INQUIRY" ? "政策咨询" : "工单催办"}`;
+          const summarizeTitle =
+            ticket.title ||
+            ticket.summarizeTitle ||
+            `关于${ticket.subdistrict || regionVocab.regionName}${decision.categoryName}的${decision.intent === "INQUIRY" ? "政策咨询" : "催办诉求"}`;
+          const subject = decision.intent === "INQUIRY" ? "咨询市民" : "催办诉求人";
+          const location = ticket.address || ticket.subdistrict || regionVocab.regionName;
+
+          const item: ExtractedTicketItem = {
+            index: 1,
+            summarizeTitle,
+            subject,
+            location,
+            eventType,
+            category: targetCategory as any,
+            confidence: Math.round(decision.intentProbability * 100),
+          };
+
+          extractionMap.set(i, item);
+          ticket.isSystemOneFastTrack = true;
+          fastTrackCount++;
+
+          // 实时持久化落库
+          if (ticket.id) {
+            tenantDb
+              .update(ticketsTable)
+              .set({
+                summarizeTitle: item.summarizeTitle,
+                address: item.location,
+                district: area.district || ticket.district || null,
+                subdistrict: area.subdistrict || ticket.subdistrict || null,
+                sourceCategory: item.category,
+                urgency: ticket.urgency,
+                confidence: item.confidence,
+              })
+              .where(eq(ticketsTable.id, ticket.id))
+              .catch((e) => console.warn(`Failed to persist fast-track ticket ${ticket.id}:`, e.message));
+          }
+        }
+      } catch (s1Err: any) {
+        console.warn(`[extract-node] System-1 evaluation error for ticket ${ticket.ticketNo}:`, s1Err.message);
+      }
+    }
+    await systemOne.close();
+  } catch (initErr: any) {
+    console.warn("[extract-node] System-1 engine initialization warning, continuing without S1 pre-filter:", initErr.message);
+  }
+
+  // 1.3 检查已抽取过的工单（断点续抽/跳过已处理），直接载入并跳过 LLM
   let preExtractedCount = 0;
   normalizedRawTickets.forEach((ticket, idx) => {
+    if (extractionMap.has(idx)) return;
     if (ticket.summarizeTitle && typeof ticket.confidence === "number" && ticket.confidence > 0) {
       const fallback = fallbackDynamicExtraction(ticket);
       extractionMap.set(idx, {
@@ -212,24 +307,26 @@ export async function extractNode(
     }
   });
 
-  let processedCount = preExtractedCount;
+  let processedCount = preExtractedCount + fastTrackCount;
   const chunkTasks: Array<() => Promise<void>> = [];
 
-  if (taskId && preExtractedCount > 0) {
-    const percent = Math.round((processedCount / Math.max(1, normalizedRawTickets.length)) * 50);
-    updateTaskProgress(taskId, {
-      processed: processedCount,
-      percent,
-      stageText: `已恢复断点：跳过已抽取工单 ${preExtractedCount} 条，继续抽取剩余 ${normalizedRawTickets.length - preExtractedCount} 条...`,
-      extractedCount: extractionMap.size,
-    });
-  }
-
-  // 1.2 对尚未抽取的工单加入并发队列
+  // 1.4 对尚未抽取的疑难工单加入 LLM 并发队列
   const pendingIdx: number[] = [];
   for (let i = 0; i < normalizedRawTickets.length; i++) {
     if (!extractionMap.has(i)) pendingIdx.push(i);
   }
+
+  if (taskId) {
+    const percent = Math.round((processedCount / Math.max(1, normalizedRawTickets.length)) * 50);
+    const alertNotice = stabilityAlertCount > 0 ? `，🔴 发现 ${stabilityAlertCount} 件涉稳红线工单` : "";
+    updateTaskProgress(taskId, {
+      processed: processedCount,
+      percent,
+      stageText: `System-1 快思考分流完成：${fastTrackCount} 条咨询/催办直通分派${alertNotice}；剩余 ${pendingIdx.length} 条工单进入大模型抽取...`,
+      extractedCount: extractionMap.size,
+    });
+  }
+
   for (let p = 0; p < pendingIdx.length; p += CHUNK_SIZE) {
     const idxs = pendingIdx.slice(p, p + CHUNK_SIZE);
     const chunk = idxs.map((i) => normalizedRawTickets[i]);
@@ -251,6 +348,7 @@ export async function extractNode(
               district: area.district || orig.district || null,
               subdistrict: area.subdistrict || orig.subdistrict || null,
               sourceCategory: canonicalizeCategory(val.category) || val.category,
+              urgency: orig.urgency || "NORMAL",
               confidence: val.confidence,
             })
             .where(eq(ticketsTable.id, orig.id))

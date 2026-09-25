@@ -41,6 +41,14 @@ export interface RawTicket {
   address?: string;
   confidence?: number;
   primaryThemeId?: string;
+  // System-1 快思考决策字段
+  systemOneIntent?: string;
+  systemOneCategory?: string;
+  systemOneUrgencyTier?: number;
+  systemOneSlaHours?: number;
+  systemOneStabilityRisk?: boolean;
+  systemOneConfidence?: number;
+  isSystemOneFastTrack?: boolean;
 }
 
 export interface EnrichedTicket extends RawTicket {
