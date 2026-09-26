@@ -170,7 +170,7 @@ export class SystemTwoEngine {
       enable_thinking: enableThinking,
       model: options.model,
       temperature: options.temperature,
-      max_tokens: options.maxTokens ?? (enableThinking ? 2048 : 1024),
+      max_tokens: options.maxTokens ?? (enableThinking ? 4096 : 2048),
       response_format: format,
     });
 

@@ -1,6 +1,7 @@
 import { SystemOneEngine } from "../packages/civic-system-one/src/index.js";
 import { z } from "zod";
 import { getSystemTwoEngine } from "../backend/model.js";
+import { LLM_TOKENS } from "../lib/tokens.js";
 
 async function main() {
   console.log("================================================================================");
@@ -61,7 +62,7 @@ async function main() {
       },
     ],
     enable_thinking: true,
-    max_tokens: 1536,
+    max_tokens: LLM_TOKENS.THINKING_SUMMARY,
   });
 
   const s2Duration = ((performance.now() - s2Start) / 1000).toFixed(2);
@@ -104,7 +105,7 @@ async function main() {
         },
       ],
       enableThinking: false, // 结构化抽取快速直出
-      maxTokens: 1024,
+      maxTokens: LLM_TOKENS.EXTRACTION,
     }
   );
 

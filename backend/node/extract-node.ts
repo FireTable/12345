@@ -23,6 +23,7 @@ import { eq } from "drizzle-orm";
 import PQueue from "p-queue";
 import { anonymize, deanonymize } from "@civic/anonymizer";
 import { SystemOneEngine } from "@civic/system-one";
+import { LLM_TOKENS } from "@/lib/tokens";
 
 export const LOW_CONFIDENCE_THRESHOLD = 60;
 
@@ -71,6 +72,7 @@ async function extractBatchWithLLM(
     const { data } = await systemTwo.createJSON(BatchExtractionSchema, {
       messages: [{ role: "user", content: prompt }],
       enableThinking: false, // 结构化要素抽取显式关闭慢思考，实现毫秒级/极速直出
+      maxTokens: LLM_TOKENS.EXTRACTION,
       temperature: 0.1,
     });
 

@@ -8,6 +8,7 @@ import type {
   RiskLevel,
 } from "../state";
 import { getSystemTwoEngine, llmConcurrency } from "../model";
+import { LLM_TOKENS } from "@/lib/tokens";
 
 import {
   ThemeEnrichmentSchema,
@@ -40,7 +41,7 @@ async function enrichThemeBatchWithLLM(
         {
           messages: [{ role: "user", content: prompt }],
           enableThinking: true, // 慢思考开启，深度权责穿透
-          maxTokens: 4096,
+          maxTokens: LLM_TOKENS.THINKING_SUMMARY,
           temperature: 0.2,
         }
       );
