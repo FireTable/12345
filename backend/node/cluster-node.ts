@@ -196,9 +196,10 @@ export async function clusterNode(
         differenceInHours(safeParseDate(lastTime), safeParseDate(firstTime))
       );
 
-      const eventType = tickets[0].eventType || "区域集中诉求";
+      const eventType = tickets[0].eventType || tickets[0].title || "区域集中诉求";
       const distinctSubjects = Array.from(new Set(tickets.map((t) => t.canonicalSubject).filter(isValidSpecificSubject)));
-      const canonicalSubject = distinctSubjects.length > 0 ? distinctSubjects.join("、") : microLocation;
+      // 优先选取最具代表性的实体主体，而非冗长拼接
+      const canonicalSubject = distinctSubjects.length > 0 ? distinctSubjects[0] : microLocation;
 
       const themeId = `THEME-${themes.length + 1}`;
       const title = [microLocation, eventType].filter(Boolean).join(" · ");
@@ -222,7 +223,22 @@ export async function clusterNode(
         tickets,
         patternType,
       });
-      const category = (tickets[0].themes && tickets[0].themes[0]) || RULES.defaultCategory;
+      
+      // 统计群内工单出现频次最高的主分类
+      const catCountMap = new Map<string, number>();
+      for (const t of tickets) {
+        const cat = t.sourceCategory || (t.themes && t.themes[0]) || RULES.defaultCategory;
+        catCountMap.set(cat, (catCountMap.get(cat) || 0) + 1);
+      }
+      let topCategory: string = RULES.defaultCategory;
+      let maxCatCount = 0;
+      for (const [cat, cnt] of catCountMap.entries()) {
+        if (cnt > maxCatCount) {
+          maxCatCount = cnt;
+          topCategory = cat;
+        }
+      }
+      const category = topCategory;
 
       themes.push({
         id: themeId,

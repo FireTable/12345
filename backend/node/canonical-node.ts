@@ -21,6 +21,59 @@ function cleanEntityName(name: string): string {
 }
 
 /**
+ * 提炼微观地点空间核心基底（道路/街巷/小区/地标基底）
+ * 例：
+ * "大良街道金榜上街28号" -> "大良街道金榜上街"
+ * "大良街道金榜上街金山路段" -> "大良街道金榜上街"
+ * "大良街道金榜上街沿街商铺" -> "大良街道金榜上街"
+ * "容桂街道文武路某烧烤大排档" -> "容桂街道文武路"
+ * "容桂街道文武路商业街" -> "容桂街道文武路"
+ */
+export function extractSpatialCore(location: string): string {
+  if (!location) return "";
+  let loc = location.trim()
+    .replace(/^(?:广东省|广州市|佛山市|顺德区)/, "")
+    .replace(/[“”"''`]/g, "");
+
+  // 匹配道路、街巷、商业街、工业区、小区、花园、大厦等空间核心实体
+  const coreRegex = /^(.*?(?:大道|商业街|工业区|步行街|综合体|批发市场|路段|路|街|巷|小区|花园|苑|城|大厦|新村|广场|公园|中心))(?=[0-9一二三四五六七八九十]+号|[0-9]+栋|[0-9]+弄|附近|周边|段|交汇处|十字路口|门前|沿街|商铺|内|旁|某|\s|$)/;
+  
+  const m = loc.match(coreRegex);
+  if (m && m[1] && m[1].length >= 4) {
+    return m[1].trim();
+  }
+
+  return loc.replace(/[0-9一二三四五六七八九十]+号.*$/, "").trim() || loc;
+}
+
+import { RULES } from "../rules";
+
+/**
+ * 校验两个微观空间是否属于同一物理点位/片区
+ */
+export function isSameSpatialEntity(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  const coreA = extractSpatialCore(a);
+  const coreB = extractSpatialCore(b);
+  if (!coreA || !coreB) return false;
+  if (coreA === coreB && coreA.length >= 4) return true;
+
+  // 严禁将纯行政区划（如"大良街道"、"容桂街道"）与具体微观道路/小区强行合并
+  if (RULES.adminOnlyLocation.test(coreA) || RULES.adminOnlyLocation.test(coreB)) {
+    return false;
+  }
+
+  const baseA = coreA.replace(/(?:商业街|步行街|沿街商铺)$/, "");
+  const baseB = coreB.replace(/(?:商业街|步行街|沿街商铺)$/, "");
+  if (baseA === baseB && baseA.length >= 4) return true;
+
+  if (baseA.length >= 4 && baseB.length >= 4) {
+    if (baseA.startsWith(baseB) || baseB.startsWith(baseA)) return true;
+  }
+  return false;
+}
+
+/**
  * 检查两个主体名称是否真正属于同一物理实体（严防通用虚词包含误判）
  */
 function isSamePhysicalEntity(a: string, b: string): boolean {
@@ -70,7 +123,6 @@ export async function canonicalNode(
     for (const group of canonicalEntityGroups) {
       if (isSamePhysicalEntity(group.representative, rawSubject)) {
         group.members.add(rawSubject);
-        // 如果当前名称更长、更具体，升级代表名称
         if (rawSubject.length > group.representative.length) {
           group.representative = rawSubject;
         }
@@ -96,7 +148,31 @@ export async function canonicalNode(
     }
   }
 
-  // 2. 映射对齐实体，并保持地点与事件独立精准
+  // 2. 统计当前批次中的微观地理基底核心（Spatial Cores），实现同片区地点规范化
+  const canonicalLocationGroups: Array<{ representative: string; members: Set<string> }> = [];
+  for (const t of enrichedTickets) {
+    const rawLoc = (t.canonicalLocation || "").trim();
+    if (!rawLoc) continue;
+
+    let foundLocGroup = false;
+    for (const group of canonicalLocationGroups) {
+      if (isSameSpatialEntity(group.representative, rawLoc)) {
+        group.members.add(rawLoc);
+        foundLocGroup = true;
+        break;
+      }
+    }
+
+    if (!foundLocGroup) {
+      const spatialCore = extractSpatialCore(rawLoc);
+      canonicalLocationGroups.push({
+        representative: spatialCore || rawLoc,
+        members: new Set([rawLoc]),
+      });
+    }
+  }
+
+  // 3. 映射对齐实体与空间核心，并保持地点与事件独立精准
   const enriched: EnrichedTicket[] = enrichedTickets.map((t) => {
     const rawSubject = (t.canonicalSubject || "").trim();
     let canonicalSubject = rawSubject;
@@ -108,7 +184,15 @@ export async function canonicalNode(
       }
     }
 
-    const canonicalLocation = (t.canonicalLocation || "").trim() || (t.subdistrict || t.district || "");
+    const rawLocation = (t.canonicalLocation || "").trim() || (t.subdistrict || t.district || "");
+    let canonicalLocation = rawLocation;
+    for (const group of canonicalLocationGroups) {
+      if (isSameSpatialEntity(group.representative, rawLocation)) {
+        canonicalLocation = group.representative;
+        break;
+      }
+    }
+
     const eventType = (t.eventType || "").trim();
 
     return {
@@ -134,3 +218,4 @@ export async function canonicalNode(
     status: "extracting",
   };
 }
+

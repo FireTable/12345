@@ -8,7 +8,7 @@ import type {
   RiskLevel,
 } from "../state";
 import { getSystemTwoEngine, llmConcurrency } from "../model";
-import { LLM_TOKENS } from "@/lib/tokens";
+import { LLM_TOKENS, LLM_TIMEOUTS } from "@/lib/tokens";
 
 import {
   ThemeEnrichmentSchema,
@@ -98,7 +98,7 @@ export async function summaryNode(
   const THEME_CHUNK_SIZE = 10;
 
   // 1. LLM deep synthesis for themes with 10-per-batch chunking
-  if (enrichedThemes.length > 0 && process.env.OPENAI_API_KEY) {
+  if (enrichedThemes.length > 0) {
     if (taskId) {
       updateTaskProgress(taskId, {
         stage: "SYNTHESIZING",
