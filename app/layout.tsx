@@ -14,8 +14,22 @@ import { RegionProvider } from "@/app/_components/civic/region-context";
 export const viewport = appViewport;
 
 export const metadata: Metadata = {
-  title: "12345 AI 智能研判系统 · 多地 SuperAgent 平台",
-  description: "全国 12345 热线多频诉求 AI 智能研判与多地纳管治理平台",
+  title: {
+    template: "%s | 民声智理 12345",
+    default: "民声智理 · 12345 政务热线认知中枢与 AI 智能研判系统",
+  },
+  description: "基于 System-1/2 双引擎分层协同、PostgreSQL 多城市 Schema 物理隔离与 72h 滑动窗口增量吸附的全国 12345 热线多频诉求智能识别、实体图谱聚类与全周期督办研判 SuperAgent 平台",
+  keywords: [
+    "12345",
+    "政务热线",
+    "智能研判",
+    "多频工单",
+    "实体图谱聚类",
+    "假闭环追踪",
+    "多租户",
+    "SuperAgent",
+    "民声智理",
+  ],
 };
 
 export default function RootLayout({

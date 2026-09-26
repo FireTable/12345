@@ -121,7 +121,7 @@ export default function DictionaryManagementPage() {
 
   const tabs = [
     { key: "aliases", label: "别名知识库映射" },
-    { key: "townships", label: `${activeRegion ? activeRegion.name : ""} ${stats.townshipCount} 大法定镇街区划` },
+    { key: "townships", label: `${activeRegion ? activeRegion.name : "辖区"}法定区划 (${stats.townshipCount} 街道/镇街)` },
     { key: "categories", label: `${stats.categoryCount} 大民生诉求分类标准` },
   ] as const;
 

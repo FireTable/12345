@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { ShundeMap } from "@/app/_components/civic/shunde-map";
+import { CivicMap } from "@/app/_components/civic/civic-map";
 import { QuadrantBoard } from "@/app/_components/civic/quadrant";
 import type { ClusterUrgency } from "@/lib/civic-cluster";
 import { clampTimeRef, formatYmd, inTimeWindow } from "@/lib/civic-time";
@@ -228,7 +228,7 @@ function MultifreqInner() {
             <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>点击镇街筛选 · 悬停查看详情</div>
           </div>
           <div className="card__body" style={{ padding: 8, paddingTop: 40, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 460 }}>
-            <ShundeMap
+            <CivicMap
               counts={ov?.regionDistribution || {}}
               clusterCounts={clusterByRegion}
               selected={region}

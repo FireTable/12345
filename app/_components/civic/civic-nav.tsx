@@ -27,6 +27,23 @@ export function CivicNav() {
     setMenuOpen(false);
   }, [pathname]);
 
+  // 动态同步页面 HTML document.title（带当前辖区站点前缀）
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const pageTitles: Record<string, string> = {
+      "/": "工单数据总览",
+      "/themes": "多频工单看板",
+      "/multifreq": "工单透势研判",
+      "/tickets": "工单中心核查",
+      "/dict": "标准字典与别名知识库",
+      "/admin/regions": "多站点管理与 AI 拓荒",
+      "/login": "系统登录",
+    };
+    const title = pageTitles[pathname] || "智能研判中心";
+    const regionPrefix = activeRegion ? `${activeRegion.name} · ` : "";
+    document.title = `${regionPrefix}${title} | 民声智理 12345`;
+  }, [pathname, activeRegion?.name]);
+
   useEffect(() => {
     if (!menuOpen) return;
     const onKey = (e: KeyboardEvent) => {
