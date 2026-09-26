@@ -1,15 +1,44 @@
 import { SystemTwoEngine } from '../src/engine.js';
 import { z } from 'zod';
+import fs from 'node:fs';
+import path from 'node:path';
+
+// 自动探测并载入主工程 .env.local（免额外依赖）
+try {
+  const envPath = path.resolve(process.cwd(), '../../.env.local');
+  if (fs.existsSync(envPath)) {
+    const lines = fs.readFileSync(envPath, 'utf-8').split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx !== -1) {
+        const key = trimmed.slice(0, eqIdx).trim();
+        const val = trimmed.slice(eqIdx + 1).trim();
+        if (!process.env[key]) {
+          process.env[key] = val;
+        }
+      }
+    }
+  }
+} catch {}
 
 async function main() {
   console.log('====================================================');
   console.log('🚀 开始 System Two 认知引擎全套端到端集成测试');
   console.log('====================================================\n');
 
-  // 初始化引擎（默认探测本地 8132 端口）
+  // 初始化引擎（探测本地 8132 端口，支持云端灾备）
   const engine = await SystemTwoEngine.create({
-    endpoint: 'http://127.0.0.1:8132/v1',
+    endpoint: process.env.SYSTEM_TWO_ENDPOINT || 'http://127.0.0.1:8132/v1',
     timeoutMs: 60000,
+    cloudFallback: process.env.OPENAI_API_KEY
+      ? {
+          endpoint: process.env.OPENAI_BASE_URL || 'https://api.edgefn.net/v1',
+          apiKey: process.env.OPENAI_API_KEY,
+          model: process.env.OPENAI_MODEL || 'DeepSeek-V4-Flash-0731',
+        }
+      : undefined,
   });
 
   console.log(`📡 当前活跃后端: ${engine.getActiveBackend()}\n`);
@@ -45,7 +74,7 @@ async function main() {
 
   // --- 测试 2: 结构化输出与 Zod 强类型校验 ---
   console.log('----------------------------------------------------');
-  console.log('【测试 2】结构化 JSON 输出与 Zod 校验');
+  console.log('【测试 2】结构化 JSON 输出与 Zod 校验 (createJSON)');
   console.log('----------------------------------------------------');
 
   const AuditSchema = z.object({
@@ -58,7 +87,8 @@ async function main() {
   type AuditResult = z.infer<typeof AuditSchema>;
 
   const startT2 = Date.now();
-  const structuredRes = await engine.createJson<AuditResult>(
+  const structuredRes = await engine.createJSON<AuditResult>(
+    AuditSchema,
     {
       messages: [
         {
@@ -70,11 +100,9 @@ async function main() {
           content: '市民反映容桂街道红绿灯故障，导致早高峰交通严重拥堵。',
         },
       ],
-      response_format: { type: 'json_object' },
-      enable_thinking: false, // 提取类任务可关闭思考加速
-      max_tokens: 300,
-    },
-    AuditSchema
+      enableThinking: false, // 提取类任务显式关闭思考加速
+      maxTokens: 300,
+    }
   );
   const dur2 = ((Date.now() - startT2) / 1000).toFixed(2);
 

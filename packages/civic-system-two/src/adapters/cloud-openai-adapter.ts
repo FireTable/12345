@@ -50,6 +50,9 @@ export class CloudOpenAIAdapter implements ISystemTwoAdapter {
       temperature: params.temperature ?? 0.2,
       max_tokens: params.max_tokens ?? 2048,
       stream: false,
+      chat_template_kwargs: {
+        enable_thinking: params.enable_thinking ?? false,
+      },
     };
 
     if (params.top_p !== undefined) {

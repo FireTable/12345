@@ -69,23 +69,22 @@ console.log(response.choices[0].message.content);
 // 慢思考思维链
 console.log(response.choices[0].message.reasoning_content);
 
-// 3. 结构化 JSON 输出与 Zod 强校验
+// 3. 结构化 JSON 输出与 Zod 强校验 (createJSON 显式传参)
 const ResultSchema = z.object({
   department: z.string(),
   priority: z.enum(['high', 'medium', 'low']),
   suggested_action: z.string(),
 });
 
-const result = await engine.createJson(
+const result = await engine.createJSON(
+  ResultSchema,
   {
     messages: [
       { role: 'system', content: '输出 JSON 格式的工单分派建议' },
       { role: 'user', content: '某路段交通信号灯损坏' },
     ],
-    response_format: { type: 'json_object' },
-    enable_thinking: false, // 结构化抽取任务可选择关闭思考
-  },
-  ResultSchema
+    enableThinking: false, // 结构化抽取任务显式关闭思考加速直出
+  }
 );
 
 console.log(result.data.department);

@@ -272,3 +272,36 @@ export function getRerankModel(): RerankModel | null {
     apiKey,
   });
 }
+
+// ==========================================
+// System-2 慢思考通用认知大模型引擎 (单例)
+// ==========================================
+import { SystemTwoEngine } from "@civic/system-two";
+
+let systemTwoEnginePromise: Promise<SystemTwoEngine> | null = null;
+
+export async function getSystemTwoEngine(): Promise<SystemTwoEngine> {
+  if (systemTwoEnginePromise) {
+    return systemTwoEnginePromise;
+  }
+
+  const endpoint = process.env.SYSTEM_TWO_ENDPOINT || "http://127.0.0.1:8132/v1";
+  const cloudApiKey = process.env.OPENAI_API_KEY;
+  const cloudEndpoint = process.env.OPENAI_BASE_URL || "https://api.edgefn.net/v1";
+  const cloudModel = process.env.OPENAI_MODEL || "DeepSeek-V4-Flash-0731";
+
+  systemTwoEnginePromise = SystemTwoEngine.create({
+    endpoint,
+    timeoutMs: 120000,
+    cloudFallback: cloudApiKey
+      ? {
+          endpoint: cloudEndpoint,
+          apiKey: cloudApiKey,
+          model: cloudModel,
+        }
+      : undefined,
+  });
+
+  return systemTwoEnginePromise;
+}
+

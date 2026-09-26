@@ -113,6 +113,11 @@ export function parseStructuredJson<T = unknown>(
   if (schema) {
     const result = schema.safeParse(parsed);
     if (!result.success) {
+      if (parsed && typeof parsed === 'object' && (parsed as any).fallback === true) {
+        throw new Error(
+          `[SystemTwo:OfflineFailsafe] 系统当前处于离线兜底模式，无法满足调用方 Schema 要求: ${(parsed as any).message}`
+        );
+      }
       throw new Error(
         `[SystemTwo:JsonValidationError] JSON 结果未通过 Schema 校验: ${result.error.message}\n解析对象: ${JSON.stringify(
           parsed

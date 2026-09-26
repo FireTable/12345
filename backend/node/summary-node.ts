@@ -7,7 +7,7 @@ import type {
   MultiFrequencyTheme,
   RiskLevel,
 } from "../state";
-import { getChatModel, llmConcurrency, markToolCallingUnsupported, modelSupportsToolCalling } from "../model";
+import { getSystemTwoEngine, llmConcurrency } from "../model";
 
 import {
   ThemeEnrichmentSchema,
@@ -19,7 +19,7 @@ import {
 const DEFAULT_RECOMMENDED_ACTION = "建议转派所属辖区行业主管部门牵头，2个工作日内核实具体诉求并向市民书面反馈办理进展。";
 
 /**
- * 批量调用大模型对多频主题进行深度公文研判（每批最多 10 个主题打包在 1 个 AI 请求中，不足 10 个按实际数量处理）
+ * 批量调用 System-2 慢思考认知引擎对多频主题进行深度公文研判（显式开启 enableThinking: true，保留深度思维链）
  */
 async function enrichThemeBatchWithLLM(
   themeBatch: MultiFrequencyTheme[]
@@ -31,78 +31,50 @@ async function enrichThemeBatchWithLLM(
 
   const enrichTask = async (): Promise<Array<Partial<MultiFrequencyTheme>>> => {
     try {
-      const chat = getChatModel(0.1);
+      const systemTwo = await getSystemTwoEngine();
       const prompt = buildBatchThemeEnrichmentPrompt(themeBatch);
 
-      // 1. 探测通过才走 tool-calling
-      if (await modelSupportsToolCalling()) {
-        try {
-          const structuredChat = chat.withStructuredOutput(BatchThemeEnrichmentSchema);
-          const structuredRes = await structuredChat.invoke(prompt);
-          if (structuredRes && Array.isArray(structuredRes.results) && structuredRes.results.length > 0) {
-            const resultMap = new Map<number, any>();
-            structuredRes.results.forEach((r) => {
-              resultMap.set(r.themeIndex, r);
-            });
-
-            return themeBatch.map((theme, i) => {
-              const r = resultMap.get(i + 1) || structuredRes.results[i];
-              if (!r) return { recommendedAction: DEFAULT_RECOMMENDED_ACTION };
-
-              const incoming = r.riskLevel as RiskLevel;
-              const finalRisk: RiskLevel = theme.riskLevel === "HIGH" ? "HIGH" : incoming;
-              return {
-                riskLevel: finalRisk,
-                riskReason: r.riskReason || theme.riskReason,
-                aiSummary: r.aiSummary || theme.aiSummary || "",
-                recommendedAction: r.recommendedAction || DEFAULT_RECOMMENDED_ACTION,
-              };
-            });
-          }
-        } catch (structErr: unknown) {
-          const message = structErr instanceof Error ? structErr.message : String(structErr);
-          markToolCallingUnsupported(message);
+      // System-2 慢思考公文研判：开启思维链，深度剖析跨部门权责与根因归因
+      const { data, reasoning } = await systemTwo.createJSON(
+        BatchThemeEnrichmentSchema,
+        {
+          messages: [{ role: "user", content: prompt }],
+          enableThinking: true, // 慢思考开启，深度权责穿透
+          maxTokens: 4096,
+          temperature: 0.2,
         }
-      }
+      );
 
-      // 2. 备用直接 Prompt + JSON 解析
-      const res = await chat.invoke(prompt);
-      const rawText = typeof res.content === "string" ? res.content : JSON.stringify(res.content);
-      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        const results = Array.isArray(parsed.results) ? parsed.results : Array.isArray(parsed) ? parsed : [];
-        if (results.length > 0) {
-          const resultMap = new Map<number, any>();
-          results.forEach((r: any, idx: number) => {
-            const index = typeof r.themeIndex === "number" ? r.themeIndex : idx + 1;
-            resultMap.set(index, r);
-          });
+      if (data && Array.isArray(data.results) && data.results.length > 0) {
+        const resultMap = new Map<number, any>();
+        data.results.forEach((r) => {
+          resultMap.set(r.themeIndex, r);
+        });
 
-          return themeBatch.map((theme, i) => {
-            const r = resultMap.get(i + 1) || results[i];
-            if (!r) return { recommendedAction: DEFAULT_RECOMMENDED_ACTION };
+        return themeBatch.map((theme, i) => {
+          const r = resultMap.get(i + 1) || data.results[i];
+          if (!r) return { recommendedAction: DEFAULT_RECOMMENDED_ACTION, reasoningContent: reasoning };
 
-            const candidate = (["HIGH", "MEDIUM", "LOW"].includes(r.riskLevel) ? r.riskLevel : theme.riskLevel) as RiskLevel;
-            const finalRisk: RiskLevel = theme.riskLevel === "HIGH" ? "HIGH" : candidate;
-            return {
-              riskLevel: finalRisk,
-              riskReason: r.riskReason || theme.riskReason,
-              aiSummary: r.aiSummary || theme.aiSummary || "",
-              recommendedAction: r.recommendedAction || DEFAULT_RECOMMENDED_ACTION,
-            };
-          });
-        }
+          const incoming = r.riskLevel as RiskLevel;
+          const finalRisk: RiskLevel = theme.riskLevel === "HIGH" ? "HIGH" : incoming;
+          return {
+            riskLevel: finalRisk,
+            riskReason: r.riskReason || theme.riskReason,
+            aiSummary: r.aiSummary || theme.aiSummary || "",
+            recommendedAction: r.recommendedAction || DEFAULT_RECOMMENDED_ACTION,
+            reasoningContent: reasoning,
+          };
+        });
       }
     } catch (err: any) {
-      console.warn("[summary-node] Batch enrichment error:", err?.message);
+      console.warn("[summary-node] System-2 batch enrichment error:", err?.message);
     }
     return fallbacks;
   };
 
-  // 15秒批次超时控制
+  // 30秒慢思考批次超时控制
   const timeoutPromise = new Promise<Array<Partial<MultiFrequencyTheme>>>((resolve) =>
-    setTimeout(() => resolve(fallbacks), 15000)
+    setTimeout(() => resolve(fallbacks), 30000)
   );
 
   return Promise.race([enrichTask(), timeoutPromise]);

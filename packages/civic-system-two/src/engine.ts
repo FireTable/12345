@@ -10,12 +10,23 @@ import { CloudOpenAIAdapter } from './adapters/cloud-openai-adapter.js';
 import { FallbackAdapter } from './adapters/fallback-adapter.js';
 import { parseStructuredJson } from './parser.js';
 
-export interface StructuredJsonResult<T> {
+export interface CreateJSONOptions {
+  messages: CivicChatCompletionParams['messages'];
+  enableThinking?: boolean;
+  temperature?: number;
+  maxTokens?: number;
+  model?: string;
+  response_format?: CivicChatCompletionParams['response_format'];
+}
+
+export interface StructuredJSONResult<T> {
   data: T;
-  reasoning_content?: string;
-  raw_content: string;
+  reasoning?: string;
+  raw: string;
   usage: CivicChatCompletion['usage'];
 }
+
+export type StructuredJsonResult<T> = StructuredJSONResult<T>;
 
 export class SystemTwoEngine {
   private localAdapter: LocalMetalAdapter;
@@ -143,44 +154,54 @@ export class SystemTwoEngine {
   };
 
   /**
-   * 高阶快捷方法：结构化输出并带 Zod 校验
-   * @param params 补全请求参数
-   * @param schema 可选的 Zod Schema
+   * 直观命令式结构化 JSON 抽取：显式传入 Zod Schema 和思考开关，无隐式黑盒封装
+   * @param schema 必传的 Zod Schema，严格守卫返回类型
+   * @param options 结构化调用选项 (显式 enableThinking 等)
+   */
+  async createJSON<T>(
+    schema: z.ZodType<T>,
+    options: CreateJSONOptions
+  ): Promise<StructuredJSONResult<T>> {
+    const enableThinking = options.enableThinking ?? false;
+    const format = options.response_format || ({ type: 'json_object' } as const);
+
+    const completion = await this.chat.completions.create({
+      messages: options.messages,
+      enable_thinking: enableThinking,
+      model: options.model,
+      temperature: options.temperature,
+      max_tokens: options.maxTokens ?? (enableThinking ? 2048 : 1024),
+      response_format: format,
+    });
+
+    const raw = completion.choices[0]?.message.content || '';
+    const reasoning = completion.choices[0]?.message.reasoning_content;
+    const data = parseStructuredJson<T>(raw, schema);
+
+    return {
+      data,
+      reasoning,
+      raw,
+      usage: completion.usage,
+    };
+  }
+
+  /**
+   * 兼容旧版调用的 createJson 别名
    */
   async createJson<T>(
     params: Omit<CivicChatCompletionParams, 'response_format'> & {
       response_format?: CivicChatCompletionParams['response_format'];
     },
     schema?: z.ZodType<T>
-  ): Promise<StructuredJsonResult<T>> {
-    const format =
-      params.response_format ||
-      ({
-        type: 'json_object',
-      } as const);
-
-    // 对于结构化 JSON 任务，默认不消耗额外思考 token，快速产出结构；
-    // 如果调用方显式要求开启思考 (enable_thinking: true)，则给予更充足的默认 max_tokens (2048)
-    const enableThinking = params.enable_thinking ?? false;
-    const maxTokens = params.max_tokens ?? (enableThinking ? 2048 : 1024);
-
-    const completion = await this.chat.completions.create({
-      ...params,
-      response_format: format,
-      enable_thinking: enableThinking,
-      max_tokens: maxTokens,
+  ): Promise<StructuredJSONResult<T>> {
+    return this.createJSON(schema || (z.any() as any), {
+      messages: params.messages,
+      enableThinking: params.enable_thinking,
+      temperature: params.temperature,
+      maxTokens: params.max_tokens,
+      model: params.model,
+      response_format: params.response_format,
     });
-
-    const rawContent = completion.choices[0]?.message.content || '';
-    const reasoningContent = completion.choices[0]?.message.reasoning_content;
-
-    const parsedData = parseStructuredJson<T>(rawContent, schema);
-
-    return {
-      data: parsedData,
-      reasoning_content: reasoningContent,
-      raw_content: rawContent,
-      usage: completion.usage,
-    };
   }
 }

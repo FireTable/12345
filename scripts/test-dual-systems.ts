@@ -1,5 +1,6 @@
 import { SystemOneEngine } from "../packages/civic-system-one/src/index.js";
-import { SystemTwoEngine, z } from "../packages/civic-system-two/src/index.js";
+import { z } from "zod";
+import { getSystemTwoEngine } from "../backend/model.js";
 
 async function main() {
   console.log("================================================================================");
@@ -10,10 +11,7 @@ async function main() {
   console.log("[1/3] 初始化双引擎运行时...");
   const t0 = performance.now();
   const system1 = await SystemOneEngine.create();
-  const system2 = await SystemTwoEngine.create({
-    endpoint: "http://127.0.0.1:8132/v1",
-    timeoutMs: 60000,
-  });
+  const system2 = await getSystemTwoEngine();
   console.log(`  ⚡ System One 状态: 就绪 (内核: ${system1.currentAdapter})`);
   console.log(`  🧠 System Two 状态: 就绪 (后端: ${system2.getActiveBackend()})`);
   console.log(`  ⏱️ 引擎初始化耗时: ${(performance.now() - t0).toFixed(2)} ms\n`);
@@ -63,7 +61,7 @@ async function main() {
       },
     ],
     enable_thinking: true,
-    max_tokens: 512,
+    max_tokens: 1536,
   });
 
   const s2Duration = ((performance.now() - s2Start) / 1000).toFixed(2);
@@ -92,7 +90,8 @@ async function main() {
 
   type TicketDispatch = z.infer<typeof TicketDispatchSchema>;
 
-  const dispatchResult = await system2.createJson<TicketDispatch>(
+  const dispatchResult = await system2.createJSON<TicketDispatch>(
+    TicketDispatchSchema,
     {
       messages: [
         {
@@ -104,10 +103,9 @@ async function main() {
           content: `工单内容: ${incomingTicket.content}`,
         },
       ],
-      enable_thinking: false, // 结构化抽取快速直出
-      max_tokens: 300,
-    },
-    TicketDispatchSchema
+      enableThinking: false, // 结构化抽取快速直出
+      maxTokens: 1024,
+    }
   );
 
   const s2bDuration = ((performance.now() - s2bStart) / 1000).toFixed(2);

@@ -5,6 +5,7 @@ import {
   llmConcurrency,
   markToolCallingUnsupported,
   modelSupportsToolCalling,
+  getSystemTwoEngine,
 } from "../model";
 import {
   BatchExtractionSchema,
@@ -14,7 +15,7 @@ import {
 import { adminFromLocation, explicitAdmin } from "@/lib/admin-area";
 import { getRegionAliasMap, normalizeAliasesInText, resolveEntityAlias } from "@/lib/alias-dict";
 import { canonicalizeCategory, canonicalizeTownship, getRegionVocabulary, type RegionVocabulary } from "@/lib/vocabulary";
-import { needsArbitration, arbitrateSingleTicket } from "./arbitrator-node";
+import { verifyAndCanonicalizeTicketArea } from "./arbitrator-node";
 import { updateTaskProgress } from "@/lib/task-progress";
 import { getRegionDb } from "@/db/client";
 import { ticketsTable } from "@/db/schema";
@@ -66,34 +67,15 @@ async function extractBatchWithLLM(
   const prompt = buildBatchExtractionPrompt(maskedTickets, vocab);
 
   try {
-    const chat = getChatModel(0);
+    const systemTwo = await getSystemTwoEngine();
+    const { data } = await systemTwo.createJSON(BatchExtractionSchema, {
+      messages: [{ role: "user", content: prompt }],
+      enableThinking: false, // 结构化要素抽取显式关闭慢思考，实现毫秒级/极速直出
+      temperature: 0.1,
+    });
 
-    if (await modelSupportsToolCalling()) {
-      try {
-        const structuredChat = chat.withStructuredOutput(BatchExtractionSchema);
-        const structuredRes = await structuredChat.invoke(prompt);
-        if (structuredRes && Array.isArray(structuredRes.items)) {
-          for (const item of structuredRes.items) {
-            if (item && typeof item.index === "number") {
-              result.set(startIndex + item.index - 1, sanitizeItem(item));
-            }
-          }
-          if (result.size > 0) return result;
-        }
-      } catch (structErr: unknown) {
-        const message = structErr instanceof Error ? structErr.message : String(structErr);
-        markToolCallingUnsupported(message);
-      }
-    }
-
-    // 探测失败或不支持：JSON 解析
-    const res = await chat.invoke(prompt);
-    const text = typeof res.content === "string" ? res.content : JSON.stringify(res.content);
-    const jsonMatch = text.match(/\[[\s\S]*\]/) || text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
-      const items: ExtractedTicketItem[] = Array.isArray(parsed) ? parsed : (parsed.items || []);
-      for (const item of items) {
+    if (data && Array.isArray(data.items)) {
+      for (const item of data.items) {
         if (item && typeof item.index === "number") {
           result.set(startIndex + item.index - 1, sanitizeItem(item));
         }
@@ -101,7 +83,7 @@ async function extractBatchWithLLM(
       if (result.size > 0) return result;
     }
   } catch (err: any) {
-    console.warn(`[extract-node] LLM extraction batch error at index ${startIndex}:`, err.message);
+    console.warn(`[extract-node] System-2 extraction batch error at index ${startIndex}:`, err.message);
   }
 
   // 3. 模型失败时平滑退化为本地动态规则抽取引擎
@@ -373,42 +355,20 @@ export async function extractNode(
     await queue.addAll(chunkTasks);
   }
 
-  // 2. 二级 AI 仲裁：只对「本轮新抽取」的工单做。已落库的抽取结果直接进聚类。
-  const arbitrationTasks: Array<() => Promise<void>> = [];
-  const lowConfidenceIndices: number[] = [];
-  let completedArbitrations = 0;
-  const newlyExtracted = new Set(pendingIdx);
-
+  // 2. 客观物理区划校准与别名规范化（彻底废除置信度二次套娃仲裁，仅对不在白名单的镇街执行纯代码别名修正）
   normalizedRawTickets.forEach((ticket, idx) => {
-    if (!newlyExtracted.has(idx)) return;
-    const item = extractionMap.get(idx) || fallbackDynamicExtraction(ticket);
-    if (needsArbitration(item, ticket, regionVocab)) {
-      lowConfidenceIndices.push(idx);
-      arbitrationTasks.push(async () => {
-        const corrected = await arbitrateSingleTicket(ticket, item, regionVocab, aliasMap);
-        extractionMap.set(idx, corrected);
-        completedArbitrations++;
-        if (taskId) {
-          const currentPercent = Math.min(68, 58 + Math.round((completedArbitrations / Math.max(1, arbitrationTasks.length)) * 10));
-          updateTaskProgress(taskId, {
-            percent: currentPercent,
-            reviewCount: arbitrationTasks.length,
-            stageText: `二级 AI 仲裁复核中 (${completedArbitrations} / ${arbitrationTasks.length})...`,
-          });
-        }
-      });
-    }
+    const item = extractionMap.get(idx);
+    if (!item) return;
+
+    const calibrated = verifyAndCanonicalizeTicketArea(item, ticket, regionVocab, aliasMap);
+    extractionMap.set(idx, calibrated);
   });
 
-  if (arbitrationTasks.length > 0) {
-    if (taskId) {
-      updateTaskProgress(taskId, {
-        percent: 58,
-        reviewCount: arbitrationTasks.length,
-        stageText: `触发二级 AI 仲裁机制，正在对 ${arbitrationTasks.length} 条低置信度/歧义工单进行事实复核纠偏...`,
-      });
-    }
-    await queue.addAll(arbitrationTasks);
+  if (taskId) {
+    updateTaskProgress(taskId, {
+      percent: 68,
+      stageText: `System-2 结构化要素抽取与行政区划校准完成，准备进入时空知识图谱聚类...`,
+    });
   }
 
   // 3. 构建富化工单并执行最终标准词汇表与别名规范化映射
