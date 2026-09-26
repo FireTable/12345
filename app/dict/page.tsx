@@ -486,7 +486,7 @@ export default function DictionaryManagementPage() {
         </div>
       )}
 
-      {/* Tab 2: 顺德 10 大法定镇街区划 */}
+      {/* Tab 2: 目标辖区法定区划与镇街街道 */}
       {activeTab === "townships" && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
           {townships.map((t) => (

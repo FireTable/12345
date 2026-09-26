@@ -1,6 +1,6 @@
 # 项目依赖清单与组件架构披露 (Dependencies & Components)
 
-> **项目名称**：民声智理 · 顺德 12345 AI 智能研判系统  
+> **项目名称**：民声智理 · 12345 政务热线认知中枢与 AI 智能研判系统 (多城市 / 多租户 V2 生产架构)  
 > **参赛团队**：赢了就回家吃鱼生  
 > **合规结论**：全栈依赖均采用宽松开源许可证（**MIT / ISC / Apache-2.0 / Unlicense**），100% 商业友好，无任何 GPL/AGPL 传染性协议。
 
@@ -75,11 +75,12 @@ app/
 │   └── dict/page.tsx                          # 5. 标准字典与别名知识库 (/dict)
 └── _components/
     ├── civic/                                 # Civic Light 核心组件库
-    │   ├── civic-nav.tsx                      # 顶部全局导航栏
+    │   ├── civic-nav.tsx                      # 顶部全局导航栏 (含多城市/区县站点切换器)
     │   ├── stat-card.tsx                      # 核心态势指标卡片
     │   ├── civic-workflow.tsx                 # LangGraph 流程执行实时动态进度条
     │   ├── civic-charts.tsx                   # Civic 统计图表组件
-    │   ├── shunde-map.tsx                     # 顺德区 10 大镇街 SVG 态势地图
+    │   ├── dynamic-map.tsx                    # 多辖区 SVG 态势地图自适应加载器
+    │   ├── shunde-map.tsx                     # 内置预置顺德区 10 大镇街 SVG 态势地图
     │   ├── quadrant.tsx                       # 紧急×重要四象限透势图
     │   └── skeletons.tsx                      # 页面加载骨架屏
     ├── dashboard/                             # 工作大盘组件

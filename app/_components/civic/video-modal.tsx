@@ -136,7 +136,7 @@ export function VideoModal({
                 系统功能演示视频
               </div>
               <div className="video-modal-subtitle">
-                民声智理 · 顺德 12345 AI 智能研判系统演示全集
+                民声智理 · 12345 AI 智能研判系统演示全集
               </div>
             </div>
           </div>

@@ -32,7 +32,7 @@ function cleanEntityName(name: string): string {
 export function extractSpatialCore(location: string): string {
   if (!location) return "";
   let loc = location.trim()
-    .replace(/^(?:广东省|广州市|佛山市|顺德区)/, "")
+    .replace(/^(?:.+?[省市区县]|广东省|广州市|佛山市|顺德区)/, "")
     .replace(/[“”"''`]/g, "");
 
   // 匹配道路、街巷、商业街、工业区、小区、花园、大厦等空间核心实体

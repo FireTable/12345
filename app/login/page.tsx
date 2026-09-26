@@ -79,7 +79,7 @@ function LoginForm() {
         <div className="login-header">
           <div className="login-brand-badge">
             <Building2 className="login-brand-icon" size={20} />
-            <span>佛山市顺德区 · 12345热线中心</span>
+            <span>12345 政务热线智能研判中心 · 多站点工作台</span>
           </div>
           <h1 className="login-title">民声智理 · 智能研判系统</h1>
           <p className="login-subtitle">

@@ -1,15 +1,17 @@
 # 数据库表结构与字段字典 (Database Schema & Dictionary)
 
-> **项目名称**：民声智理 · 顺德 12345 AI 智能研判系统  
+> **项目名称**：民声智理 · 12345 政务热线认知中枢与 AI 智能研判系统 (多城市 / 多租户 V2 生产架构)  
 > **参赛团队**：赢了就回家吃鱼生  
 > **ORM 框架**：Drizzle ORM (`drizzle-orm` + `postgres.js`)  
-> **数据库引擎**：PostgreSQL 16 (支持 JSONB / 时区时间戳 / 高并发索引)
+> **数据库引擎**：PostgreSQL 16 (支持多租户独立 Schema 物理隔离 / JSONB / 时区时间戳 / 高并发索引)
 
 ---
 
 ## 目录
 1. [数据表关系拓扑 (ER Diagram)](#一数据表关系拓扑-er-diagram)
-2. [7 大核心数据表详细字典](#二7-大核心数据表详细字典)
+2. [多城市独立 Schema 物理隔离体系](#二多城市独立-schema-物理隔离体系)
+3. [8 大核心数据表详细字典](#三8-大核心数据表详细字典)
+   - [0. 区域/站点注册花名册表 (regions - public schema)](#0-区域站点注册花名册表-regions---public-schema)
    - [1. 工单主表 (tickets)](#1-工单主表-tickets-ticketstable)
    - [2. 多频主题聚类表 (themes)](#2-多频主题聚类表-themes-themestable)
    - [3. 工单-主题关联表 (ticket_themes)](#3-工单-主题多对多关联表-ticket_themes-ticketthemestable)
@@ -17,7 +19,7 @@
    - [5. 官方标准政务词汇表 (vocabularies)](#5-官方标准政务词汇表-vocabularies-vocabulariestable)
    - [6. 别名与实体对齐知识库 (aliases)](#6-别名与实体对齐知识库-aliases-aliasestable)
    - [7. 任务进度持久化表 (task_progress)](#7-任务进度持久化表-task_progress-taskprogresstable)
-3. [数据库脚本与运维常用命令](#三数据库脚本与运维常用命令)
+4. [数据库脚本与运维常用命令](#四数据库脚本与运维常用命令)
 
 ---
 
@@ -25,10 +27,23 @@
 
 ```mermaid
 erDiagram
+    regions ||--o{ tickets : "Schema 物理级承载"
     tickets ||--o{ ticket_themes : "1 对 多 (级联删除)"
     themes ||--o{ ticket_themes : "1 对 多 (级联删除)"
     tickets ||--o{ review_queue : "1 对 多 (低置信争议工单)"
     
+    regions {
+        varchar(64) id PK "站点唯一标识(如fs_shunde, gz_haizhu)"
+        varchar(128) name "站点辖区名称(如顺德区, 海珠区)"
+        varchar(128) city "所属地级市(如佛山市, 广州市)"
+        varchar(128) province "所属省份(默认广东省)"
+        varchar(64) schema_name UK "独立物理 Schema(如 region_fs_shunde)"
+        varchar(255) svg_map_path "前端 SVG 态势地图静态资源路径"
+        text category_config_json "辖区定制分类配置 JSON"
+        varchar(32) status "状态(ACTIVE/INACTIVE)"
+        boolean is_default "是否为系统默认站点"
+    }
+
     tickets {
         varchar(64) id PK "系统内部唯一工单 ID"
         varchar(64) ticket_no UK "工单业务唯一编号"
@@ -38,8 +53,8 @@ erDiagram
         text masked_content "🤖 脱敏展示正文"
         varchar(64) citizen_name "🤖 诉求人姓名(AI抽取+脱敏)"
         varchar(64) citizen_phone "🤖 诉求人电话(AI抽取+脱敏)"
-        varchar(64) district "所属行政区(顺德区)"
-        varchar(64) subdistrict "🤖 所属法定镇街(10大镇街)"
+        varchar(64) district "所属行政区(如顺德区/海珠区)"
+        varchar(64) subdistrict "🤖 所属法定镇街/街道"
         varchar(64) source_category "🤖 7大标准民生分类"
         varchar(64) ingest_district "导入原始行政区"
         varchar(64) ingest_subdistrict "导入原始镇街"
@@ -145,7 +160,50 @@ erDiagram
 
 ---
 
-## 二、7 大核心数据表详细字典
+## 二、多城市独立 Schema 物理隔离体系
+
+为了支持全国范围内多城市/多区县站点的无感热插拔与严格数据安全隔离，系统采用 **PostgreSQL 独立 Schema 物理隔离** 架构：
+
+```text
+PostgreSQL 实例 (ticket_radar)
+├── public (公共元数据空间)
+│   ├── regions (区域/站点注册花名册表)
+│   ├── user / session / account (Better Auth 全局认证表)
+│   └── ...
+├── region_fs_shunde (佛山市顺德区物理 Schema)
+│   ├── tickets / themes / ticket_themes / review_queue / vocabularies / aliases / task_progress
+├── region_gz_haizhu (广州市海珠区物理 Schema)
+│   ├── tickets / themes / ticket_themes / review_queue / vocabularies / aliases / task_progress
+└── region_{id} (任意新城市 AI 拓荒独立 Schema)
+    └── 100% 物理独立表结构，杜绝跨辖区数据串扰
+```
+
+- **动态路由**：应用通过 `getRegionDb(regionId)` 或 `lib/tenant/schema-manager.ts` 动态解析目标站点 Schema，自动执行独立迁移与隔离查询；
+- **AI 拓荒**：通过 `/admin/regions` 调用 Scout 拓荒 Agent，30 秒完成新城市法定区划分析、建表与知识沉淀。
+
+---
+
+## 三、8 大核心数据表详细字典
+
+### 0. 区域/站点注册花名册表：`regions` (`regionsTable` in `public` schema)
+> 存储全局已注册的城市/区县站点信息、独立 Schema 映射名与前端态势地图资源。
+
+| 字段名 | 数据库类型 | 约束 / 索引 | 描述 | 数据来源 / 算法说明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | `VARCHAR(64)` | `PRIMARY KEY` | 站点唯一标识符 | 如 `fs_shunde`, `gz_haizhu`, `bj_chaoyang` |
+| `name` | `VARCHAR(128)` | `NOT NULL` | 站点行政区全名 | 如 `顺德区`, `海珠区` |
+| `city` | `VARCHAR(128)` | `NOT NULL, INDEX` | 所属地级市 | 如 `佛山市`, `广州市`, `北京市` |
+| `province` | `VARCHAR(128)` | `NOT NULL, DEFAULT '广东省'` | 所属省份 | 如 `广东省` |
+| `schema_name` | `VARCHAR(64)` | `NOT NULL, UNIQUE, INDEX` | 对应的独立物理 Schema | 如 `region_fs_shunde`, `region_gz_haizhu` |
+| `svg_map_path`| `VARCHAR(255)` | `NULLABLE` | 前端 SVG 态势地图资源路径 | 如 `/civic/shunde-map.svg`，支持热插拔 |
+| `category_config_json` | `TEXT` | `NULLABLE` | 定制民生分类配置 JSON | 支持各辖区个性化扩展民生诉求分类 |
+| `status` | `VARCHAR(32)` | `NOT NULL, INDEX, DEFAULT 'ACTIVE'` | 站点运营状态 | `ACTIVE` 启用 / `INACTIVE` 维护停用 |
+| `is_default` | `BOOLEAN` | `NOT NULL, DEFAULT FALSE` | 是否为系统全局默认站点 | 默认站点为 `true` (如佛山顺德示范站点) |
+| `description`| `TEXT` | `NULLABLE` | 站点业务说明备注 | 站点特性、数据量及管理主体备忘 |
+| `created_at` | `TIMESTAMP` | `NOT NULL, DEFAULT NOW` | 站点创建入库时间 | 站点注册时间戳 |
+| `updated_at` | `TIMESTAMP` | `NOT NULL, DEFAULT NOW` | 站点信息更新时间 | 站点元数据更新时间戳 |
+
+---
 
 ### 1. 工单主表：`tickets` (`ticketsTable`)
 > 存储工单全生命周期基础记录，承载原始诉求、🤖 AI 结构化抽取字段、脱敏正文及 🚨 假闭环研判标签。
@@ -160,8 +218,8 @@ erDiagram
 | `masked_content` | `TEXT` | `NULLABLE` | 🤖 隐私脱敏展示文本 | 经 `anonymizer.ts` 对人名、手机、门牌等关键 PII 掩码后的安全文本 |
 | `citizen_name` | `VARCHAR(64)` | `NULLABLE` | 🤖 诉求人姓名 | 🤖 结构化抽取并做脱敏掩码（如 `张*`） |
 | `citizen_phone` | `VARCHAR(64)` | `NULLABLE` | 🤖 诉求人联系电话 | 🤖 结构化抽取并做脱敏掩码（如 `138****1234`） |
-| `district` | `VARCHAR(64)` | `NULLABLE` | 所属行政区划 | 默认为佛山市“顺德区” |
-| `subdistrict` | `VARCHAR(64)` | `INDEX, NULLABLE` | 🤖 法定归属镇街 | 经法定白名单与别名引擎归一后的 10 大法定辖区 |
+| `district` | `VARCHAR(64)` | `NULLABLE` | 所属行政区划 | 归属行政区划（如“顺德区”、“海珠区”） |
+| `subdistrict` | `VARCHAR(64)` | `INDEX, NULLABLE` | 🤖 法定归属镇街/街道 | 经目标辖区法定白名单与别名引擎归一后的法定辖区 |
 | `source_category` | `VARCHAR(64)` | `INDEX, NULLABLE` | 🤖 7大标准民生分类 | 城市管理/市场监管/社会治理/交通出行/生态环境/劳动社保/公共安全 |
 | `ingest_district` | `VARCHAR(64)` | `NULLABLE` | 导入原始行政区 | 导入文件原始区划字段（未经 AI 处理） |
 | `ingest_subdistrict` | `VARCHAR(64)` | `NULLABLE` | 导入原始镇街 | 导入文件原始镇街字段（未经 AI 处理） |
@@ -203,7 +261,7 @@ erDiagram
 | `first_at` / `last_at`| `TIMESTAMP` | `NULLABLE` | 首末单发生时间 | 群组内最早及最新工单登记时间 |
 | `handling_status` | `VARCHAR(16)` | `DEFAULT '未处理'` | 全周期督办状态 | `未处理` / `处置中` / `已办结` |
 | `handling_progress`| `INTEGER` | `DEFAULT 0` | 督办进度百分比 | 0 ~ 100 整数进度 |
-| `handling_owner` | `VARCHAR(64)` | `NULLABLE` | 牵头承办责任科室 | 如“大良街道综合行政执法办” |
+| `handling_owner` | `VARCHAR(64)` | `NULLABLE` | 牵头承办责任科室 | 如“所属镇街综合行政执法办” |
 | `handling_eta` | `TIMESTAMP` | `NULLABLE` | 承诺办结时限 | 督办截止时限要求 |
 | `features_json` | `TEXT` | `NULLABLE` | 🤖 特征向量/属性 JSON | 🤖 聚类多维特征序列化字段 |
 | `radar_json` | `TEXT` | `NULLABLE` | 🤖 多维雷达图评分 JSON | 🤖 诉求复杂度、影响面、解决难度等多维雷达打分 |
@@ -240,14 +298,14 @@ erDiagram
 ---
 
 ### 5. 官方标准政务词汇表：`vocabularies` (`vocabulariesTable`)
-> 严格固化顺德区 10 大法定镇街、98+ 村居社区与 7 大民生分类白名单，作为 Prompt 强约束输入。
+> 严格固化当前辖区法定镇街、村居社区与 7 大民生分类白名单（内置顺德等预置字典），作为 Prompt 强约束输入。
 
 | 字段名 | 数据库类型 | 约束 / 索引 | 描述 |
 | :--- | :--- | :--- | :--- |
 | `id` | `VARCHAR(64)` | `PRIMARY KEY` | 词汇唯一 ID |
 | `type` | `VARCHAR(32)` | `NOT NULL, INDEX` | 类别：`TOWNSHIP` 镇街 / `COMMUNITY` 村居 / `CATEGORY` 分类 / `DEPARTMENT` 部门 |
-| `name` | `VARCHAR(128)`| `NOT NULL, INDEX` | 标准名称（如 `容桂街道`、`大良街道`、`城市管理`） |
-| `full_name`| `VARCHAR(255)`| `NULLABLE` | 官方全称（如 `佛山市顺德区容桂街道办事处`） |
+| `name` | `VARCHAR(128)`| `NOT NULL, INDEX` | 标准名称（如辖区镇街名、民生分类名） |
+| `full_name`| `VARCHAR(255)`| `NULLABLE` | 官方全称（如 `XX区XX街道办事处`） |
 | `parent_name`|`VARCHAR(128)`| `NULLABLE` | 上级归属辖区（如所属镇街名） |
 | `meta_json` | `TEXT` | `NULLABLE` | 扩展元数据 JSON（如辖区边界、人口、负责人等） |
 | `description`| `TEXT` | `NULLABLE` | 词汇释义与权责说明 |
@@ -335,12 +393,12 @@ erDiagram
 
 ---
 
-## 三、数据库脚本与运维常用命令
+## 四、数据库脚本与运维常用命令
 
 | 业务目标 | 对应 NPM 命令 | 底层脚本路径 | 说明 |
 | :--- | :--- | :--- | :--- |
 | **数据库迁移** | `pnpm db:migrate` | `scripts/db-migrate.ts` | 执行 `db/migrations/` 下的 SQL 迁移脚本 |
-| **全量词库填充** | `pnpm db:vocab` | `scripts/seed-vocabulary.ts` | 导入顺德 10 大镇街、村居及预置别名知识库 |
+| **全量词库填充** | `pnpm db:vocab` | `scripts/seed-vocabulary.ts` | 导入预置辖区（默认顺德）法定镇街、村居及预置别名知识库 |
 | **管理员账号初始化** | `pnpm db:seed-admin` | `scripts/seed-admin.ts` | 初始化/重置默认系统管理员账号 (`admin` / `admin`) |
 | **脱敏样例工单** | `pnpm db:seed` | `scripts/db-seed.ts` | 写入 200 条真实脱敏抽样工单用于冒烟演示 |
 | **数据备份导出** | `pnpm db:export` | `scripts/db-export.ts` | 导出全库数据为 `db/dumps/ticket_radar_data.json` |

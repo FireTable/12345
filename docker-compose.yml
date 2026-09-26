@@ -1,4 +1,4 @@
-# docker compose for 民声智理 · 顺德 12345 AI 智能研判系统 (VPS deployment, 由小蠢改造)
+# docker compose for 民声智理 · 12345 AI 智能研判系统 (多城市 / 多租户 V2 生产架构)
 # ============================================================
 # 改动 vs 原版 (老大确认的方案):
 #   - 删除 caddy service (复用 langgraph-app-caddy-1)
