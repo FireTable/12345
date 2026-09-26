@@ -73,9 +73,9 @@ async function enrichThemeBatchWithLLM(
     return fallbacks;
   };
 
-  // 30秒慢思考批次超时控制
+  // 慢思考批次超时控制 (充分尊重模型思考推导过程，分配充裕的 10 分钟预算)
   const timeoutPromise = new Promise<Array<Partial<MultiFrequencyTheme>>>((resolve) =>
-    setTimeout(() => resolve(fallbacks), 30000)
+    setTimeout(() => resolve(fallbacks), LLM_TIMEOUTS.THINKING)
   );
 
   return Promise.race([enrichTask(), timeoutPromise]);

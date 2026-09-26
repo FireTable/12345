@@ -45,9 +45,36 @@ export const LLM_TOKENS = {
   LIGHTWEIGHT: parseEnvInt("LLM_LIGHTWEIGHT_MAX_TOKENS", 1024),
 } as const;
 
+export const LLM_TIMEOUTS = {
+  /**
+   * 慢思考深度公文研判超时 (SummaryNode / 复杂思维链)
+   * 充裕预算：10 分钟 (600,000 ms)，充分考虑 27B 大模型在本地深入推演思维链的时间，绝不提前掐断
+   */
+  THINKING: parseEnvInt("LLM_THINKING_TIMEOUT_MS", 600_000),
+
+  /**
+   * 结构化要素抽取超时 (ExtractNode)
+   * 充裕预算：5 分钟 (300,000 ms)，完全容纳并发批次多工单抽取
+   */
+  EXTRACTION: parseEnvInt("LLM_EXTRACTION_TIMEOUT_MS", 300_000),
+
+  /**
+   * 引擎通用兜底超时
+   * 预算：10 分钟 (600,000 ms)
+   */
+  DEFAULT: parseEnvInt("LLM_DEFAULT_TIMEOUT_MS", 600_000),
+} as const;
+
 /**
  * 根据是否开启慢思考获取自适应安全默认 Token 预算
  */
 export function getDefaultMaxTokens(enableThinking?: boolean): number {
   return enableThinking ? LLM_TOKENS.THINKING_SUMMARY : LLM_TOKENS.EXTRACTION;
+}
+
+/**
+ * 根据是否开启慢思考获取充足的超时时间 (毫秒)
+ */
+export function getRecommendedTimeout(enableThinking?: boolean): number {
+  return enableThinking ? LLM_TIMEOUTS.THINKING : LLM_TIMEOUTS.EXTRACTION;
 }

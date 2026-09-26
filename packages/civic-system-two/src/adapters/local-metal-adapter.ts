@@ -18,7 +18,7 @@ export class LocalMetalAdapter implements ISystemTwoAdapter {
     this.endpoint = (config.endpoint || 'http://127.0.0.1:8132/v1').replace(/\/+$/, '');
     this.model = config.model || 'bonsai-2-27b';
     this.apiKey = config.apiKey || 'local-token';
-    this.timeoutMs = config.timeoutMs ?? 180000;
+    this.timeoutMs = config.timeoutMs ?? 600000; // 默认 10 分钟充足慢思考预算
     this.defaultEnableThinking = config.enableThinkingDefault ?? true;
   }
 

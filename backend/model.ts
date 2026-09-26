@@ -1,13 +1,10 @@
 import { ChatOpenAI } from "@langchain/openai";
 import { Embeddings, type EmbeddingsParams } from "@langchain/core/embeddings";
 import { z } from "zod";
-import nextEnvPkg from "@next/env";
+import * as nextEnvPkg from "@next/env";
 
 try {
-  const loadEnvConfig = (nextEnvPkg as any)?.loadEnvConfig || (nextEnvPkg as any)?.default?.loadEnvConfig;
-  if (typeof loadEnvConfig === "function") {
-    loadEnvConfig(process.cwd());
-  }
+  nextEnvPkg.loadEnvConfig(process.cwd());
 } catch (e) { }
 
 const DEFAULT_HEADERS = {
@@ -277,6 +274,7 @@ export function getRerankModel(): RerankModel | null {
 // System-2 慢思考通用认知大模型引擎 (单例)
 // ==========================================
 import { SystemTwoEngine } from "@civic/system-two";
+import { LLM_TIMEOUTS } from "@/lib/tokens";
 
 let systemTwoEnginePromise: Promise<SystemTwoEngine> | null = null;
 
@@ -292,7 +290,7 @@ export async function getSystemTwoEngine(): Promise<SystemTwoEngine> {
 
   systemTwoEnginePromise = SystemTwoEngine.create({
     endpoint,
-    timeoutMs: 120000,
+    timeoutMs: LLM_TIMEOUTS.DEFAULT,
     cloudFallback: cloudApiKey
       ? {
           endpoint: cloudEndpoint,

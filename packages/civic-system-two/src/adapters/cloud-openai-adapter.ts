@@ -13,7 +13,7 @@ export class CloudOpenAIAdapter implements ISystemTwoAdapter {
   private model: string;
   private timeoutMs: number;
 
-  constructor(config: CloudFallbackConfig, timeoutMs = 120000) {
+  constructor(config: CloudFallbackConfig, timeoutMs = 600000) {
     this.endpoint = config.endpoint.replace(/\/+$/, '');
     this.apiKey = config.apiKey;
     this.model = config.model;
