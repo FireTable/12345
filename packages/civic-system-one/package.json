@@ -15,6 +15,7 @@
     "README.md"
   ],
   "scripts": {
+    "test": "tsx scripts/test-engine.ts",
     "engine": "python3 scripts/engine.py",
     "benchmark": "python3 scripts/benchmark.py"
   },
@@ -32,5 +33,10 @@
   "license": "MIT",
   "dependencies": {
     "onnxruntime-node": "^1.30.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
   }
 }

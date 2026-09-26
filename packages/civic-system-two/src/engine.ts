@@ -159,9 +159,16 @@ export class SystemTwoEngine {
         type: 'json_object',
       } as const);
 
+    // 对于结构化 JSON 任务，默认不消耗额外思考 token，快速产出结构；
+    // 如果调用方显式要求开启思考 (enable_thinking: true)，则给予更充足的默认 max_tokens (2048)
+    const enableThinking = params.enable_thinking ?? false;
+    const maxTokens = params.max_tokens ?? (enableThinking ? 2048 : 1024);
+
     const completion = await this.chat.completions.create({
       ...params,
       response_format: format,
+      enable_thinking: enableThinking,
+      max_tokens: maxTokens,
     });
 
     const rawContent = completion.choices[0]?.message.content || '';

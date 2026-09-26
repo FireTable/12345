@@ -93,6 +93,12 @@ export function parseStructuredJson<T = unknown>(
   rawText: string,
   schema?: z.ZodType<T>
 ): T {
+  if (!rawText || rawText.trim().length === 0) {
+    throw new Error(
+      `[SystemTwo:EmptyJsonOutput] 模型生成的正文为空（可能是 max_tokens 预算不足被思维链提前耗尽）。建议增大 max_tokens 或在结构化抽取任务中设置 enable_thinking: false。`
+    );
+  }
+
   const jsonStr = cleanJsonFences(rawText);
   let parsed: unknown;
 
