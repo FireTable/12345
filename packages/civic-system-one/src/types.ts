@@ -68,13 +68,12 @@ export interface CivicSystemOneDecision {
   crossDepartmentRisk: boolean;
 
   // 元数据
-  adapterUsed: "mps" | "onnx" | "fallback";
+  adapterUsed: "onnx" | "fallback";
   latencyMs: number;
 }
 
 export interface SystemOneConfig {
-  preferredMode?: "auto" | "mps" | "onnx" | "fallback";
-  mpsEndpoint?: string; // 默认 "http://127.0.0.1:8000"
+  preferredMode?: "auto" | "onnx" | "fallback";
   onnxModelDir?: string;
   intraOpNumThreads?: number;
 }

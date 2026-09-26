@@ -109,9 +109,27 @@ afshinm/laya-mps (Base ModernBERT 1.68GB)     | 10,000   | 876.20 s    | 87.6197
 ### 1. 核心模型产物 (`models/`)
 
 - `models/vocab_civic.json`：政务通用词表（15,000 核心词汇，0.5 MB）
-- `models/civic-laya-onnx/model.onnx`：生产级 ONNX 模型（4.5 MB，主推 CPU 8线程极速运行时）
-- `models/civic-laya-mlx/weights.npz`：Apple Silicon 原生 MLX 浮点权重（4.2 MB）
-- `models/civic-laya-checkpoint/best_model.pt`：PyTorch 原生训练检查点（4.5 MB）
+- `models/civic-laya-onnx/model.onnx`：生产级 ONNX 模型（4.5 MB，Node.js 原生内嵌 0.2ms 极速推理）
+- `models/civic-laya-checkpoint/best_model.pt`：PyTorch 训练检查点（4.5 MB，用于模型重训练、微调与 Python 基准对比）
+
+### 2. TypeScript / Node.js 极简调用
+
+`@civic/system-one` 采用极简设计，基于官方 `onnxruntime-node` 原生内嵌运行，**零外部进程依赖（无需 Python/8000端口）**，单条推理耗时仅 **0.2 ~ 0.4 ms**：
+
+```typescript
+import { SystemOneEngine } from "@civic/system-one";
+
+const engine = await SystemOneEngine.create();
+const decision = await engine.evaluate({
+  title: "水管爆裂路面积水",
+  content: "大良街道某路段主水管突发爆裂漏水严重，导致双向交通受阻..."
+});
+
+console.log(decision.categoryName); // 交通出行
+console.log(decision.intent);       // COMPLAINT
+console.log(decision.urgencyLevel); // Level 1
+console.log(decision.latencyMs);    // 0.4 ms
+```
 
 ### 2. 生产脚本清单 (`scripts/`)
 
