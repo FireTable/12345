@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { MOCK_RAW_TICKETS } from "@/lib/mock-data";
 import { getRegionDb } from "@/db/client";
-import { ticketsTable } from "@/db/schema";
-import { sql, inArray } from "drizzle-orm";
+import { ticketsTable, themesTable } from "@/db/schema";
+import { sql, inArray, eq } from "drizzle-orm";
 import type { RawTicket } from "@/backend/state";
 import { desensitizeContent } from "@/backend/anonymizer";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
+import { ingestSingleTicketPipeline } from "@/backend/agent";
 
 export async function GET(req: Request) {
   try {
@@ -108,6 +109,73 @@ export async function POST(req: Request) {
             .onConflictDoNothing({ target: ticketsTable.ticketNo });
 
           insertedCount = recordsToInsert.length;
+
+          // 若为单条新工单接入，后台异步触发增量时空吸附与研判，实现“入库即智能吸附”
+          if (recordsToInsert.length === 1) {
+            const singleRec = recordsToInsert[0];
+            (async () => {
+              try {
+                const activeRows = await tenantDb
+                  .select()
+                  .from(themesTable)
+                  .where(sql`${themesTable.handlingStatus} != '已办结'`);
+
+                const activeThemes: any[] = activeRows.map((r: any) => ({
+                  id: r.id,
+                  title: r.title,
+                  canonicalSubject: r.canonicalSubject,
+                  canonicalLocation: r.canonicalLocation,
+                  eventType: r.eventType,
+                  category: r.category || "城市管理",
+                  riskLevel: r.riskLevel,
+                  riskReason: r.riskReason || "",
+                  ticketCount: r.ticketCount,
+                  timeSpanHours: r.timeSpanHours || 1,
+                  firstOccurrence: r.firstAt ? r.firstAt.toISOString().slice(0, 19).replace("T", " ") : "",
+                  lastOccurrence: r.lastAt ? r.lastAt.toISOString().slice(0, 19).replace("T", " ") : "",
+                  aiSummary: r.aiSummary || "",
+                  recommendedAction: r.recommendedAction || "",
+                  handlingStatus: r.handlingStatus || "未处理",
+                  status: "CONFIRMED",
+                  tickets: [],
+                  relatedSubjects: [r.canonicalSubject],
+                  relatedLocations: [r.canonicalLocation],
+                }));
+
+                const { enrichedTicket, result: incResult } = await ingestSingleTicketPipeline(
+                  {
+                    ...singleRec,
+                    createTime: singleRec.createTime instanceof Date ? singleRec.createTime.toISOString().slice(0, 19).replace("T", " ") : String(singleRec.createTime),
+                  },
+                  activeThemes,
+                  regionId
+                );
+
+                if (incResult.action === "ATTACHED" && incResult.matchedThemeId) {
+                  await tenantDb
+                    .update(ticketsTable)
+                    .set({
+                      primaryThemeId: incResult.matchedThemeId,
+                      summarizeTitle: enrichedTicket.summarizeTitle,
+                      address: enrichedTicket.canonicalLocation,
+                      sourceCategory: enrichedTicket.sourceCategory,
+                      confidence: enrichedTicket.confidence,
+                    })
+                    .where(eq(ticketsTable.id, singleRec.id));
+
+                  await tenantDb
+                    .update(themesTable)
+                    .set({
+                      ticketCount: incResult.matchedTheme?.ticketCount || sql`${themesTable.ticketCount} + 1`,
+                      lastAt: new Date(),
+                    })
+                    .where(eq(themesTable.id, incResult.matchedThemeId));
+                }
+              } catch (asyncErr: any) {
+                console.warn("[tickets/route] Incremental ingestion background task warning:", asyncErr.message);
+              }
+            })().catch(() => {});
+          }
         }
       }
     } catch (dbErr: any) {

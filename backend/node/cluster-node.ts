@@ -53,6 +53,7 @@ function isSpecificMicroLocation(location: string): boolean {
  * 绝不允许跨主体、跨地点的乱绑定与乱拉郎配！
  */
 import { updateTaskProgress } from "@/lib/task-progress";
+import { evaluateIncrementalTicket } from "../incremental-cluster";
 
 export async function clusterNode(
   state: TicketRadarState
@@ -69,17 +70,31 @@ export async function clusterNode(
   }
 
   if (enrichedTickets.length === 0) {
-    return { themes: [], status: "clustering" };
+    return { themes: state.themes || [], status: "clustering" };
   }
 
-  const themes: MultiFrequencyTheme[] = [];
+  const themes: MultiFrequencyTheme[] = [...(state.themes || [])];
   const assignedTicketIds = new Set<string>();
+
+  // ==========================================
+  // 步骤 0：【存量活跃主题增量吸附】优先匹配已有在办事件簇
+  // ==========================================
+  if (themes.length > 0) {
+    for (const ticket of enrichedTickets) {
+      if (assignedTicketIds.has(ticket.id)) continue;
+      const incRes = evaluateIncrementalTicket(ticket, themes);
+      if (incRes.action === "ATTACHED") {
+        assignedTicketIds.add(ticket.id);
+      }
+    }
+  }
 
   // ==========================================
   // 模式 1：【同一明确涉事主体】多频共性聚类
   // ==========================================
   const subjectGroupMap = new Map<string, EnrichedTicket[]>();
   for (const ticket of enrichedTickets) {
+    if (assignedTicketIds.has(ticket.id)) continue;
     const subj = (ticket.canonicalSubject || "").trim();
     if (!isValidSpecificSubject(subj)) continue;
 

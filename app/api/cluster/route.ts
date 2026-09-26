@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { runTicketRadarPipeline } from "@/backend/agent";
 import { db, getRegionDb } from "@/db/client";
-import { ticketsTable } from "@/db/schema";
+import { ticketsTable, themesTable } from "@/db/schema";
 import { seedReviewQueue } from "@/lib/review-queue";
 import { initTaskProgress } from "@/lib/task-progress";
 import { persistClusterResult } from "@/lib/civic-persist";
@@ -73,8 +73,41 @@ export async function POST(req: NextRequest) {
 
     initTaskProgress(taskId, tickets.length);
 
-    // 3. Run LangGraph JS Pipeline with regionId
-    const result = await runTicketRadarPipeline(tickets, threadId, taskId, regionId);
+    // 2.1 查询数据库中处于在办/未办结状态的存量多频主题，支持跨批次增量吸附
+    let existingActiveThemes: any[] = [];
+    try {
+      const activeRows = await tenantDb
+        .select()
+        .from(themesTable)
+        .where(sql`${themesTable.handlingStatus} != '已办结'`);
+
+      existingActiveThemes = activeRows.map((r: any) => ({
+        id: r.id,
+        title: r.title,
+        canonicalSubject: r.canonicalSubject,
+        canonicalLocation: r.canonicalLocation,
+        eventType: r.eventType,
+        category: r.category || "城市管理",
+        riskLevel: r.riskLevel,
+        riskReason: r.riskReason || "",
+        ticketCount: r.ticketCount,
+        timeSpanHours: r.timeSpanHours || 1,
+        firstOccurrence: r.firstAt ? r.firstAt.toISOString().slice(0, 19).replace("T", " ") : "",
+        lastOccurrence: r.lastAt ? r.lastAt.toISOString().slice(0, 19).replace("T", " ") : "",
+        aiSummary: r.aiSummary || "",
+        recommendedAction: r.recommendedAction || "",
+        handlingStatus: r.handlingStatus || "未处理",
+        status: "CONFIRMED",
+        tickets: [],
+        relatedSubjects: [r.canonicalSubject],
+        relatedLocations: [r.canonicalLocation],
+      }));
+    } catch (e: any) {
+      // 降级为空
+    }
+
+    // 3. Run LangGraph JS Pipeline with regionId and existingActiveThemes
+    const result = await runTicketRadarPipeline(tickets, threadId, taskId, regionId, existingActiveThemes);
 
     // 4. Persist extract + cluster agent fields (never overwrite content)
     try {
