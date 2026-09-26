@@ -4,7 +4,27 @@ Work branch: `feat/civic-ui-landing`
 Reference: `design-assets/frontend/`  
 Rule: pages read persisted or aggregated data. No `Math.random` trends, no `log10(count)` fake confidence, no hardcoded 北滘 +186% insight as live copy.
 
-## 2026-08-21 — 13,659 件全量工单质量治理与 Themes 零串扰双轨实体聚类重构
+## 2026-09-26 — V2 双引擎架构重构、微观时空基底对齐与增量滑动窗口闭环落地
+
+- **System-1 / System-2 双引擎分层协同全面落地**：
+  - **Monorepo Packages 架构**：拆分并定型 `@civic/system-one`（4头交叉注意力神经分类器，单单推断 **0.079 ms**，吞吐超 **12,600 TPS**）、`@civic/system-two`（Bonsai 2 27B PTQ1_0 三值大模型，Apple Silicon Metal 深度调优，CoT 思维链剥离，`createJSON` 强类型驱动）与 `@civic/anonymizer`（全要素可逆隐私脱敏安全气隙）。
+  - **快思考极速直通**：政策咨询件（INQUIRY）与工单催办毫秒级直接分派直通（51ms），无需调用昂贵大模型，节约 80%+ 简单工单算力。
+  - **极速抽取与废除套娃仲裁**：工单抽取显式指定 `enableThinking: false`，单件约 3 秒结构化直出；彻底剔除旧版置信度 `< 60` 反复调用 LLM 仲裁的低效死循环，改由权威字典与本地白名单确定性校准。
+  - **多频成团统一慢思考**：仅在多频事件成团后统一调用 1 次 System-2 慢思考（`enableThinking: true`），推导 **3100+ 字符思维链**，深度穿透跨部门权责并生成分步处置预案。
+- **微观时空核心基底提纯算法 (`extractSpatialCore`)**：
+  - 自动剥离门牌号（“28号”）、店铺名等修饰噪点，提纯出公共微观道路核心基底（如 `大良街道金榜上街`），彻底解决市民表达细微差异无法聚类的历史顽疾。
+  - 建立纯行政区划防吸附隔离线，严禁将全街道泛诉求错误吸附进具体某条路段，杜绝工单串扰。
+- **增量工单时空吸附与 72h 滑动时间窗口机制 (`backend/incremental-cluster.ts`)**：
+  - 新增流式吸附判定：新工单 **1.9 毫秒** 判定是否吸附进当前在办活跃主题，工单数自动累加，杜绝重复建群。
+  - 确立“距离该事件最后一个事件发生时间（lastOccurrence）的 72 小时滑动时间窗口”政务业务标准。
+  - 平时 0 耗时继承老方案（0 等待、0 Token 消耗），座席秒级答复；突发严重险情（冲刷塌陷、次生灾害）质变精准触发 System-2 慢思考升级应急救援预案。
+- **集中式 Token 与超时预算体系 (`lib/tokens.ts`)**：
+  - 抽取分配 2048 Tokens / 5 分钟超时，慢思考分配 4096 Tokens / 10 分钟充足预算，彻底根除客户端写死短超时断联报错。
+- **业务 API 双模态全面贯通**：
+  - `POST /api/tickets`：单单流式入库后台异步触发 `ingestSingleTicketPipeline`，实现“入库即智能吸附”；
+  - `POST /api/cluster`：批处理研判自动带入未结案存量主题，实现跨批次连续性治理。
+
+---
 
 - **工单镇街与摘要全量治理 (`scripts/refine-data-quality.ts`)**：
   - 全量清洗 13,659 条工单，结合顺德 10 镇街、98+ 村居社区及 72+ 别名白名单，将 5,764 条缺失镇街工单 100% 准确归正，并去除 `'其在陈村镇'` 等前缀脏数据。

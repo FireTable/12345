@@ -126,11 +126,19 @@ ssh root@<VPS_IP> 'cd /opt/12345-stack && \
 
 本系统原生支持**纯离线、零外部请求**的信创政务内网部署：
 
-1. **大模型本地化 (Ollama / vLLM)**：
-   - 部署 MiniCPM / Qwen2.5 等开源政务量化模型；
-   - 将 `.env.vps` 中的 `OPENAI_BASE_URL` 配置为 `http://127.0.0.1:11434/v1`；
+1. **大模型本地化 (Ollama / vLLM / llama-server)**：
+   - 部署 MiniCPM / Qwen2.5 / Bonsai 2 等开源政务量化模型；
    - 系统内置 `isLocalLlm()` / `isOllamaLlm()` 自动识别并调优 KV Cache 与并发参数。
-2. **数据不出域**：所有结构化抽取、仲裁与向量计算全部在政务专网内完成。
+2. **Apple Silicon Metal 慢思考硬件加速 (System-2 黄金调优)**：
+   - 模型物料：`Ternary-Bonsai-2-27B-PTQ1_0.gguf`（三值化 5.5GB 权重）；
+   - 启动生产调优服务（端口 8132）：
+     ```bash
+     cd packages/civic-system-two
+     npm run serve
+     # 对应底层参数: -m <model.gguf> -np 1 -fa on -ctk q8_0 -ctv q8_0 --port 8132
+     ```
+   - 吞吐表现：在 M 系列芯片上实现 **20 ~ 24 tokens/s** 稳定高吞吐输出。
+3. **数据不出域**：所有快思考决策（ONNX/MPS）、隐私脱敏及慢思考大模型推理全部在本地专网闭环完成，数据 100% 不出域。
 
 ---
 

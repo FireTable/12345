@@ -15,6 +15,13 @@
 
 ## 一、生产核心依赖清单与开源协议
 
+### 0. 核心私有 Monorepo 独立引擎包 (In-repo Packages)
+| 模块名称 | 路径 | 核心能力说明 | 架构特性 |
+| :--- | :--- | :--- | :--- |
+| **`@civic/system-one`** | `packages/civic-system-one` | **快思考极速决策引擎**：单单推理 **0.079 ms**，吞吐 **12,600 TPS**，政策咨询/催办免 LLM 直接直通 | 纯离线 ONNX/MPS 神经分类器 |
+| **`@civic/system-two`** | `packages/civic-system-two` | **慢思考通用认知大模型引擎**：适配 Bonsai 2 27B PTQ1_0 三值大模型，Apple Silicon Metal 深度调优 | OpenAI 规范 / CoT 思维链剥离 / createJSON |
+| **`@civic/anonymizer`** | `packages/civic-anonymizer` | **全要素可逆隐私脱敏引擎**：出站掩码加密，入库前会话级 Keymap 确定性无损反向还原 | 国标数学校验 / 零外部网络依赖 |
+
 ### 1. 核心 AI 图状态机与数据流
 | 依赖库名称 | 版本号 | 用途说明 | 开源许可证 | 官方仓库 / 主页 |
 | :--- | :--- | :--- | :--- | :--- |

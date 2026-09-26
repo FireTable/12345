@@ -17,7 +17,7 @@
    - 调用方亦可随时显式指定 `enable_thinking: false` 关闭思考进行低延迟直出。
 3. **格式完全由调用方掌控**：
    - 包内部**不硬编码**任何业务级 Prompt 或格式限制，业务层自由决定输出纯文本、Markdown 报告或 JSON 数据。
-   - 提供 `engine.createJson<T>(params, schema)` 配合 Zod 实现带类型守卫的端到端安全解析。
+   - 提供 `engine.createJSON<T>(schema, options)` 配合 Zod 实现带类型守卫的端到端安全解析。
 4. **Apple Silicon Metal 黄金调优**：
    - 搭载 Bonsai 2 27B PTQ1_0 三值大模型（单量化权重仅 5.5GB）。
    - 实测最佳参数配置：单流高吞吐（`-np 1`，彻底避免多 Batch 导致的 Metal 三值去量化带宽竞争瓶颈）、Flash Attention 开启（`-fa on`）、KV Cache 压缩减半（`-ctk q8_0 -ctv q8_0`），在 M 系列芯片上实现稳定 20+ tokens/s。
