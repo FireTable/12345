@@ -216,10 +216,12 @@ pnpm db:seed
 npx tsx scripts/test-accuracy-pipeline.ts
 ```
 
-### 5. 启动本地开发服务
+### 5. 启动本地全栈开发服务 (Next.js + System-2 本地慢思考引擎)
 ```bash
 pnpm dev
 ```
+> 💡 **全栈一键拉起**：`pnpm dev` 会自动探测并拉起本地 Apple Silicon Metal 优化的 System-2 慢思考推理服务 (`http://127.0.0.1:8132/v1`) 与 Next.js 开发服务；若仅需启动 Web 前端/API 服务，可执行 `pnpm dev:web`。
+
 在浏览器中访问 [http://localhost:3000](http://localhost:3000) 即可开始使用！
 - **系统登录账号**：`admin`
 - **系统登录密码**：`admin`
@@ -230,7 +232,9 @@ pnpm dev
 
 | 命令 | 说明 |
 | :--- | :--- |
-| `pnpm dev` | 启动 Next.js 本地开发服务 |
+| `pnpm dev` | **全栈启动**：自动并行拉起 System-2 本地大模型推理引擎 (8132) 与 Next.js (3000) |
+| `pnpm dev:web` | **轻量启动**：仅启动 Next.js 本地开发服务 (大模型依赖云端 API 灾备模式) |
+| `pnpm dev:llm` | **独立调试**：单独拉起 System-2 本地 Metal 推理服务 (Bonsai 2 27B) |
 | `pnpm build` | 编译 Next.js 生产版本构建 |
 | `pnpm db:migrate` | 运行 Drizzle SQL 数据库迁移 |
 | `pnpm db:vocab` | 一键初始化/同步标准政务词汇表与别名知识库 |

@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev",
+    "dev": "tsx scripts/dev.ts",
+    "dev:web": "next dev",
+    "dev:llm": "tsx packages/civic-system-two/scripts/serve.ts",
     "dev:backend": "langgraphjs dev",
     "build": "next build",
     "start": "next start",
