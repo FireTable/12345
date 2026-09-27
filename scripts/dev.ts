@@ -61,15 +61,11 @@ function cleanUpAndExit(code = 0) {
   for (const proc of childProcesses) {
     if (proc && !proc.killed && proc.pid) {
       try {
-        process.kill(-proc.pid, "SIGTERM");
-      } catch {
-        try {
-          proc.kill("SIGTERM");
-        } catch {}
-      }
+        proc.kill("SIGTERM");
+      } catch {}
     }
   }
-  setTimeout(() => process.exit(code), 300);
+  setTimeout(() => process.exit(code), 200);
 }
 
 process.on("SIGINT", () => cleanUpAndExit(0));
@@ -97,7 +93,6 @@ async function main() {
 
       const s2Proc = spawn("npx", ["tsx", SERVE_SCRIPT], {
         stdio: ["ignore", "pipe", "pipe"],
-        detached: true,
         env: {
           ...process.env,
           PORT: String(PORT),
@@ -170,7 +165,6 @@ async function main() {
 
   const nextProc = spawn("npx", nextArgs, {
     stdio: "inherit",
-    detached: true,
     env: process.env,
   });
 
