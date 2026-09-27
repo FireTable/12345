@@ -83,10 +83,10 @@ export class ONNXAdapter implements DecisionAdapter {
       tokens.forEach((tok, idx) => this.tokenToId.set(tok, idx));
     }
 
-    // Dynamic import onnxruntime-node
+    // Dynamic import onnxruntime-node via runtime evaluation to bypass Webpack static bundling
     try {
-      // @ts-ignore
-      this.ort = await import("onnxruntime-node");
+      const importDynamic = new Function("modulePath", "return import(modulePath)");
+      this.ort = await importDynamic("onnxruntime-node");
       const sessionOptions = {
         intraOpNumThreads: 4,
         graphOptimizationLevel: "all",

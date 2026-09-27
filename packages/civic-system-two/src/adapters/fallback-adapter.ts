@@ -1,5 +1,5 @@
-import { CivicChatCompletion, CivicChatCompletionParams } from '../types.js';
-import { ISystemTwoAdapter } from './types.js';
+import { CivicChatCompletion, CivicChatCompletionParams } from '../types';
+import { ISystemTwoAdapter } from './types';
 
 export class FallbackAdapter implements ISystemTwoAdapter {
   readonly name = 'FallbackAdapter (Safe Offline Emergency Failsafe)';

@@ -1,4 +1,4 @@
-import { CivicChatCompletion, CivicChatCompletionParams } from '../types.js';
+import { CivicChatCompletion, CivicChatCompletionParams } from '../types';
 
 export interface ISystemTwoAdapter {
   readonly name: string;

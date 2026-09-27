@@ -2,6 +2,14 @@ import { NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { getDefaultRegion } from "@/db/client";
 
+function normalizeRegionId(raw?: string | null): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (trimmed === "shunde") return "fs_shunde";
+  if (trimmed === "haizhu") return "gz_haizhu";
+  return trimmed || null;
+}
+
 /**
  * 从请求的 Header / Cookie / URL 参数中解析当前激活的地区站点 ID
  */
@@ -12,9 +20,9 @@ export async function resolveRequestRegionId(
   if (req && "url" in req) {
     try {
       const url = new URL(req.url);
-      const queryRegion = url.searchParams.get("region");
-      if (queryRegion && queryRegion.trim()) {
-        return queryRegion.trim();
+      const queryRegion = normalizeRegionId(url.searchParams.get("region"));
+      if (queryRegion) {
+        return queryRegion;
       }
     } catch (e) {
       // ignore
@@ -23,18 +31,18 @@ export async function resolveRequestRegionId(
 
   // 2. HTTP Request Header: x-region-id
   if (req && "headers" in req) {
-    const headerRegion = req.headers.get("x-region-id");
-    if (headerRegion && headerRegion.trim()) {
-      return headerRegion.trim();
+    const headerRegion = normalizeRegionId(req.headers.get("x-region-id"));
+    if (headerRegion) {
+      return headerRegion;
     }
   }
 
   // 3. Cookie: active_region
   try {
     const cookieStore = await cookies();
-    const cookieRegion = cookieStore.get("active_region")?.value;
-    if (cookieRegion && cookieRegion.trim()) {
-      return cookieRegion.trim();
+    const cookieRegion = normalizeRegionId(cookieStore.get("active_region")?.value);
+    if (cookieRegion) {
+      return cookieRegion;
     }
   } catch (e) {
     // ignore
@@ -48,5 +56,5 @@ export async function resolveRequestRegionId(
     // ignore
   }
 
-  return "shunde";
+  return "fs_shunde";
 }

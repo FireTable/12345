@@ -5,7 +5,14 @@ const nextConfig: NextConfig = {
   // Standalone build → minimal runtime image (see Dockerfile)
   output: "standalone",
   // Support server external packages if needed
-  serverExternalPackages: ["@langchain/langgraph", "@langchain/core"],
+  serverExternalPackages: [
+    "@langchain/langgraph",
+    "@langchain/core",
+    "onnxruntime-node",
+    "@civic/system-one",
+    "@civic/system-two",
+    "@civic/anonymizer",
+  ],
 };
 
 export default nextConfig;

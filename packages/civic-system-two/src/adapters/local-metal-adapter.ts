@@ -2,9 +2,9 @@ import {
   CivicChatCompletion,
   CivicChatCompletionParams,
   SystemTwoConfig,
-} from '../types.js';
-import { extractReasoningAndContent, parseStructuredJson } from '../parser.js';
-import { ISystemTwoAdapter } from './types.js';
+} from '../types';
+import { extractReasoningAndContent, parseStructuredJson } from '../parser';
+import { ISystemTwoAdapter } from './types';
 
 export class LocalMetalAdapter implements ISystemTwoAdapter {
   readonly name = 'LocalMetalAdapter (llama-server / Metal)';

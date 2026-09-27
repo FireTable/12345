@@ -3,12 +3,12 @@ import {
   CivicChatCompletion,
   CivicChatCompletionParams,
   SystemTwoConfig,
-} from './types.js';
-import { ISystemTwoAdapter } from './adapters/types.js';
-import { LocalMetalAdapter } from './adapters/local-metal-adapter.js';
-import { CloudOpenAIAdapter } from './adapters/cloud-openai-adapter.js';
-import { FallbackAdapter } from './adapters/fallback-adapter.js';
-import { parseStructuredJson } from './parser.js';
+} from './types';
+import { ISystemTwoAdapter } from './adapters/types';
+import { LocalMetalAdapter } from './adapters/local-metal-adapter';
+import { CloudOpenAIAdapter } from './adapters/cloud-openai-adapter';
+import { FallbackAdapter } from './adapters/fallback-adapter';
+import { parseStructuredJson } from './parser';
 
 export interface CreateJSONOptions {
   messages: CivicChatCompletionParams['messages'];

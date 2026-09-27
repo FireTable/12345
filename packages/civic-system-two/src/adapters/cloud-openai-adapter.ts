@@ -2,9 +2,9 @@ import {
   CivicChatCompletion,
   CivicChatCompletionParams,
   CloudFallbackConfig,
-} from '../types.js';
-import { extractReasoningAndContent, parseStructuredJson } from '../parser.js';
-import { ISystemTwoAdapter } from './types.js';
+} from '../types';
+import { extractReasoningAndContent, parseStructuredJson } from '../parser';
+import { ISystemTwoAdapter } from './types';
 
 export class CloudOpenAIAdapter implements ISystemTwoAdapter {
   readonly name = 'CloudOpenAIAdapter (Remote OpenAI-compatible)';

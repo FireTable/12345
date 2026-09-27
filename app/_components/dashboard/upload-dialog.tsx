@@ -14,6 +14,7 @@ import {
   RefreshCw,
   Clock,
   ClipboardPaste,
+  Minimize2,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Button } from "@/app/_components/ui/button";
@@ -23,6 +24,8 @@ import type { MultiFrequencyTheme, OverallStats, GraphData } from "@/backend/sta
 import type { TaskProgress } from "@/lib/task-progress";
 import { claimClusterTask, releaseClusterTask } from "@/lib/cluster-client";
 import { resolveApiError } from "@/lib/api-codes";
+import { PipelineFlowView } from "./pipeline-flow-view";
+import { FloatingProgressPill } from "./floating-progress-pill";
 
 interface UploadDialogProps {
   isOpen: boolean;
@@ -83,6 +86,8 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
   const clusterStartedRef = useRef(false);
   const startClusterRef = useRef<() => Promise<void>>(async () => {});
 
+  const [isMinimized, setIsMinimized] = useState(false);
+
   // Stop polling on unmount
   useEffect(() => {
     return () => {
@@ -90,16 +95,36 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
     };
   }, []);
 
-  // Lock background body scroll when open
+  // 断点续播感知：组件初始化时，检查是否后台有正在运行的流水线任务
   useEffect(() => {
-    if (isOpen) {
+    let cancelled = false;
+    void fetch("/api/cluster/progress?taskId=latest")
+      .then((r) => r.json())
+      .then((j) => {
+        if (!cancelled && j.success && j.data && j.data.status === "RUNNING") {
+          setTaskProgress((prev) => ({ ...prev, ...j.data }));
+          setStep("CLUSTERING");
+          setIsMinimized(true); // 正在运行中时默认在右下角悬浮
+          onClusteringChange?.(true);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [onClusteringChange]);
+
+  // Lock background body scroll when open and not minimized
+  useEffect(() => {
+    if (isOpen && !isMinimized) {
       const originalOverflow = document.body.style.overflow;
       document.body.style.overflow = "hidden";
       return () => {
         document.body.style.overflow = originalOverflow;
       };
     }
-  }, [isOpen]);
+  }, [isOpen, isMinimized]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -107,6 +132,8 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
       setStep("SELECT");
       return;
     }
+    // 打开时若已处于最小化态，则还原
+    setIsMinimized(false);
     if (autoStartCluster) {
       setStep("CLUSTERING");
       if (!clusterStartedRef.current) {
@@ -252,7 +279,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
         .catch(() => {});
     }
 
-    // 进度轮询：读内存与DB进度，6s 请求一次，结束即停。
+    // 进度轮询：读内存与DB进度，1s 高频平滑同步，结束即停。
     if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     let pollInFlight = false;
     pollTimerRef.current = setInterval(async () => {
@@ -278,7 +305,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
       } finally {
         pollInFlight = false;
       }
-    }, 6000);
+    }, 1000);
 
     if (!isOwner) {
       // 任务已在后台运行中，直接连上轮询监听
@@ -350,29 +377,32 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
   };
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-      <motion.div
-        key="upload-backdrop"
-        className="fixed inset-0 z-[250] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4"
-        onClick={() => {
-          if (step !== "INGESTING" && step !== "CLUSTERING") {
-            onClose();
-          }
-        }}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.18, ease: "easeOut" }}
-      >
-        <motion.div
-          className="w-full max-w-xl bg-card border border-border rounded-xl shadow-xl overflow-hidden flex flex-col text-foreground"
-          onClick={(e) => e.stopPropagation()}
-          initial={{ opacity: 0, scale: 0.96, y: 8 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.96, y: 8 }}
-          transition={{ duration: 0.2, ease: [0.32, 0.72, 0.18, 1] }}
-        >
+    <>
+      <AnimatePresence>
+        {isOpen && !isMinimized && (
+          <motion.div
+            key="upload-backdrop"
+            className="fixed inset-0 z-[250] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4"
+            onClick={() => {
+              if (step === "CLUSTERING") {
+                setIsMinimized(true);
+              } else if (step !== "INGESTING") {
+                onClose();
+              }
+            }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
+          >
+            <motion.div
+              className="w-full max-w-2xl bg-card border border-border rounded-xl shadow-xl overflow-hidden flex flex-col text-foreground"
+              onClick={(e) => e.stopPropagation()}
+              initial={{ opacity: 0, scale: 0.96, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 8 }}
+              transition={{ duration: 0.2, ease: [0.32, 0.72, 0.18, 1] }}
+            >
         {/* Modal Header */}
         <div className="px-5 py-4 border-b border-border flex items-center justify-between bg-muted/20">
           <div className="flex items-center gap-2.5">
@@ -398,13 +428,26 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            disabled={step === "INGESTING" || step === "CLUSTERING"}
-            className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer disabled:opacity-30"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1">
+            {step === "CLUSTERING" && (
+              <button
+                type="button"
+                onClick={() => setIsMinimized(true)}
+                title="收起至右下角悬浮窗"
+                className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+              >
+                <Minimize2 className="w-4 h-4" />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={step === "INGESTING" || step === "CLUSTERING"}
+              className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer disabled:opacity-30"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Modal Body */}
@@ -569,356 +612,16 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
               </motion.div>
             )}
 
-            {/* STEP 3: CLUSTERING (REAL BACKEND P-QUEUE PROGRESS) */}
+            {/* STEP 3: CLUSTERING (V2 PIPELINE FLOW VIEW) */}
             {step === "CLUSTERING" && (
               <motion.div
                 key="clustering"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="py-2 space-y-4"
+                className="py-1"
               >
-                {/* Header & Percentage */}
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <div className="flex items-center gap-2">
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
-                      <span className="text-xs font-semibold text-foreground">
-                        {taskProgress.stageText || "处理中..."}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-muted-foreground pl-5.5">
-                      多线程并发处理 · 实体抽取与连通图谱聚类
-                    </p>
-                  </div>
-
-                  <div className="text-right">
-                    {taskProgress.total > 0 || taskProgress.percent > 0 ? (
-                      <span className="text-lg font-bold font-mono text-primary">
-                        {taskProgress.percent}%
-                      </span>
-                    ) : (
-                      <Loader2 className="w-5 h-5 animate-spin text-primary ml-auto" />
-                    )}
-                  </div>
-                </div>
-
-                {/* Clean Professional Progress Bar */}
-                <div className="w-full bg-muted rounded-full h-2 overflow-hidden border border-border/50">
-                  <motion.div
-                    className="bg-primary h-full rounded-full transition-all duration-300"
-                    style={{ width: `${taskProgress.percent}%` }}
-                  />
-                </div>
-
-                {/* Real Pipeline Flow Metrics */}
-                {(() => {
-                  const totalTickets = taskProgress.total || report?.insertedCount || 0;
-                  const processedTickets = taskProgress.processed || 0;
-                  const themeCount = taskProgress.themeCount || 0;
-                  const reviewCount = taskProgress.reviewCount || 0;
-                  const isDone = taskProgress.status === "COMPLETED";
-                  const stageText = taskProgress.stageText || "";
-                  const percent = taskProgress.percent || 0;
-                  const awaiting = !isDone && totalTickets === 0;
-                  const metricOrWait = (n: number) =>
-                    awaiting ? (
-                      <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                    ) : (
-                      n.toLocaleString("zh-CN")
-                    );
-
-                  const step1Done = totalTickets > 0;
-                  const currentStage = taskProgress.stage;
-
-                  // 步骤 2: 要素抽取
-                  const step2Active = taskProgress.status === "RUNNING" && currentStage === "EXTRACTING";
-                  const step2Done = isDone || ["CLUSTERING", "SYNTHESIZING", "COMPLETED"].includes(currentStage) || (totalTickets > 0 && processedTickets >= totalTickets);
-
-                  // 步骤 3: 智能复核与图谱分析
-                  const step3Active = taskProgress.status === "RUNNING" && currentStage === "CLUSTERING";
-                  const step3Done = isDone || ["SYNTHESIZING", "COMPLETED"].includes(currentStage) || themeCount > 0;
-
-                  // 步骤 4: 多频主题聚类与公文研判
-                  const step4Active = taskProgress.status === "RUNNING" && currentStage === "SYNTHESIZING";
-                  const step4Done = isDone || currentStage === "COMPLETED" || themeCount > 0;
-
-                  return (
-                    <div className="flex items-center justify-between gap-1 pt-1 select-none">
-                      {/* Step 1: 总工单量 */}
-                      <motion.div
-                        initial={{ opacity: 0, y: 5 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.2 }}
-                        className={`flex-1 p-2.5 rounded-lg border transition-all duration-300 ${
-                          step1Done
-                            ? "border-emerald-500/30 bg-emerald-500/5 shadow-xs"
-                            : "border-border/40 bg-muted/20 opacity-50"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-[10.5px] font-medium text-muted-foreground">总工单量</span>
-                          {step1Done ? (
-                            <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
-                          ) : (
-                            <Clock className="w-3 h-3 text-muted-foreground/40 shrink-0" />
-                          )}
-                        </div>
-                        <p className="text-sm font-bold font-mono text-foreground min-h-5 flex items-center">
-                          {metricOrWait(totalTickets)}
-                        </p>
-                      </motion.div>
-
-                      {/* Flowing Connector 1 -> 2 */}
-                      <div className="flex items-center justify-center gap-1 px-1 shrink-0">
-                        {[0, 1, 2].map((i) => (
-                          <motion.div
-                            key={i}
-                            className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${
-                              step2Done
-                                ? "bg-emerald-500 shadow-[0_0_3px_rgba(16,185,129,0.3)]"
-                                : step2Active
-                                ? "bg-primary"
-                                : "bg-muted-foreground/30"
-                            }`}
-                            animate={
-                              step2Active
-                                ? {
-                                    scale: [0.8, 1.35, 0.8],
-                                    opacity: [0.35, 1, 0.35],
-                                  }
-                                : {
-                                    scale: 1,
-                                    opacity: step2Done ? 1 : 0.35,
-                                  }
-                            }
-                            transition={
-                              step2Active
-                                ? {
-                                    repeat: Infinity,
-                                    duration: 1.1,
-                                    delay: i * 0.22,
-                                    ease: "easeInOut",
-                                  }
-                                : {
-                                    duration: 0.2,
-                                  }
-                            }
-                          />
-                        ))}
-                      </div>
-
-                      {/* Step 2: 已抽取工单 */}
-                      <motion.div
-                        initial={{ opacity: 0, y: 5 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.2, delay: 0.05 }}
-                        className={`flex-1 p-2.5 rounded-lg border transition-all duration-300 ${
-                          step2Active
-                            ? "border-primary/50 bg-primary/5 ring-1 ring-primary/40 shadow-[0_0_12px_rgba(59,130,246,0.14)]"
-                            : step2Done
-                            ? "border-emerald-500/30 bg-emerald-500/5 shadow-xs"
-                            : "border-border/40 bg-muted/15 opacity-40 grayscale"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span
-                            className={`text-[10.5px] font-medium transition-colors ${
-                              step2Active ? "text-primary font-semibold" : "text-muted-foreground"
-                            }`}
-                          >
-                            已抽取工单
-                          </span>
-                          {step2Active ? (
-                            <span className="relative flex h-2 w-2">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
-                            </span>
-                          ) : step2Done ? (
-                            <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
-                          ) : (
-                            <Clock className="w-3 h-3 text-muted-foreground/40 shrink-0" />
-                          )}
-                        </div>
-                        <p
-                          className={`text-sm font-bold font-mono transition-colors ${
-                            step2Active ? "text-primary" : "text-foreground"
-                          }`}
-                        >
-                          {metricOrWait(processedTickets)}
-                        </p>
-                      </motion.div>
-
-                      {/* Flowing Connector 2 -> 3 */}
-                      <div className="flex items-center justify-center gap-1 px-1 shrink-0">
-                        {[0, 1, 2].map((i) => (
-                          <motion.div
-                            key={i}
-                            className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${
-                              step3Done
-                                ? "bg-emerald-500 shadow-[0_0_3px_rgba(16,185,129,0.3)]"
-                                : step3Active
-                                ? "bg-amber-500"
-                                : "bg-muted-foreground/30"
-                            }`}
-                            animate={
-                              step3Active
-                                ? {
-                                    scale: [0.8, 1.35, 0.8],
-                                    opacity: [0.35, 1, 0.35],
-                                  }
-                                : {
-                                    scale: 1,
-                                    opacity: step3Done ? 1 : 0.35,
-                                  }
-                            }
-                            transition={
-                              step3Active
-                                ? {
-                                    repeat: Infinity,
-                                    duration: 1.1,
-                                    delay: i * 0.22,
-                                    ease: "easeInOut",
-                                  }
-                                : {
-                                    duration: 0.2,
-                                  }
-                            }
-                          />
-                        ))}
-                      </div>
-
-                      {/* Step 3: 低置信复核 (二级 AI 仲裁纠偏) */}
-                      <motion.div
-                        initial={{ opacity: 0, y: 5 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.2, delay: 0.1 }}
-                        className={`flex-1 p-2.5 rounded-lg border transition-all duration-300 ${
-                          step3Active
-                            ? "border-amber-500/50 bg-amber-500/5 ring-1 ring-amber-500/40 shadow-[0_0_12px_rgba(245,158,11,0.15)]"
-                            : step3Done
-                            ? "border-emerald-500/30 bg-emerald-500/5 shadow-xs"
-                            : "border-border/40 bg-muted/15 opacity-40 grayscale"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span
-                            className={`text-[10.5px] font-medium transition-colors ${
-                              step3Active ? "text-amber-600 dark:text-amber-400 font-semibold" : "text-muted-foreground"
-                            }`}
-                          >
-                            低置信复核
-                          </span>
-                          {step3Active ? (
-                            <span className="relative flex h-2 w-2">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-500 opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-                            </span>
-                          ) : step3Done ? (
-                            <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
-                          ) : (
-                            <Clock className="w-3 h-3 text-muted-foreground/40 shrink-0" />
-                          )}
-                        </div>
-                        <p
-                          className={`text-sm font-bold font-mono transition-colors ${
-                            step3Active || reviewCount > 0 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"
-                          }`}
-                        >
-                          {awaiting ? (
-                            <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                          ) : (
-                            reviewCount.toLocaleString("zh-CN")
-                          )}
-                        </p>
-                      </motion.div>
-
-                      {/* Flowing Connector 3 -> 4 */}
-                      <div className="flex items-center justify-center gap-1 px-1 shrink-0">
-                        {[0, 1, 2].map((i) => (
-                          <motion.div
-                            key={i}
-                            className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${
-                              step4Done
-                                ? "bg-emerald-500 shadow-[0_0_3px_rgba(16,185,129,0.3)]"
-                                : step4Active
-                                ? "bg-primary"
-                                : "bg-muted-foreground/30"
-                            }`}
-                            animate={
-                              step4Active
-                                ? {
-                                    scale: [0.8, 1.35, 0.8],
-                                    opacity: [0.35, 1, 0.35],
-                                  }
-                                : {
-                                    scale: 1,
-                                    opacity: step4Done ? 1 : 0.35,
-                                  }
-                            }
-                            transition={
-                              step4Active
-                                ? {
-                                    repeat: Infinity,
-                                    duration: 1.1,
-                                    delay: i * 0.22,
-                                    ease: "easeInOut",
-                                  }
-                                : {
-                                    duration: 0.2,
-                                  }
-                            }
-                          />
-                        ))}
-                      </div>
-
-                      {/* Step 4: 已聚类主题 */}
-                      <motion.div
-                        initial={{ opacity: 0, y: 5 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.2, delay: 0.15 }}
-                        className={`flex-1 p-2.5 rounded-lg border transition-all duration-300 ${
-                          step4Active
-                            ? "border-primary/50 bg-primary/5 ring-1 ring-primary/40 shadow-[0_0_12px_rgba(59,130,246,0.14)]"
-                            : step4Done
-                            ? "border-emerald-500/30 bg-emerald-500/5 shadow-xs"
-                            : "border-border/40 bg-muted/15 opacity-40 grayscale"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span
-                            className={`text-[10.5px] font-medium transition-colors ${
-                              step4Active ? "text-primary font-semibold" : "text-muted-foreground"
-                            }`}
-                          >
-                            已聚类主题
-                          </span>
-                          {step4Active ? (
-                            <span className="relative flex h-2 w-2">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
-                            </span>
-                          ) : step4Done ? (
-                            <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
-                          ) : (
-                            <Clock className="w-3 h-3 text-muted-foreground/40 shrink-0" />
-                          )}
-                        </div>
-                        <p
-                          className={`text-sm font-bold font-mono transition-colors ${
-                            step4Active ? "text-primary" : step4Done ? "text-primary" : "text-muted-foreground"
-                          }`}
-                        >
-                          {awaiting ? (
-                            <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                          ) : (
-                            themeCount.toLocaleString("zh-CN")
-                          )}
-                        </p>
-                      </motion.div>
-                    </div>
-                  );
-                })()}
+                <PipelineFlowView progress={taskProgress} />
               </motion.div>
             )}
 
@@ -1072,5 +775,13 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
       </motion.div>
       )}
     </AnimatePresence>
+
+    {/* 任务在后台运行时，可收起为右下角轻量悬浮胶囊 */}
+    <FloatingProgressPill
+      progress={taskProgress}
+      isVisible={isMinimized && (step === "CLUSTERING" || taskProgress.status === "RUNNING")}
+      onExpand={() => setIsMinimized(false)}
+    />
+  </>
   );
 };

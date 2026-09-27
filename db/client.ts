@@ -10,6 +10,7 @@ const url =
 declare global {
   var __pg: ReturnType<typeof postgres> | undefined;
   var __tenantSqls: Map<string, ReturnType<typeof postgres>> | undefined;
+  var __tenantDbs: Map<string, DB> | undefined;
 }
 
 // 1. 公共默认数据库连接（针对 public schema，用于 Better Auth、regions 表等）
@@ -28,7 +29,11 @@ if (process.env.NODE_ENV !== "production") {
   globalThis.__tenantSqls = tenantSqls;
 }
 
-const tenantDbs = new Map<string, DB>();
+const tenantDbs: Map<string, DB> =
+  globalThis.__tenantDbs ?? new Map();
+if (process.env.NODE_ENV !== "production") {
+  globalThis.__tenantDbs = tenantDbs;
+}
 
 /**
  * 缓存的地区 ID 到 Schema 映射
@@ -83,6 +88,10 @@ export async function getRegionDb(regionIdOrSchema?: string | null): Promise<{
     await getAllRegions();
   }
 
+  // 别名与历史参数归一化
+  if (targetId === "shunde") targetId = "fs_shunde";
+  if (targetId === "haizhu") targetId = "gz_haizhu";
+
   if (!targetId || targetId === "default") {
     const def = await getDefaultRegion();
     if (def) {
@@ -103,23 +112,38 @@ export async function getRegionDb(regionIdOrSchema?: string | null): Promise<{
       const cached = regionSchemaCache.get(targetId)!;
       schemaName = cached.schemaName;
       targetRegion = cached.region;
+    } else {
+      // 容错模糊匹配后缀（例如传了 shunde 匹配到 fs_shunde）
+      for (const [id, val] of regionSchemaCache.entries()) {
+        if (id.endsWith(`_${targetId}`) || id === targetId) {
+          targetId = id;
+          schemaName = val.schemaName;
+          targetRegion = val.region;
+          break;
+        }
+      }
     }
   }
 
-  // 获取该 Schema 专属的连接池实例
-  if (!tenantSqls.has(schemaName)) {
-    const tenantSql = postgres(url, {
-      connection: {
-        search_path: `${schemaName}, public`,
-      },
-      max: 8,
-    });
-    tenantSqls.set(schemaName, tenantSql);
+  // 获取该 Schema 专属的连接池与 Drizzle 实例
+  if (!tenantDbs.has(schemaName)) {
+    let tenantSql = tenantSqls.get(schemaName);
+    if (!tenantSql) {
+      tenantSql = postgres(url, {
+        connection: {
+          search_path: `${schemaName}, public`,
+        },
+        max: 8,
+      });
+      tenantSqls.set(schemaName, tenantSql);
+    }
     tenantDbs.set(schemaName, drizzle(tenantSql, { schema }));
   }
 
+  const resolvedDb = tenantDbs.get(schemaName) ?? db;
+
   return {
-    db: tenantDbs.get(schemaName)!,
+    db: resolvedDb,
     region: targetRegion,
     schemaName,
   };

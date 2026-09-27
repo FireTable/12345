@@ -7,6 +7,20 @@ import { db } from "@/db/client";
 import { taskProgressTable } from "@/db/schema";
 import { eq, desc, lt, and } from "drizzle-orm";
 
+export interface ActiveCategoryStats {
+  category: string;
+  count: number;
+}
+
+export interface ActiveClusterSpotlight {
+  id: string;
+  name: string;
+  category: string;
+  ticketCount: number;
+  subdistrict?: string;
+  type: "EXISTING_ABSORBED" | "NEW_CLUSTER";
+}
+
 export interface TaskProgress {
   taskId: string;
   status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
@@ -19,6 +33,12 @@ export interface TaskProgress {
   themeCount: number;
   reviewCount: number;
   failedCount: number;
+  // V2 流水线专有增强度量
+  fastTrackCount?: number;
+  absorbedCount?: number;
+  activeCategories?: ActiveCategoryStats[];
+  recentClusters?: ActiveClusterSpotlight[];
+  currentReasoning?: string;
   error?: string;
   updatedAt: number;
 }

@@ -136,9 +136,22 @@ export async function summaryNode(
         synthesizedCount += batch.length;
         if (taskId) {
           const percent = Math.min(96, 78 + Math.round((synthesizedCount / Math.max(1, enrichedThemes.length)) * 18));
+          const sampleReasoning = batchResults.find((r) => r.reasoningContent)?.reasoningContent;
+          const spotlightClusters = enrichedThemes.slice(0, 5).map((t) => ({
+            id: t.id,
+            name: t.title,
+            category: t.category,
+            ticketCount: t.ticketCount,
+            subdistrict: t.canonicalLocation,
+            type: "NEW_CLUSTER" as const,
+          }));
+
           updateTaskProgress(taskId, {
             percent,
-            stageText: `AI 正在生成公文级处置建议 (${Math.min(synthesizedCount, enrichedThemes.length)} / ${enrichedThemes.length})...`,
+            themeCount: enrichedThemes.length,
+            recentClusters: spotlightClusters,
+            currentReasoning: sampleReasoning ? sampleReasoning.slice(0, 180) + "..." : undefined,
+            stageText: `System-2 深度思考研判中 (${Math.min(synthesizedCount, enrichedThemes.length)} / ${enrichedThemes.length} 主题)...`,
           });
         }
       });
@@ -148,12 +161,22 @@ export async function summaryNode(
   }
 
   if (taskId) {
+    const spotlightClusters = enrichedThemes.slice(0, 6).map((t) => ({
+      id: t.id,
+      name: t.title,
+      category: t.category,
+      ticketCount: t.ticketCount,
+      subdistrict: t.canonicalLocation,
+      type: "NEW_CLUSTER" as const,
+    }));
+
     updateTaskProgress(taskId, {
       stage: "COMPLETED",
       status: "COMPLETED",
       percent: 100,
       stageText: `多频研判完成！已聚合 ${enrichedThemes.length} 个多频主题`,
       themeCount: enrichedThemes.length,
+      recentClusters: spotlightClusters,
     });
   }
 

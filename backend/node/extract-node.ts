@@ -300,12 +300,27 @@ export async function extractNode(
     if (!extractionMap.has(i)) pendingIdx.push(i);
   }
 
+  // 计算当前已提取工单的板块分类分布
+  const computeActiveCategories = () => {
+    const counts = new Map<string, number>();
+    for (const item of extractionMap.values()) {
+      const cat = item.category || "综合民生";
+      counts.set(cat, (counts.get(cat) || 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .map(([category, count]) => ({ category, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 6);
+  };
+
   if (taskId) {
     const percent = Math.round((processedCount / Math.max(1, normalizedRawTickets.length)) * 50);
     const alertNotice = stabilityAlertCount > 0 ? `，🔴 发现 ${stabilityAlertCount} 件涉稳红线工单` : "";
     updateTaskProgress(taskId, {
       processed: processedCount,
       percent,
+      fastTrackCount,
+      activeCategories: computeActiveCategories(),
       stageText: `System-1 快思考分流完成：${fastTrackCount} 条咨询/催办直通分派${alertNotice}；剩余 ${pendingIdx.length} 条工单进入大模型抽取...`,
       extractedCount: extractionMap.size,
     });
@@ -346,6 +361,8 @@ export async function extractNode(
         updateTaskProgress(taskId, {
           processed: currentProcessed,
           percent,
+          fastTrackCount,
+          activeCategories: computeActiveCategories(),
           stageText: `AI 正在抽取工单实体与微观地点 (${currentProcessed} / ${normalizedRawTickets.length})...`,
           extractedCount: extractionMap.size,
         });
@@ -369,6 +386,8 @@ export async function extractNode(
   if (taskId) {
     updateTaskProgress(taskId, {
       percent: 68,
+      fastTrackCount,
+      activeCategories: computeActiveCategories(),
       stageText: `System-2 结构化要素抽取与行政区划校准完成，准备进入时空知识图谱聚类...`,
     });
   }

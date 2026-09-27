@@ -76,6 +76,7 @@ export async function clusterNode(
   const themes: MultiFrequencyTheme[] = [...(state.themes || [])];
   const assignedTicketIds = new Set<string>();
 
+  let absorbedCount = 0;
   // ==========================================
   // 步骤 0：【存量活跃主题增量吸附】优先匹配已有在办事件簇
   // ==========================================
@@ -85,8 +86,16 @@ export async function clusterNode(
       const incRes = evaluateIncrementalTicket(ticket, themes);
       if (incRes.action === "ATTACHED") {
         assignedTicketIds.add(ticket.id);
+        absorbedCount++;
       }
     }
+  }
+
+  if (taskId && absorbedCount > 0) {
+    updateTaskProgress(taskId, {
+      absorbedCount,
+      stageText: `时空增量吸附：已吸附 ${absorbedCount} 条工单至既有在办事件簇，正在挖掘新兴聚集性多频主题...`,
+    });
   }
 
   // ==========================================
