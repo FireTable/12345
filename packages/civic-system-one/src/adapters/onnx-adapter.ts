@@ -43,6 +43,54 @@ const SLA_MAP: Record<0 | 1 | 2 | 3, 0 | 2 | 24 | 120> = {
   3: 2,
 };
 
+function townshipPresetPath(): string {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  return path.resolve(here, "../../../../lib/presets/foshan_shunde.json");
+}
+
+/** 镇街类与训练脚本一致：字典里的法定全称，再加上 UNKNOWN。 */
+export function loadTownshipLabels(presetPath: string = townshipPresetPath()): string[] {
+  const preset = JSON.parse(fs.readFileSync(presetPath, "utf-8"));
+  const names: string[] = [];
+  for (const town of preset.townships || []) {
+    const name = String(town.fullName || "").trim();
+    if (!name || names.includes(name) || name === "顺德区" || name === "UNKNOWN") {
+      throw new Error(`非法镇街类: ${name}`);
+    }
+    names.push(name);
+  }
+  if (names.length !== 10) {
+    throw new Error(`镇街字典应为 10 个法定全称，实际 ${names.length}`);
+  }
+  return [...names, "UNKNOWN"];
+}
+
+/** 与训练脚本同一套最长匹配。不截断。空文本用 [UNK]。 */
+export function encodeCivicText(tokenToId: Map<string, number>, text: string): number[] {
+  const ids: number[] = [];
+  const t = (text || "").trim();
+  let i = 0;
+  const n = t.length;
+  while (i < n) {
+    if (i + 4 <= n && tokenToId.has(t.slice(i, i + 4))) {
+      ids.push(tokenToId.get(t.slice(i, i + 4))!);
+      i += 4;
+    } else if (i + 3 <= n && tokenToId.has(t.slice(i, i + 3))) {
+      ids.push(tokenToId.get(t.slice(i, i + 3))!);
+      i += 3;
+    } else if (i + 2 <= n && tokenToId.has(t.slice(i, i + 2))) {
+      ids.push(tokenToId.get(t.slice(i, i + 2))!);
+      i += 2;
+    } else if (tokenToId.has(t[i])) {
+      ids.push(tokenToId.get(t[i])!);
+      i += 1;
+    } else {
+      i += 1;
+    }
+  }
+  return ids.length > 0 ? ids : [tokenToId.get("[UNK]") ?? 1];
+}
+
 export class ONNXAdapter implements DecisionAdapter {
   readonly name = "onnx" as const;
   private onnxModelPath: string;
@@ -102,33 +150,6 @@ export class ONNXAdapter implements DecisionAdapter {
     }
   }
 
-  private encodeStr(text: string, maxLen: number): number[] {
-    const ids: number[] = [];
-    const t = text.trim();
-    let i = 0;
-    const n = t.length;
-
-    while (i < n && ids.length < maxLen) {
-      if (i + 4 <= n && this.tokenToId.has(t.slice(i, i + 4))) {
-        ids.push(this.tokenToId.get(t.slice(i, i + 4))!);
-        i += 4;
-      } else if (i + 3 <= n && this.tokenToId.has(t.slice(i, i + 3))) {
-        ids.push(this.tokenToId.get(t.slice(i, i + 3))!);
-        i += 3;
-      } else if (i + 2 <= n && this.tokenToId.has(t.slice(i, i + 2))) {
-        ids.push(this.tokenToId.get(t.slice(i, i + 2))!);
-        i += 2;
-      } else if (this.tokenToId.has(t[i])) {
-        ids.push(this.tokenToId.get(t[i])!);
-        i += 1;
-      } else {
-        i += 1;
-      }
-    }
-
-    return ids.length > 0 ? ids : [1];
-  }
-
   private softmax(logits: number[]): number[] {
     const maxVal = Math.max(...logits);
     const exps = logits.map((val) => Math.exp(val - maxVal));
@@ -151,31 +172,39 @@ export class ONNXAdapter implements DecisionAdapter {
 
     const title = ticket.title || "";
     const body = ticket.content || "";
+    const townshipLabels = loadTownshipLabels();
+    const hasTownship = (session.outputNames || []).includes("township_logits");
 
-    // Pure Dual-Stream Tokenization
-    const titleTokens = this.encodeStr(title, 32);
-    const bodyTokens = this.encodeStr(body, 128);
+    const encodedTitle = encodeCivicText(this.tokenToId, title);
+    const encodedBody = encodeCivicText(this.tokenToId, body);
+    // 旧的四头文件把注意力长度写死成 32/128。没有镇街头时仍按那个长度送，避免线上请求报错。
+    const titleTokens = hasTownship ? encodedTitle : encodedTitle.slice(0, 32);
+    const bodyTokens = hasTownship ? encodedBody : encodedBody.slice(0, 128);
+    const titleWidth = hasTownship ? titleTokens.length : 32;
+    const bodyWidth = hasTownship ? bodyTokens.length : 128;
 
-    const titleIds = new BigInt64Array(32).fill(0n);
-    const titleMask = new Float32Array(32).fill(0);
+    const titleIds = new BigInt64Array(titleWidth);
+    const titleMask = new Float32Array(titleWidth);
     titleTokens.forEach((tok, idx) => {
       titleIds[idx] = BigInt(tok);
       titleMask[idx] = 1.0;
     });
 
-    const bodyIds = new BigInt64Array(128).fill(0n);
-    const bodyMask = new Float32Array(128).fill(0);
+    const bodyIds = new BigInt64Array(bodyWidth);
+    const bodyMask = new Float32Array(bodyWidth);
     bodyTokens.forEach((tok, idx) => {
       bodyIds[idx] = BigInt(tok);
       bodyMask[idx] = 1.0;
     });
 
     const feeds = {
-      title_ids: new this.ort.Tensor("int64", titleIds, [1, 32]),
-      title_mask: new this.ort.Tensor("float32", titleMask, [1, 32]),
-      body_ids: new this.ort.Tensor("int64", bodyIds, [1, 128]),
-      body_mask: new this.ort.Tensor("float32", bodyMask, [1, 128]),
+      title_ids: new this.ort.Tensor("int64", titleIds, [1, titleWidth]),
+      title_mask: new this.ort.Tensor("float32", titleMask, [1, titleWidth]),
+      body_ids: new this.ort.Tensor("int64", bodyIds, [1, bodyWidth]),
+      body_mask: new this.ort.Tensor("float32", bodyMask, [1, bodyWidth]),
     };
+    const titleTokenCount = feeds.title_ids.dims[1];
+    const bodyTokenCount = feeds.body_ids.dims[1];
 
     // 100% Pure Neural Network Inference
     const outputs = await session.run(feeds);
@@ -185,11 +214,20 @@ export class ONNXAdapter implements DecisionAdapter {
     const intLogits = Array.from(outputs.intent_logits.data as Float32Array);
     const urgLogits = Array.from(outputs.urgency_logits.data as Float32Array);
     const stabLogits = Array.from(outputs.stability_logits.data as Float32Array);
+    const townLogits = hasTownship
+      ? Array.from(outputs.township_logits.data as Float32Array)
+      : null;
+    if (townLogits && townLogits.length !== townshipLabels.length) {
+      throw new Error(
+        `[ONNXAdapter] 镇街输出 ${townLogits.length} 类，字典是 ${townshipLabels.length} 类`
+      );
+    }
 
     const catProbs = this.softmax(catLogits);
     const intProbs = this.softmax(intLogits);
     const urgProbs = this.softmax(urgLogits);
     const stabProbs = this.softmax(stabLogits);
+    const townProbs = townLogits ? this.softmax(townLogits) : null;
 
     // 1. Category
     let bestCatIdx = 0;
@@ -225,6 +263,10 @@ export class ONNXAdapter implements DecisionAdapter {
     const stabilityRisk = stabProbs[0] > stabProbs[1]; // Index 0 is YES, Index 1 is NO
     const stabilityRiskProbability = stabProbs[0];
 
+    const bestTownIdx = townProbs ? townProbs.indexOf(Math.max(...townProbs)) : -1;
+    const township = bestTownIdx >= 0 ? townshipLabels[bestTownIdx] : "UNKNOWN";
+    const townshipProbability = bestTownIdx >= 0 ? townProbs![bestTownIdx] : 0;
+
     // Interlock: escalate to Level 3 if stability risk is triggered
     if (stabilityRisk) {
       urgencyLevel = 3;
@@ -246,6 +288,10 @@ export class ONNXAdapter implements DecisionAdapter {
       slaHours,
       stabilityRisk,
       stabilityRiskProbability: Number(stabilityRiskProbability.toFixed(4)),
+      township,
+      townshipProbability: Number(townshipProbability.toFixed(4)),
+      titleTokenCount,
+      bodyTokenCount,
       isReasonable: true,
       crossDepartmentRisk,
       adapterUsed: "onnx",

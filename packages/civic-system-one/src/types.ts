@@ -61,7 +61,15 @@ export interface CivicSystemOneDecision {
   stabilityRisk: boolean;
   stabilityRiskProbability: number;
 
-  // 5. 诉求合理性与缠访识别
+  // 5. 镇街。取标准字典法定全称，正文对不上时为 UNKNOWN。顺德区不是镇街类。
+  township: string;
+  townshipProbability: number;
+
+  // 6. 本次送进模型的 token 数。正文不再截成 128。
+  titleTokenCount: number;
+  bodyTokenCount: number;
+
+  // 7. 诉求合理性与缠访识别。规则字段，不参与训练。
   isReasonable: boolean;
 
   // 6. 多部门权责交叉与踢皮球风险
