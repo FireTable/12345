@@ -91,6 +91,8 @@
 }
 .nav-item:hover { color: var(--c-brand); background: var(--c-brand-tint); }
 .nav-item.is-active { color: var(--c-brand); font-weight: 600; background: var(--c-brand-tint); }
+.navbar .nav-more__trigger { color: var(--c-brand); }
+.navbar .nav-more__trigger:hover { color: var(--c-brand-dark); }
 .nav-item.is-active::after { content: none; }
 .nav-item__arrow {
   font-size: 10px; opacity: 0.6;
