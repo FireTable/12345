@@ -116,7 +116,7 @@ export async function createTenantTables(sql: postgres.Sql, schemaName: string) 
         ai_confidence INTEGER,
         first_at TIMESTAMP WITH TIME ZONE,
         last_at TIMESTAMP WITH TIME ZONE,
-        handling_status VARCHAR(16) DEFAULT '未处理',
+        handling_status VARCHAR(16) DEFAULT 'PENDING',
         handling_progress INTEGER DEFAULT 0,
         handling_owner VARCHAR(64),
         handling_eta TIMESTAMP WITH TIME ZONE,
@@ -208,6 +208,8 @@ export async function createTenantTables(sql: postgres.Sql, schemaName: string) 
         review_count INTEGER DEFAULT 0 NOT NULL,
         failed_count INTEGER DEFAULT 0 NOT NULL,
         error TEXT,
+        region_id VARCHAR(64),
+        heartbeat_at TIMESTAMP WITH TIME ZONE,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
       );

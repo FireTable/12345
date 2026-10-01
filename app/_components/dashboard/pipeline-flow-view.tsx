@@ -53,8 +53,8 @@ const STEPS: StepDef[] = [
   {
     key: "ABSORPTION",
     number: 4,
-    title: "72h增量吸附",
-    sub: "空间基底 · 存量簇吸附",
+    title: "同一事件归并",
+    sub: "同类诉求 · 时间只记节奏",
     icon: GitMerge,
   },
   {
@@ -138,7 +138,7 @@ export const PipelineFlowView: React.FC<PipelineFlowViewProps> = ({ progress }) 
           <p className="text-[11px] text-muted-foreground pl-4.5">
             {isCompleted
               ? `研判流水线已完工 · 共聚合 ${themeCount} 个重点多频主题`
-              : "双系统分流 · 时空增量吸附 · 本地端侧慢思考推理"}
+              : "双系统分流 · 同一事件归并 · 本地端侧慢思考推理"}
           </p>
         </div>
 
@@ -326,7 +326,7 @@ export const PipelineFlowView: React.FC<PipelineFlowViewProps> = ({ progress }) 
               <span className="animate-pulse">
                 {stage === "SYNTHESIZING"
                   ? "System-2 正在将时空连通子图聚合成案..."
-                  : "72h 滑窗时空空间基底吸附中..."}
+                  : "正在按同一事件归并..."}
               </span>
             </div>
           )}

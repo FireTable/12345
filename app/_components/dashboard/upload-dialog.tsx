@@ -39,6 +39,8 @@ interface UploadDialogProps {
   /** 右上角「启动 Agent 研判」：跳过选文件，直接进入研判进度条 */
   autoStartCluster?: boolean;
   onClusteringChange?: (running: boolean) => void;
+  /** 刷新后弹窗是关的，点右下角胶囊时要把它打开 */
+  onShowProgress?: () => void;
 }
 
 interface IngestionReport {
@@ -56,6 +58,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
   onDatabaseUpdated,
   autoStartCluster = false,
   onClusteringChange,
+  onShowProgress,
 }) => {
   const [step, setStep] = useState<"SELECT" | "INGESTING" | "REPORT" | "CLUSTERING" | "ERROR">("SELECT");
   const [isDragging, setIsDragging] = useState(false);
@@ -83,10 +86,105 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const pollGenRef = useRef(0);
   const clusterStartedRef = useRef(false);
   const startClusterRef = useRef<() => Promise<void>>(async () => {});
+  const startProgressPollRef = useRef<(taskId: string) => void>(() => {});
 
   const [isMinimized, setIsMinimized] = useState(false);
+
+  const startProgressPoll = (taskId: string) => {
+    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    const generation = ++pollGenRef.current;
+
+    const tick = async () => {
+      if (generation !== pollGenRef.current) return;
+      try {
+        const res = await fetch(`/api/cluster/progress?taskId=${encodeURIComponent(taskId)}`, {
+          cache: "no-store",
+        });
+        const json = await res.json();
+        if (generation !== pollGenRef.current || !json.success || !json.data) return;
+        const data = json.data as TaskProgress;
+        setTaskProgress((prev) => ({ ...prev, ...data, taskId: data.taskId || taskId }));
+
+        if (data.status !== "COMPLETED" && data.status !== "FAILED") return;
+
+        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
+        pollGenRef.current += 1;
+        releaseClusterTask(data.taskId || taskId);
+        onClusteringChange?.(false);
+
+        if (data.status === "FAILED") {
+          setErrorMessage(data.error || "研判失败");
+          setStep("ERROR");
+          setIsMinimized(false);
+          toast.error(data.error || "研判失败");
+          return;
+        }
+
+        const [cl, ov] = await Promise.all([
+          fetch("/api/clusters", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+          fetch("/api/overview", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+        ]);
+        const list = Array.isArray(cl?.topClusters) ? cl.topClusters : [];
+        const themes: MultiFrequencyTheme[] = list.map((c: {
+          id: string;
+          title?: string;
+          region?: string;
+          type?: string;
+          count?: number;
+          urgency?: string;
+          first_date?: string;
+          last_date?: string;
+        }) => ({
+          id: c.id,
+          title: c.title || "",
+          canonicalSubject: c.title || "",
+          canonicalLocation: c.region || "",
+          eventType: c.type || "",
+          category: c.type || "",
+          riskLevel: c.urgency === "urgent" ? "HIGH" : "LOW",
+          riskReason: "",
+          ticketCount: c.count || 0,
+          timeSpanHours: 0,
+          firstOccurrence: c.first_date || "",
+          lastOccurrence: c.last_date || "",
+          aiSummary: "",
+          recommendedAction: "",
+          tickets: [],
+          relatedSubjects: [],
+          relatedLocations: [],
+          status: "UNCHECKED" as const,
+        }));
+        setStep("SELECT");
+        setIsMinimized(false);
+        onUploadSuccess({
+          themes,
+          stats: {
+            totalTickets: Number(ov?.totalWorkorders || 0),
+            multiFrequencyTickets: Number(ov?.multiFreqCount || cl?.totalMultiFreq || 0),
+            multiFrequencyRate: 0,
+            themeCount: Number(ov?.multiFreqClusters || cl?.totalClusters || themes.length),
+            highRiskCount: themes.filter((t) => t.riskLevel === "HIGH").length,
+            mediumRiskCount: 0,
+            lowRiskCount: 0,
+            compressionRatio: 0,
+            topSubject: themes[0]?.title || "",
+            avgResponseTimeSavedHours: 0,
+          },
+          graphData: { nodes: [], links: [] },
+        });
+      } catch {
+        // 下一拍再试，队列进程还在跑
+      }
+    };
+
+    void tick();
+    pollTimerRef.current = setInterval(() => void tick(), 2000);
+  };
+  startProgressPollRef.current = startProgressPoll;
 
   // Stop polling on unmount
   useEffect(() => {
@@ -95,17 +193,18 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
     };
   }, []);
 
-  // 断点续播感知：组件初始化时，检查是否后台有正在运行的流水线任务
+  // 断点续播感知：刷新页面后接着看队列里的任务，并继续轮询
   useEffect(() => {
     let cancelled = false;
-    void fetch("/api/cluster/progress?taskId=latest")
+    void fetch("/api/cluster/progress?taskId=latest", { cache: "no-store" })
       .then((r) => r.json())
       .then((j) => {
-        if (!cancelled && j.success && j.data && j.data.status === "RUNNING") {
+        if (!cancelled && j.success && j.data && (j.data.status === "RUNNING" || j.data.status === "PENDING")) {
           setTaskProgress((prev) => ({ ...prev, ...j.data }));
           setStep("CLUSTERING");
-          setIsMinimized(true); // 正在运行中时默认在右下角悬浮
+          setIsMinimized(true);
           onClusteringChange?.(true);
+          startProgressPollRef.current(j.data.taskId);
         }
       })
       .catch(() => {});
@@ -129,7 +228,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
   useEffect(() => {
     if (!isOpen) {
       clusterStartedRef.current = false;
-      setStep("SELECT");
+      setStep((current) => (current === "CLUSTERING" ? current : "SELECT"));
       return;
     }
     // 打开时若已处于最小化态，则还原
@@ -279,40 +378,13 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
         .catch(() => {});
     }
 
-    // 进度轮询：读内存与DB进度，1s 高频平滑同步，结束即停。
-    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-    let pollInFlight = false;
-    pollTimerRef.current = setInterval(async () => {
-      if (pollInFlight) return;
-      pollInFlight = true;
-      try {
-        const pRes = await fetch(`/api/cluster/progress?taskId=${taskId}`);
-        const pJson = await pRes.json();
-        if (pJson.success && pJson.data) {
-          setTaskProgress((prev) => ({
-            ...prev,
-            ...pJson.data,
-            total: pJson.data.total || prev.total,
-            processed: pJson.data.processed || prev.processed,
-          }));
-          const st = pJson.data.status;
-          if (st === "COMPLETED" || st === "FAILED") {
-            if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-          }
-        }
-      } catch (e) {
-        // Silent poll error
-      } finally {
-        pollInFlight = false;
-      }
-    }, 1000);
+    startProgressPoll(taskId);
 
     if (!isOwner) {
-      // 任务已在后台运行中，直接连上轮询监听
       return;
     }
 
-    toast.info("正在唤起 Agent 执行知识图谱聚类...");
+    toast.info("研判已进入队列，刷新页面也会继续");
 
     try {
       const clusterRes = await fetch("/api/cluster", {
@@ -325,31 +397,19 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
       });
       const clusterJson = await clusterRes.json();
 
-      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-
-      if (clusterJson.success) {
-        setTaskProgress((prev) => ({
-          ...prev,
-          percent: 100,
-          status: "COMPLETED",
-          stageText: `研判完成！已聚合 ${clusterJson.data.themes.length} 个多频主题`,
-        }));
-        onClusteringChange?.(false);
-        releaseClusterTask(taskId);
-
-        setTimeout(() => {
-          toast.success(`Agent 研判完成！已生成 ${clusterJson.data.themes.length} 个多频治理主题！`);
-          onUploadSuccess(clusterJson.data);
-          handleFinishAndClose();
-        }, 500);
-      } else {
+      if (!clusterJson.success) {
+        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
         onClusteringChange?.(false);
         releaseClusterTask(taskId);
         const errorText = resolveApiError(clusterJson, "Agent 智能聚类失败");
         setErrorMessage(errorText);
         setStep("ERROR");
         toast.error(errorText);
+        return;
       }
+
+      const queuedId = clusterJson.data?.taskId || taskId;
+      if (queuedId !== taskId) startProgressPoll(queuedId);
     } catch (err: any) {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
       onClusteringChange?.(false);
@@ -780,7 +840,10 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
     <FloatingProgressPill
       progress={taskProgress}
       isVisible={isMinimized && (step === "CLUSTERING" || taskProgress.status === "RUNNING")}
-      onExpand={() => setIsMinimized(false)}
+      onExpand={() => {
+        setIsMinimized(false);
+        onShowProgress?.();
+      }}
     />
   </>
   );

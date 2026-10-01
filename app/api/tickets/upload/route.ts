@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 import Papa from "papaparse";
 import { buildRecordsFromRows, insertRecordsBatch } from "@/lib/ticket-ingest";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
+import { getRegionVocabulary } from "@/lib/vocabulary";
 import { apiSuccess, apiError, ApiCode } from "@/lib/api-codes";
 
 export async function POST(req: NextRequest) {
@@ -48,7 +49,13 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Normalize and 3. Batch insert (delegated to shared lib)
-    const { records, failedCount: normalizedFailed } = buildRecordsFromRows(rawRows, "GD-UPLOAD");
+    const vocab = await getRegionVocabulary(regionId);
+    const { records, failedCount: normalizedFailed } = buildRecordsFromRows(rawRows, "GD-UPLOAD", {
+      townships: vocab.townships,
+      district: vocab.regionName,
+      city: vocab.cityName,
+      province: vocab.provinceName,
+    });
     const { insertedCount, duplicateCount, failedCount: batchFailed } =
       await insertRecordsBatch(records, regionId);
     const failedCount = normalizedFailed + batchFailed;

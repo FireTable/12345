@@ -17,6 +17,7 @@ import {
 } from "@/app/_components/ui/select";
 import { TablePager } from "@/app/_components/civic/table-pager";
 import { useRegion } from "@/app/_components/civic/region-context";
+import { HANDLING_STATUS, normalizeStatusCode } from "@/lib/civic-dto";
 
 type Cluster = {
   id: string;
@@ -61,8 +62,8 @@ export default function ThemesPage() {
   const [ready, setReady] = useState(false);
 
   function load() {
-    const regParam = activeRegion?.id ? `?region=${encodeURIComponent(activeRegion.id)}` : "";
-    fetch(`/api/clusters${regParam}`)
+    // 站点由 cookie 决定。region 查询参数是镇街名，传站点 id 会把列表滤空。
+    fetch("/api/clusters")
       .then((r) => r.json())
       .then((j) => {
         setRows(j.topClusters || []);
@@ -80,18 +81,18 @@ export default function ThemesPage() {
 
   const counts = {
     all: rows.length,
-    pending: rows.filter((r) => (r.status.code || "PENDING") === "PENDING").length,
-    progress: rows.filter((r) => r.status.code === "IN_PROGRESS").length,
-    done: rows.filter((r) => r.status.code === "RESOLVED").length,
+    pending: rows.filter((r) => (r.status.code || HANDLING_STATUS.PENDING) === HANDLING_STATUS.PENDING).length,
+    progress: rows.filter((r) => r.status.code === HANDLING_STATUS.IN_PROGRESS).length,
+    done: rows.filter((r) => r.status.code === HANDLING_STATUS.RESOLVED).length,
     urgent: rows.filter((r) => r.urgency === "urgent").length,
   };
 
   const filtered = useMemo(() => {
     const arr = rows.filter((r) => {
-      const code = r.status.code || (r.status.label === "已办结" ? "RESOLVED" : r.status.label === "处置中" ? "IN_PROGRESS" : "PENDING");
-      if (tab === "pending" && code !== "PENDING") return false;
-      if (tab === "progress" && code !== "IN_PROGRESS") return false;
-      if (tab === "done" && code !== "RESOLVED") return false;
+      const code = r.status.code || normalizeStatusCode(r.status.label);
+      if (tab === "pending" && code !== HANDLING_STATUS.PENDING) return false;
+      if (tab === "progress" && code !== HANDLING_STATUS.IN_PROGRESS) return false;
+      if (tab === "done" && code !== HANDLING_STATUS.RESOLVED) return false;
       if (tab === "urgent" && r.urgency !== "urgent") return false;
       if (region && !r.region.includes(region)) return false;
       if (mode && r.mode !== mode) return false;
@@ -333,7 +334,8 @@ export default function ThemesPage() {
                 <tbody>
                   {pageData.map((g) => {
                     const u = URGENCY_META[g.urgency];
-                    const sCls = g.status.code === "RESOLVED" || g.status.label === "已办结" ? "status-tag--done" : g.status.code === "IN_PROGRESS" || g.status.label === "处置中" ? "status-tag--progress" : "status-tag--pending";
+                    const statusCode = g.status.code || normalizeStatusCode(g.status.label);
+                    const sCls = statusCode === HANDLING_STATUS.RESOLVED ? "status-tag--done" : statusCode === HANDLING_STATUS.IN_PROGRESS ? "status-tag--progress" : "status-tag--pending";
                     const conf = g.ai_confidence;
                     const confColor = conf == null ? "#86909C" : conf >= 90 ? "#52C41A" : conf >= 85 ? "#1677FF" : "#FF7D00";
                     return (

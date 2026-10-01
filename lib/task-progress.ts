@@ -117,9 +117,6 @@ export function initTaskProgress(taskId: string, total: number = 0): TaskProgres
   // 异步写入 DB
   persistTaskToDb(initial);
 
-  // 顺手清扫卡死任务(容器 OOM / 重启 / SIGKILL 残留),不阻塞初始化
-  sweepStaleTasks().catch(() => {});
-
   return initial;
 }
 
@@ -164,9 +161,44 @@ export function updateTaskProgress(
 /**
  * 获取任务进度：优先从内存读取，若重启或跨实例未命中则回捞 PostgreSQL
  */
+function rowToProgress(r: {
+  taskId: string;
+  status: string | null;
+  stage: string | null;
+  stageText: string | null;
+  percent: number | null;
+  total: number | null;
+  processed: number | null;
+  extractedCount: number | null;
+  themeCount: number | null;
+  reviewCount: number | null;
+  failedCount: number | null;
+  error: string | null;
+  updatedAt: Date | null;
+}): TaskProgress {
+  return {
+    taskId: r.taskId,
+    status: (r.status as TaskProgress["status"]) || "PENDING",
+    stage: (r.stage as TaskProgress["stage"]) || "EXTRACTING",
+    stageText: r.stageText || "处理中...",
+    percent: r.percent || 0,
+    total: r.total || 0,
+    processed: r.processed || 0,
+    extractedCount: r.extractedCount || 0,
+    themeCount: r.themeCount || 0,
+    reviewCount: r.reviewCount || 0,
+    failedCount: r.failedCount || 0,
+    error: r.error || undefined,
+    updatedAt: r.updatedAt ? r.updatedAt.getTime() : Date.now(),
+  };
+}
+
+/**
+ * 进度由独立队列进程写入。Next 进程里的内存只是上一拍的副本，
+ * 每次都跟数据库比时间，避免页面刷新后一直停在旧百分比。
+ */
 export async function getTaskProgress(taskId: string): Promise<TaskProgress | null> {
   const mem = progressStore.get(taskId);
-  if (mem) return mem;
 
   try {
     const rows = await db
@@ -176,30 +208,16 @@ export async function getTaskProgress(taskId: string): Promise<TaskProgress | nu
       .limit(1);
 
     if (rows && rows.length > 0) {
-      const r = rows[0];
-      const restored: TaskProgress = {
-        taskId: r.taskId,
-        status: (r.status as any) || "PENDING",
-        stage: (r.stage as any) || "EXTRACTING",
-        stageText: r.stageText || "处理中...",
-        percent: r.percent || 0,
-        total: r.total || 0,
-        processed: r.processed || 0,
-        extractedCount: r.extractedCount || 0,
-        themeCount: r.themeCount || 0,
-        reviewCount: r.reviewCount || 0,
-        failedCount: r.failedCount || 0,
-        error: r.error || undefined,
-        updatedAt: r.updatedAt ? r.updatedAt.getTime() : Date.now(),
-      };
-      progressStore.set(taskId, restored);
-      return restored;
+      const fromDb = rowToProgress(rows[0]);
+      if (mem && mem.updatedAt > fromDb.updatedAt) return mem;
+      progressStore.set(taskId, fromDb);
+      return fromDb;
     }
   } catch (err: any) {
     console.warn(`[task-progress] Failed to fetch task ${taskId} from DB:`, err.message);
   }
 
-  return null;
+  return mem ?? null;
 }
 
 /**

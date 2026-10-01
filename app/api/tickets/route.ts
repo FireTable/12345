@@ -7,6 +7,8 @@ import type { RawTicket } from "@/backend/state";
 import { desensitizeContent } from "@/backend/anonymizer";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 import { ingestSingleTicketPipeline } from "@/backend/agent";
+import { HANDLING_STATUS, normalizeStatusCode } from "@/lib/civic-dto";
+import { CATEGORY } from "@/lib/vocabulary";
 
 export async function GET(req: Request) {
   try {
@@ -115,10 +117,9 @@ export async function POST(req: Request) {
             const singleRec = recordsToInsert[0];
             (async () => {
               try {
-                const activeRows = await tenantDb
-                  .select()
-                  .from(themesTable)
-                  .where(sql`${themesTable.handlingStatus} != '已办结'`);
+                const activeRows = (await tenantDb.select().from(themesTable)).filter(
+                  (row) => normalizeStatusCode(row.handlingStatus) !== HANDLING_STATUS.RESOLVED
+                );
 
                 const activeThemes: any[] = activeRows.map((r: any) => ({
                   id: r.id,
@@ -126,7 +127,7 @@ export async function POST(req: Request) {
                   canonicalSubject: r.canonicalSubject,
                   canonicalLocation: r.canonicalLocation,
                   eventType: r.eventType,
-                  category: r.category || "城市管理",
+                  category: r.category || CATEGORY.URBAN_MANAGEMENT,
                   riskLevel: r.riskLevel,
                   riskReason: r.riskReason || "",
                   ticketCount: r.ticketCount,
@@ -135,7 +136,7 @@ export async function POST(req: Request) {
                   lastOccurrence: r.lastAt ? r.lastAt.toISOString().slice(0, 19).replace("T", " ") : "",
                   aiSummary: r.aiSummary || "",
                   recommendedAction: r.recommendedAction || "",
-                  handlingStatus: r.handlingStatus || "未处理",
+                  handlingStatus: r.handlingStatus || HANDLING_STATUS.PENDING,
                   status: "CONFIRMED",
                   tickets: [],
                   relatedSubjects: [r.canonicalSubject],

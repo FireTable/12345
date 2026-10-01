@@ -11,16 +11,6 @@ if (loadEnvConfig) {
   loadEnvConfig(process.cwd());
 }
 
-import { db } from "../db/client";
-import {
-  ticketsTable,
-  themesTable,
-  ticketThemesTable,
-  reviewQueueTable,
-  vocabulariesTable,
-  aliasesTable,
-} from "../db/schema";
-
 async function importAllData() {
   console.log("==================================================");
   console.log("📥 正在执行 PostgreSQL 数据库全量恢复 (db-import)...");
@@ -43,6 +33,21 @@ async function importAllData() {
   const { data } = payload;
 
   console.log(`📄 读取数据备份，生成于: ${payload.exportedAt || "未知时间"}`);
+
+  const { resolveScriptRegion } = await import("./region-target");
+  const {
+    ticketsTable,
+    themesTable,
+    ticketThemesTable,
+    reviewQueueTable,
+    vocabulariesTable,
+    aliasesTable,
+  } = await import("../db/schema");
+  const target = await resolveScriptRegion();
+  const db = target.db;
+  if (payload.schemaName && payload.schemaName !== target.schemaName) {
+    console.log(`ℹ️  备份来自 ${payload.schemaName}，本次写入 ${target.schemaName}`);
+  }
 
   try {
     // 1. 导入 Vocabularies

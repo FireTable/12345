@@ -2,7 +2,7 @@
 
 export const LIST_PAGE_MIN = 1;
 export const LIST_SIZE_DEFAULT = 10;
-export const LIST_SIZE_MAX = 50;
+export const LIST_SIZE_MAX = 100;
 export const DAYS_MAX = 366;
 
 function toInt(raw: unknown, fallback: number): number {

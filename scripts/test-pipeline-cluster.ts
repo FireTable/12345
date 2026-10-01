@@ -163,7 +163,8 @@ async function main() {
     console.log(`     🏷️ 大类: ${t.sourceCategory || "—"} | 🌟 置信度: ${t.confidence}分 | ⚡ S1直通: ${Boolean(t.isSystemOneFastTrack)}`);
   });
 
-  if (allExtracted && enriched.length === testTickets.length) {
+  const check1 = allExtracted && enriched.length === testTickets.length;
+  if (check1) {
     console.log("  ✅ 验证 1 通过：所有工单 100% 成功提取主体、地点与大类，无一遗漏！\n");
   } else {
     console.warn("  ⚠️ 验证 1 未完全达标，请核查抽取缺失项！\n");
@@ -192,10 +193,11 @@ async function main() {
     (th) => th.canonicalLocation.includes("文武路") || th.canonicalSubject.includes("餐饮") || th.title.includes("油烟") || th.title.includes("烧烤")
   );
 
-  if (hasWaterBurstTheme && hasNightFoodTheme) {
+  const check2 = hasWaterBurstTheme && hasNightFoodTheme;
+  if (check2) {
     console.log("\n  ✅ 验证 2 通过：大良金榜爆管群体投诉与容桂文武路夜市油烟被精准独立聚类，未发生交叉串扰！\n");
   } else {
-    console.log(`\n  ℹ️ 聚类完成，主题数: ${themes.length}\n`);
+    console.warn(`\n  ⚠️ 验证 2 未通过：没有同时得到金榜爆管簇与文武路油烟簇。主题数: ${themes.length}\n`);
   }
 
   // ----------------------------------------------------------------------
@@ -221,13 +223,26 @@ async function main() {
     }
   });
 
-  if (allHaveActions && themes.length > 0) {
+  const check3 = allHaveActions && themes.length > 0;
+  if (check3) {
     console.log("\n  ✅ 验证 3 通过：每个多频事件簇均由 System-2 统一生成了牵头/协办处置方案与公文建议！\n");
   } else {
-    console.log(`\n  ℹ️ 公文研判完成，共检查 ${themes.length} 个主题。\n`);
+    console.warn(`\n  ⚠️ 验证 3 未通过：主题缺少综述或处置建议。共检查 ${themes.length} 个主题。\n`);
   }
 
+  const failed = [
+    !check1 ? "验证 1：抽取不完整" : "",
+    !check2 ? "验证 2：金榜爆管与文武路油烟没有各自成簇" : "",
+    !check3 ? "验证 3：主题缺少综述或处置建议" : "",
+  ].filter(Boolean);
+
   console.log("================================================================================");
+  if (failed.length > 0) {
+    console.error("❌ 全链路评测未通过:");
+    for (const item of failed) console.error(`   - ${item}`);
+    console.log("================================================================================\n");
+    process.exit(1);
+  }
   console.log("🎉 12345 真实业务多工单全链路端到端闭环评测圆满成功！");
   console.log("================================================================================\n");
 }

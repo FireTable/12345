@@ -3,18 +3,30 @@
  * 
  * 验证目标：
  * 1. 【增量自动吸附】：当已有多频主题在办时，后续同地工单无需重新建群，秒级判定并入；
- * 2. 【滑动时间窗口核验】：证明是“距离最后一个事件的 72 小时滑动窗口”，而非从第一个事件写死截断；
+ * 2. 【时间只记节奏】：隔了 4 天的同一件事仍然并入，节奏记为反复，不另开主题；
  * 3. 【平时 0 耗时继承】：普通追加工单不调用大模型慢思考，直接继承已有处置方案，0 Token、0 等待；
  * 4. 【突发险情质变升级】：当追加工单出现严重险情词时，精准触发慢思考升级，生成紧急救援预案。
  */
 
 import { evaluateIncrementalTicket, upgradeThemeWithSystemTwo } from "../backend/incremental-cluster";
+import { CADENCE } from "../backend/theme-metrics";
 import type { EnrichedTicket, MultiFrequencyTheme } from "../backend/state";
+import { HANDLING_STATUS } from "../lib/civic-dto";
+import { CATEGORY } from "../lib/vocabulary";
+
+function cloneTheme(theme: MultiFrequencyTheme): MultiFrequencyTheme {
+  return {
+    ...theme,
+    tickets: theme.tickets.map((ticket) => ({ ...ticket })),
+    relatedSubjects: [...theme.relatedSubjects],
+    relatedLocations: [...theme.relatedLocations],
+  };
+}
 
 async function main() {
   console.log("================================================================================");
   console.log("🏛️  12345 增量工单时空吸附与动态研判机制实测");
-  console.log("   (验证：增量识别 ➔ 滑动时间窗口 ➔ 平时继承老方案 ➔ 质变按需触发慢思考)");
+  console.log("   (验证：同一事件并入 ➔ 隔天仍并入并记反复 ➔ 平时继承老方案 ➔ 质变按需触发慢思考)");
   console.log("================================================================================\n");
 
   // 1. 模拟系统已存量的在办主题 (THEME-1: 金榜上街爆管事件，已包含 3 件工单)
@@ -24,7 +36,7 @@ async function main() {
     canonicalSubject: "大良街道金榜上街主供水管",
     canonicalLocation: "大良街道金榜上街",
     eventType: "供水管网破裂",
-    category: "城市管理",
+    category: CATEGORY.URBAN_MANAGEMENT,
     riskLevel: "MEDIUM",
     riskReason: "同一微观点位短时集中反映（3件）",
     ticketCount: 3,
@@ -33,7 +45,7 @@ async function main() {
     lastOccurrence: "2026-09-26 09:10:00", // 最后一件发生时间
     aiSummary: "大良街道金榜上街主供水管破裂，导致路面积水及片区停水，正开展市政抢修。",
     recommendedAction: "大良街道城管办牵头联合供水抢修队现场关阀抢修，2小时内恢复供水。",
-    handlingStatus: "处置中",
+    handlingStatus: HANDLING_STATUS.IN_PROGRESS,
     status: "CONFIRMED",
     relatedSubjects: ["大良街道金榜上街主供水管"],
     relatedLocations: ["大良街道金榜上街28号", "大良街道金榜上街沿街商铺"],
@@ -71,11 +83,11 @@ async function main() {
     canonicalLocation: "大良街道金榜上街45号",
     canonicalSubject: "大良街道金榜上街自来水管",
     eventType: "停水诉求",
-    sourceCategory: "城市管理",
+    sourceCategory: CATEGORY.URBAN_MANAGEMENT,
     confidence: 95,
     entities: [],
     relations: [],
-    themes: ["城市管理"],
+    themes: [CATEGORY.URBAN_MANAGEMENT],
   };
 
   console.log(`📥 接收工单: [${ticket4.ticketNo}] ${ticket4.title}`);
@@ -83,7 +95,7 @@ async function main() {
   console.log(`   - 地点: ${ticket4.canonicalLocation}`);
 
   const startT1 = performance.now();
-  const res1 = evaluateIncrementalTicket(ticket4, activeThemes, { slidingWindowHours: 72 });
+  const res1 = evaluateIncrementalTicket(ticket4, [cloneTheme(existingTheme)]);
   const dur1 = (performance.now() - startT1).toFixed(3);
 
   console.log(`\n⚡ 算法研判结果 (耗时: ${dur1} ms):`);
@@ -122,7 +134,7 @@ async function main() {
   };
 
   const startT2 = performance.now();
-  const res2 = evaluateIncrementalTicket(ticketOther, activeThemes, { slidingWindowHours: 72 });
+  const res2 = evaluateIncrementalTicket(ticketOther, [cloneTheme(existingTheme)]);
   const dur2 = (performance.now() - startT2).toFixed(3);
 
   console.log(`📥 接收工单: [${ticketOther.ticketNo}] ${ticketOther.title}`);
@@ -134,7 +146,7 @@ async function main() {
   // 测试用例 3：滑动时间窗口验证（超过 72 小时后发生的新诉求）
   // ---------------------------------------------------------------------------
   console.log("\n--------------------------------------------------------------------------------");
-  console.log("👉 【测试 3】滑动时间窗口有效性验证（4 天后同一地点再来报修，已超 72 小时滑动窗口）");
+  console.log("👉 【测试 3】4 天后同一地点再来报修，仍并入原主题，节奏记为反复");
   const ticketExpired: EnrichedTicket = {
     id: "TICKET-EXPIRED-01",
     ticketNo: "FS20260926010",
@@ -150,14 +162,17 @@ async function main() {
     canonicalLocation: "大良街道金榜上街",
     canonicalSubject: "自来水管",
     eventType: "漏水报修",
-    sourceCategory: "城市管理",
+    sourceCategory: CATEGORY.URBAN_MANAGEMENT,
     confidence: 90,
     entities: [],
     relations: [],
-    themes: ["城市管理"],
+    themes: [CATEGORY.URBAN_MANAGEMENT],
   };
 
-  const res3 = evaluateIncrementalTicket(ticketExpired, activeThemes, { slidingWindowHours: 72 });
+  const res3 = evaluateIncrementalTicket(ticketExpired, [cloneTheme(existingTheme)]);
+  const closedTheme = cloneTheme(existingTheme);
+  closedTheme.handlingStatus = HANDLING_STATUS.RESOLVED;
+  const res3Closed = evaluateIncrementalTicket(ticketExpired, [closedTheme]);
   console.log(`📥 接收工单: [${ticketExpired.ticketNo}] 发生时间: ${ticketExpired.createTime}`);
   console.log(`⚡ 算法研判结果:`);
   console.log(`   - 决策动作: [${res3.action}]`);
@@ -183,24 +198,56 @@ async function main() {
     canonicalLocation: "大良街道金榜上街28号",
     canonicalSubject: "大良街道金榜上街塌陷路面",
     eventType: "路面塌陷险情",
-    sourceCategory: "城市管理",
+    sourceCategory: CATEGORY.URBAN_MANAGEMENT,
     confidence: 98,
     entities: [],
     relations: [],
-    themes: ["城市管理"],
+    themes: [CATEGORY.URBAN_MANAGEMENT],
   };
 
   console.log(`📥 接收工单: [${ticketHazard.ticketNo}] ${ticketHazard.title}`);
-  const res4 = evaluateIncrementalTicket(ticketHazard, activeThemes, { slidingWindowHours: 72 });
+  const res4 = evaluateIncrementalTicket(ticketHazard, [cloneTheme(existingTheme)]);
   console.log(`⚡ 算法研判结果:`);
   console.log(`   - 决策动作: [${res4.action}]`);
   console.log(`   - 归属主题: ${res4.matchedThemeId}`);
   console.log(`   - 慢思考质变升级判定: ${res4.needDeepThinkingUpgrade ? "🚨 触发严重险情质变升级！" : "否"}`);
   console.log(`   - 升级原因: ${res4.upgradeReason}`);
 
-  if (res4.needDeepThinkingUpgrade && res4.matchedTheme) {
+  const failures: string[] = [];
+  if (res1.action !== "ATTACHED") failures.push(`测试 1：期望 ATTACHED，实际 ${res1.action}`);
+  if (res1.needDeepThinkingUpgrade) failures.push("测试 1：普通追加不应触发慢思考");
+  if (res1.matchedTheme?.ticketCount !== 4) {
+    failures.push(`测试 1：吸附后工单数应为 4，实际 ${res1.matchedTheme?.ticketCount}`);
+  }
+  if (res2.action !== "STANDALONE") failures.push(`测试 2：期望 STANDALONE，实际 ${res2.action}`);
+  if (res3.action !== "ATTACHED") failures.push(`测试 3：期望 ATTACHED，实际 ${res3.action}`);
+  if (res3.cadence !== CADENCE.RECURRING) failures.push(`测试 3：节奏应为反复，实际 ${res3.cadence}`);
+  if (res3.needDeepThinkingUpgrade) failures.push("测试 3：隔天再反映不应触发慢思考");
+  if (res3.matchedTheme?.ticketCount !== 4) {
+    failures.push(`测试 3：并入后工单数应为 4，实际 ${res3.matchedTheme?.ticketCount}`);
+  }
+  if (res3Closed.action !== "ATTACHED" || (res3Closed.matchedTheme?.reopenCount || 0) < 1) {
+    failures.push("测试 3：已办结主题再次反映应按复发并入");
+  }
+  if (res1.cadence !== CADENCE.BURST) failures.push(`测试 1：节奏应为突发，实际 ${res1.cadence}`);
+  if (res4.action !== "ATTACHED") failures.push(`测试 4：期望 ATTACHED，实际 ${res4.action}`);
+  if (!res4.needDeepThinkingUpgrade) failures.push("测试 4：险情工单应触发慢思考升级");
+
+  if (failures.length > 0) {
+    console.error("\n❌ 增量评测未通过:");
+    for (const item of failures) console.error(`   - ${item}`);
+    process.exit(1);
+  }
+
+  if (process.env.SKIP_SYSTEM_TWO === "1") {
+    console.log("\n确定性断言已通过。SKIP_SYSTEM_TWO=1，跳过慢思考调用。");
+  } else if (res4.matchedTheme) {
     console.log("\n🧠 正在启动 System-2 慢思考进行【应急增量再研判】(重新推导多部门联合救险预案)...");
     const upgraded = await upgradeThemeWithSystemTwo(res4.matchedTheme);
+    if (!upgraded.recommendedAction?.trim()) {
+      console.error("❌ 测试 4：慢思考没有给出处置建议");
+      process.exit(1);
+    }
     console.log(`\n✅ System-2 增量研判推导完成！`);
     console.log(`   - 最新风险等级: [${upgraded.riskLevel}]`);
     console.log(`   - 最新成因剖析: ${upgraded.riskReason}`);

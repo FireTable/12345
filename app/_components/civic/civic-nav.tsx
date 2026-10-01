@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { MessageCircle, User, LogOut, Film } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ChevronDown, MessageCircle, User, LogOut, Film } from "lucide-react";
 import { useCivicWorkflow } from "./civic-workflow";
 import { NAV_ITEMS } from "./nav-items";
 import { authClient } from "@/lib/auth/client";
@@ -14,6 +14,61 @@ import { useRegion } from "./region-context";
 
 export { NAV_ITEMS };
 
+function navItemActive(href: string, pathname: string) {
+  return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/");
+}
+
+function useFittingNavCount(itemCount: number) {
+  const menuRef = useRef<HTMLDivElement>(null);
+  const measureRef = useRef<HTMLDivElement>(null);
+  const [count, setCount] = useState(itemCount);
+
+  useLayoutEffect(() => {
+    const menu = menuRef.current;
+    const measure = measureRef.current;
+    if (!menu || !measure) return;
+
+    const apply = () => {
+      if (window.matchMedia("(max-width: 768px)").matches) {
+        setCount(itemCount);
+        return;
+      }
+      const available = menu.clientWidth;
+      if (available < 8) return;
+      const styles = getComputedStyle(measure);
+      const gap = parseFloat(styles.columnGap || styles.gap || "8") || 8;
+      const widths = Array.from(measure.querySelectorAll<HTMLElement>("[data-nav-measure]")).map(
+        (node) => node.offsetWidth
+      );
+      const moreWidth = measure.querySelector<HTMLElement>("[data-nav-more-measure]")?.offsetWidth ?? 72;
+      let used = 0;
+      let fit = 0;
+      for (let i = 0; i < widths.length; i++) {
+        const next = fit === 0 ? widths[i] : used + gap + widths[i];
+        const reserve = i < widths.length - 1 ? gap + moreWidth : 0;
+        if (next + reserve <= available + 0.5) {
+          used = next;
+          fit += 1;
+        } else {
+          break;
+        }
+      }
+      setCount(fit);
+    };
+
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(menu);
+    window.addEventListener("resize", apply);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", apply);
+    };
+  }, [itemCount]);
+
+  return { menuRef, measureRef, count };
+}
+
 export function CivicNav() {
   const pathname = usePathname();
   const router = useRouter();
@@ -21,10 +76,19 @@ export function CivicNav() {
   const { activeRegion } = useRegion();
   const [menuOpen, setMenuOpen] = useState(false);
   const [videoModalOpen, setVideoModalOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+  const { menuRef, measureRef, count: visibleNavCount } = useFittingNavCount(NAV_ITEMS.length);
   const { data: session } = authClient.useSession();
+  const visibleNav = NAV_ITEMS.slice(0, visibleNavCount);
+  const overflowNav = NAV_ITEMS.slice(visibleNavCount);
 
   useEffect(() => {
     setMenuOpen(false);
+    setMoreOpen(false);
+    setUserMenuOpen(false);
   }, [pathname]);
 
   // 动态同步页面 HTML document.title（带当前辖区站点前缀）
@@ -45,13 +109,25 @@ export function CivicNav() {
   }, [pathname, activeRegion?.name]);
 
   useEffect(() => {
-    if (!menuOpen) return;
+    if (!menuOpen && !userMenuOpen && !moreOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMenuOpen(false);
+      if (e.key !== "Escape") return;
+      setMenuOpen(false);
+      setUserMenuOpen(false);
+      setMoreOpen(false);
+    };
+    const onPointer = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (userMenuRef.current && !userMenuRef.current.contains(target)) setUserMenuOpen(false);
+      if (moreMenuRef.current && !moreMenuRef.current.contains(target)) setMoreOpen(false);
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [menuOpen]);
+    document.addEventListener("mousedown", onPointer);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onPointer);
+    };
+  }, [menuOpen, userMenuOpen, moreOpen]);
 
   const handleSignOut = async () => {
     try {
@@ -131,18 +207,58 @@ export function CivicNav() {
             />
           ) : null}
           <div id="navbar-panel" className={`navbar__panel${menuOpen ? " is-open" : ""}`}>
-            <div className="navbar__menu">
-              {NAV_ITEMS.map((it) => {
-                const active =
-                  it.href === "/"
-                    ? pathname === "/"
-                    : pathname === it.href || pathname.startsWith(it.href + "/");
-                return (
-                  <Link key={it.key} href={it.href} className={`nav-item${active ? " is-active" : ""}`}>
+            <div className="navbar__menu" ref={menuRef}>
+              <div className="navbar__menu-measure" ref={measureRef} aria-hidden="true">
+                {NAV_ITEMS.map((it) => (
+                  <span key={it.key} data-nav-measure className="nav-item">
                     {it.label}
-                  </Link>
-                );
-              })}
+                  </span>
+                ))}
+                <span data-nav-more-measure className="nav-item nav-more__trigger">
+                  更多
+                  <ChevronDown size={14} />
+                </span>
+              </div>
+              {visibleNav.map((it) => (
+                <Link
+                  key={it.key}
+                  href={it.href}
+                  className={`nav-item${navItemActive(it.href, pathname) ? " is-active" : ""}`}
+                >
+                  {it.label}
+                </Link>
+              ))}
+              {overflowNav.length > 0 ? (
+                <div className="nav-more" ref={moreMenuRef}>
+                  <button
+                    type="button"
+                    className={`nav-item nav-more__trigger${
+                      overflowNav.some((it) => navItemActive(it.href, pathname)) ? " is-active" : ""
+                    }${moreOpen ? " is-open" : ""}`}
+                    aria-haspopup="menu"
+                    aria-expanded={moreOpen}
+                    onClick={() => setMoreOpen((open) => !open)}
+                  >
+                    更多
+                    <ChevronDown size={14} />
+                  </button>
+                  {moreOpen ? (
+                    <div className="nav-more__menu" role="menu">
+                      {overflowNav.map((it) => (
+                        <Link
+                          key={it.key}
+                          href={it.href}
+                          role="menuitem"
+                          className={`nav-item${navItemActive(it.href, pathname) ? " is-active" : ""}`}
+                          onClick={() => setMoreOpen(false)}
+                        >
+                          {it.label}
+                        </Link>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
 
             <div className="navbar__user">
@@ -172,24 +288,32 @@ export function CivicNav() {
               </a>
 
               {session?.user ? (
-                <div className="navbar-user-card" title={session.user.email}>
-                  <User size={14} className="navbar-user-icon" />
-                  <span className="navbar-user-name">
-                    {session.user.name || (session.user as any).username || "管理员"}
-                  </span>
-                  <span className="navbar-user-role">
-                    {(session.user as any).role === "admin" ? "管理员" : "经办员"}
-                  </span>
-                  <span className="navbar-user-divider" />
+                <div className="navbar-user-menu" ref={userMenuRef}>
                   <button
                     type="button"
-                    className="navbar-user-logout-btn"
-                    onClick={handleSignOut}
-                    title="退出登录"
+                    className={`navbar-user-card${userMenuOpen ? " is-open" : ""}`}
+                    title={session.user.email}
+                    aria-haspopup="menu"
+                    aria-expanded={userMenuOpen}
+                    onClick={() => setUserMenuOpen((open) => !open)}
                   >
-                    <LogOut size={13} />
-                    <span>退出</span>
+                    <User size={14} className="navbar-user-icon" />
+                    <span className="navbar-user-name">
+                      {session.user.name || (session.user as any).username || "管理员"}
+                    </span>
+                    <span className="navbar-user-role">
+                      {(session.user as any).role === "admin" ? "管理员" : "经办员"}
+                    </span>
+                    <ChevronDown size={14} className="navbar-user-chevron" />
                   </button>
+                  {userMenuOpen ? (
+                    <div className="navbar-user-pop" role="menu">
+                      <button type="button" role="menuitem" className="navbar-user-pop__item" onClick={handleSignOut}>
+                        <LogOut size={14} />
+                        <span>退出登录</span>
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <Link href="/login" className="navbar-icon-btn" style={{ textDecoration: "none", width: "auto", padding: "0 12px" }}>

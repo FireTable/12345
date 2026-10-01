@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
-import { db } from "@/db/client";
+import { getRegionDb } from "@/db/client";
 import { themesTable, ticketsTable, ticketThemesTable } from "@/db/schema";
 import { eq, or, ilike } from "drizzle-orm";
 import { toClusterDto, toWorkorderDto } from "@/lib/civic-dto";
+import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
+    const regionId = await resolveRequestRegionId(req);
+    const { db } = await getRegionDb(regionId);
     const themes = await db.select().from(themesTable).where(eq(themesTable.id, id)).limit(1);
     const theme = themes[0];
     if (!theme) return NextResponse.json({ success: false, error: "not found" }, { status: 404 });

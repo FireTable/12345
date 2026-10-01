@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { buildRecordsFromTexts, insertRecordsBatch } from "@/lib/ticket-ingest";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
+import { getRegionVocabulary } from "@/lib/vocabulary";
 import { apiSuccess, apiError, ApiCode } from "@/lib/api-codes";
 
 const MAX_LINES = 2000;
@@ -35,7 +36,13 @@ export async function POST(req: NextRequest) {
       return apiError(ApiCode.FILE_SIZE_EXCEEDED, `单次粘贴最多 ${MAX_LINES} 条,当前 ${texts.length} 条`, 400);
     }
 
-    const { records, failedCount: normalizedFailed } = buildRecordsFromTexts(texts);
+    const vocab = await getRegionVocabulary(regionId);
+    const { records, failedCount: normalizedFailed } = buildRecordsFromTexts(texts, {
+      townships: vocab.townships,
+      district: vocab.regionName,
+      city: vocab.cityName,
+      province: vocab.provinceName,
+    });
     const { insertedCount, duplicateCount, failedCount: batchFailed } =
       await insertRecordsBatch(records, regionId);
     const failedCount = normalizedFailed + batchFailed;

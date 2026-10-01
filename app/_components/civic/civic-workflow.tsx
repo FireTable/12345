@@ -196,6 +196,7 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
         isOpen={uploadOpen}
         autoStartCluster={clusterOnly}
         onClusteringChange={setAnalyzing}
+        onShowProgress={() => setUploadOpen(true)}
         onClose={() => {
           if (analyzing) return;
           setUploadOpen(false);

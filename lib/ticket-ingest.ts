@@ -2,8 +2,10 @@ import { db, getRegionDb } from "@/db/client";
 import { ticketsTable } from "@/db/schema";
 import { inArray } from "drizzle-orm";
 import { desensitizeContent } from "@/backend/anonymizer";
+import { profileTicket } from "@/backend/ticket-profile";
 import { AGENT_TICKET_NULLS } from "@/lib/civic-persist";
 import { invalidateCivicAggregates } from "@/lib/civic-cache";
+import type { TownshipInfo } from "@/lib/vocabulary";
 
 const HEADER_MAP: Record<string, string> = {
   序号: "index",
@@ -69,9 +71,17 @@ export interface IngestReport {
 
 // ponytail: 提取自原 upload/route,粘贴文本 / 上传文件共用同一份「规范化 + 批量去重插入」逻辑,
 // 任何字段补缺规则只需改这一处。
+export interface IngestProfileOptions {
+  townships?: TownshipInfo[];
+  district?: string | null;
+  city?: string | null;
+  province?: string | null;
+}
+
 export function buildRecordsFromRows(
   rawRows: Record<string, any>[],
-  idPrefix: string
+  idPrefix: string,
+  options: IngestProfileOptions = {}
 ): { records: any[]; failedCount: number } {
   const records: any[] = [];
   let failedCount = 0;
@@ -98,6 +108,10 @@ export function buildRecordsFromRows(
       normalized.ticketNo || `${idPrefix}-${baseTs}-${String(idx + 1).padStart(6, "0")}`
     );
     const createTime = extractDate(content);
+    const profile = profileTicket(
+      { title, content, subdistrict: optionalText(normalized.subdistrict) },
+      options.townships || []
+    );
 
     const channel = normalized.channel || normalized.sourceChannel || "市民服务热线";
 
@@ -128,7 +142,13 @@ export function buildRecordsFromRows(
       ingestSubdistrict: optionalText(normalized.subdistrict),
       ingestCategory: optionalText(normalized.sourceCategory),
       ...AGENT_TICKET_NULLS,
-      urgency: "NORMAL",
+      province: options.province || null,
+      city: options.city || null,
+      district: optionalText(normalized.district) || options.district || null,
+      subdistrict: profile.township,
+      sourceCategory: profile.category,
+      address: profile.place,
+      urgency: profile.urgent ? "URGENT" : "NORMAL",
       channel,
       status: "PENDING",
       createTime,
@@ -142,7 +162,10 @@ export function buildRecordsFromRows(
 }
 
 // 粘贴文本专用:每行=一条,首句作标题,余下作内容;自动补缺其余字段。
-export function buildRecordsFromTexts(texts: string[]): { records: any[]; failedCount: number } {
+export function buildRecordsFromTexts(
+  texts: string[],
+  options: IngestProfileOptions = {}
+): { records: any[]; failedCount: number } {
   const rawRows: Record<string, any>[] = [];
   for (const line of texts) {
     const trimmed = line.trim();
@@ -152,7 +175,7 @@ export function buildRecordsFromTexts(texts: string[]): { records: any[]; failed
     const title = titleMatch ? titleMatch[0].trim() : trimmed.slice(0, 30);
     rawRows.push({ title, content: trimmed });
   }
-  return buildRecordsFromRows(rawRows, "GD-PASTE");
+  return buildRecordsFromRows(rawRows, "GD-PASTE", options);
 }
 
 // ponytail: 500/批,22 字段上限 ~11k 参数,PG max_params=32767 安全区

@@ -1,5 +1,15 @@
 import { NextResponse } from "next/server";
-import { getTaskProgress, getLatestTaskProgress } from "@/lib/task-progress";
+import { getTaskProgress, getLatestTaskProgress, type TaskProgress } from "@/lib/task-progress";
+import { invalidateCivicAggregates } from "@/lib/civic-cache";
+
+export const dynamic = "force-dynamic";
+
+function jsonProgress(data: TaskProgress) {
+  if (data.status === "COMPLETED" || data.status === "FAILED") {
+    invalidateCivicAggregates();
+  }
+  return NextResponse.json({ success: true, data });
+}
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -7,12 +17,7 @@ export async function GET(req: Request) {
 
   if (!taskId || taskId === "latest") {
     const latest = await getLatestTaskProgress();
-    if (latest) {
-      return NextResponse.json({
-        success: true,
-        data: latest,
-      });
-    }
+    if (latest) return jsonProgress(latest);
     if (!taskId) {
       return NextResponse.json({ success: false, error: "Missing taskId parameter" }, { status: 400 });
     }
@@ -39,8 +44,5 @@ export async function GET(req: Request) {
     });
   }
 
-  return NextResponse.json({
-    success: true,
-    data: progress,
-  });
+  return jsonProgress(progress);
 }

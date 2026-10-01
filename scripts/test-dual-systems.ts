@@ -110,7 +110,7 @@ async function main() {
   );
 
   const s2bDuration = ((performance.now() - s2bStart) / 1000).toFixed(2);
-  console.log(`  ⏱️ 结构化抽取耗时: ${s2bDuration} 秒 (校验状态: ✅ 全部通过)`);
+  console.log(`  ⏱️ 结构化抽取耗时: ${s2bDuration} 秒`);
   console.log(`  🏛️ 牵头主办单位: ${dispatchResult.data.primary_department}`);
   console.log(`  🤝 协同处置单位: ${dispatchResult.data.coordinating_departments.join(", ")}`);
   console.log(`  🚨 紧急等级评定: [${dispatchResult.data.emergency_level.toUpperCase()}]`);
@@ -118,10 +118,23 @@ async function main() {
   console.log(`  📢 即时处置指令: ${dispatchResult.data.immediate_instruction}`);
   console.log(`  ⏳ 督办时限要求: ${dispatchResult.data.dispatch_sla_hours} 小时\n`);
 
+  const failures: string[] = [];
+  if (!decision1.intent || !decision1.categoryName) failures.push("System-1 未返回意图或分类");
+  if (!choice.message.content?.trim()) failures.push("System-2 研判正文为空");
+  if (!dispatchResult.data.primary_department?.trim()) failures.push("结构化派单缺少牵头部门");
+  if (!dispatchResult.data.immediate_instruction?.trim()) failures.push("结构化派单缺少处置指令");
+
   console.log("================================================================================");
-  console.log("🎉 双系统协同全流程验证圆满成功！");
-  console.log("   - 快思考 (System One): 0.4ms 完成毫秒级护栏拦截与意图分流");
-  console.log("   - 慢思考 (System Two): 完整思维链推理 + 精准权责研判 + 100% 结构化派单落地");
+  if (failures.length > 0) {
+    console.error("❌ 双引擎联动验证未通过:");
+    for (const item of failures) console.error(`   - ${item}`);
+    console.log("================================================================================");
+    await system1.close();
+    process.exit(1);
+  }
+  console.log("🎉 双系统协同全流程验证通过");
+  console.log(`   - 快思考 (System One): ${s1Duration.toFixed(3)} ms，意图 ${decision1.intent} / ${decision1.categoryName}`);
+  console.log(`   - 慢思考 (System Two): 研判 ${s2Duration} 秒，结构化抽取 ${s2bDuration} 秒`);
   console.log("================================================================================");
 
   await system1.close();

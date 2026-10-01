@@ -171,10 +171,10 @@ export async function summaryNode(
     }));
 
     updateTaskProgress(taskId, {
-      stage: "COMPLETED",
-      status: "COMPLETED",
-      percent: 100,
-      stageText: `多频研判完成！已聚合 ${enrichedThemes.length} 个多频主题`,
+      stage: "SYNTHESIZING",
+      status: "RUNNING",
+      percent: 96,
+      stageText: `主题已生成，正在写入数据库（${enrichedThemes.length} 个）...`,
       themeCount: enrichedThemes.length,
       recentClusters: spotlightClusters,
     });

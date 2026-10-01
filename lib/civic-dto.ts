@@ -15,13 +15,27 @@ export function regionLabel(subdistrict?: string | null, district?: string | nul
   return raw.replace(/(街道|镇|乡|区|县)$/g, "") || "未归属";
 }
 
-export function mapTicketStatus(status?: string | null): "PENDING" | "IN_PROGRESS" | "RESOLVED" {
-  const s = (status || "PENDING").toUpperCase();
-  if (s === "RESOLVED" || s === "FINISHED") return "RESOLVED";
-  if (s === "DISPATCHED" || s === "VERIFIED" || s === "IN_PROGRESS" || s === "PROCESSING") {
-    return "IN_PROGRESS";
+export const HANDLING_STATUS = {
+  PENDING: "PENDING",
+  IN_PROGRESS: "IN_PROGRESS",
+  RESOLVED: "RESOLVED",
+} as const;
+
+export type HandlingStatusCode = (typeof HANDLING_STATUS)[keyof typeof HANDLING_STATUS];
+
+const HANDLING_STATUS_LABEL: Record<HandlingStatusCode, string> = {
+  PENDING: "未处理",
+  IN_PROGRESS: "处置中",
+  RESOLVED: "已办结",
+};
+
+export function mapTicketStatus(status?: string | null): HandlingStatusCode {
+  const s = (status || HANDLING_STATUS.PENDING).toUpperCase();
+  if (s === HANDLING_STATUS.RESOLVED || s === "FINISHED") return HANDLING_STATUS.RESOLVED;
+  if (s === "DISPATCHED" || s === "VERIFIED" || s === HANDLING_STATUS.IN_PROGRESS || s === "PROCESSING") {
+    return HANDLING_STATUS.IN_PROGRESS;
   }
-  return "PENDING";
+  return HANDLING_STATUS.PENDING;
 }
 
 /**
@@ -34,12 +48,29 @@ export function isAnonymizedCitizen(name?: string | null): boolean {
   return !trimmed || ANONYMIZED_CITIZEN_RE.test(trimmed);
 }
 
-export function normalizeStatusCode(status?: string | null): "PENDING" | "IN_PROGRESS" | "RESOLVED" {
-  if (!status) return "PENDING";
-  const s = status.trim().toUpperCase();
-  if (s === "RESOLVED" || s === "FINISHED" || s === "已办结" || s === "办结") return "RESOLVED";
-  if (s === "IN_PROGRESS" || s === "PROCESSING" || s === "DISPATCHED" || s === "处置中" || s === "处理中") return "IN_PROGRESS";
-  return "PENDING";
+const LEGACY_RESOLVED = new Set(["已办结", "办结"]);
+const LEGACY_IN_PROGRESS = new Set(["处置中", "处理中"]);
+
+export function normalizeStatusCode(status?: string | null): HandlingStatusCode {
+  if (!status) return HANDLING_STATUS.PENDING;
+  const s = status.trim();
+  const upper = s.toUpperCase();
+  if (upper === HANDLING_STATUS.RESOLVED || upper === "FINISHED" || LEGACY_RESOLVED.has(s)) {
+    return HANDLING_STATUS.RESOLVED;
+  }
+  if (
+    upper === HANDLING_STATUS.IN_PROGRESS ||
+    upper === "PROCESSING" ||
+    upper === "DISPATCHED" ||
+    LEGACY_IN_PROGRESS.has(s)
+  ) {
+    return HANDLING_STATUS.IN_PROGRESS;
+  }
+  return HANDLING_STATUS.PENDING;
+}
+
+export function handlingStatusLabel(status?: string | null): string {
+  return HANDLING_STATUS_LABEL[normalizeStatusCode(status)];
 }
 
 export function getUrgencyLabel(urgency?: string | null): string {
@@ -51,8 +82,8 @@ export function getUrgencyLabel(urgency?: string | null): string {
 
 export function handlingColor(label?: string | null): string {
   const code = normalizeStatusCode(label);
-  if (code === "RESOLVED") return "#52C41A";
-  if (code === "IN_PROGRESS") return "#1677FF";
+  if (code === HANDLING_STATUS.RESOLVED) return "#52C41A";
+  if (code === HANDLING_STATUS.IN_PROGRESS) return "#1677FF";
   return "#F53F3F";
 }
 
@@ -193,7 +224,7 @@ export function toClusterDto(theme: {
     ai_confidence: theme.aiConfidence ?? null,
     status: {
       code: normalizeStatusCode(theme.handlingStatus),
-      label: theme.handlingStatus || "未处理",
+      label: handlingStatusLabel(theme.handlingStatus),
       progress: theme.handlingProgress ?? 0,
       owner: theme.handlingOwner || "",
       color: handlingColor(theme.handlingStatus),
@@ -248,7 +279,7 @@ export function toWorkorderDto(row: {
     id: row.ticketNo || row.id,
     ticketId: row.id,
     title: row.summarizeTitle || row.title || "市民诉求",
-    category: row.sourceCategory || row.category || "综合民生",
+    category: row.sourceCategory || row.category || "",
     region: regionLabel(row.subdistrict, row.district) || "辖区",
     urgency: row.urgency || "NORMAL",
     status: mapTicketStatus(row.status),

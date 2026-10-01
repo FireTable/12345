@@ -3,6 +3,7 @@ import { ticketsTable, themesTable, ticketThemesTable } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { adminFromLocation } from "@/lib/admin-area";
 import { civicModeFromPattern } from "@/backend/theme-metrics";
+import { HANDLING_STATUS } from "@/lib/civic-dto";
 import { invalidateCivicAggregates } from "@/lib/civic-cache";
 import type { EnrichedTicket, MultiFrequencyTheme } from "@/backend/state";
 
@@ -89,7 +90,7 @@ export function buildThemePersistRow(theme: MultiFrequencyTheme): ThemePersistRo
     canonicalSubject: clip(theme.canonicalSubject, 255) || "相关主体",
     canonicalLocation: clip(theme.canonicalLocation, 255) || "本地辖区",
     eventType: clip(theme.eventType, 128) || "民生诉求",
-    category: clip(theme.category, 64) || "城市管理",
+    category: clip(theme.category, 64),
     riskLevel: clip(theme.riskLevel, 32) || "LOW",
     riskReason: theme.riskReason || null,
     ticketCount: theme.ticketCount,
@@ -101,7 +102,7 @@ export function buildThemePersistRow(theme: MultiFrequencyTheme): ThemePersistRo
     aiConfidence: theme.aiConfidence ?? null,
     firstAt: parseThemeDate(theme.firstOccurrence),
     lastAt: parseThemeDate(theme.lastOccurrence),
-    handlingStatus: clip(theme.handlingStatus, 16) || "未处理",
+    handlingStatus: clip(theme.handlingStatus, 16) || HANDLING_STATUS.PENDING,
     handlingProgress: theme.handlingProgress ?? 0,
     handlingOwner: theme.handlingOwner ? clip(theme.handlingOwner, 64) : null,
     featuresJson: theme.features ? JSON.stringify(theme.features) : null,

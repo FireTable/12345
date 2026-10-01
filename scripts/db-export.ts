@@ -10,20 +10,22 @@ if (loadEnvConfig) {
   loadEnvConfig(process.cwd());
 }
 
-import { db } from "../db/client";
-import {
-  ticketsTable,
-  themesTable,
-  ticketThemesTable,
-  reviewQueueTable,
-  vocabulariesTable,
-  aliasesTable,
-} from "../db/schema";
-
 async function exportAllData() {
   console.log("==================================================");
   console.log("📦 正在导出 PostgreSQL 数据库全量数据...");
   console.log("==================================================\n");
+
+  const { resolveScriptRegion } = await import("./region-target");
+  const {
+    ticketsTable,
+    themesTable,
+    ticketThemesTable,
+    reviewQueueTable,
+    vocabulariesTable,
+    aliasesTable,
+  } = await import("../db/schema");
+  const target = await resolveScriptRegion();
+  const db = target.db;
 
   const dumpDir = path.resolve(process.cwd(), "db", "dumps");
   if (!fs.existsSync(dumpDir)) {
@@ -42,7 +44,9 @@ async function exportAllData() {
 
   const payload = {
     exportedAt: new Date().toISOString(),
-    version: "1.0.0",
+    version: "1.1.0",
+    regionId: target.region?.id || null,
+    schemaName: target.schemaName,
     counts: {
       tickets: tickets.length,
       themes: themes.length,

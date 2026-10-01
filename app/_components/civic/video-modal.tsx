@@ -37,7 +37,7 @@ export const DEMO_VIDEOS: DemoVideo[] = [
   {
     id: "multifreq",
     title: "工单透势研判",
-    desc: "四象限与假闭环追踪：紧急×重要象限图、72h 时序衰减追踪与重点督办单",
+    desc: "四象限与假闭环追踪：紧急×重要象限图、突发与反复节奏、重点督办单",
     src: "/videos/工单透势.mp4",
     tag: "📈 假闭环狙击",
   },

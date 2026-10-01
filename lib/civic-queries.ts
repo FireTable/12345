@@ -40,9 +40,7 @@ export async function loadOverview(days: number, regionId?: string) {
   const { db: tenantDb } = await getRegionDb(regionId);
   const latest = await latestTicketTime(tenantDb);
   const scoped = colInWindow(ticketsTable.createTime, windowForDays(days, latest));
-  const analyzed = scoped
-    ? and(isNotNull(ticketsTable.confidence), scoped)
-    : isNotNull(ticketsTable.confidence);
+  const inWindow = scoped ?? sql`true`;
 
   const [totals, themeCountRes, regionRows, categoryRows, regionCategoryRows, monthlyRows, themeInsightRows] =
     await Promise.all([
@@ -63,7 +61,7 @@ export async function loadOverview(days: number, regionId?: string) {
           n: sql<number>`count(*)::int`,
         })
         .from(ticketsTable)
-        .where(analyzed)
+        .where(inWindow)
         .groupBy(ticketsTable.subdistrict),
       tenantDb
         .select({
@@ -71,7 +69,7 @@ export async function loadOverview(days: number, regionId?: string) {
           n: sql<number>`count(*)::int`,
         })
         .from(ticketsTable)
-        .where(analyzed)
+        .where(inWindow)
         .groupBy(ticketsTable.sourceCategory),
       tenantDb
         .select({
@@ -80,7 +78,7 @@ export async function loadOverview(days: number, regionId?: string) {
           n: sql<number>`count(*)::int`,
         })
         .from(ticketsTable)
-        .where(analyzed)
+        .where(inWindow)
         .groupBy(ticketsTable.subdistrict, ticketsTable.sourceCategory),
       tenantDb
         .select({
@@ -196,14 +194,13 @@ export async function loadWorkorderStats(regionId?: string) {
         subdistrict: ticketsTable.subdistrict,
       })
       .from(ticketsTable)
-      .where(isNotNull(ticketsTable.confidence))
       .groupBy(ticketsTable.subdistrict),
     tenantDb
       .select({
         category: ticketsTable.sourceCategory,
       })
       .from(ticketsTable)
-      .where(and(isNotNull(ticketsTable.confidence), isNotNull(ticketsTable.sourceCategory)))
+      .where(isNotNull(ticketsTable.sourceCategory))
       .groupBy(ticketsTable.sourceCategory),
   ]);
 

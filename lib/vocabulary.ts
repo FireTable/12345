@@ -40,71 +40,75 @@ export interface RegionVocabulary {
   categories: CategoryInfo[];
 }
 
+/** 官方分类名。比较和赋值走这些键。 */
+export const CATEGORY = {
+  URBAN_MANAGEMENT: "城市管理",
+  MARKET_REGULATION: "市场监管",
+  SOCIAL_GOVERNANCE: "社会治理",
+  TRANSPORT: "交通出行",
+  ENVIRONMENT: "生态环境",
+  LABOR: "劳动社保",
+  PUBLIC_SAFETY: "公共安全",
+} as const;
+
+export type StandardCategoryName = (typeof CATEGORY)[keyof typeof CATEGORY];
+
 /**
  * 标准 7 大民生诉求分类默认定义
  */
 export const STANDARD_CATEGORIES: readonly CategoryInfo[] = [
   {
-    category: "城市管理",
+    category: CATEGORY.URBAN_MANAGEMENT,
     subItems: ["物业管理纠纷", "住宅电梯维保与故障", "市政排污/供水管网", "市容市貌与流动摊贩占道", "违章搭建与占绿", "路灯照明与公用设施", "垃圾清运与环卫保洁"],
     leadDepartment: "综合行政执法局 / 住房城乡建设局 / 城市管理局",
   },
   {
-    category: "市场监管",
+    category: CATEGORY.MARKET_REGULATION,
     subItems: ["消费维权与退款纠纷", "虚假宣传与价格欺诈", "无照无证经营", "食品药品安全隐患", "特种设备安全", "商户规范经营", "预付卡消费维权"],
     leadDepartment: "市场监督管理局 / 消费者委员会",
   },
   {
-    category: "社会治理",
+    category: CATEGORY.SOCIAL_GOVERNANCE,
     subItems: ["社区邻里矛盾纠纷", "基层物业管理协商", "公共服务与便民事务", "租房租赁纠纷", "信访诉求调解", "政务平台系统咨询"],
     leadDepartment: "平安法治办公室 / 社区居委会 / 辖区派出所",
   },
   {
-    category: "交通出行",
+    category: CATEGORY.TRANSPORT,
     subItems: ["机动车违停阻碍通行", "主干道交通拥堵", "非机动车/共享单车乱堆放", "交通信号灯与标线破损", "营运客运与公交服务", "道路开挖与施工占道"],
     leadDepartment: "公安交警大队 / 交通运输局",
   },
   {
-    category: "生态环境",
+    category: CATEGORY.ENVIRONMENT,
     subItems: ["商业夜间经营音响噪音扰民", "工地施工噪声", "餐饮油烟与恶臭直排", "工业废气粉尘排放", "河道水体黑臭与偷排", "固体废物倾倒"],
     leadDepartment: "生态环境分局 / 综合行政执法队",
   },
   {
-    category: "劳动社保",
+    category: CATEGORY.LABOR,
     subItems: ["企业拖欠工资欠薪", "劳动合同解除与经济补偿", "社保医保缴纳与断缴", "失业保险金申领核验异常", "工伤认定与劳动仲裁"],
     leadDepartment: "人力资源和社会保障局 / 劳动仲裁院",
   },
   {
-    category: "公共安全",
+    category: CATEGORY.PUBLIC_SAFETY,
     subItems: ["违规销售/燃放烟花爆竹", "危险化学品与易燃易爆隐患", "消防通道占用与堵塞", "建筑施工安全生产事故", "电动车违规室内充电"],
     leadDepartment: "应急管理局 / 消防救援大队 / 辖区派出所",
   },
 ] as const;
 
-export type StandardCategoryName =
-  | "城市管理"
-  | "市场监管"
-  | "社会治理"
-  | "交通出行"
-  | "生态环境"
-  | "劳动社保"
-  | "公共安全";
-
 const STANDARD_CATEGORY_SET = new Set<string>(STANDARD_CATEGORIES.map((c) => c.category));
 
 const CATEGORY_ALIASES: Record<string, StandardCategoryName> = {
-  交通管理: "交通出行",
-  交通运输: "交通出行",
-  交通: "交通出行",
-  社会保障: "劳动社保",
-  社保: "劳动社保",
-  医疗保障: "劳动社保",
-  医保: "劳动社保",
-  人才就业: "劳动社保",
-  就业: "劳动社保",
-  政务: "社会治理",
-  公共服务: "社会治理",
-  教育: "社会治理",
+  交通管理: CATEGORY.TRANSPORT,
+  交通运输: CATEGORY.TRANSPORT,
+  交通: CATEGORY.TRANSPORT,
+  社会保障: CATEGORY.LABOR,
+  社保: CATEGORY.LABOR,
+  医疗保障: CATEGORY.LABOR,
+  医保: CATEGORY.LABOR,
+  人才就业: CATEGORY.LABOR,
+  就业: CATEGORY.LABOR,
+  政务: CATEGORY.SOCIAL_GOVERNANCE,
+  公共服务: CATEGORY.SOCIAL_GOVERNANCE,
+  教育: CATEGORY.SOCIAL_GOVERNANCE,
 };
 
 export function canonicalizeCategory(name?: string | null): StandardCategoryName | null {
@@ -215,7 +219,7 @@ export async function getRegionVocabulary(regionIdOrSchema?: string | null): Pro
             code: r.id,
             name: r.name,
             fullName: r.fullName || r.name,
-            category: meta.category || "城市管理",
+            category: meta.category || CATEGORY.URBAN_MANAGEMENT,
           });
         } else if (r.type === "CATEGORY") {
           categories.push({
@@ -258,6 +262,42 @@ export function invalidateVocabCache(regionId?: string) {
   } else {
     vocabCache.clear();
   }
+}
+
+/**
+ * 在一段工单文本里找出最像的法定镇街。取最长命中，避免短名先匹配把工单归到名单里靠前的镇街。
+ * 认不出时返回 null，调用方不要再填一个默认镇街。
+ */
+export function matchTownshipName(text: string, townships: TownshipInfo[]): string | null {
+  const source = text || "";
+  if (!source || townships.length === 0) return null;
+
+  let best: { fullName: string; matchLen: number; index: number } | null = null;
+  for (const township of townships) {
+    const fullName = (township.fullName || township.name || "").trim();
+    if (!fullName) continue;
+    const labels = [
+      township.fullName,
+      township.name,
+      ...(township.aliases || []),
+      ...(township.communities || []),
+      ...(township.landmarks || []),
+    ];
+    for (const raw of labels) {
+      const label = (raw || "").trim();
+      if (label.length < 2) continue;
+      const index = source.indexOf(label);
+      if (index < 0) continue;
+      if (
+        !best ||
+        label.length > best.matchLen ||
+        (label.length === best.matchLen && index < best.index)
+      ) {
+        best = { fullName, matchLen: label.length, index };
+      }
+    }
+  }
+  return best?.fullName ?? null;
 }
 
 /**

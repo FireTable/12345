@@ -29,6 +29,7 @@ type Row = {
   status: string;
   createdAt: string;
   content?: string;
+  address?: string;
   cluster_id?: string;
   cluster_name?: string;
   multifreq?: boolean;
@@ -50,7 +51,7 @@ export default function TicketsPage() {
   const { openUpload, runCluster, analyzing, isAllAnalyzed, disabledReason } = useCivicWorkflow();
   const { activeRegion } = useRegion();
   const [page, setPage] = useState(1);
-  const [size, setSize] = useState(10);
+  const [size, setSize] = useState(20);
   const [keyword, setKeyword] = useState("");
   const [tab, setTab] = useState("all");
   const [region, setRegion] = useState("");
@@ -322,8 +323,7 @@ export default function TicketsPage() {
           <thead>
             <tr>
               <th style={{ width: 150, minWidth: 140 }}>工单号</th>
-              <th style={{ width: 260, minWidth: 220 }}>诉求标题</th>
-              <th>诉求正文内容</th>
+              <th>诉求标题</th>
               <th style={{ width: 85 }}>镇街</th>
               <th style={{ width: 95, minWidth: 90 }}>类型</th>
               <th style={{ width: 80 }}>紧急度</th>
@@ -336,13 +336,9 @@ export default function TicketsPage() {
             {data.data.map((r) => (
               <tr key={r.ticketId} onClick={() => setDrawer(r)}>
                 <td className="col-id">{r.id}</td>
-                <td>
+                <td className="col-title">
                   <div className="col-title__text" title={r.title}>{r.title}</div>
-                </td>
-                <td>
-                  <div className="col-content__text" title={r.content || ""}>
-                    {r.content || "暂无诉求正文"}
-                  </div>
+                  {r.address ? <div className="col-title__desc" title={r.address}>{r.address}</div> : null}
                 </td>
                 <td>{r.region || "—"}</td>
                 <td>
@@ -371,7 +367,7 @@ export default function TicketsPage() {
           pages={pages}
           total={data.total}
           pageSize={size}
-          pageSizeOptions={[10, 20, 50]}
+          pageSizeOptions={[20, 50, 100]}
           itemLabel="条"
           onPageChange={setPage}
           onPageSizeChange={(n) => {

@@ -3,6 +3,7 @@ import type { RawTicket, TicketRadarState, MultiFrequencyTheme, EnrichedTicket }
 import { evaluateIncrementalTicket, upgradeThemeWithSystemTwo, type IncrementalClusterResult } from "./incremental-cluster";
 import { extractNode } from "./node/extract-node";
 import { canonicalNode } from "./node/canonical-node";
+import { getRegionVocabulary } from "@/lib/vocabulary";
 
 export { graph };
 
@@ -59,8 +60,11 @@ export async function ingestSingleTicketPipeline(
 
   const enrichedTicket = canonicalState.enrichedTickets?.[0] || (extractState.enrichedTickets?.[0] as EnrichedTicket);
 
-  // 3. 确定性时空滑动窗口吸附研判 (毫秒级判定)
-  const clusterResult = evaluateIncrementalTicket(enrichedTicket, activeThemes);
+  // 3. 同一事件并入已有主题。时间只记节奏，不拆簇。
+  const vocab = await getRegionVocabulary(regionId);
+  const clusterResult = evaluateIncrementalTicket(enrichedTicket, activeThemes, {
+    townships: vocab.townships,
+  });
 
   // 4. 若吸附成功且命中严重突发险情，触发 System-2 慢思考进行应急处置升级
   let updatedTheme: MultiFrequencyTheme | undefined = clusterResult.matchedTheme;

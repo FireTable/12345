@@ -14,7 +14,7 @@ import {
 } from "../prompt";
 import { adminFromLocation, explicitAdmin } from "@/lib/admin-area";
 import { getRegionAliasMap, normalizeAliasesInText, resolveEntityAlias } from "@/lib/alias-dict";
-import { canonicalizeCategory, canonicalizeTownship, getRegionVocabulary, type RegionVocabulary } from "@/lib/vocabulary";
+import { CATEGORY, canonicalizeCategory, canonicalizeTownship, getRegionVocabulary, type RegionVocabulary } from "@/lib/vocabulary";
 import { verifyAndCanonicalizeTicketArea } from "./arbitrator-node";
 import { updateTaskProgress } from "@/lib/task-progress";
 import { getRegionDb } from "@/db/client";
@@ -24,8 +24,26 @@ import PQueue from "p-queue";
 import { anonymize, deanonymize } from "@civic/anonymizer";
 import { SystemOneEngine } from "@civic/system-one";
 import { LLM_TOKENS } from "@/lib/tokens";
+import { familyLabel, profileTicket } from "../ticket-profile";
 
 export const LOW_CONFIDENCE_THRESHOLD = 60;
+
+/** 只记下摘要和置信度。类别、镇街、地点留到整批结束再写，避免抽到一半把上传时的画像盖掉。 */
+function rememberExtraction(
+  tenantDb: Awaited<ReturnType<typeof getRegionDb>>["db"],
+  ticketId: string,
+  summarizeTitle: string | null | undefined,
+  confidence: number | null | undefined
+) {
+  tenantDb
+    .update(ticketsTable)
+    .set({
+      summarizeTitle: summarizeTitle || null,
+      confidence: typeof confidence === "number" ? confidence : null,
+    })
+    .where(eq(ticketsTable.id, ticketId))
+    .catch((e) => console.warn(`Failed to persist ticket ${ticketId}:`, e.message));
+}
 
 /**
  * 批次调用大模型进行严格、精准的结构化 Zod 要素抽取
@@ -215,15 +233,17 @@ export async function extractNode(
           ? "MEDIUM"
           : "NORMAL";
 
+        const profile = profileTicket(ticket, regionVocab.townships);
+        if (profile.urgent) ticket.urgency = "URGENT";
+
         if (decision.stabilityRisk) {
           stabilityAlertCount++;
         }
 
-        // 1.2 高置信度业务咨询 (INQUIRY, 0h SLA) 与催办件 (REMINDER) 免 LLM 直通车
+        // 已能判定事件类型的诉求走正常抽取，避免咨询/催办直通把主体和类别盖掉。
         const isFastTrackIntent = decision.intent === "INQUIRY" || decision.intent === "REMINDER";
-        if (isFastTrackIntent && decision.intentProbability >= 0.80 && !extractionMap.has(i)) {
-          const area = adminFromLocation(ticket.subdistrict || "", ticket);
-          const targetCategory = canonicalizeCategory(decision.categoryName) || "城市管理";
+        if (!profile.family && isFastTrackIntent && decision.intentProbability >= 0.80 && !extractionMap.has(i)) {
+          const targetCategory = canonicalizeCategory(decision.categoryName) || CATEGORY.URBAN_MANAGEMENT;
           const eventType = `${decision.categoryName}${decision.intent === "INQUIRY" ? "政策咨询" : "工单催办"}`;
           const summarizeTitle =
             ticket.title ||
@@ -248,19 +268,7 @@ export async function extractNode(
 
           // 实时持久化落库
           if (ticket.id) {
-            tenantDb
-              .update(ticketsTable)
-              .set({
-                summarizeTitle: item.summarizeTitle,
-                address: item.location,
-                district: area.district || ticket.district || null,
-                subdistrict: area.subdistrict || ticket.subdistrict || null,
-                sourceCategory: item.category,
-                urgency: ticket.urgency,
-                confidence: item.confidence,
-              })
-              .where(eq(ticketsTable.id, ticket.id))
-              .catch((e) => console.warn(`Failed to persist fast-track ticket ${ticket.id}:`, e.message));
+            rememberExtraction(tenantDb, ticket.id, item.summarizeTitle, item.confidence);
           }
         }
       } catch (s1Err: any) {
@@ -321,7 +329,9 @@ export async function extractNode(
       percent,
       fastTrackCount,
       activeCategories: computeActiveCategories(),
-      stageText: `System-1 快思考分流完成：${fastTrackCount} 条咨询/催办直通分派${alertNotice}；剩余 ${pendingIdx.length} 条工单进入大模型抽取...`,
+      stageText: preExtractedCount > 0
+        ? `继续研判：已完成 ${preExtractedCount} 条，还剩 ${pendingIdx.length} 条`
+        : `System-1 快思考分流完成：${fastTrackCount} 条咨询/催办直通分派${alertNotice}；剩余 ${pendingIdx.length} 条工单进入大模型抽取...`,
       extractedCount: extractionMap.size,
     });
   }
@@ -339,19 +349,7 @@ export async function extractNode(
         // 单条实时持久化至目标 Schema 对应的 PostgreSQL 数据库，保证中途关闭或刷新永不丢失进度
         const orig = normalizedRawTickets[key];
         if (orig && orig.id) {
-          const area = adminFromLocation(val.location, orig);
-          tenantDb.update(ticketsTable)
-            .set({
-              summarizeTitle: val.summarizeTitle,
-              address: val.location,
-              district: area.district || orig.district || null,
-              subdistrict: area.subdistrict || orig.subdistrict || null,
-              sourceCategory: canonicalizeCategory(val.category) || val.category,
-              urgency: orig.urgency || "NORMAL",
-              confidence: val.confidence,
-            })
-            .where(eq(ticketsTable.id, orig.id))
-            .catch((e) => console.warn(`Failed to persist ticket ${orig.id}:`, e.message));
+          rememberExtraction(tenantDb, orig.id, val.summarizeTitle, val.confidence);
         }
       });
       processedCount += chunk.length;
@@ -394,39 +392,47 @@ export async function extractNode(
 
   // 3. 构建富化工单并执行最终标准词汇表与别名规范化映射
   const enrichedTickets: EnrichedTicket[] = normalizedRawTickets.map((ticket, index) => {
+    const profile = profileTicket(ticket, regionVocab.townships);
     const fallback = fallbackDynamicExtraction(ticket);
     const aiExtracted = extractionMap.get(index);
     const summarizeTitle = aiExtracted?.summarizeTitle || ticket.summarizeTitle || fallback.summarizeTitle;
     const rawSubject = aiExtracted?.subject || fallback.subject;
-    const rawLocation = aiExtracted?.location || fallback.location;
-    const eventType = aiExtracted?.eventType || fallback.eventType;
-    const category =
-      canonicalizeCategory(aiExtracted?.category || fallback.category) || "城市管理";
+    const resolvedSubject = resolveEntityAlias(rawSubject, aliasMap);
+    const genericSubject = /^(涉事方|咨询市民|催办诉求人|商家|相关主体|商铺|店铺)$/;
+    const canonicalSubject =
+      profile.subject && genericSubject.test((resolvedSubject || "").trim())
+        ? profile.subject
+        : resolvedSubject;
+    const rawLocation = profile.place || aiExtracted?.location || fallback.location;
+    const eventType = familyLabel(profile.family) || aiExtracted?.eventType || fallback.eventType;
+    // 类别只认规则画像。对不上家族就留空，不用模型补类。
+    const category = profile.category || "";
     const confidence =
       typeof aiExtracted?.confidence === "number"
         ? aiExtracted.confidence
         : fallback.confidence;
 
-    const canonicalSubject = resolveEntityAlias(rawSubject, aliasMap);
     const canonicalLocation = resolveEntityAlias(rawLocation, aliasMap);
     const area = adminFromLocation(canonicalLocation, ticket);
     const subdistrict =
-      canonicalizeTownship(area.subdistrict || ticket.subdistrict, regionVocab) ||
-      area.subdistrict ||
+      canonicalizeTownship(ticket.subdistrict, regionVocab) ||
+      profile.township ||
+      canonicalizeTownship(area.subdistrict, regionVocab) ||
       undefined;
 
     return {
       ...ticket,
-      district: area.district || undefined,
+      district: area.district || ticket.district || undefined,
       subdistrict,
-      sourceCategory: category,
-      address: canonicalLocation,
+      sourceCategory: category || undefined,
+      address: canonicalLocation || ticket.address,
+      urgency: profile.urgent ? "URGENT" : ticket.urgency,
       summarizeTitle,
       confidence,
       canonicalSubject,
       canonicalLocation,
       eventType,
-      themes: [category],
+      themes: category ? [category] : [],
       entities: [
         { name: canonicalSubject, canonicalName: canonicalSubject, type: "SUBJECT", confidence: Math.min(1, confidence / 100) },
         { name: canonicalLocation, canonicalName: canonicalLocation, type: "LOCATION", confidence: Math.min(1, (confidence - 5) / 100) },

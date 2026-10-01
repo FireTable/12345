@@ -82,6 +82,50 @@ export function inferPatternType(tickets: EnrichedTicket[]): PatternType {
   return "GROUP_GATHERING";
 }
 
+export const CADENCE = {
+  BURST: "BURST",
+  RECURRING: "RECURRING",
+  SEASONAL: "SEASONAL",
+} as const;
+
+export type ThemeCadence = (typeof CADENCE)[keyof typeof CADENCE];
+
+const CADENCE_LABEL: Record<ThemeCadence, string> = {
+  BURST: "突发",
+  RECURRING: "反复",
+  SEASONAL: "季节性",
+};
+
+export function cadenceLabel(cadence: ThemeCadence): string {
+  return CADENCE_LABEL[cadence] || cadence;
+}
+
+const BURST_HOURS = 72;
+const SEASONAL_GAP_HOURS = 14 * 24;
+
+/** 时间只描述已经聚在一起的主题有多频，不决定工单能不能进这个主题。 */
+export function describeCadence(times: Array<string | number | Date | undefined>): ThemeCadence {
+  const ms = times
+    .map((value) => {
+      if (value instanceof Date) return value.getTime();
+      if (typeof value === "number") return value;
+      return parseTime(value);
+    })
+    .filter((value) => value > 0)
+    .sort((a, b) => a - b);
+  if (ms.length < 2) return CADENCE.BURST;
+
+  let maxGapHours = 0;
+  for (let i = 1; i < ms.length; i++) {
+    maxGapHours = Math.max(maxGapHours, (ms[i] - ms[i - 1]) / 3600000);
+  }
+  if (maxGapHours >= SEASONAL_GAP_HOURS) return CADENCE.SEASONAL;
+
+  const spanHours = (ms[ms.length - 1] - ms[0]) / 3600000;
+  if (spanHours <= BURST_HOURS) return CADENCE.BURST;
+  return CADENCE.RECURRING;
+}
+
 function parseTime(s?: string): number {
   if (!s) return 0;
   const t = new Date(s.replace(" ", "T")).getTime();
@@ -113,6 +157,7 @@ export function deriveThemeMetrics(theme: Pick<
 
   const times = tickets.map((t) => parseTime(t.createTime)).filter(Boolean).sort((a, b) => a - b);
   const spanHours = times.length >= 2 ? (times[times.length - 1] - times[0]) / 3600000 : 1;
+  const cadence = describeCadence(times);
   const timePct = spanHours <= 24 ? 92 : spanHours <= 24 * 7 ? 78 : spanHours <= 24 * 30 ? 62 : 45;
 
   const moodHits = tickets.filter((t) =>
@@ -136,7 +181,7 @@ export function deriveThemeMetrics(theme: Pick<
   const features = [
     { name: "关键词命中", pct: keywordPct, desc: event ? `主题「${event}」覆盖 ${keywordHits}/${n}` : "无统一事件类型" },
     { name: "地理范围", pct: geoPct, desc: loc ? `落在同一地点 ${locHits}/${n}` : "地点未对齐" },
-    { name: "时间模式", pct: timePct, desc: `跨度约 ${Math.max(1, Math.round(spanHours))} 小时` },
+    { name: "时间模式", pct: timePct, desc: `${cadenceLabel(cadence)} · 跨度约 ${Math.max(1, Math.round(spanHours))} 小时` },
     { name: "情绪强度", pct: moodPct, desc: moodHits ? `险情/激烈用语 ${moodHits} 条` : "未命中险情词" },
   ];
 

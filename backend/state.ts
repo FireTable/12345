@@ -158,7 +158,7 @@ export const TicketRadarStateAnnotation = Annotation.Root({
     default: () => [],
   }),
   themes: Annotation<MultiFrequencyTheme[]>({
-    reducer: (prev, next) => (next && next.length > 0 ? next : prev),
+    reducer: (prev, next) => (next == null ? prev : next),
     default: () => [],
   }),
   stats: Annotation<OverallStats>({

@@ -1,11 +1,19 @@
-import { db } from "../db/client";
-import { ticketsTable, themesTable, ticketThemesTable } from "../db/schema";
+import nextEnvPkg from "@next/env";
 import { sql } from "drizzle-orm";
+
+const { loadEnvConfig } = (nextEnvPkg as any).default || nextEnvPkg;
+if (loadEnvConfig) {
+  loadEnvConfig(process.cwd());
+}
 
 async function clearDatabase() {
   console.log("==================================================");
   console.log("🗑️  正在清空 PostgreSQL 数据库表数据...");
   console.log("==================================================\n");
+
+  const { resolveScriptRegion } = await import("./region-target");
+  const { ticketsTable, themesTable, ticketThemesTable } = await import("../db/schema");
+  const { db } = await resolveScriptRegion();
 
   try {
     await db.delete(ticketThemesTable);
@@ -24,4 +32,7 @@ async function clearDatabase() {
   process.exit(0);
 }
 
-clearDatabase().catch(console.error);
+clearDatabase().catch((err) => {
+  console.error("❌ 清空失败:", err);
+  process.exit(1);
+});
