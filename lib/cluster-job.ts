@@ -7,6 +7,7 @@ import { persistClusterResult } from "@/lib/civic-persist";
 import { seedReviewQueue } from "@/lib/review-queue";
 import type { RawTicket } from "@/backend/state";
 import type { ClusterJob } from "@/lib/cluster-queue";
+import { workOrderClockFromTicketNo } from "@/lib/work-order-date";
 
 /**
  * 跑完一条已经入队的研判。抽取中途写入的置信度会让下次拉起跳过已完成的工单。
@@ -23,9 +24,13 @@ export async function executeClusterJob(job: ClusterJob): Promise<number> {
     confidence: typeof r.confidence === "number" ? r.confidence : undefined,
     sourceCategory: r.sourceCategory || undefined,
     primaryThemeId: r.primaryThemeId || undefined,
-    createTime: r.createTime
-      ? r.createTime.toISOString().slice(0, 19).replace("T", " ")
-      : "2025-01-01 00:00:00",
+    canonicalSubject: r.canonicalSubject || undefined,
+    eventType: r.eventType || undefined,
+    slaHours: typeof r.slaHours === "number" ? r.slaHours : undefined,
+    stabilityRisk: typeof r.stabilityRisk === "boolean" ? r.stabilityRisk : undefined,
+    createTime:
+      workOrderClockFromTicketNo(r.ticketNo) ||
+      (r.createTime ? r.createTime.toISOString().slice(0, 19).replace("T", " ") : "2025-01-01 00:00:00"),
     content: r.content,
     maskedContent: r.maskedContent || undefined,
     closedAt: r.closedAt ? r.closedAt.toISOString().slice(0, 19).replace("T", " ") : undefined,

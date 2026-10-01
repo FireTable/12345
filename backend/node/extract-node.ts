@@ -1,12 +1,11 @@
 import type { TicketRadarState, EnrichedTicket, RawTicket } from "../state";
 import {
-  getChatModel,
-  isLocalLlm,
-  llmConcurrency,
-  markToolCallingUnsupported,
+  isLocalSystemTwo,
   modelSupportsToolCalling,
   getSystemTwoEngine,
+  systemTwoConcurrency,
 } from "../model";
+import { workOrderClockFromTicketNo, workOrderInstantFromTicketNo } from "@/lib/work-order-date";
 import {
   BatchExtractionSchema,
   buildBatchExtractionPrompt,
@@ -24,25 +23,78 @@ import PQueue from "p-queue";
 import { anonymize, deanonymize } from "@civic/anonymizer";
 import { SystemOneEngine } from "@civic/system-one";
 import { LLM_TOKENS } from "@/lib/tokens";
-import { profileTicket } from "../ticket-profile";
 
 export const LOW_CONFIDENCE_THRESHOLD = 60;
 
-/** 只记下摘要和置信度。类别、镇街、地点留到整批结束再写，避免抽到一半把上传时的画像盖掉。 */
+function clipField(value: string | null | undefined, max: number): string | null {
+  const text = (value ?? "").trim();
+  if (!text) return null;
+  return text.length <= max ? text : text.slice(0, max);
+}
+
+/** 抽到一条就写下主体、地点、事件和摘要，中断后可以接着跑。空字段不覆盖已有值。 */
 function rememberExtraction(
   tenantDb: Awaited<ReturnType<typeof getRegionDb>>["db"],
   ticketId: string,
-  summarizeTitle: string | null | undefined,
-  confidence: number | null | undefined
+  patch: {
+    createTime?: Date | null;
+    sourceCategory?: string | null;
+    urgency?: string | null;
+    slaHours?: number | null;
+    stabilityRisk?: boolean | null;
+    summarizeTitle?: string | null;
+    confidence?: number | null;
+    canonicalSubject?: string | null;
+    eventType?: string | null;
+    address?: string | null;
+    subdistrict?: string | null;
+  }
 ) {
+  const set: Record<string, unknown> = {};
+  if (patch.createTime instanceof Date) set.createTime = patch.createTime;
+  const sourceCategory = clipField(patch.sourceCategory, 64);
+  if (sourceCategory) set.sourceCategory = sourceCategory;
+  if (patch.urgency) set.urgency = patch.urgency;
+  if (typeof patch.slaHours === "number") set.slaHours = patch.slaHours;
+  if (typeof patch.stabilityRisk === "boolean") set.stabilityRisk = patch.stabilityRisk;
+  if (patch.summarizeTitle?.trim()) set.summarizeTitle = patch.summarizeTitle.trim();
+  if (typeof patch.confidence === "number") set.confidence = patch.confidence;
+  const subject = clipField(patch.canonicalSubject, 255);
+  if (subject) set.canonicalSubject = subject;
+  const eventType = clipField(patch.eventType, 128);
+  if (eventType) set.eventType = eventType;
+  const address = clipField(patch.address, 255);
+  if (address) set.address = address;
+  const subdistrict = clipField(patch.subdistrict, 64);
+  if (subdistrict) set.subdistrict = subdistrict;
+  if (Object.keys(set).length === 0) return;
   tenantDb
     .update(ticketsTable)
-    .set({
-      summarizeTitle: summarizeTitle || null,
-      confidence: typeof confidence === "number" ? confidence : null,
-    })
+    .set(set)
     .where(eq(ticketsTable.id, ticketId))
     .catch((e) => console.warn(`Failed to persist ticket ${ticketId}:`, e.message));
+}
+
+function systemOnePatch(ticket: RawTicket) {
+  return {
+    createTime: workOrderInstantFromTicketNo(ticket.ticketNo),
+    sourceCategory: ticket.sourceCategory,
+    urgency: ticket.urgency,
+    slaHours: ticket.systemOneSlaHours,
+    stabilityRisk: ticket.systemOneStabilityRisk,
+    subdistrict: ticket.subdistrict,
+  };
+}
+
+function hasStoredExtraction(ticket: RawTicket): boolean {
+  return Boolean(
+    ticket.summarizeTitle?.trim() &&
+      ticket.canonicalSubject?.trim() &&
+      ticket.eventType?.trim() &&
+      ticket.address?.trim() &&
+      typeof ticket.confidence === "number" &&
+      ticket.confidence > 0
+  );
 }
 
 /**
@@ -86,27 +138,31 @@ async function extractBatchWithLLM(
 
   const prompt = buildBatchExtractionPrompt(maskedTickets, vocab);
 
-  try {
-    const systemTwo = await getSystemTwoEngine();
-    const { data } = await systemTwo.createJSON(BatchExtractionSchema, {
-      messages: [{ role: "user", content: prompt }],
-      enableThinking: false, // 结构化要素抽取显式关闭慢思考，实现毫秒级/极速直出
-      maxTokens: LLM_TOKENS.EXTRACTION,
-      temperature: 0.1,
-    });
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const systemTwo = await getSystemTwoEngine();
+      const { data } = await systemTwo.createJSON(BatchExtractionSchema, {
+        messages: [{ role: "user", content: prompt }],
+        enableThinking: false,
+        maxTokens: LLM_TOKENS.EXTRACTION,
+        temperature: 0.1,
+      });
 
-    if (data && Array.isArray(data.items)) {
-      for (const item of data.items) {
-        if (item && typeof item.index === "number") {
+      if (data && Array.isArray(data.items)) {
+        for (const item of data.items) {
+          if (!item || typeof item.index !== "number") continue;
+          const sanitized = sanitizeItem(item);
+          if (!sanitized.summarizeTitle || !sanitized.subject || !sanitized.location || !sanitized.eventType) continue;
           const key = startIndex + item.index - 1;
-          result.set(key, sanitizeItem(item));
+          result.set(key, sanitized);
           fromLlm.add(key);
         }
+        if (result.size === tickets.length) return { items: result, fromLlm };
       }
-      if (result.size > 0) return { items: result, fromLlm };
+    } catch (err: any) {
+      console.warn(`[extract-node] System-2 extraction batch error at index ${startIndex} attempt ${attempt + 1}:`, err.message);
     }
-  } catch (err: any) {
-    console.warn(`[extract-node] System-2 extraction batch error at index ${startIndex}:`, err.message);
+    if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
   }
 
   // 3. 模型失败时平滑退化为本地动态规则抽取引擎
@@ -161,9 +217,9 @@ export async function extractNode(
 ): Promise<Partial<TicketRadarState>> {
   const rawTickets = state.rawTickets || [];
   const taskId = state.taskId;
-  const CHUNK_SIZE = isLocalLlm() ? 4 : 1;
+  const CHUNK_SIZE = isLocalSystemTwo() ? 1 : 4;
   const extractionMap = new Map<number, ExtractedTicketItem>();
-  const queue = new PQueue({ concurrency: llmConcurrency() });
+  const queue = new PQueue({ concurrency: systemTwoConcurrency() });
 
   // 加载当前运行站点的动态词库与别名映射，以及专属 Schema 数据库客户端
   const regionVocab = await getRegionVocabulary(state.regionId);
@@ -193,12 +249,16 @@ export async function extractNode(
   }
 
   // 1. 全文别名标准化预处理
-  const normalizedRawTickets = rawTickets.map((t) => ({
-    ...t,
-    title: normalizeAliasesInText(t.title, aliasMap),
-    content: normalizeAliasesInText(t.content, aliasMap),
-    subdistrict: normalizeAliasesInText(t.subdistrict, aliasMap),
-  }));
+  const normalizedRawTickets = rawTickets.map((t) => {
+    const clock = workOrderClockFromTicketNo(t.ticketNo);
+    return {
+      ...t,
+      title: normalizeAliasesInText(t.title, aliasMap),
+      content: normalizeAliasesInText(t.content, aliasMap),
+      subdistrict: normalizeAliasesInText(t.subdistrict, aliasMap),
+      createTime: clock || t.createTime,
+    };
+  });
 
   // 1.1 启动 System-1 极速决策引擎 (自适应 MPS / ONNX 神经编码器，单件时延 <1ms)
   let fastTrackCount = 0;
@@ -236,43 +296,12 @@ export async function extractNode(
           : decision.urgencyLevel === 2
           ? "MEDIUM"
           : "NORMAL";
-
-        const profile = profileTicket(ticket, regionVocab.townships);
-
-        if (decision.stabilityRisk) {
-          stabilityAlertCount++;
-        }
-
-        // 已能判定事件类型的诉求走正常抽取，避免咨询/催办直通把主体和类别盖掉。
-        const isFastTrackIntent = decision.intent === "INQUIRY" || decision.intent === "REMINDER";
-        if (!profile.family && isFastTrackIntent && decision.intentProbability >= 0.80 && !extractionMap.has(i)) {
-          const targetCategory = canonicalizeCategory(decision.categoryName) || decision.categoryName;
-          const eventType = `${decision.categoryName}${decision.intent === "INQUIRY" ? "政策咨询" : "工单催办"}`;
-          const summarizeTitle =
-            ticket.title ||
-            ticket.summarizeTitle ||
-            `关于${ticket.subdistrict || regionVocab.regionName}${decision.categoryName}的${decision.intent === "INQUIRY" ? "政策咨询" : "催办诉求"}`;
-          const subject = decision.intent === "INQUIRY" ? "咨询市民" : "催办诉求人";
-          const location = ticket.address || ticket.subdistrict || regionVocab.regionName;
-
-          const item: ExtractedTicketItem = {
-            index: 1,
-            summarizeTitle,
-            subject,
-            location,
-            eventType,
-            category: targetCategory as any,
-            confidence: Math.round(decision.intentProbability * 100),
-          };
-
-          extractionMap.set(i, item);
-          ticket.isSystemOneFastTrack = true;
-          fastTrackCount++;
-
-          // 实时持久化落库
-          if (ticket.id) {
-            rememberExtraction(tenantDb, ticket.id, item.summarizeTitle, item.confidence);
-          }
+        const category = canonicalizeCategory(decision.categoryName) || decision.categoryName;
+        if (category) ticket.sourceCategory = category;
+        if (decision.stabilityRisk) stabilityAlertCount++;
+        if (ticket.id) rememberExtraction(tenantDb, ticket.id, systemOnePatch(ticket));
+        if ((i + 1) % 50 === 0 || i + 1 === normalizedRawTickets.length) {
+          console.log(`[extract] system-1 ${i + 1}/${normalizedRawTickets.length}`);
         }
       } catch (s1Err: any) {
         console.warn(`[extract-node] System-1 evaluation error for ticket ${ticket.ticketNo}:`, s1Err.message);
@@ -286,20 +315,17 @@ export async function extractNode(
   // 1.3 检查已抽取过的工单（断点续抽/跳过已处理），直接载入并跳过 LLM
   let preExtractedCount = 0;
   normalizedRawTickets.forEach((ticket, idx) => {
-    if (extractionMap.has(idx)) return;
-    if (ticket.summarizeTitle && typeof ticket.confidence === "number" && ticket.confidence > 0) {
-      const fallback = fallbackDynamicExtraction(ticket);
-      extractionMap.set(idx, {
-        index: 1,
-        summarizeTitle: ticket.summarizeTitle,
-        subject: ticket.title || fallback.subject || "相关主体",
-        location: ticket.address || ticket.subdistrict || fallback.location || regionVocab.regionName,
-        eventType: ticket.sourceCategory || fallback.eventType || "民生诉求",
-        category: (ticket.sourceCategory as any) || fallback.category || "城市管理",
-        confidence: ticket.confidence,
-      });
-      preExtractedCount++;
-    }
+    if (extractionMap.has(idx) || !hasStoredExtraction(ticket)) return;
+    extractionMap.set(idx, {
+      index: 1,
+      summarizeTitle: ticket.summarizeTitle || "",
+      subject: ticket.canonicalSubject || "",
+      location: ticket.address || "",
+      eventType: ticket.eventType || "",
+      category: (ticket.sourceCategory as any) || "城市管理",
+      confidence: ticket.confidence || 0,
+    });
+    preExtractedCount++;
   });
 
   let processedCount = preExtractedCount + fastTrackCount;
@@ -339,6 +365,7 @@ export async function extractNode(
     });
   }
 
+  console.log(`[extract] system-1 done, stored ${preExtractedCount}, system-2 pending ${pendingIdx.length}`);
   const llmTicketIndexes = new Set<number>();
   for (let p = 0; p < pendingIdx.length; p += CHUNK_SIZE) {
     const idxs = pendingIdx.slice(p, p + CHUNK_SIZE);
@@ -357,10 +384,19 @@ export async function extractNode(
         // 单条实时持久化至目标 Schema 对应的 PostgreSQL 数据库，保证中途关闭或刷新永不丢失进度
         const orig = normalizedRawTickets[key];
         if (orig && orig.id) {
-          rememberExtraction(tenantDb, orig.id, val.summarizeTitle, val.confidence);
+          rememberExtraction(tenantDb, orig.id, {
+            ...systemOnePatch(orig),
+            summarizeTitle: val.summarizeTitle,
+            confidence: val.confidence,
+            canonicalSubject: val.subject,
+            eventType: val.eventType,
+            address: val.location,
+          });
         }
       });
       processedCount += chunk.length;
+      const done = Math.min(processedCount, normalizedRawTickets.length);
+      console.log(`[extract] ${done}/${normalizedRawTickets.length}`);
       if (taskId) {
         const currentProcessed = Math.min(processedCount, normalizedRawTickets.length);
         const percent = Math.round((currentProcessed / Math.max(1, normalizedRawTickets.length)) * 50);

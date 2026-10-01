@@ -41,6 +41,11 @@ export interface RawTicket {
   address?: string;
   confidence?: number;
   primaryThemeId?: string;
+  /** 已落库的 System 2 主体。四项都在时，重跑可以不再请模型抽一遍。 */
+  canonicalSubject?: string;
+  eventType?: string;
+  slaHours?: number;
+  stabilityRisk?: boolean;
   // System-1 快思考决策字段
   systemOneIntent?: string;
   systemOneCategory?: string;

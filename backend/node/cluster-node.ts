@@ -10,10 +10,12 @@ import { deriveRiskLevel, scanNegativeSentiment } from "./risk-rules";
 import { RULES } from "../rules";
 import { cadenceLabel, civicModeFromPattern, deriveThemeMetrics, describeCadence, inferPatternType } from "../theme-metrics";
 import { validateAndFilterThemes } from "./cluster-validator";
-import { getRegionVocabulary } from "@/lib/vocabulary";
+import { getRegionVocabulary, legalTownshipName } from "@/lib/vocabulary";
 import { updateTaskProgress } from "@/lib/task-progress";
 import { HANDLING_STATUS } from "@/lib/civic-dto";
-import { clusterIncidents, familyLabel, profileTicket } from "../ticket-profile";
+import { profileTicket } from "../ticket-profile";
+import { chooseThemeAnchor, clusterLinked } from "../same-incident-cluster";
+import { embedTextsWithRetry, extractionProductText } from "../embed-products";
 
 function majority(values: Array<string | null | undefined>): string | null {
   const counts = new Map<string, number>();
@@ -69,20 +71,30 @@ export async function clusterNode(
     ticket.clusterId = undefined;
   }
 
-  const themes: MultiFrequencyTheme[] = [];
-  const groups = clusterIncidents(enrichedTickets, (ticket) => {
-    const profile = profileTicket(ticket, regionVocab.townships);
-    return {
-      ...profile,
-      township: ticket.subdistrict || null,
-      category: (ticket.sourceCategory as typeof profile.category) || null,
-      subject: ticket.canonicalSubject || null,
-      place: ticket.canonicalLocation || null,
-    };
-  });
+  const productTexts = enrichedTickets.map((ticket) => extractionProductText(ticket));
+  const vectors = await embedTextsWithRetry(productTexts);
+  if (vectors.length !== enrichedTickets.length) {
+    throw new Error(`Embedding rows ${vectors.length} != tickets ${enrichedTickets.length}`);
+  }
 
-  for (const group of groups) {
-    const tickets = [...group.members].sort(
+  const themes: MultiFrequencyTheme[] = [];
+  const groups = clusterLinked(enrichedTickets, (ticket, index) => ({
+    profile: profileTicket(
+      { title: ticket.title, content: ticket.content, subdistrict: ticket.subdistrict },
+      regionVocab.townships
+    ),
+    category: ticket.sourceCategory || "",
+    township:
+      ticket.subdistrict ||
+      legalTownshipName(`${ticket.canonicalLocation || ""}\n${ticket.content || ""}`, regionVocab) ||
+      "",
+    placeEvidence: [ticket.canonicalLocation, ticket.summarizeTitle, ticket.content].filter(Boolean).join("\n"),
+    subject: ticket.canonicalSubject || "",
+    vector: vectors[index] || [],
+  }));
+
+  for (const members of groups) {
+    const tickets = [...members].sort(
       (a, b) => safeParseDate(a.createTime).getTime() - safeParseDate(b.createTime).getTime()
     );
     const firstTime = tickets[0].createTime;
@@ -92,12 +104,19 @@ export async function clusterNode(
       differenceInHours(safeParseDate(lastTime), safeParseDate(firstTime))
     );
     const themeId = `THEME-${themes.length + 1}`;
-    const eventType = majority(tickets.map((ticket) => ticket.eventType)) || familyLabel(group.family) || "同类诉求";
+    const eventType = majority(tickets.map((ticket) => ticket.eventType)) || "同类诉求";
     const township = majority(tickets.map((ticket) => ticket.subdistrict));
     const category = majority(tickets.map((ticket) => ticket.sourceCategory)) || "";
-    const anchor = !group.anchor || group.anchor === group.family ? eventType : group.anchor;
-    const location = group.place
-      ? [township, group.place].filter(Boolean).join("")
+    const place = majority(tickets.map((ticket) => ticket.canonicalLocation));
+    const anchor = chooseThemeAnchor({
+      subjects: tickets.map((ticket) => ticket.canonicalSubject || ""),
+      placeEvidence: tickets.map((ticket) =>
+        [ticket.canonicalLocation, ticket.summarizeTitle, ticket.content].filter(Boolean).join("\n")
+      ),
+      eventType,
+    });
+    const location = place
+      ? [township && place.includes(township) ? "" : township, place].filter(Boolean).join("")
       : [township, anchor === eventType ? "" : anchor].filter(Boolean).join("") || anchor;
     const title =
       anchor === eventType

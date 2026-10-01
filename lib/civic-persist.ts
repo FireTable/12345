@@ -6,6 +6,7 @@ import { civicModeFromPattern } from "@/backend/theme-metrics";
 import { HANDLING_STATUS } from "@/lib/civic-dto";
 import { invalidateCivicAggregates } from "@/lib/civic-cache";
 import type { EnrichedTicket, MultiFrequencyTheme } from "@/backend/state";
+import { workOrderInstantFromTicketNo } from "@/lib/work-order-date";
 
 export type TicketAgentPatch = {
   district: string | null;
@@ -16,6 +17,11 @@ export type TicketAgentPatch = {
   summarizeTitle: string | null;
   primaryThemeId: string | null;
   urgency: string | null;
+  slaHours: number | null;
+  stabilityRisk: boolean | null;
+  canonicalSubject: string | null;
+  eventType: string | null;
+  createTime?: Date;
 };
 
 export type ThemePersistRow = {
@@ -54,6 +60,10 @@ export const AGENT_TICKET_NULLS: TicketAgentPatch = {
   summarizeTitle: null,
   primaryThemeId: null,
   urgency: null,
+  slaHours: null,
+  stabilityRisk: null,
+  canonicalSubject: null,
+  eventType: null,
 };
 
 function parseThemeDate(value?: string | null): Date | null {
@@ -68,16 +78,28 @@ export function buildTicketAgentPatch(
 ): TicketAgentPatch {
   const area = adminFromLocation(ticket.canonicalLocation, ticket);
   const themeId = opts?.themeId === undefined ? ticket.clusterId || ticket.primaryThemeId || null : opts.themeId;
+  const createTime = workOrderInstantFromTicketNo(ticket.ticketNo);
   return {
     district: area.district,
     subdistrict: ticket.subdistrict || null,
     sourceCategory: ticket.themes?.[0] || ticket.sourceCategory || null,
-    address: ticket.canonicalLocation || ticket.address || null,
+    address: clipOrNull(ticket.canonicalLocation || ticket.address, 255),
     confidence: typeof ticket.confidence === "number" ? ticket.confidence : null,
     summarizeTitle: ticket.summarizeTitle || null,
     primaryThemeId: themeId,
     urgency: ticket.urgency || null,
+    slaHours: typeof ticket.systemOneSlaHours === "number" ? ticket.systemOneSlaHours : ticket.slaHours ?? null,
+    stabilityRisk: typeof ticket.systemOneStabilityRisk === "boolean" ? ticket.systemOneStabilityRisk : ticket.stabilityRisk ?? null,
+    canonicalSubject: clipOrNull(ticket.canonicalSubject, 255),
+    eventType: clipOrNull(ticket.eventType, 128),
+    ...(createTime ? { createTime } : {}),
   };
+}
+
+function clipOrNull(value: string | null | undefined, max: number): string | null {
+  const text = (value ?? "").trim();
+  if (!text) return null;
+  return text.length <= max ? text : text.slice(0, max);
 }
 
 function clip(value: string | null | undefined, max: number): string {

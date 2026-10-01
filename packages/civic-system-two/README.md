@@ -15,6 +15,7 @@
    - **默认开启慢思考 (`enable_thinking: true`)**，深入拆解复杂诉求权责与争议点。
    - 模型的思考过程自动剥离并置入 `choices[0].message.reasoning_content`，纯净答复置入 `choices[0].message.content`。
    - 调用方亦可随时显式指定 `enable_thinking: false` 关闭思考进行低延迟直出。
+   - 本仓库的工单抽取和主题建议都传 `enableThinking: false`。思考打开时，输出额度会被思维链用完，JSON 正文变空。引擎自己的默认仍然是开启思考。
 3. **格式完全由调用方掌控**：
    - 包内部**不硬编码**任何业务级 Prompt 或格式限制，业务层自由决定输出纯文本、Markdown 报告或 JSON 数据。
    - 提供 `engine.createJSON<T>(schema, options)` 配合 Zod 实现带类型守卫的端到端安全解析。

@@ -1,6 +1,6 @@
 # 民声智理 · 12345 政务热线认知中枢与 AI 智能研判系统 (多城市 / 多租户 V2 Production)
 
-> **基于 System-1 (神经快思考) + System-2 (深度慢思考) 双引擎分层协同、PostgreSQL 多城市 Schema 物理隔离与权威知识库、微观时空核心基底对齐 (Spatial Core) 与 72h 滑动窗口增量吸附算法的政务 12345 热线多频诉求智能识别、实体图谱聚类与全周期督办研判 SuperAgent 平台。**
+> **每条工单都过 System 1 和 System 2。抽取产物再做向量，只把同一件事或同一个具体地点收成主题。登记日从工单编号前六位读取。**
 
 ---
 
@@ -8,39 +8,42 @@
 
 ```
   ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-  │  ⚡ 快思考极速直通│     │  🧠 慢思考深度推导│     │  🌐 多城市/多租户│
-  │ <1ms 咨询0Token直分 │     │ 3100+字CoT穿透权责 │     │ Schema隔离/AI拓荒│
+  │  ⚡ 每条都过 System 1│  │  🧠 每条都过 System 2│  │  🌐 多城市/多租户│
+  │ 分类 时限 涉稳    │     │ 主体 地点 事件 摘要│     │ Schema隔离/AI拓荒│
   └─────────────────┘     └─────────────────┘     └─────────────────┘
   ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-  │  🔍 时空基底增量吸附│     │  🚨 假闭环时序狙击 │     │  🛡️ 纯离线数据不出域 │
-  │ 72h滑动窗口秒级归卷 │     │ 办结衰减/直推督办  │     │ 隐私脱敏/全私有部署 │
+  │  🔍 同一件事才成主题│  │  🚨 假闭环时序狙击 │     │  🛡️ 纯离线数据不出域 │
+  │ 向量加地点规则    │     │ 办结后再反映标出  │     │ 隐私脱敏/全私有部署 │
   └─────────────────┘     └─────────────────┘     └─────────────────┘
 ```
 
-1. **⚡ System-1 快思考极速决策（<1ms 耗时，80%+ 简单工单 0 Token 消耗）**
-   - 自适应本地 Apple Silicon MPS 神经芯片或 ONNX Runtime，单条纯推理耗时仅 **0.079 ms**，吞吐突破 **12,600 TPS**；
-   - 对政策咨询（INQUIRY，0h SLA）及工单催办以 100 分置信度毫秒级直接分派，免调用昂贵大模型。
+1. **⚡ System 1：每条工单先做分类**
+   - 本地 ONNX，四个头：意图、民生分类、紧急程度、涉稳。模型不判断镇街，镇街字段固定是 `UNKNOWN`，业务不会把它写成街道名。
+   - 分类、紧急程度、办理时限和涉稳标记都落在工单上。咨询和催办也继续往下走，不跳过 System 2。
 
-2. **🧠 System-2 慢思考与长工单深度公文研判（Bonsai 2 27B PTQ1_0）**
-   - 本地 Apple Silicon Metal 硬件深度调优，三值量化权重仅 5.5GB，单流稳定 **20+ tokens/s**；
-   - 显式分离思维链（CoT），在多频成团后统一推导 **3100+ 字符思考过程**，深度穿透跨部门权责争议，生成“牵头部门、协办单位、10分/30分/2小时分步办理与回访”的高可操作性预案。
+2. **🧠 System 2：每条工单都抽实体，并写一句话摘要**
+   - 本地 Bonsai 2 27B，思考关掉，只出 JSON。每条写下主体、地点、事件和一句话摘要。
+   - 两条及以上的工单收成主题之后，再为这个主题写一条处置建议。单独留下的工单不再写主题建议。主题建议同样关掉思考。
 
 3. **🌐 多城市/多租户 Schema 物理级隔离与 AI 自动拓荒 (`/admin/regions`)**
    - **数据物理隔离**：基于 PostgreSQL 独立 Schema 架构（`region_{id}`），不同城市/区县站点数据、字典与聚类案卷 100% 物理隔离，杜绝跨区数据串扰；
    - **AI 智能拓荒 (Scout)**：30 秒输入任意新城市/区县（如广州海珠、北京朝阳），AI 自动生成标准化法定镇街、社区与权威别名知识库；
    - **站点热插拔与动态地图**：前端统一集成多站点实时切换器，自适应加载对应辖区 SVG 态势地图与多维指标（默认内置佛山顺德、广州海珠等预置站点）。
 
-4. **🔍 微观时空核心基底提纯 (`extractSpatialCore`) 与 72h 滑动窗口增量吸附**
-   - **空间提纯**：自动剥离门牌号（“28号”）、店铺名等修饰噪点，提纯出公共道路核心基底（如 `大良街道金榜上街`），彻底解决地址微小差异无法聚类的顽疾；
-   - **滑动窗口增量吸附**：以“距离该事件最后一个事件发生时间的 72 小时滑动窗口”为准，后续追加工单 **1.9 毫秒** 秒级吸附进在办案卷，平时继承老方案（0 秒等待），突发险情质变精准触发慢思考升级。
+4. **🔍 同一件事或同一个具体地点才收成主题**
+   - 先把 System 2 的摘要、主体、事件、地点、镇街和分类做成向量。
+   - 规则已经判定是同一件事，就收成一个主题。规则没抓住时，向量余弦不低于 0.88，并且分类相同、镇街都写明且相同、地点是同一个小区或地标，才收在一起。
+   - 门牌不同不并。不同地点的同类投诉不并，例如两处烟花、同一条路上的两家欠薪。空镇街不能当成同一个镇。
+   - 新来的单张工单如果是同一件事，并入已有主题，不按相隔多久拆开。
+
+登记日从工单编号前六位读。`250101000770102-01` 里，`250101` 是 2025-01-01，`000770` 是当天的受理序号，`102` 是事项代码，`-01` 是重办序号。这三段都不是时分秒，所以时间记成上海时区当天 00:00。正文里写的另一个日期不能替换编号上的日期。编号解析不了，才回退到正文里的时间。
 
 5. **🎯 多辖区权威政务白名单与确定性物理校准，彻底根治大模型幻觉**
    - 固化辖区法定镇街、村居社区（预置顺德区 10 大镇街、98+ 村居等）及 7 大民生诉求分类为 **Prompt 强约束白名单**；
    - 彻底废除旧版低置信度反复套娃仲裁死循环，改由本地确定性字典与规则库进行物理校准。
 
 6. **🚨 独创“假闭环”智能识别算法**
-   - 针对“数字办结、问题依旧”的基层治理痛点，建立 72 小时时序衰减与空间拓扑追踪模型；
-   - 自动识别办结后短期内同点同因再次投诉的**假闭环工单**，标记红色警报并直达生成《12345 重点督查督办单》。
+   - 办结后 7 天内，同一件事再次反映，标成假闭环。天数可用 `TICKET_RADAR_FAKE_CLOSURE_DAYS` 改。
 
 7. **🔒 权威认证与全链路安全路由守卫 (Better Auth)**
    - 深度集成 **Better Auth** 生产级身份认证框架与 Drizzle ORM PostgreSQL 适配器；
@@ -65,7 +68,7 @@
 | 🌟 **系统全景总览** | [`民声智理_总览片_v1.mp4`](public/videos/民声智理_总览片_v1.mp4) | **全景总览与产品宣传片**：民声智理整体架构、核心价值、AI 研判闭环与基层赋能成效。 |
 | 📊 **数据总览看板** | [`数据总览.mp4`](public/videos/数据总览.mp4) | **首页态势大盘**：辖区热点态势地图、实时工单统计、多维处置率指标与 AI Copilot 交互。 |
 | 🗂️ **多频工单看板** | [`多频工单.mp4`](public/videos/多频工单.mp4) | **双轨聚类折叠**：183+ 多频主题群组智能聚类、一键折叠详情、实体拓扑与公文级处置建议。 |
-| 📈 **工单透势研判** | [`工单透势.mp4`](public/videos/工单透势.mp4) | **四象限与假闭环追踪**：紧急×重要象限图、72h 时序衰减追踪、假闭环红色预警与重点督办单生成。 |
+| 📈 **工单透势研判** | [`工单透势.mp4`](public/videos/工单透势.mp4) | **四象限与假闭环追踪**：紧急×重要象限图、办结后再反映的假闭环预警与重点督办。 |
 | 📑 **工单中心核查** | [`工单中心.mp4`](public/videos/工单中心.mp4) | **全量工单穿透**：高阶复合检索、四要素抽取明细、实体归一化与人工复核流转。 |
 | 📖 **标准字典治理** | [`标准字典.mp4`](public/videos/标准字典.mp4) | **知识库与别名沉淀**：多辖区法定镇街/村居白名单、别名自学习沉淀与权威实体对齐管理。 |
 
@@ -77,9 +80,9 @@
 
 | 文档名称 | 路径 | 核心内容说明 |
 | :--- | :--- | :--- |
-| 📐 **V2 工作流全景架构** | [`.gemini/v2-workflow.md`](.gemini/v2-workflow.md) | **最新生产架构必读**。System-1/2 双引擎分层、微观时空基底提纯、增量滑动吸附与端到端实测数据。 |
-| 📜 **V1 历史工作流存档** | [`.gemini/v1-workflow.md`](.gemini/v1-workflow.md) | **历史演进备忘**。记录 main 分支原始 LangGraph 工作流设计与演进痛点。 |
-| 📐 **AI 工作流工程规范** | [`docs/WORKFLOW.md`](docs/WORKFLOW.md) | **架构必读**。端到端各节点职责、字段保底矩阵、保真质检器与多模态 API 接入。 |
+| 📐 **现行工作流** | [`docs/WORKFLOW.md`](docs/WORKFLOW.md) | **现在怎么跑**。每条工单过 System 1 和 System 2，抽取产物做向量，同一件事或同一地点才成主题。 |
+| 📜 **早期设计稿** | [`.gemini/v2-workflow.md`](.gemini/v2-workflow.md) | 重构初期的设计记录。里面的咨询直通、72 小时并单、主题建议开思考，都已经不用了。 |
+| 📜 **V1 历史工作流存档** | [`.gemini/v1-workflow.md`](.gemini/v1-workflow.md) | main 分支最初的 LangGraph 工作流。 |
 | 🗄️ **数据库设计与字典规范** | [`docs/DBS.md`](docs/DBS.md) | **数据必读**。7 大核心数据表 ER 拓扑关系、Drizzle ORM Schema 定义与全量字段字典。 |
 | 🚀 **系统部署与运维手册** | [`docs/DEPLOY.md`](docs/DEPLOY.md) | **运维必读**。本地开发启动、VPS 云端 Docker 部署与信创纯离线 Metal / vLLM 私有化配置。 |
 | 📦 **依赖清单与组件架构** | [`docs/DEPS.md`](docs/DEPS.md) | **全栈依赖**。涵盖 Monorepo Packages 独立包、生产依赖与前端业务组件映射表。 |
@@ -100,56 +103,31 @@
 │   ├── themes/                       # 多频工单看板页面 (/themes)
 │   └── tickets/                      # 工单中心下钻核查页面 (/tickets)
 ├── backend/                          # 核心业务后端与认知中枢
-│   ├── agent.ts                      # LangGraph 流水线与 ingestSingleTicketPipeline 单工单增量接入
-│   ├── incremental-cluster.ts        # 增量时空工单吸附引擎 (72h滑动窗口 / 条件慢思考升级)
+│   ├── agent.ts                      # LangGraph 流水线。顺序是抽取、对齐、聚类、主题建议
+│   ├── incremental-cluster.ts        # 新来的单张工单并入已有主题。同一件事才并，不按相隔多久拆开
+│   ├── same-incident-cluster.ts      # 同一件事或同一个具体地点的判定。向量由调用方算好传进来
+│   ├── embed-products.ts             # 把抽取产物做成向量。429 会等待后重试
 │   ├── node/                         # 工作流节点
-│   │   ├── extract-node.ts           # System-2 结构化直出 (think: false, ~3s/件)
-│   │   ├── canonical-node.ts         # extractSpatialCore 微观空间提纯与纯行政区划防吸附
-│   │   ├── cluster-node.ts           # 存量在办主题吸附 + Louvain 双轨多频聚类
-│   │   ├── cluster-validator.ts      # 聚类真实性与质量交叉质检器
-│   │   └── summary-node.ts           # System-2 深度慢思考 (think: true, 3100+字思维链公文建议)
+│   │   ├── extract-node.ts           # 每条工单：System 1，然后 System 2 抽实体和摘要
+│   │   ├── canonical-node.ts         # 别名对齐，缩短地点写法
+│   │   ├── cluster-node.ts           # 嵌入抽取产物，再按同一件事或同一地点成主题
+│   │   ├── cluster-validator.ts      # 丢掉主体是「市民」这类空泛词的主题
+│   │   └── summary-node.ts           # 只给两条及以上的主题写处置建议，思考关掉
 │   └── rules.ts                      # 统一规则与险情红线词库
 ├── packages/                         # Monorepo 独立高性能核心引擎包
 │   ├── civic-system-one/             # System-1 快思考引擎 (<1ms 前向分类 / 12,600 TPS)
 │   ├── civic-system-two/             # System-2 慢思考通用认知引擎 (OpenAI 协议 / Metal 调优 / CoT 剥离)
 │   └── civic-anonymizer/             # 全要素可逆隐私脱敏引擎 (出站加密 / 入库无损还原)
 ├── lib/                              # 公共服务库 (tokens.ts 集中预算管理, vocabulary.ts 动态词典)
-├── scripts/                          # 自动化测试与评测脚本
-│   ├── test-pipeline-cluster.ts      # 7 工单真实业务端到端全链路闭环评测
-│   └── test-incremental-clustering.ts # 增量时空吸附与 72h 滑动时间窗口评测
+├── scripts/                          # 迁移、种子、开发启动、样本重跑
+├── tests/                            # 不改库的规则核对
+│   ├── test-work-order-date.ts       # 编号日期：正文里的另一个日期不能替换编号
+│   ├── test-same-incident-cluster.ts # 东湖学府并在一起，不同地点的烟花和欠薪不并
+│   └── test-incident-profile.ts      # 同一条路上的两家欠薪、相邻门牌不并
 └── docs/                             # 系统权威技术规范与架构文档
 ```
-│   ├── prompt.ts                     # 结构化 Prompt 模版与 Zod Schemas
-│   ├── rules.ts                      # 业务规则与常量配置
-│   ├── state.ts                      # LangGraph 状态机 State 数据模型
-│   └── theme-metrics.ts              # 主题统计特征与雷达维度计算
-├── db/                               # PostgreSQL 数据库与 Drizzle ORM
-│   ├── migrations/                   # 数据库版本迁移 SQL 脚本
-│   ├── client.ts                     # PostgreSQL 数据库连接客户端
-│   └── schema.ts                     # 数据表结构定义 (Tickets, Themes, Vocabularies, Aliases 等)
-├── docs/                             # 专题架构与业务文档体系 (详见上方文档说明)
-├── lib/                              # 共享通用类库与知识字典
-│   ├── admin-area.ts                 # 行政区划解析器
-│   ├── alias-dict.ts                 # 别名映射与实体归一化引擎
-│   ├── civic-cluster.ts              # 聚类多频模式与紧急度常量
-│   ├── civic-dto.ts                  # 数据传输对象转换器
-│   ├── civic-persist.ts              # 聚类结果持久化引擎
-│   ├── civic-queries.ts              # 业务多维聚合查询
-│   ├── civic-stats.ts                # 态势洞察与指标生成器
-│   ├── tenant/                       # 多租户 Schema 与多城市会话管理
-│   ├── presets/                      # 预置辖区站点字典 (foshan_shunde.json 等)
-│   └── vocabulary.ts                 # 多辖区法定镇街与 7 大分类动态标准词汇库
-├── public/                           # 静态资源与多媒体展示文件
-│   ├── civic/                        # 辖区态势地图矢量 (内置顺德 10 镇街 SVG 等) 与 ECharts 离线库
-│   └── videos/                       # 系统全流程高清演示视频 (总览/看板/透势/工单/字典)
-├── scripts/                          # 自动化脚本与测试套件
-│   ├── db-migrate.ts                 # 数据库迁移执行脚本
-│   ├── db-seed.ts                    # 样例工单数据入库脚本
-│   ├── seed-vocabulary.ts            # 权威政务词汇与别名初始化脚本
-│   └── test-accuracy-pipeline.ts     # 全链路准确度自动化测试套件
-├── package.json                      # 项目依赖与指令配置
-└── tsconfig.json                     # TypeScript 配置
-```
+
+后端其余文件：`prompt.ts` 写抽取和主题建议的提示，`state.ts` 是流水线状态，`theme-metrics.ts` 计算主题节奏。`lib/work-order-date.ts` 从工单编号读登记日。`lib/ticket-ingest.ts` 入库时先用这个日期。数据库字段见 [`docs/DBS.md`](docs/DBS.md)。
 
 ---
 
@@ -161,7 +139,7 @@
 | **工作流编排** | **@langchain/langgraph + LangGraph JS** | 状态机驱动的高可靠 Agent 图工作流 |
 | **数据库 & ORM** | **PostgreSQL + Drizzle ORM** | 高性能多租户独立 Schema 物理隔离与类型安全 ORM |
 | **UI 设计系统** | **Tailwind CSS + Radix UI + Lucide Icons** | 统一定制的 Civic Light 政务视觉规范 |
-| **大模型生态** | **ChatOpenAI (gpt-5.6-terra / BGE-M3)** | 结构化要素抽取、二级仲裁与公文研判 |
+| **大模型** | **本地 Bonsai 2 27B + BAAI/bge-m3** | 每条工单抽实体和摘要；抽取产物做向量。主题建议只写给多条工单的主题 |
 | **测试与执行** | **TSX + TypeScript 5.7+** | 零编译极速 TypeScript 脚本与类型保障 |
 
 ---
@@ -211,9 +189,11 @@ pnpm db:seed-admin
 pnpm db:seed
 ```
 
-### 4. 运行全链路准确度测试
+### 4. 核对日期和聚类规则
 ```bash
-npx tsx scripts/test-accuracy-pipeline.ts
+npx tsx tests/test-work-order-date.ts
+npx tsx tests/test-same-incident-cluster.ts
+npx tsx tests/test-incident-profile.ts
 ```
 
 ### 5. 启动本地全栈开发服务 (Next.js + System-2 本地慢思考引擎)

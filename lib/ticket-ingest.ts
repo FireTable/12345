@@ -1,11 +1,12 @@
 import { db, getRegionDb } from "@/db/client";
 import { ticketsTable } from "@/db/schema";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { desensitizeContent } from "@/backend/anonymizer";
 import { profileTicket } from "@/backend/ticket-profile";
 import { AGENT_TICKET_NULLS } from "@/lib/civic-persist";
 import { invalidateCivicAggregates } from "@/lib/civic-cache";
 import type { TownshipInfo } from "@/lib/vocabulary";
+import { workOrderInstantFromTicketNo } from "@/lib/work-order-date";
 
 const HEADER_MAP: Record<string, string> = {
   序号: "index",
@@ -107,7 +108,7 @@ export function buildRecordsFromRows(
     const ticketNo = String(
       normalized.ticketNo || `${idPrefix}-${baseTs}-${String(idx + 1).padStart(6, "0")}`
     );
-    const createTime = extractDate(content);
+    const createTime = workOrderInstantFromTicketNo(ticketNo) ?? extractDate(content);
     const profile = profileTicket(
       { title, content, subdistrict: optionalText(normalized.subdistrict) },
       options.townships || []
@@ -204,6 +205,13 @@ export async function insertRecordsBatch(records: any[], regionId?: string): Pro
       duplicateCount += existingSet.size;
 
       const newRecords = chunk.filter((c) => !existingSet.has(c.ticketNo));
+      for (const row of chunk) {
+        if (!existingSet.has(row.ticketNo) || !(row.createTime instanceof Date)) continue;
+        await targetDb
+          .update(ticketsTable)
+          .set({ createTime: row.createTime })
+          .where(eq(ticketsTable.ticketNo, row.ticketNo));
+      }
 
       if (newRecords.length > 0) {
         // ponytail: 锁定 ticketNo 唯一约束去重,用 returning 拿到 DB 真插入数。

@@ -7,7 +7,7 @@ import type {
   MultiFrequencyTheme,
   RiskLevel,
 } from "../state";
-import { getSystemTwoEngine, llmConcurrency } from "../model";
+import { getSystemTwoEngine, systemTwoConcurrency } from "../model";
 import { LLM_TOKENS, LLM_TIMEOUTS } from "@/lib/tokens";
 
 import {
@@ -28,44 +28,43 @@ export async function enrichThemeBatchWithLLM(
   const fallbacks = themeBatch.map(() => ({ ...EMPTY_ADVICE }));
 
   const enrichTask = async (): Promise<Array<Partial<MultiFrequencyTheme>>> => {
-    try {
-      const systemTwo = await getSystemTwoEngine();
-      const prompt = buildBatchThemeEnrichmentPrompt(themeBatch);
-
-      const { data } = await systemTwo.createJSON(
-        BatchThemeEnrichmentSchema,
-        {
+    const merged = themeBatch.map((theme) => ({
+      aiSummary: theme.aiSummary || "",
+      recommendedAction: "",
+    }));
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0 && merged.every((row) => row.recommendedAction.trim())) break;
+      try {
+        const systemTwo = await getSystemTwoEngine();
+        const prompt = buildBatchThemeEnrichmentPrompt(themeBatch);
+        const { data } = await systemTwo.createJSON(BatchThemeEnrichmentSchema, {
           messages: [{ role: "user", content: prompt }],
           enableThinking: false,
           maxTokens: LLM_TOKENS.THEME_ADVICE,
           temperature: 0.2,
+        });
+        if (data && Array.isArray(data.results) && data.results.length > 0) {
+          const resultMap = new Map<number, any>();
+          data.results.forEach((row) => resultMap.set(row.themeIndex, row));
+          themeBatch.forEach((theme, index) => {
+            const row = resultMap.get(index + 1) || data.results[index];
+            if (!row) return;
+            if (!merged[index].aiSummary.trim()) merged[index].aiSummary = row.aiSummary || theme.aiSummary || "";
+            if (!merged[index].recommendedAction.trim()) merged[index].recommendedAction = row.recommendedAction || "";
+          });
         }
-      );
-
-      if (data && Array.isArray(data.results) && data.results.length > 0) {
-        const resultMap = new Map<number, any>();
-        data.results.forEach((r) => {
-          resultMap.set(r.themeIndex, r);
-        });
-
-        return themeBatch.map((theme, i) => {
-          const r = resultMap.get(i + 1) || data.results[i];
-          if (!r) return { ...EMPTY_ADVICE };
-          return {
-            aiSummary: r.aiSummary || theme.aiSummary || "",
-            recommendedAction: r.recommendedAction || "",
-          };
-        });
+      } catch (err: any) {
+        console.warn(`[summary-node] System-2 batch enrichment error attempt ${attempt + 1}:`, err?.message);
       }
-    } catch (err: any) {
-      console.warn("[summary-node] System-2 batch enrichment error:", err?.message);
+      if (merged.every((row) => row.recommendedAction.trim())) return merged;
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
     }
-    return fallbacks;
+    return merged;
   };
 
   // 慢思考批次超时控制 (充分尊重模型思考推导过程，分配充裕的 10 分钟预算)
   const timeoutPromise = new Promise<Array<Partial<MultiFrequencyTheme>>>((resolve) =>
-    setTimeout(() => resolve(fallbacks), LLM_TIMEOUTS.THINKING)
+    setTimeout(() => resolve(fallbacks), LLM_TIMEOUTS.THINKING * 3)
   );
 
   return Promise.race([enrichTask(), timeoutPromise]);
@@ -98,7 +97,7 @@ export async function summaryNode(
       });
     }
 
-    const queue = new PQueue({ concurrency: Math.min(4, llmConcurrency()) });
+    const queue = new PQueue({ concurrency: systemTwoConcurrency() });
     let synthesizedCount = 0;
 
     const chunkTasks: Array<() => Promise<void>> = [];
@@ -124,6 +123,7 @@ export async function summaryNode(
         });
 
         synthesizedCount += batch.length;
+        console.log(`[summary] ${Math.min(synthesizedCount, enrichedThemes.length)}/${enrichedThemes.length}`);
         if (taskId) {
           const percent = Math.min(96, 78 + Math.round((synthesizedCount / Math.max(1, enrichedThemes.length)) * 18));
           const sampleReasoning = batchResults.find((r) => r.reasoningContent)?.reasoningContent;

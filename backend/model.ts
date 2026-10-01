@@ -49,6 +49,18 @@ export function llmConcurrency(): number {
   return isLocalLlm() ? 5 : 10;
 }
 
+/** System 2 的地址。默认是本机 llama，和云端对话地址不是同一个。 */
+export function isLocalSystemTwo(): boolean {
+  const endpoint = (process.env.SYSTEM_TWO_ENDPOINT || "http://127.0.0.1:8132/v1").toLowerCase();
+  return /localhost|127\.0\.0\.1|0\.0\.0\.0|::1/.test(endpoint);
+}
+
+/** 本机 llama 以 -np 1 启动，抽取和主题建议一次只发一条，避免把请求堆爆。 */
+export function systemTwoConcurrency(): number {
+  if (isLocalSystemTwo()) return 1;
+  return llmConcurrency();
+}
+
 const ToolProbeSchema = z.object({ ping: z.string() });
 
 let toolCallingSupported: boolean | null = null;

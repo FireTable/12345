@@ -48,7 +48,7 @@ erDiagram
         varchar(64) id PK "系统内部唯一工单 ID"
         varchar(64) ticket_no UK "工单业务唯一编号"
         text title "原始工单标题"
-        text summarize_title "🤖 AI提炼一句话核心诉求"
+        text summarize_title "System 2 这一条的摘要"
         text content "诉求原始全量文本"
         text masked_content "🤖 脱敏展示正文"
         varchar(64) citizen_name "🤖 诉求人姓名(AI抽取+脱敏)"
@@ -59,13 +59,17 @@ erDiagram
         varchar(64) ingest_district "导入原始行政区"
         varchar(64) ingest_subdistrict "导入原始镇街"
         varchar(64) ingest_category "导入原始分类"
-        varchar(16) urgency "紧急程度(NORMAL/URGENT)"
-        varchar(255) address "🤖 诉求具体事发地址(AI抽取)"
-        integer confidence "🤖 抽取置信度(0-100)"
+        varchar(16) urgency "紧急程度(NORMAL/MEDIUM/URGENT)"
+        integer sla_hours "System 1 办理时限(小时)"
+        boolean stability_risk "System 1 是否涉稳"
+        varchar(255) canonical_subject "System 2 主体"
+        varchar(128) event_type "System 2 事件"
+        varchar(255) address "System 2 地点"
+        integer confidence "抽取置信度(0-100)"
         varchar(64) primary_theme_id "🤖 所属首要主题ID(聚类关联)"
         varchar(64) channel "诉求渠道来源"
         varchar(32) status "工单流转状态"
-        timestamp create_time "诉求登记时间"
+        timestamp create_time "登记时间(编号日期当天00:00)"
         timestamp closed_at "办结归档时间"
         varchar(32) closure_status "办结状态"
         boolean is_fake_closure "🚨🤖 假闭环告警标记(算法研判)"
@@ -86,7 +90,7 @@ erDiagram
         text ai_summary "🤖 态势全貌分析与规律总结"
         text recommended_action "🤖 公文级协同处置建议"
         varchar(32) pattern_type "🤖 形态(INDIVIDUAL_REPEAT/GROUP_GATHERING)"
-        varchar(16) civic_mode "🤖 治理模式(AUTO/ARBITRATED)"
+        varchar(16) civic_mode "形态(aggregate/repeat/diverge)"
         integer ai_confidence "🤖 综合研判置信度"
         timestamp first_at "首单发生时间"
         timestamp last_at "末单发生时间"
@@ -211,35 +215,39 @@ PostgreSQL 实例 (ticket_radar)
 | 字段名 | 数据库类型 | 约束 / 索引 | 描述 | 数据来源 / 算法说明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `id` | `VARCHAR(64)` | `PRIMARY KEY` | 工单唯一系统主键 ID | 系统按 `tk-{timestamp}-{index}` 自动分配 |
-| `ticket_no` | `VARCHAR(64)` | `NOT NULL, UNIQUE, INDEX` | 12345 业务工单编号 | 原始表格工单编号（如 `250101000020109-01`） |
-| `title` | `TEXT` | `NULLABLE` | 原始工单标题 | 保留原始表格标题，严禁覆盖 |
-| `summarize_title` | `TEXT` | `NULLABLE` | 🤖 AI 提炼一句话核心标题 | 由 LLM 自动生成的标准摘要标题 |
+| `ticket_no` | `VARCHAR(64)` | `NOT NULL, UNIQUE, INDEX` | 12345 业务工单编号 | `250101000770102-01`：前六位年月日，接着六位受理序号，末三位事项代码，横杠后是重办序号 |
+| `title` | `TEXT` | `NULLABLE` | 表格里的短标签 | 已经是分类过的标签，例如「（城管）商业噪音」。市民原文在 `content`，标题可空 |
+| `summarize_title` | `TEXT` | `NULLABLE` | 这一条工单的摘要 | System 2 为这一条写的一句话。抽不出来就空着 |
 | `content` | `TEXT` | `NOT NULL` | 工单原始诉求全文 | 核心数据源（含事发时间、地点、涉事方、诉求细节） |
 | `masked_content` | `TEXT` | `NULLABLE` | 🤖 隐私脱敏展示文本 | 经 `anonymizer.ts` 对人名、手机、门牌等关键 PII 掩码后的安全文本 |
 | `citizen_name` | `VARCHAR(64)` | `NULLABLE` | 🤖 诉求人姓名 | 🤖 结构化抽取并做脱敏掩码（如 `张*`） |
 | `citizen_phone` | `VARCHAR(64)` | `NULLABLE` | 🤖 诉求人联系电话 | 🤖 结构化抽取并做脱敏掩码（如 `138****1234`） |
 | `district` | `VARCHAR(64)` | `NULLABLE` | 所属行政区划 | 归属行政区划（如“顺德区”、“海珠区”） |
-| `subdistrict` | `VARCHAR(64)` | `INDEX, NULLABLE` | 🤖 法定归属镇街/街道 | 经目标辖区法定白名单与别名引擎归一后的法定辖区 |
-| `source_category` | `VARCHAR(64)` | `INDEX, NULLABLE` | 🤖 7大标准民生分类 | 城市管理/市场监管/社会治理/交通出行/生态环境/劳动社保/公共安全 |
+| `subdistrict` | `VARCHAR(64)` | `INDEX, NULLABLE` | 法定镇街 | 当前城市词典里的法定镇或街道。模型返回的 `UNKNOWN` 不入库，对不上就空着 |
+| `source_category` | `VARCHAR(64)` | `INDEX, NULLABLE` | 民生分类 | System 1。城市管理/市场监管/社会治理/交通出行/生态环境/劳动社保/公共安全 |
 | `ingest_district` | `VARCHAR(64)` | `NULLABLE` | 导入原始行政区 | 导入文件原始区划字段（未经 AI 处理） |
 | `ingest_subdistrict` | `VARCHAR(64)` | `NULLABLE` | 导入原始镇街 | 导入文件原始镇街字段（未经 AI 处理） |
 | `ingest_category` | `VARCHAR(64)` | `NULLABLE` | 导入原始诉求分类 | 导入文件原始分类字段（未经 AI 处理） |
-| `urgency` | `VARCHAR(16)` | `INDEX, DEFAULT 'NORMAL'` | 紧急度评级 | `NORMAL` 普通 / `URGENT` 加急诉求 |
-| `address` | `VARCHAR(255)` | `NULLABLE` | 🤖 事发具体物理门牌/路段 | 🤖 从正文中由 LLM 抽取的微观空间点位 |
-| `confidence` | `INTEGER` | `NULLABLE` | 🤖 抽取置信度得分 (0~100) | 🤖 结构化抽取质量打分，`< 60` 触发二级 AI 仲裁 |
+| `urgency` | `VARCHAR(16)` | `INDEX, DEFAULT 'NORMAL'` | 紧急程度 | System 1。`NORMAL` / `MEDIUM` / `URGENT`。涉稳或紧急程度为 3 时写成 `URGENT` |
+| `sla_hours` | `INTEGER` | `NULLABLE` | 办理时限（小时） | System 1。紧急程度 0 到 3 对应 0、120、24、2 |
+| `stability_risk` | `BOOLEAN` | `NULLABLE` | 是否涉稳 | System 1。`false` 也是有效结果 |
+| `canonical_subject` | `VARCHAR(255)` | `NULLABLE` | 主体 | System 2。最长 255 字 |
+| `event_type` | `VARCHAR(128)` | `NULLABLE` | 事件 | System 2。最长 128 字 |
+| `address` | `VARCHAR(255)` | `NULLABLE` | 地点 | System 2 抽出的事发地点 |
+| `confidence` | `INTEGER` | `NULLABLE` | 抽取置信度 (0~100) | 低于 60 进入人工复核队列。不再为此再叫一次大模型 |
 | `primary_theme_id` | `VARCHAR(64)` | `INDEX, NULLABLE` | 🤖 首要归属主题 ID | 🤖 聚类后关联的核心多频群组 ID |
 | `channel` | `VARCHAR(64)` | `DEFAULT '市民服务热线'` | 诉求来源渠道 | 市民热线 / 微信小程序 / 市长信箱 |
 | `status` | `VARCHAR(32)` | `INDEX, DEFAULT 'PENDING'` | 流转状态 | `PENDING` 待研判 / `PROCESSING` 处置中 / `RESOLVED` 已结案 |
-| `create_time` | `TIMESTAMP` | `INDEX, NULLABLE` | 诉求登记发生时间 | 结构化提取的标准发生时间戳 |
+| `create_time` | `TIMESTAMP WITH TIME ZONE` | `INDEX, NULLABLE` | 登记时间 | 编号前六位对应的日期，记亚洲/上海当天 00:00。例如 `250101…` 为 `2025-01-01 00:00+08`。编号不是日期时，才用正文里的时间 |
 | `closed_at` | `TIMESTAMP` | `INDEX, NULLABLE` | 办结归档时间 | 业务系统反馈的结案时间戳 |
 | `closure_status` | `VARCHAR(32)` | `NULLABLE` | 办结结论状态 | `已办结` / `处理中` / `退单` |
-| `is_fake_closure` | `BOOLEAN` | `DEFAULT FALSE` | 🚨🤖 假闭环告警标旗 | 🤖 办结后 72 小时内在同一空间同因再次投诉时置为 `true` |
+| `is_fake_closure` | `BOOLEAN` | `DEFAULT FALSE` | 假闭环 | 同一件事在办结后 7 天内再次反映时置为 `true`。天数由 `TICKET_RADAR_FAKE_CLOSURE_DAYS` 控制 |
 | `created_at` | `TIMESTAMP` | `NOT NULL, DEFAULT NOW` | 入库时间 | 记录创建时间 |
 
 ---
 
 ### 2. 多频主题聚类表：`themes` (`themesTable`)
-> 存储经双轨聚类、二级仲裁与公文级全貌研判后的多频治理主题。
+> 两条及以上、被判定为同一件事或同一个具体地点的工单，收成一个主题。单独留下的工单不进这张表。
 
 | 字段名 | 数据库类型 | 约束 / 索引 | 描述 | 数据来源 / 算法说明 |
 | :--- | :--- | :--- | :--- | :--- |
@@ -254,9 +262,9 @@ PostgreSQL 实例 (ticket_radar)
 | `ticket_count` | `INTEGER` | `NOT NULL, INDEX, DEFAULT 0`| 🤖 聚合工单总件数 | 🤖 该多频群组下包含的工单数 |
 | `time_span_hours` | `INTEGER` | `NOT NULL, DEFAULT 1` | 🤖 爆发时间跨度 (小时) | 🤖 最大与最小发生时间的间隔 |
 | `ai_summary` | `TEXT` | `NULLABLE` | 🤖 态势全貌分析摘要 | 🤖 高层研判简报，总结集中爆发的时段规律与核心诉求 |
-| `recommended_action`| `TEXT` | `NULLABLE` | 🤖 公文级协同处置建议 | 🤖 精准指定牵头部门、协办部门、时限要求及法定办理路径 |
+| `recommended_action`| `TEXT` | `NULLABLE` | 主题处置建议 | 只写给已收成主题的多条工单。System 2 思考关掉。模型没写出就空着，不用同一句套话填上 |
 | `pattern_type` | `VARCHAR(32)` | `INDEX, NULLABLE` | 🤖 聚类形态分类 | 🤖 `INDIVIDUAL_REPEAT` (主体重复) / `GROUP_GATHERING` (群体聚集) |
-| `civic_mode` | `VARCHAR(16)` | `NULLABLE` | 🤖 治理模式 | 🤖 `AUTO` 算法自主 / `ARBITRATED` 二级仲裁纠偏 |
+| `civic_mode` | `VARCHAR(16)` | `NULLABLE` | 主题形态 | `aggregate` 群体聚集 / `repeat` 同一人反复 / `diverge` 同一地点多类问题。由成团方式算出，不是二次仲裁 |
 | `ai_confidence` | `INTEGER` | `NULLABLE` | 🤖 研判置信度评分 | 🤖 综合质检置信度得分 (0~100) |
 | `first_at` / `last_at`| `TIMESTAMP` | `NULLABLE` | 首末单发生时间 | 群组内最早及最新工单登记时间 |
 | `handling_status` | `VARCHAR(16)` | `DEFAULT '未处理'` | 全周期督办状态 | `未处理` / `处置中` / `已办结` |
@@ -281,7 +289,7 @@ PostgreSQL 实例 (ticket_radar)
 ---
 
 ### 4. 人工复核队列：`review_queue` (`reviewQueueTable`)
-> 承接首轮置信度低、主体歧义或存在争议的工单，形成“人机协同”闭环。
+> 抽取置信度低于 60，或抽取失败的工单进这里，由人看。不再为此再叫一次大模型。
 
 | 字段名 | 数据库类型 | 约束 / 索引 | 描述 |
 | :--- | :--- | :--- | :--- |
