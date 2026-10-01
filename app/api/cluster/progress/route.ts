@@ -18,9 +18,8 @@ export async function GET(req: Request) {
   if (!taskId || taskId === "latest") {
     const latest = await getLatestTaskProgress();
     if (latest) return jsonProgress(latest);
-    if (!taskId) {
-      return NextResponse.json({ success: false, error: "Missing taskId parameter" }, { status: 400 });
-    }
+    // 没有任务时不要编一条 PENDING。页面会把任意 PENDING 当成正在跑，按钮就停在研判中。
+    return NextResponse.json({ success: true, data: null });
   }
 
   const progress = await getTaskProgress(taskId!);

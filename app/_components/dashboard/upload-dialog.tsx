@@ -199,12 +199,17 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
     void fetch("/api/cluster/progress?taskId=latest", { cache: "no-store" })
       .then((r) => r.json())
       .then((j) => {
-        if (!cancelled && j.success && j.data && (j.data.status === "RUNNING" || j.data.status === "PENDING")) {
-          setTaskProgress((prev) => ({ ...prev, ...j.data }));
+        const data = j.data as TaskProgress | null;
+        const resumable =
+          data?.taskId &&
+          data.taskId !== "latest" &&
+          (data.status === "RUNNING" || data.status === "PENDING");
+        if (!cancelled && j.success && resumable && data) {
+          setTaskProgress((prev) => ({ ...prev, ...data }));
           setStep("CLUSTERING");
           setIsMinimized(true);
           onClusteringChange?.(true);
-          startProgressPollRef.current(j.data.taskId);
+          startProgressPollRef.current(data.taskId);
         }
       })
       .catch(() => {});
