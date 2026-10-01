@@ -43,26 +43,23 @@ const SLA_MAP: Record<0 | 1 | 2 | 3, 0 | 2 | 24 | 120> = {
   3: 2,
 };
 
-function townshipPresetPath(): string {
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  return path.resolve(here, "../../../../lib/presets/foshan_shunde.json");
-}
+/** Labels the shared ONNX classifies. Town names stay in each city's dictionary. */
+export const SHARED_MODEL_LABELS: readonly string[] = [
+  ...INTENT_KEYS,
+  ...CATEGORY_KEYS,
+  "Level 0",
+  "Level 1",
+  "Level 2",
+  "Level 3",
+  "YES",
+  "NO",
+];
 
-/** 镇街类与训练脚本一致：字典里的法定全称，再加上 UNKNOWN。 */
-export function loadTownshipLabels(presetPath: string = townshipPresetPath()): string[] {
-  const preset = JSON.parse(fs.readFileSync(presetPath, "utf-8"));
-  const names: string[] = [];
-  for (const town of preset.townships || []) {
-    const name = String(town.fullName || "").trim();
-    if (!name || names.includes(name) || name === "顺德区" || name === "UNKNOWN") {
-      throw new Error(`非法镇街类: ${name}`);
-    }
-    names.push(name);
-  }
-  if (names.length !== 10) {
-    throw new Error(`镇街字典应为 10 个法定全称，实际 ${names.length}`);
-  }
-  return [...names, "UNKNOWN"];
+const FULL_LENGTH_MARK = "civic_length";
+
+/** True when this ONNX was exported to score the real token lengths. */
+export function modelScoresFullText(modelPath: string): boolean {
+  return fs.readFileSync(modelPath).includes(Buffer.from(FULL_LENGTH_MARK));
 }
 
 /** 与训练脚本同一套最长匹配。不截断。空文本用 [UNK]。 */
@@ -98,6 +95,7 @@ export class ONNXAdapter implements DecisionAdapter {
   private session: any = null;
   private tokenToId: Map<string, number> = new Map();
   private ort: any = null;
+  private fullLength = false;
 
   constructor(options?: ONNXAdapterOptions) {
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -139,6 +137,7 @@ export class ONNXAdapter implements DecisionAdapter {
         intraOpNumThreads: 4,
         graphOptimizationLevel: "all",
       };
+      this.fullLength = modelScoresFullText(this.onnxModelPath);
       this.session = await this.ort.InferenceSession.create(
         this.onnxModelPath,
         sessionOptions
@@ -172,16 +171,13 @@ export class ONNXAdapter implements DecisionAdapter {
 
     const title = ticket.title || "";
     const body = ticket.content || "";
-    const townshipLabels = loadTownshipLabels();
-    const hasTownship = (session.outputNames || []).includes("township_logits");
-
     const encodedTitle = encodeCivicText(this.tokenToId, title);
     const encodedBody = encodeCivicText(this.tokenToId, body);
-    // 旧的四头文件把注意力长度写死成 32/128。没有镇街头时仍按那个长度送，避免线上请求报错。
-    const titleTokens = hasTownship ? encodedTitle : encodedTitle.slice(0, 32);
-    const bodyTokens = hasTownship ? encodedBody : encodedBody.slice(0, 128);
-    const titleWidth = hasTownship ? titleTokens.length : 32;
-    const bodyWidth = hasTownship ? bodyTokens.length : 128;
+    // The previous file only runs at title 32 and body 128. A full-text export is marked in the file.
+    const titleTokens = this.fullLength ? encodedTitle : encodedTitle.slice(0, 32);
+    const bodyTokens = this.fullLength ? encodedBody : encodedBody.slice(0, 128);
+    const titleWidth = this.fullLength ? titleTokens.length : 32;
+    const bodyWidth = this.fullLength ? bodyTokens.length : 128;
 
     const titleIds = new BigInt64Array(titleWidth);
     const titleMask = new Float32Array(titleWidth);
@@ -214,20 +210,11 @@ export class ONNXAdapter implements DecisionAdapter {
     const intLogits = Array.from(outputs.intent_logits.data as Float32Array);
     const urgLogits = Array.from(outputs.urgency_logits.data as Float32Array);
     const stabLogits = Array.from(outputs.stability_logits.data as Float32Array);
-    const townLogits = hasTownship
-      ? Array.from(outputs.township_logits.data as Float32Array)
-      : null;
-    if (townLogits && townLogits.length !== townshipLabels.length) {
-      throw new Error(
-        `[ONNXAdapter] 镇街输出 ${townLogits.length} 类，字典是 ${townshipLabels.length} 类`
-      );
-    }
 
     const catProbs = this.softmax(catLogits);
     const intProbs = this.softmax(intLogits);
     const urgProbs = this.softmax(urgLogits);
     const stabProbs = this.softmax(stabLogits);
-    const townProbs = townLogits ? this.softmax(townLogits) : null;
 
     // 1. Category
     let bestCatIdx = 0;
@@ -263,9 +250,9 @@ export class ONNXAdapter implements DecisionAdapter {
     const stabilityRisk = stabProbs[0] > stabProbs[1]; // Index 0 is YES, Index 1 is NO
     const stabilityRiskProbability = stabProbs[0];
 
-    const bestTownIdx = townProbs ? townProbs.indexOf(Math.max(...townProbs)) : -1;
-    const township = bestTownIdx >= 0 ? townshipLabels[bestTownIdx] : "UNKNOWN";
-    const townshipProbability = bestTownIdx >= 0 ? townProbs![bestTownIdx] : 0;
+    // Town names are not classes in the shared weights. The city dictionary assigns them.
+    const township = "UNKNOWN";
+    const townshipProbability = 0;
 
     // Interlock: escalate to Level 3 if stability risk is triggered
     if (stabilityRisk) {

@@ -61,7 +61,7 @@ export interface CivicSystemOneDecision {
   stabilityRisk: boolean;
   stabilityRiskProbability: number;
 
-  // 5. 镇街。取标准字典法定全称，正文对不上时为 UNKNOWN。顺德区不是镇街类。
+  // 5. 镇街不在共享权重里。模型固定返回 UNKNOWN，页面上的镇街来自当前城市的字典。
   township: string;
   townshipProbability: number;
 

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-Train the civic System 1 classifier on five answers.
+Train the shared civic System 1 classifier.
 
 Title and body keep every token. Titles in the training split are sometimes
-blanked so an empty title still has a decision. Township labels are the
-Shunde dictionary full names plus UNKNOWN.
+blanked so an empty title still has a decision. The four heads are intent,
+category, urgency, and stability. Township stays on each city's dictionary,
+so this file does not learn city town names.
 """
 
 import os
@@ -26,28 +27,12 @@ from torch.utils.data import Dataset, DataLoader, Sampler
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_DATA = os.path.join(SCRIPT_DIR, "../data/civic_jev.jsonl")
 VOCAB_PATH = os.path.join(SCRIPT_DIR, "../models/vocab_civic.json")
-PRESET_PATH = os.path.join(SCRIPT_DIR, "../../../lib/presets/foshan_shunde.json")
 DEFAULT_CKPT = os.path.join(SCRIPT_DIR, "../models/civic-laya-checkpoint/best_model.pt")
 DEFAULT_ONNX = os.path.join(SCRIPT_DIR, "../models/civic-laya-onnx/model.onnx")
 
-ANSWER_ORDER = ["intent", "category", "urgency", "stability", "township"]
+ANSWER_ORDER = ["intent", "category", "urgency", "stability"]
 
 CATEGORY_WEIGHTS = [1.2, 1.3, 1.0, 1.1, 1.0, 2.5, 1.0]
-
-
-def load_township_labels() -> List[str]:
-    with open(PRESET_PATH, "r", encoding="utf-8") as f:
-        preset = json.load(f)
-    names = []
-    for town in preset.get("townships") or []:
-        name = str(town.get("fullName") or "").strip()
-        if not name or name in names or name in ("顺德区", "UNKNOWN"):
-            raise SystemExit(f"非法镇街类: {name}")
-        names.append(name)
-    if len(names) != 10:
-        raise SystemExit(f"镇街字典应为 10 个法定全称，实际 {len(names)}")
-    return names + ["UNKNOWN"]
-
 
 CRITERIA_CHOICES = {
     "intent": ["INQUIRY", "COMPLAINT", "SUGGESTION", "REMINDER", "COMMENDATION"],
@@ -57,7 +42,6 @@ CRITERIA_CHOICES = {
     ],
     "urgency": ["Level 0", "Level 1", "Level 2", "Level 3"],
     "stability": ["YES", "NO"],
-    "township": load_township_labels(),
 }
 
 
@@ -125,7 +109,7 @@ class DualStreamDatasetV4(Dataset):
             content = row.get("content") or row.get("state") or ""
             answers = row.get("answers") or []
             if len(answers) < len(ANSWER_ORDER):
-                raise ValueError(f"{row.get('ticketNo')} answers 不足五项")
+                raise ValueError(f"{row.get('ticketNo')} answers 不足四项")
             for dim, answer in zip(ANSWER_ORDER, answers):
                 if answer not in choice_sets[dim]:
                     raise ValueError(f"{row.get('ticketNo')} {dim}={answer!r}")
@@ -372,6 +356,15 @@ def export_onnx(model: LayaDecisionModelV4, path: str):
         dynamo=False,
     )
     os.replace(tmp, path)
+    import onnx
+    exported = onnx.load(path)
+    length_meta = exported.metadata_props.add()
+    length_meta.key = "civic_length"
+    length_meta.value = "full"
+    class_meta = exported.metadata_props.add()
+    class_meta.key = "civic_classes"
+    class_meta.value = ",".join(label for dim in ANSWER_ORDER for label in CRITERIA_CHOICES[dim])
+    onnx.save(exported, path)
 
 
 def score_onnx(onnx_path: str, dataset: DualStreamDatasetV4, batch_size: int) -> Dict[str, float]:
@@ -382,9 +375,8 @@ def score_onnx(onnx_path: str, dataset: DualStreamDatasetV4, batch_size: int) ->
     expected = [f"{dim}_logits" for dim in ANSWER_ORDER]
     if names != expected:
         raise SystemExit(f"ONNX 输出 {names} 与 {expected} 不一致")
-    town = session.get_outputs()[-1]
-    if town.shape[-1] != len(CRITERIA_CHOICES["township"]):
-        raise SystemExit(f"镇街输出维度 {town.shape} 与字典不符")
+    if any(name.startswith("township") for name in names):
+        raise SystemExit(f"共享模型不应输出镇街: {names}")
     loader = DataLoader(
         dataset,
         batch_sampler=BucketBatchSampler(
@@ -452,7 +444,7 @@ def write_regression(path: str, train_count: int, heldout_count: int, accs: Dict
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Train civic System 1 on the five-answer JSONL")
+    parser = argparse.ArgumentParser(description="Train the shared four-head civic System 1")
     parser.add_argument("--data", default=DEFAULT_DATA)
     parser.add_argument("--epochs", type=int, default=5)
     parser.add_argument("--batch-size", type=int, default=64)
@@ -467,7 +459,7 @@ def main():
     started = time.perf_counter()
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     print(f"device {device}", flush=True)
-    print(f"township {CRITERIA_CHOICES['township']}", flush=True)
+    print(f"heads {ANSWER_ORDER}", flush=True)
 
     rows = read_rows(args.data)
     train_rows = [row for row in rows if not is_holdout(str(row["ticketNo"]))]

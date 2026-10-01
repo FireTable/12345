@@ -1,6 +1,6 @@
 import { SystemOneEngine } from "../src/engine";
 import { CivicAnonymizer } from "@civic/anonymizer";
-import { encodeCivicText, loadTownshipLabels } from "../src/adapters/onnx-adapter";
+import { encodeCivicText, SHARED_MODEL_LABELS, modelScoresFullText } from "../src/adapters/onnx-adapter";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -94,12 +94,12 @@ async function main() {
     console.log(`\n[Fixture] 成功验证冒烟种子库: ${lines.length} 条有效 Laya 标准 QA 记录。`);
   }
 
-  const labels = loadTownshipLabels();
   const preset = JSON.parse(fs.readFileSync(path.resolve("lib/presets/foshan_shunde.json"), "utf-8"));
-  const expectedLabels = [...preset.townships.map((town: { fullName: string }) => town.fullName), "UNKNOWN"];
-  assert(JSON.stringify(labels) === JSON.stringify(expectedLabels), "镇街类和标准字典不一致");
-  assert(!labels.includes("顺德区"), "顺德区不能作为镇街类");
-  assert(labels.includes("大良街道") && !labels.includes("大良"), "镇街类用法定全称");
+  const shundeTowns = preset.townships.map((town: { fullName: string }) => town.fullName);
+  const banned = [...shundeTowns, "顺德区"];
+  for (const name of banned) {
+    assert(!SHARED_MODEL_LABELS.includes(name), `共享模型含有镇街类: ${name}`);
+  }
 
   const vocab = JSON.parse(
     fs.readFileSync(path.resolve("packages/civic-system-one/models/vocab_civic.json"), "utf-8")
@@ -115,28 +115,31 @@ async function main() {
   assert(!!emptyTitle.intent && !!emptyTitle.category, "空标题也要给出意图和分类");
   assert([0, 1, 2, 3].includes(emptyTitle.urgencyLevel), "紧迫度缺失");
   assert(typeof emptyTitle.stabilityRisk === "boolean", "涉稳结果缺失");
-  assert(labels.includes(emptyTitle.township), `镇街不在字典里: ${emptyTitle.township}`);
+  assert(emptyTitle.township === "UNKNOWN", `模型不应给出镇街: ${emptyTitle.township}`);
   assert(emptyTitle.bodyTokenCount === fullCount, `正文 token ${emptyTitle.bodyTokenCount}，全文是 ${fullCount}`);
-  assert(emptyTitle.bodyTokenCount !== 128, "正文仍被截成 128");
+  assert(emptyTitle.bodyTokenCount > 128, "正文仍被截成 128");
   assert(emptyTitle.titleTokenCount >= 1, "空标题没有送进模型");
 
   const noTown = await engine.evaluate({
     title: "",
     content: "市民来电咨询办理进度，希望得到回复。",
   });
-  assert(labels.includes(noTown.township), `无地点工单的镇街不在字典里: ${noTown.township}`);
   assert(noTown.township !== "大良街道", "正文没有镇街时不应填成大良街道");
+  assert(noTown.township === "UNKNOWN", `无地点工单被填成镇街: ${noTown.township}`);
   assert(!!noTown.intent && !!noTown.category && typeof noTown.stabilityRisk === "boolean", "无地点工单缺少原有字段");
 
   const modelPath = path.resolve("packages/civic-system-one/models/civic-laya-onnx/model.onnx");
+  assert(modelScoresFullText(modelPath), "线上模型不是全文导出");
   const importDynamic = new Function("modulePath", "return import(modulePath)");
   const ort = await importDynamic("onnxruntime-node");
   const session = await ort.InferenceSession.create(modelPath);
-  assert((session.outputNames as string[]).includes("township_logits"), "导出的模型没有镇街输出");
+  const outputNames = session.outputNames as string[];
+  assert(!outputNames.includes("township_logits"), "共享模型仍在输出镇街");
+  assert(outputNames.includes("intent_logits") && outputNames.includes("stability_logits"), "四项输出缺失");
   if (typeof session.release === "function") await session.release();
 
   console.log("ASSERT_FIELDS intent category urgencyLevel stabilityRisk township bodyTokenCount");
-  console.log(`ASSERT_OK emptyTitle=decision longBodyTokens=${emptyTitle.bodyTokenCount} townshipSet=${labels.length}`);
+  console.log(`ASSERT_OK emptyTitle=decision longBodyTokens=${emptyTitle.bodyTokenCount} classes=${SHARED_MODEL_LABELS.length}`);
   console.log("\n=== @civic/system-one 验证全部通过！===");
 }
 
