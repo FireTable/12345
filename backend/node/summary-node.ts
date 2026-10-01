@@ -11,37 +11,33 @@ import { getSystemTwoEngine, llmConcurrency } from "../model";
 import { LLM_TOKENS, LLM_TIMEOUTS } from "@/lib/tokens";
 
 import {
-  ThemeEnrichmentSchema,
   BatchThemeEnrichmentSchema,
-  buildThemeEnrichmentPrompt,
   buildBatchThemeEnrichmentPrompt,
 } from "../prompt";
 
-const DEFAULT_RECOMMENDED_ACTION = "建议转派所属辖区行业主管部门牵头，2个工作日内核实具体诉求并向市民书面反馈办理进展。";
+const EMPTY_ADVICE = { aiSummary: "", recommendedAction: "" };
 
 /**
- * 批量调用 System-2 慢思考认知引擎对多频主题进行深度公文研判（显式开启 enableThinking: true，保留深度思维链）
+ * 给一批主题写各自的摘要和处置建议。
+ * 只要 JSON，不开思考。思考会把输出额度用完，正文变空，最后每个主题都落成同一句套话。
  */
-async function enrichThemeBatchWithLLM(
+export async function enrichThemeBatchWithLLM(
   themeBatch: MultiFrequencyTheme[]
 ): Promise<Array<Partial<MultiFrequencyTheme>>> {
   if (themeBatch.length === 0) return [];
-  const fallbacks = themeBatch.map(() => ({
-    recommendedAction: DEFAULT_RECOMMENDED_ACTION,
-  }));
+  const fallbacks = themeBatch.map(() => ({ ...EMPTY_ADVICE }));
 
   const enrichTask = async (): Promise<Array<Partial<MultiFrequencyTheme>>> => {
     try {
       const systemTwo = await getSystemTwoEngine();
       const prompt = buildBatchThemeEnrichmentPrompt(themeBatch);
 
-      // System-2 慢思考公文研判：开启思维链，深度剖析跨部门权责与根因归因
-      const { data, reasoning } = await systemTwo.createJSON(
+      const { data } = await systemTwo.createJSON(
         BatchThemeEnrichmentSchema,
         {
           messages: [{ role: "user", content: prompt }],
-          enableThinking: true, // 慢思考开启，深度权责穿透
-          maxTokens: LLM_TOKENS.THINKING_SUMMARY,
+          enableThinking: false,
+          maxTokens: LLM_TOKENS.THEME_ADVICE,
           temperature: 0.2,
         }
       );
@@ -54,16 +50,10 @@ async function enrichThemeBatchWithLLM(
 
         return themeBatch.map((theme, i) => {
           const r = resultMap.get(i + 1) || data.results[i];
-          if (!r) return { recommendedAction: DEFAULT_RECOMMENDED_ACTION, reasoningContent: reasoning };
-
-          const incoming = r.riskLevel as RiskLevel;
-          const finalRisk: RiskLevel = theme.riskLevel === "HIGH" ? "HIGH" : incoming;
+          if (!r) return { ...EMPTY_ADVICE };
           return {
-            riskLevel: finalRisk,
-            riskReason: r.riskReason || theme.riskReason,
             aiSummary: r.aiSummary || theme.aiSummary || "",
-            recommendedAction: r.recommendedAction || DEFAULT_RECOMMENDED_ACTION,
-            reasoningContent: reasoning,
+            recommendedAction: r.recommendedAction || "",
           };
         });
       }
@@ -102,7 +92,7 @@ export async function summaryNode(
     if (taskId) {
       updateTaskProgress(taskId, {
         stage: "SYNTHESIZING",
-        stageText: `正在对 ${enrichedThemes.length} 个多频主题进行批量深度公文研判与协同处置建议生成...`,
+        stageText: `正在为 ${enrichedThemes.length} 个主题生成各自的摘要和处置建议...`,
         percent: 78,
         themeCount: enrichedThemes.length,
       });
@@ -151,7 +141,7 @@ export async function summaryNode(
             themeCount: enrichedThemes.length,
             recentClusters: spotlightClusters,
             currentReasoning: sampleReasoning ? sampleReasoning.slice(0, 180) + "..." : undefined,
-            stageText: `System-2 深度思考研判中 (${Math.min(synthesizedCount, enrichedThemes.length)} / ${enrichedThemes.length} 主题)...`,
+            stageText: `正在生成处置建议 (${Math.min(synthesizedCount, enrichedThemes.length)} / ${enrichedThemes.length} 主题)...`,
           });
         }
       });

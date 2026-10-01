@@ -25,6 +25,12 @@ export const LLM_TOKENS = {
   EXTRACTION: parseEnvInt("LLM_EXTRACTION_MAX_TOKENS", 2048),
 
   /**
+   * 主题建议 (SummaryNode)
+   * 只要 JSON 正文，不开思考。10 个主题的摘要和建议大约 2000 token。
+   */
+  THEME_ADVICE: parseEnvInt("LLM_THEME_ADVICE_MAX_TOKENS", 3072),
+
+  /**
    * 慢思考深度公文研判 (SummaryNode)
    * 适用：开启思维链 (enableThinking: true) 的复杂多频民生热点根因与权责推演
    * 预算：4096 Tokens (容纳 1500~2500 Tokens 深度思维链 + 完整结构化通报公文)
