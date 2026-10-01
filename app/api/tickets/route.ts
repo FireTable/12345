@@ -161,6 +161,12 @@ export async function POST(req: Request) {
                       address: enrichedTicket.canonicalLocation,
                       sourceCategory: enrichedTicket.sourceCategory,
                       confidence: enrichedTicket.confidence,
+                      canonicalSubject: enrichedTicket.canonicalSubject,
+                      eventType: enrichedTicket.eventType,
+                      urgency: enrichedTicket.urgency,
+                      slaHours: enrichedTicket.slaHours,
+                      stabilityRisk: enrichedTicket.stabilityRisk,
+                      subdistrict: enrichedTicket.subdistrict,
                     })
                     .where(eq(ticketsTable.id, singleRec.id));
 
@@ -169,6 +175,10 @@ export async function POST(req: Request) {
                     .set({
                       ticketCount: incResult.matchedTheme?.ticketCount || sql`${themesTable.ticketCount} + 1`,
                       lastAt: new Date(),
+                      riskLevel: incResult.matchedTheme?.riskLevel,
+                      riskReason: incResult.matchedTheme?.riskReason,
+                      aiSummary: incResult.matchedTheme?.aiSummary,
+                      recommendedAction: incResult.matchedTheme?.recommendedAction,
                     })
                     .where(eq(themesTable.id, incResult.matchedThemeId));
                 }

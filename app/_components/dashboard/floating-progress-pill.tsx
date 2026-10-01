@@ -60,10 +60,10 @@ export const FloatingProgressPill: React.FC<FloatingProgressPillProps> = ({
                   : isFailed
                   ? "流水线异常"
                   : progress.stage === "SYNTHESIZING"
-                  ? "System-2 慢思考"
+                  ? "主题建议"
                   : progress.stage === "CLUSTERING"
-                  ? "时空图谱聚类"
-                  : "要素抽取分流"}
+                  ? "同一事件归并"
+                  : "分类与抽取"}
               </span>
               <span className="font-mono text-xs font-bold text-primary">
                 {progress.percent}%

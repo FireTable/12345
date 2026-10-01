@@ -1,6 +1,7 @@
 import { graph } from "./agent/ticket-agent";
 import type { RawTicket, TicketRadarState, MultiFrequencyTheme, EnrichedTicket } from "./state";
 import { evaluateIncrementalTicket, upgradeThemeWithSystemTwo, type IncrementalClusterResult } from "./incremental-cluster";
+import { embedTextsWithRetry, extractionProductText, themeProductText } from "./embed-products";
 import { extractNode } from "./node/extract-node";
 import { canonicalNode } from "./node/canonical-node";
 import { getRegionVocabulary } from "@/lib/vocabulary";
@@ -60,13 +61,28 @@ export async function ingestSingleTicketPipeline(
 
   const enrichedTicket = canonicalState.enrichedTickets?.[0] || (extractState.enrichedTickets?.[0] as EnrichedTicket);
 
-  // 3. 同一事件并入已有主题。时间只记节奏，不拆簇。
+  // 3. 同一件事，或向量很近的同一个具体地点，并入已有主题。
   const vocab = await getRegionVocabulary(regionId);
+  const openThemes = activeThemes.filter((theme) => theme.status !== "DISMISSED");
+  let ticketVector: number[] | undefined;
+  const themeVectors = new Map<string, number[]>();
+  if (openThemes.length > 0) {
+    const texts = [extractionProductText(enrichedTicket), ...openThemes.map((theme) => themeProductText(theme))];
+    const vectors = await embedTextsWithRetry(texts);
+    ticketVector = vectors[0];
+    openThemes.forEach((theme, index) => {
+      const vector = vectors[index + 1];
+      if (vector) themeVectors.set(theme.id, vector);
+    });
+  }
   const clusterResult = evaluateIncrementalTicket(enrichedTicket, activeThemes, {
     townships: vocab.townships,
+    vocab,
+    ticketVector,
+    themeVectors,
   });
 
-  // 4. 若吸附成功且命中严重突发险情，触发 System-2 慢思考进行应急处置升级
+  // 4. 险情升级只重写建议，思考关掉，风险等级用本地规则
   let updatedTheme: MultiFrequencyTheme | undefined = clusterResult.matchedTheme;
   if (clusterResult.needDeepThinkingUpgrade && clusterResult.matchedTheme) {
     updatedTheme = await upgradeThemeWithSystemTwo(clusterResult.matchedTheme);

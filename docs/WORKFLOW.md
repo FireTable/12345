@@ -92,7 +92,7 @@ flowchart TD
 
 主题名优先用大家一致的具体主体。主体是「市民」这类空话时，改用共同的小区或地标，例如东湖学府。质检器会丢掉主体过短或是空泛词的主题。少于 2 条不成主题。
 
-新来的单张工单走 [`backend/incremental-cluster.ts`](../backend/incremental-cluster.ts)。是同一件事就并入未驳回的主题，不按相隔多久拆开。时间只用来记这团事情是突发、反复还是季节性。
+新来的单张工单走 [`backend/incremental-cluster.ts`](../backend/incremental-cluster.ts)，用和批量一样的规则：同一件事，或者向量很近的同一个具体地点。不按相隔多久拆开。时间只用来记节奏。编号没有钟点、又落在同一天时，记为同日，不叫突发。险情升级会把风险调高，并重写这条主题的建议，思考关掉，模型不能改风险等级。
 
 ### 6. 主题级处置建议
 
@@ -104,7 +104,7 @@ flowchart TD
 
 ## 三、生产入口
 
-- [app/api/tickets/route.ts](../app/api/tickets/route.ts)：单条接入。新工单如果是同一件事，并入已有主题。
+- [app/api/tickets/route.ts](../app/api/tickets/route.ts)：单条接入。新工单先过 System 1 和 System 2，再用和批量一样的规则并入已有主题。
 - [app/api/cluster/route.ts](../app/api/cluster/route.ts)：批量研判。读取该城市已入库的工单，跑完整条流水线，替换该城市的主题。
 
 不要对 `public.tickets` 跑这套批量研判。顺德数据在 `region_fs_shunde`。

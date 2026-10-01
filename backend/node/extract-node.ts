@@ -261,7 +261,7 @@ export async function extractNode(
   });
 
   // 1.1 启动 System-1 极速决策引擎 (自适应 MPS / ONNX 神经编码器，单件时延 <1ms)
-  let fastTrackCount = 0;
+  let classifiedCount = 0;
   let stabilityAlertCount = 0;
   try {
     const systemOne = await SystemOneEngine.create();
@@ -299,6 +299,7 @@ export async function extractNode(
         const category = canonicalizeCategory(decision.categoryName) || decision.categoryName;
         if (category) ticket.sourceCategory = category;
         if (decision.stabilityRisk) stabilityAlertCount++;
+        classifiedCount++;
         if (ticket.id) rememberExtraction(tenantDb, ticket.id, systemOnePatch(ticket));
         if ((i + 1) % 50 === 0 || i + 1 === normalizedRawTickets.length) {
           console.log(`[extract] system-1 ${i + 1}/${normalizedRawTickets.length}`);
@@ -328,7 +329,7 @@ export async function extractNode(
     preExtractedCount++;
   });
 
-  let processedCount = preExtractedCount + fastTrackCount;
+  let processedCount = preExtractedCount;
   const chunkTasks: Array<() => Promise<void>> = [];
 
   // 1.4 对尚未抽取的疑难工单加入 LLM 并发队列
@@ -356,11 +357,11 @@ export async function extractNode(
     updateTaskProgress(taskId, {
       processed: processedCount,
       percent,
-      fastTrackCount,
+      classifiedCount,
       activeCategories: computeActiveCategories(),
       stageText: preExtractedCount > 0
         ? `继续研判：已完成 ${preExtractedCount} 条，还剩 ${pendingIdx.length} 条`
-        : `System-1 快思考分流完成：${fastTrackCount} 条咨询/催办直通分派${alertNotice}；剩余 ${pendingIdx.length} 条工单进入大模型抽取...`,
+        : `System 1 已分类 ${classifiedCount} 条${alertNotice}，接下来抽取 ${pendingIdx.length} 条`,
       extractedCount: extractionMap.size,
     });
   }
@@ -403,7 +404,7 @@ export async function extractNode(
         updateTaskProgress(taskId, {
           processed: currentProcessed,
           percent,
-          fastTrackCount,
+          classifiedCount,
           activeCategories: computeActiveCategories(),
           stageText: `AI 正在抽取工单实体与微观地点 (${currentProcessed} / ${normalizedRawTickets.length})...`,
           extractedCount: extractionMap.size,
@@ -428,9 +429,9 @@ export async function extractNode(
   if (taskId) {
     updateTaskProgress(taskId, {
       percent: 68,
-      fastTrackCount,
+      classifiedCount,
       activeCategories: computeActiveCategories(),
-      stageText: `System-2 结构化要素抽取与行政区划校准完成，准备进入时空知识图谱聚类...`,
+      stageText: `抽取完成，准备按同一事件归并`,
     });
   }
 

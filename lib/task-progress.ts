@@ -35,6 +35,7 @@ export interface TaskProgress {
   failedCount: number;
   // V2 流水线专有增强度量
   fastTrackCount?: number;
+  classifiedCount?: number;
   absorbedCount?: number;
   activeCategories?: ActiveCategoryStats[];
   recentClusters?: ActiveClusterSpotlight[];

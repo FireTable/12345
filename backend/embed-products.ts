@@ -23,6 +23,25 @@ export function extractionProductText(ticket: {
     .join("\n");
 }
 
+export function themeProductText(theme: {
+  aiSummary?: string | null;
+  canonicalSubject?: string | null;
+  eventType?: string | null;
+  canonicalLocation?: string | null;
+  category?: string | null;
+}): string {
+  return [
+    theme.aiSummary,
+    theme.canonicalSubject,
+    theme.eventType,
+    theme.canonicalLocation,
+    theme.category,
+  ]
+    .map((value) => (value || "").trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
 /** 嵌入抽取产物。429 会退避重试，仍失败就抛出，不改用更低的阈值凑数。 */
 export async function embedTextsWithRetry(texts: string[]): Promise<number[][]> {
   if (texts.length === 0) return [];

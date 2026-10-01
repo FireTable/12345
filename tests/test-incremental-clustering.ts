@@ -9,7 +9,7 @@
  */
 
 import { evaluateIncrementalTicket, upgradeThemeWithSystemTwo } from "../backend/incremental-cluster";
-import { CADENCE } from "../backend/theme-metrics";
+import { CADENCE, describeCadence } from "../backend/theme-metrics";
 import type { EnrichedTicket, MultiFrequencyTheme } from "../backend/state";
 import { HANDLING_STATUS } from "../lib/civic-dto";
 import { CATEGORY } from "../lib/vocabulary";
@@ -231,7 +231,73 @@ async function main() {
   }
   if (res1.cadence !== CADENCE.BURST) failures.push(`测试 1：节奏应为突发，实际 ${res1.cadence}`);
   if (res4.action !== "ATTACHED") failures.push(`测试 4：期望 ATTACHED，实际 ${res4.action}`);
-  if (!res4.needDeepThinkingUpgrade) failures.push("测试 4：险情工单应触发慢思考升级");
+  if (!res4.needDeepThinkingUpgrade) failures.push("测试 4：险情工单应触发升级");
+  if (res4.matchedTheme?.riskLevel !== "HIGH") failures.push("测试 4：险情应由规则写成高风险");
+
+  if (describeCadence(["2025-01-01 00:00:00", "2025-01-01 00:00:00"]) !== CADENCE.SAME_DAY) {
+    failures.push("同一天且没有钟点应记为同日");
+  }
+  if (describeCadence(["2025-01-01 08:15:00", "2025-01-01 10:15:00"]) !== CADENCE.BURST) {
+    failures.push("同一天有钟点仍记突发");
+  }
+
+  const donghuTheme: MultiFrequencyTheme = {
+    id: "THEME-DONGHU",
+    title: "容桂街道 · 东湖学府 · 施工噪音",
+    canonicalSubject: "东湖学府",
+    canonicalLocation: "容桂街道东湖学府二期工地",
+    eventType: "施工噪音",
+    category: CATEGORY.URBAN_MANAGEMENT,
+    riskLevel: "LOW",
+    riskReason: "",
+    ticketCount: 2,
+    timeSpanHours: 1,
+    firstOccurrence: "2025-01-01 00:00:00",
+    lastOccurrence: "2025-01-01 00:00:00",
+    aiSummary: "容桂街道东湖学府二期施工噪音",
+    recommendedAction: "已有建议",
+    handlingStatus: HANDLING_STATUS.IN_PROGRESS,
+    status: "CONFIRMED",
+    relatedSubjects: ["东湖学府"],
+    relatedLocations: ["容桂街道东湖学府二期工地"],
+    tickets: [],
+  };
+  const donghuTicket: EnrichedTicket = {
+    id: "TICKET-DONGHU",
+    ticketNo: "250101009990109-01",
+    title: "来电",
+    content: "容桂街道新有中东湖学府二期，另一位市民再次来电，说的是同一处楼盘。",
+    createTime: "2025-01-01 00:00:00",
+    citizenName: "市民",
+    citizenPhone: "",
+    district: "顺德区",
+    subdistrict: "容桂街道",
+    channel: "市民热线",
+    status: "PENDING",
+    canonicalLocation: "容桂街道东湖学府二期",
+    canonicalSubject: "市民",
+    summarizeTitle: "东湖学府二期施工噪音",
+    eventType: "施工噪音",
+    sourceCategory: CATEGORY.URBAN_MANAGEMENT,
+    confidence: 90,
+    entities: [],
+    relations: [],
+    themes: [],
+  };
+  const donghuPlain = evaluateIncrementalTicket(donghuTicket, [cloneTheme(donghuTheme)]);
+  const donghuEmbedded = evaluateIncrementalTicket(donghuTicket, [cloneTheme(donghuTheme)], {
+    ticketVector: [1, 0],
+    themeVectors: new Map([["THEME-DONGHU", [1, 0]]]),
+  });
+  if (donghuPlain.action !== "STANDALONE") {
+    failures.push(`东湖学府没有向量时不应并入，实际 ${donghuPlain.action}`);
+  }
+  if (donghuEmbedded.action !== "ATTACHED") {
+    failures.push(`东湖学府有向量时应并入，实际 ${donghuEmbedded.action}`);
+  }
+  if (donghuEmbedded.cadence !== CADENCE.SAME_DAY) {
+    failures.push(`东湖学府同一天零点应记同日，实际 ${donghuEmbedded.cadence}`);
+  }
 
   if (failures.length > 0) {
     console.error("\n❌ 增量评测未通过:");

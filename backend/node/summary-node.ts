@@ -126,7 +126,7 @@ export async function summaryNode(
         console.log(`[summary] ${Math.min(synthesizedCount, enrichedThemes.length)}/${enrichedThemes.length}`);
         if (taskId) {
           const percent = Math.min(96, 78 + Math.round((synthesizedCount / Math.max(1, enrichedThemes.length)) * 18));
-          const sampleReasoning = batchResults.find((r) => r.reasoningContent)?.reasoningContent;
+          const sampleAdvice = batchResults.find((row) => row.recommendedAction?.trim())?.recommendedAction;
           const spotlightClusters = enrichedThemes.slice(0, 5).map((t) => ({
             id: t.id,
             name: t.title,
@@ -140,7 +140,7 @@ export async function summaryNode(
             percent,
             themeCount: enrichedThemes.length,
             recentClusters: spotlightClusters,
-            currentReasoning: sampleReasoning ? sampleReasoning.slice(0, 180) + "..." : undefined,
+            currentReasoning: sampleAdvice ? sampleAdvice.slice(0, 180) : undefined,
             stageText: `正在生成处置建议 (${Math.min(synthesizedCount, enrichedThemes.length)} / ${enrichedThemes.length} 主题)...`,
           });
         }

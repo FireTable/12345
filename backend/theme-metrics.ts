@@ -86,6 +86,7 @@ export const CADENCE = {
   BURST: "BURST",
   RECURRING: "RECURRING",
   SEASONAL: "SEASONAL",
+  SAME_DAY: "SAME_DAY",
 } as const;
 
 export type ThemeCadence = (typeof CADENCE)[keyof typeof CADENCE];
@@ -94,6 +95,7 @@ const CADENCE_LABEL: Record<ThemeCadence, string> = {
   BURST: "突发",
   RECURRING: "反复",
   SEASONAL: "季节性",
+  SAME_DAY: "同日",
 };
 
 export function cadenceLabel(cadence: ThemeCadence): string {
@@ -115,6 +117,10 @@ export function describeCadence(times: Array<string | number | Date | undefined>
     .sort((a, b) => a - b);
   if (ms.length < 2) return CADENCE.BURST;
 
+  const clocks = ms.map(shanghaiClock);
+  const sameCalendarDay = new Set(clocks.map((clock) => clock.date)).size === 1;
+  if (sameCalendarDay && clocks.every((clock) => clock.midnight)) return CADENCE.SAME_DAY;
+
   let maxGapHours = 0;
   for (let i = 1; i < ms.length; i++) {
     maxGapHours = Math.max(maxGapHours, (ms[i] - ms[i - 1]) / 3600000);
@@ -124,6 +130,24 @@ export function describeCadence(times: Array<string | number | Date | undefined>
   const spanHours = (ms[ms.length - 1] - ms[0]) / 3600000;
   if (spanHours <= BURST_HOURS) return CADENCE.BURST;
   return CADENCE.RECURRING;
+}
+
+function shanghaiClock(ms: number): { date: string; midnight: boolean } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(ms));
+  const read = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "";
+  return {
+    date: `${read("year")}-${read("month")}-${read("day")}`,
+    midnight: read("hour") === "00" && read("minute") === "00" && read("second") === "00",
+  };
 }
 
 function parseTime(s?: string): number {
@@ -181,7 +205,14 @@ export function deriveThemeMetrics(theme: Pick<
   const features = [
     { name: "关键词命中", pct: keywordPct, desc: event ? `主题「${event}」覆盖 ${keywordHits}/${n}` : "无统一事件类型" },
     { name: "地理范围", pct: geoPct, desc: loc ? `落在同一地点 ${locHits}/${n}` : "地点未对齐" },
-    { name: "时间模式", pct: timePct, desc: `${cadenceLabel(cadence)} · 跨度约 ${Math.max(1, Math.round(spanHours))} 小时` },
+    {
+      name: "时间模式",
+      pct: timePct,
+      desc:
+        cadence === CADENCE.SAME_DAY
+          ? "同日 · 编号没有钟点"
+          : `${cadenceLabel(cadence)} · 跨度约 ${Math.max(1, Math.round(spanHours))} 小时`,
+    },
     { name: "情绪强度", pct: moodPct, desc: moodHits ? `险情/激烈用语 ${moodHits} 条` : "未命中险情词" },
   ];
 

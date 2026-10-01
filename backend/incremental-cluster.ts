@@ -5,14 +5,15 @@
  */
 
 import { differenceInHours, parse, parseISO, isValid } from "date-fns";
-import type { EnrichedTicket, MultiFrequencyTheme, RiskLevel } from "./state";
+import type { EnrichedTicket, MultiFrequencyTheme } from "./state";
 import { negativeTermsPattern, RULES } from "./rules";
 import { getSystemTwoEngine } from "./model";
 import { LLM_TOKENS } from "@/lib/tokens";
 import { BatchThemeEnrichmentSchema, buildBatchThemeEnrichmentPrompt } from "./prompt";
-import { familyLabel, incidentsMatch, profileTicket } from "./ticket-profile";
+import { familyLabel, profileTicket } from "./ticket-profile";
+import { shouldLinkIncidents } from "./same-incident-cluster";
 import { CADENCE, cadenceLabel, describeCadence, type ThemeCadence } from "./theme-metrics";
-import { loadPresetVocabulary, type TownshipInfo } from "@/lib/vocabulary";
+import { legalTownshipName, loadPresetVocabulary, type RegionVocabulary, type TownshipInfo } from "@/lib/vocabulary";
 import { HANDLING_STATUS, normalizeStatusCode } from "@/lib/civic-dto";
 
 function safeParseDate(dateStr: string): Date {
@@ -40,7 +41,12 @@ export interface IncrementalClusterResult {
 export function evaluateIncrementalTicket(
   newTicket: EnrichedTicket,
   activeThemes: MultiFrequencyTheme[],
-  options?: { townships?: TownshipInfo[] }
+  options?: {
+    townships?: TownshipInfo[];
+    vocab?: RegionVocabulary;
+    ticketVector?: number[];
+    themeVectors?: Map<string, number[]>;
+  }
 ): IncrementalClusterResult {
   const townships = options?.townships ?? loadPresetVocabulary().townships;
   const ticketTime = safeParseDate(newTicket.createTime);
@@ -52,9 +58,7 @@ export function evaluateIncrementalTicket(
     },
     townships
   );
-  incoming.township = newTicket.subdistrict || null;
-  incoming.subject = newTicket.canonicalSubject || null;
-  incoming.place = newTicket.canonicalLocation || null;
+  if (newTicket.subdistrict) incoming.township = newTicket.subdistrict;
 
   for (const theme of activeThemes) {
     if (theme.status === "DISMISSED") continue;
@@ -67,7 +71,28 @@ export function evaluateIncrementalTicket(
       },
       townships
     );
-    if (!incidentsMatch(incoming, active)) continue;
+    const themeTownship = legalTownshipName(theme.canonicalLocation, options?.vocab) || "";
+    const linked = shouldLinkIncidents(
+      {
+        profile: incoming,
+        category: newTicket.sourceCategory || "",
+        township: newTicket.subdistrict || "",
+        placeEvidence: [newTicket.canonicalLocation, newTicket.summarizeTitle, newTicket.content]
+          .filter(Boolean)
+          .join("\n"),
+        subject: newTicket.canonicalSubject || "",
+        vector: options?.ticketVector || [],
+      },
+      {
+        profile: active,
+        category: theme.category || "",
+        township: themeTownship,
+        placeEvidence: [theme.canonicalLocation, theme.aiSummary, theme.title].filter(Boolean).join("\n"),
+        subject: theme.canonicalSubject || "",
+        vector: options?.themeVectors?.get(theme.id) || [],
+      }
+    );
+    if (!linked) continue;
 
     const lastThemeEventTime = safeParseDate(theme.lastOccurrence || theme.firstOccurrence);
     const hoursSinceLast = Math.abs(differenceInHours(ticketTime, lastThemeEventTime));
@@ -94,7 +119,11 @@ export function evaluateIncrementalTicket(
       theme.reopenCount = (theme.reopenCount || 0) + 1;
       theme.reopenTicketIds = [...(theme.reopenTicketIds || []), newTicket.id];
     }
-    const cadence = describeCadence(theme.tickets.map((ticket) => ticket.createTime));
+    const cadence = describeCadence([
+      theme.firstOccurrence,
+      theme.lastOccurrence,
+      ...theme.tickets.map((ticket) => ticket.createTime),
+    ]);
 
     // 6. 质变升级研判：研判是否需要触发 System-2 慢思考增量重推
     const hasExtremeHazard = negativeTermsPattern().test(newTicket.content || "");
@@ -106,15 +135,21 @@ export function evaluateIncrementalTicket(
     if (hasExtremeHazard && theme.riskLevel !== "HIGH") {
       needDeepThinkingUpgrade = true;
       upgradeReason = `新工单反映突发严重险情关键字（如塌陷/事故/伤亡/断水断电），诉求性质升级！`;
+      theme.riskLevel = "HIGH";
+      theme.riskReason = upgradeReason;
     } else if (crossedRiskThreshold) {
       needDeepThinkingUpgrade = true;
       upgradeReason = `工单数量达到 ${theme.ticketCount} 件，突破高风险群体事件阈值！`;
+      theme.riskLevel = "HIGH";
+      theme.riskReason = upgradeReason;
     }
 
     const rhythm =
-      cadence === CADENCE.SEASONAL
-        ? `距上次 ${hoursSinceLast} 小时，中间空了很久，节奏记为${cadenceLabel(cadence)}`
-        : `距上次 ${hoursSinceLast} 小时，节奏记为${cadenceLabel(cadence)}`;
+      cadence === CADENCE.SAME_DAY
+        ? `同一天，编号没有钟点，节奏记为${cadenceLabel(cadence)}`
+        : cadence === CADENCE.SEASONAL
+          ? `距上次 ${hoursSinceLast} 小时，中间空了很久，节奏记为${cadenceLabel(cadence)}`
+          : `距上次 ${hoursSinceLast} 小时，节奏记为${cadenceLabel(cadence)}`;
     const familyName = familyLabel(incoming.family) || familyLabel(active.family) || "同类诉求";
 
     return {
@@ -138,32 +173,39 @@ export function evaluateIncrementalTicket(
 }
 
 /**
- * 触发 System-2 对质变升级的主题进行增量慢思考（仅在升级时调用）
+ * 险情升级后重写这一条主题的摘要和处置建议。思考关掉。风险等级保持本地规则刚写上的值。
  */
 export async function upgradeThemeWithSystemTwo(
   theme: MultiFrequencyTheme
 ): Promise<MultiFrequencyTheme> {
+  const riskLevel = theme.riskLevel;
+  const riskReason = theme.riskReason;
+  let advice = theme.recommendedAction || "";
+  let summary = theme.aiSummary || "";
   const systemTwo = await getSystemTwoEngine();
   const prompt = buildBatchThemeEnrichmentPrompt([theme]);
 
-  const { data, reasoning } = await systemTwo.createJSON(
-    BatchThemeEnrichmentSchema,
-    {
-      messages: [{ role: "user", content: prompt }],
-      enableThinking: true,
-      maxTokens: LLM_TOKENS.THINKING_SUMMARY,
-      temperature: 0.2,
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const { data } = await systemTwo.createJSON(BatchThemeEnrichmentSchema, {
+        messages: [{ role: "user", content: prompt }],
+        enableThinking: false,
+        maxTokens: LLM_TOKENS.THEME_ADVICE,
+        temperature: 0.2,
+      });
+      const res = data?.results?.[0];
+      if (res?.recommendedAction?.trim()) advice = res.recommendedAction;
+      if (res?.aiSummary?.trim()) summary = res.aiSummary;
+      if (advice.trim()) break;
+    } catch (err: any) {
+      console.warn(`[incremental] theme upgrade attempt ${attempt + 1}:`, err?.message);
     }
-  );
-
-  if (data?.results?.[0]) {
-    const res = data.results[0];
-    theme.riskLevel = (res.riskLevel as RiskLevel) || "HIGH";
-    theme.riskReason = res.riskReason || theme.riskReason;
-    theme.aiSummary = res.aiSummary || theme.aiSummary;
-    theme.recommendedAction = res.recommendedAction || theme.recommendedAction;
-    theme.reasoningContent = reasoning;
+    if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
   }
 
+  theme.aiSummary = summary;
+  theme.recommendedAction = advice;
+  theme.riskLevel = riskLevel;
+  theme.riskReason = riskReason;
   return theme;
 }

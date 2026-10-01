@@ -194,6 +194,15 @@ export async function clusterNode(
     return b.ticketCount - a.ticketCount;
   });
 
+  if (taskId) {
+    const joined = validatedThemes.reduce((sum, theme) => sum + theme.ticketCount, 0);
+    updateTaskProgress(taskId, {
+      absorbedCount: joined,
+      themeCount: validatedThemes.length,
+      stageText: `同一事件归并完成，${validatedThemes.length} 个主题`,
+    });
+  }
+
   return {
     themes: validatedThemes,
     enrichedTickets,

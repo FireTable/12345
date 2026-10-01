@@ -39,29 +39,29 @@ const STEPS: StepDef[] = [
   {
     key: "SYSTEM1",
     number: 2,
-    title: "⚡快思考分流",
-    sub: "<1ms 神经分派 · 0-Token",
+    title: "System 1",
+    sub: "分类 · 时限 · 涉稳",
     icon: Zap,
   },
   {
     key: "EXTRACTION",
     number: 3,
-    title: "时空要素抽取",
-    sub: "主体 · 微观点位 · 行政区划",
+    title: "实体抽取",
+    sub: "主体 · 地点 · 摘要",
     icon: Cpu,
   },
   {
     key: "ABSORPTION",
     number: 4,
-    title: "同一事件归并",
-    sub: "同类诉求 · 时间只记节奏",
+    title: "同一事件",
+    sub: "向量 · 同一地点",
     icon: GitMerge,
   },
   {
     key: "SYSTEM2",
     number: 5,
-    title: "🧠深度慢思考",
-    sub: "System-2 · CoT公文研判",
+    title: "主题建议",
+    sub: "多条才写 · 不开思考",
     icon: Sparkles,
   },
 ];
@@ -73,7 +73,7 @@ export const PipelineFlowView: React.FC<PipelineFlowViewProps> = ({ progress }) 
     percent,
     total,
     processed,
-    fastTrackCount = 0,
+    classifiedCount = 0,
     absorbedCount = 0,
     themeCount = 0,
     activeCategories = [],
@@ -90,7 +90,7 @@ export const PipelineFlowView: React.FC<PipelineFlowViewProps> = ({ progress }) 
     if (isCompleted) return 5;
     if (stage === "PARSING") return 0;
     if (stage === "EXTRACTING") {
-      // 抽取阶段前期为快思考(0~10%)，后进入要素抽取
+      // 抽取阶段前期是 System 1 分类，之后才是实体抽取
       return percent < 12 ? 1 : 2;
     }
     if (stage === "CLUSTERING") return 3;
@@ -138,7 +138,7 @@ export const PipelineFlowView: React.FC<PipelineFlowViewProps> = ({ progress }) 
           <p className="text-[11px] text-muted-foreground pl-4.5">
             {isCompleted
               ? `研判流水线已完工 · 共聚合 ${themeCount} 个重点多频主题`
-              : "双系统分流 · 同一事件归并 · 本地端侧慢思考推理"}
+              : "每条都过两个系统 · 同一件事才成主题"}
           </p>
         </div>
 
@@ -235,9 +235,15 @@ export const PipelineFlowView: React.FC<PipelineFlowViewProps> = ({ progress }) 
                 <span className="text-[9px] text-muted-foreground">产出</span>
                 <span className="font-mono text-xs font-bold text-foreground">
                   {idx === 0 && (total > 0 ? `${total}件` : "--")}
-                  {idx === 1 && (fastTrackCount > 0 ? `${fastTrackCount}直通` : "0")}
+                  {idx === 1 &&
+                    (classifiedCount > 0
+                      ? `${classifiedCount}条`
+                      : total > 0 && (percent >= 12 || stage === "CLUSTERING" || stage === "SYNTHESIZING" || isCompleted)
+                        ? `${total}条`
+                        : "--")}
                   {idx === 2 && (processed > 0 ? `${processed}/${total || "--"}` : "--")}
-                  {idx === 3 && (absorbedCount > 0 ? `${absorbedCount}吸附` : "0")}
+                  {idx === 3 &&
+                    (absorbedCount > 0 ? `${absorbedCount}并入` : themeCount > 0 ? `${themeCount}主题` : "--")}
                   {idx === 4 && (themeCount > 0 ? `${themeCount}主题` : isCompleted ? `${themeCount}主题` : "--")}
                 </span>
               </div>
@@ -253,10 +259,14 @@ export const PipelineFlowView: React.FC<PipelineFlowViewProps> = ({ progress }) 
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
               <Layers className="w-3.5 h-3.5 text-primary" />
-              <span>知识图谱板块分流</span>
+              <span>分类</span>
             </div>
             <span className="text-[10px] text-muted-foreground font-mono">
-              已分流 {activeCategories.reduce((acc, c) => acc + c.count, 0)} 条
+              {activeCategories.length > 0
+                ? `${activeCategories.reduce((acc, c) => acc + c.count, 0)} 条`
+                : total > 0
+                  ? `${total} 条已分类`
+                  : "等待分类"}
             </span>
           </div>
 
@@ -283,17 +293,17 @@ export const PipelineFlowView: React.FC<PipelineFlowViewProps> = ({ progress }) 
             </div>
           ) : (
             <div className="py-4 text-center text-xs text-muted-foreground border border-dashed border-border/40 rounded-md">
-              <span className="animate-pulse">正在提取工单所属业务板块知识映射...</span>
+              <span className="animate-pulse">分类结果写在每条工单上</span>
             </div>
           )}
         </div>
 
-        {/* 右侧：72h 增量时空吸附 / 涌现主题聚落 (Cluster Spotlight) */}
+        {/* 右侧：同一事件归并 */}
         <div className="p-3 rounded-lg border border-border/50 bg-card/60 backdrop-blur-xs space-y-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
               <Network className="w-3.5 h-3.5 text-indigo-400" />
-              <span>多频事件簇涌现与吸附</span>
+              <span>同一事件归并</span>
             </div>
             <span className="text-[10px] text-muted-foreground font-mono">
               {themeCount > 0 ? `${themeCount} 个主题就绪` : "连通子图计算中"}
@@ -324,16 +334,18 @@ export const PipelineFlowView: React.FC<PipelineFlowViewProps> = ({ progress }) 
           ) : (
             <div className="py-4 text-center text-xs text-muted-foreground border border-dashed border-border/40 rounded-md">
               <span className="animate-pulse">
-                {stage === "SYNTHESIZING"
-                  ? "System-2 正在将时空连通子图聚合成案..."
-                  : "正在按同一事件归并..."}
+                {themeCount > 0
+                  ? `${themeCount} 个主题已生成`
+                  : stage === "SYNTHESIZING"
+                    ? "正在为多条工单的主题写处置建议..."
+                    : "正在按同一事件归并..."}
               </span>
             </div>
           )}
         </div>
       </div>
 
-      {/* 底部：System-2 慢思考思维链 (CoT Reasoning Preview) */}
+      {/* 底部：刚写出的主题处置建议 */}
       {currentReasoning && (
         <motion.div
           initial={{ opacity: 0, height: 0 }}
@@ -342,7 +354,7 @@ export const PipelineFlowView: React.FC<PipelineFlowViewProps> = ({ progress }) 
         >
           <div className="flex items-center gap-1.5 text-primary font-semibold text-[11px]">
             <Sparkles className="w-3 h-3 text-primary animate-spin" />
-            <span>System-2 深度思考思维链实时反馈</span>
+            <span>主题处置建议</span>
           </div>
           <p className="text-[11px] text-muted-foreground font-mono italic leading-relaxed line-clamp-2">
             "{currentReasoning}"
