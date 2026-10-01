@@ -31,6 +31,22 @@ import {
   Check,
 } from "lucide-react";
 
+const ADVICE_LABELS = ["牵头部门", "响应时限", "办理路径", "建议时限"];
+
+/** 模型把部门、时限、步骤写成一句。按这几个标记拆成行，页面才有分段。 */
+function segmentAdvice(raw: string): string[] {
+  const text = raw.replace(/\r\n/g, "\n").trim();
+  if (!text) return [];
+  if (text.includes("\n")) {
+    return text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  }
+  const label = ADVICE_LABELS.join("|");
+  let marked = text.replace(new RegExp(`(?<!^)\\s*(${label})\\s*[:：]`, "g"), "\n$1：");
+  marked = marked.replace(/(办理路径[:：])\s*(?=\d)/g, "$1\n");
+  marked = marked.replace(/[；;]\s*(?=\d+[.、．])/g, "\n");
+  return marked.split("\n").map((line) => line.trim()).filter(Boolean);
+}
+
 type Member = {
   id: string;
   ticketId: string;
@@ -60,6 +76,7 @@ type ClusterDetail = {
   mode_tagline?: string;
   mode_risk?: string;
   mode_advice?: string;
+  summary?: string;
   title?: string;
   ai_confidence: number | null;
   first_date: string;
@@ -192,8 +209,10 @@ function ThemeDetailInner() {
 
   const [copiedAdvice, setCopiedAdvice] = useState(false);
 
+  const adviceText = segmentAdvice(row?.mode_advice || meta.rule || "");
+
   const handleCopyAdvice = () => {
-    const text = row?.mode_advice || meta.rule;
+    const text = adviceText.join("\n");
     if (!text) return;
     navigator.clipboard
       .writeText(text)
@@ -258,7 +277,7 @@ function ThemeDetailInner() {
       `AI 聚类置信度: ${row.ai_confidence ?? "—"}%`,
       `当前处置状态: ${row.status?.label || "未处理"} (进度 ${row.status?.progress ?? 0}%)`,
       `牵头承办部门: ${row.status?.owner || `${regionName}热线督办组`}`,
-      `协同处置建议: ${row.mode_advice || meta.rule}`,
+      `协同处置建议:\n${adviceText.join("\n")}`,
       "",
       `==================== 关联成员工单列表 ====================`,
       ...members.map((m, idx) => `[${idx + 1}] #${m.id} | ${m.createdAt} | 诉求人: ${m.caller_name || "市民"} | 涉事地址: ${m.address || m.region || "—"}\n    标题: ${m.title}\n    正文: ${m.content || "—"}\n`),
@@ -355,11 +374,15 @@ function ThemeDetailInner() {
                 <div className="cluster-hero__stat-val">{row.ai_confidence == null ? "—" : `${row.ai_confidence}%`}</div>
                 <div className="cluster-hero__stat-label">AI 聚类置信度</div>
               </div>
-              <div className="cluster-hero__stat">
-                <div className="cluster-hero__stat-val">{row.trend || "—"}</div>
-                <div className="cluster-hero__stat-label">近 7 天趋势</div>
-              </div>
+              {row.trend ? (
+                <div className="cluster-hero__stat">
+                  <div className="cluster-hero__stat-val">{row.trend}</div>
+                  <div className="cluster-hero__stat-label">近 7 天趋势</div>
+                </div>
+              ) : null}
             </div>
+
+            {row.summary ? <div className="cluster-hero__summary">{row.summary}</div> : null}
 
             <div className="mode-explainer">
               <b>研判规则：</b>
@@ -394,7 +417,11 @@ function ThemeDetailInner() {
                 </button>
               </div>
               <div className="glass-advice__body">
-                {row.mode_advice || meta.rule}
+                {adviceText.map((line, index) => (
+                  <p key={`${index}-${line.slice(0, 12)}`} className={/^\d+[.、．]/.test(line) ? "glass-advice__step" : undefined}>
+                    {line}
+                  </p>
+                ))}
               </div>
               <div className="glass-advice__foot">
                 <span>牵头：{row.status?.owner || "所属辖区行业主管部门"}</span>

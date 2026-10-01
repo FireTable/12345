@@ -65,7 +65,8 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: flex-start;
+  gap: 14px;
 }
 .cluster-hero__right {
   width: 380px;
@@ -208,6 +209,11 @@
   margin-bottom: 12px;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
 }
+.glass-advice__body p {
+  margin: 0 0 8px;
+}
+.glass-advice__body p:last-child { margin-bottom: 0; }
+.glass-advice__step { padding-left: 1.1em; text-indent: -1.1em; }
 .glass-advice__foot {
   display: flex;
   justify-content: space-between;
@@ -235,7 +241,14 @@
 .cluster-hero__main { flex: 1; min-width: 0; }
 .cluster-hero__title { font-size: 22px; font-weight: 700; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .cluster-hero__sub { font-size: 13px; opacity: 0.92; margin-top: 4px; }
-.cluster-hero__stats { display: flex; gap: 28px; margin-top: 16px; flex-wrap: wrap; }
+.cluster-hero__stats { display: flex; gap: 28px; margin-top: 4px; flex-wrap: wrap; }
+.cluster-hero__summary {
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.7;
+}
 .cluster-hero__stat { display: flex; flex-direction: column; gap: 2px; }
 .cluster-hero__stat-val { font-size: 26px; font-weight: 700; line-height: 1.1; font-feature-settings: "tnum"; }
 .cluster-hero__stat-label { font-size: 12px; opacity: 0.88; }
@@ -245,7 +258,7 @@
 }
 .mode-explainer {
   background: rgba(255,255,255,0.12); border-radius: 8px; padding: 10px 14px;
-  margin-top: 14px; font-size: 12px; line-height: 1.6;
+  margin-top: 0; font-size: 12px; line-height: 1.6;
 }
 .mode-explainer b { color: #FFE7A0; }
 .hero-mode-badge {

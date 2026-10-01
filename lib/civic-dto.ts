@@ -118,6 +118,7 @@ export function toClusterDto(theme: {
   firstAt?: Date | string | null;
   lastAt?: Date | string | null;
   recommendedAction?: string | null;
+  aiSummary?: string | null;
   riskReason?: string | null;
   riskLevel?: string | null;
   features?: Array<{ name: string; pct: number; desc: string }> | null;
@@ -219,6 +220,7 @@ export function toClusterDto(theme: {
     mode_tagline: meta.tagline,
     mode_risk: theme.riskReason || meta.risk,
     mode_advice: theme.recommendedAction || "",
+    summary: theme.aiSummary || "",
     mode_color: meta.color,
     mode_icon: meta.icon,
     ai_confidence: theme.aiConfidence ?? null,
