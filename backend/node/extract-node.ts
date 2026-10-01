@@ -14,7 +14,7 @@ import {
 } from "../prompt";
 import { adminFromLocation, explicitAdmin } from "@/lib/admin-area";
 import { getRegionAliasMap, normalizeAliasesInText, resolveEntityAlias } from "@/lib/alias-dict";
-import { CATEGORY, canonicalizeCategory, canonicalizeTownship, getRegionVocabulary, type RegionVocabulary } from "@/lib/vocabulary";
+import { canonicalizeCategory, getRegionVocabulary, legalTownshipName, type RegionVocabulary } from "@/lib/vocabulary";
 import { verifyAndCanonicalizeTicketArea } from "./arbitrator-node";
 import { updateTaskProgress } from "@/lib/task-progress";
 import { getRegionDb } from "@/db/client";
@@ -24,7 +24,7 @@ import PQueue from "p-queue";
 import { anonymize, deanonymize } from "@civic/anonymizer";
 import { SystemOneEngine } from "@civic/system-one";
 import { LLM_TOKENS } from "@/lib/tokens";
-import { familyLabel, profileTicket } from "../ticket-profile";
+import { profileTicket } from "../ticket-profile";
 
 export const LOW_CONFIDENCE_THRESHOLD = 60;
 
@@ -52,9 +52,10 @@ async function extractBatchWithLLM(
   tickets: RawTicket[],
   startIndex: number,
   vocab?: RegionVocabulary
-): Promise<Map<number, ExtractedTicketItem>> {
+): Promise<{ items: Map<number, ExtractedTicketItem>; fromLlm: Set<number> }> {
   const result = new Map<number, ExtractedTicketItem>();
-  if (tickets.length === 0) return result;
+  const fromLlm = new Set<number>();
+  if (tickets.length === 0) return { items: result, fromLlm };
 
   // 1. 建立本批工单的本地脱敏 Keymap 映射，用于大模型抽取结果的确定性实体还原
   const keymapByIndex = new Map<number, Record<string, string>>();
@@ -97,10 +98,12 @@ async function extractBatchWithLLM(
     if (data && Array.isArray(data.items)) {
       for (const item of data.items) {
         if (item && typeof item.index === "number") {
-          result.set(startIndex + item.index - 1, sanitizeItem(item));
+          const key = startIndex + item.index - 1;
+          result.set(key, sanitizeItem(item));
+          fromLlm.add(key);
         }
       }
-      if (result.size > 0) return result;
+      if (result.size > 0) return { items: result, fromLlm };
     }
   } catch (err: any) {
     console.warn(`[extract-node] System-2 extraction batch error at index ${startIndex}:`, err.message);
@@ -114,7 +117,7 @@ async function extractBatchWithLLM(
     }
   });
 
-  return result;
+  return { items: result, fromLlm };
 }
 
 /**
@@ -227,6 +230,7 @@ export async function extractNode(
         ticket.systemOneSlaHours = decision.slaHours;
         ticket.systemOneStabilityRisk = decision.stabilityRisk;
         ticket.systemOneConfidence = decision.categoryProbability;
+        ticket.systemOneTownship = decision.township;
         ticket.urgency = decision.stabilityRisk || decision.urgencyLevel === 3
           ? "URGENT"
           : decision.urgencyLevel === 2
@@ -234,7 +238,6 @@ export async function extractNode(
           : "NORMAL";
 
         const profile = profileTicket(ticket, regionVocab.townships);
-        if (profile.urgent) ticket.urgency = "URGENT";
 
         if (decision.stabilityRisk) {
           stabilityAlertCount++;
@@ -243,7 +246,7 @@ export async function extractNode(
         // 已能判定事件类型的诉求走正常抽取，避免咨询/催办直通把主体和类别盖掉。
         const isFastTrackIntent = decision.intent === "INQUIRY" || decision.intent === "REMINDER";
         if (!profile.family && isFastTrackIntent && decision.intentProbability >= 0.80 && !extractionMap.has(i)) {
-          const targetCategory = canonicalizeCategory(decision.categoryName) || CATEGORY.URBAN_MANAGEMENT;
+          const targetCategory = canonicalizeCategory(decision.categoryName) || decision.categoryName;
           const eventType = `${decision.categoryName}${decision.intent === "INQUIRY" ? "政策咨询" : "工单催办"}`;
           const summarizeTitle =
             ticket.title ||
@@ -336,13 +339,18 @@ export async function extractNode(
     });
   }
 
+  const llmTicketIndexes = new Set<number>();
   for (let p = 0; p < pendingIdx.length; p += CHUNK_SIZE) {
     const idxs = pendingIdx.slice(p, p + CHUNK_SIZE);
     const chunk = idxs.map((i) => normalizedRawTickets[i]);
     const indexMap = idxs;
     chunkTasks.push(async () => {
       const packed = await extractBatchWithLLM(chunk, 0, regionVocab);
-      packed.forEach((val, packedIdx) => {
+      packed.fromLlm.forEach((packedIdx) => {
+        const key = indexMap[packedIdx];
+        if (key !== undefined) llmTicketIndexes.add(key);
+      });
+      packed.items.forEach((val, packedIdx) => {
         const key = indexMap[packedIdx];
         if (key === undefined) return;
         extractionMap.set(key, val);
@@ -392,21 +400,17 @@ export async function extractNode(
 
   // 3. 构建富化工单并执行最终标准词汇表与别名规范化映射
   const enrichedTickets: EnrichedTicket[] = normalizedRawTickets.map((ticket, index) => {
-    const profile = profileTicket(ticket, regionVocab.townships);
     const fallback = fallbackDynamicExtraction(ticket);
     const aiExtracted = extractionMap.get(index);
     const summarizeTitle = aiExtracted?.summarizeTitle || ticket.summarizeTitle || fallback.summarizeTitle;
-    const rawSubject = aiExtracted?.subject || fallback.subject;
-    const resolvedSubject = resolveEntityAlias(rawSubject, aliasMap);
-    const genericSubject = /^(涉事方|咨询市民|催办诉求人|商家|相关主体|商铺|店铺)$/;
-    const canonicalSubject =
-      profile.subject && genericSubject.test((resolvedSubject || "").trim())
-        ? profile.subject
-        : resolvedSubject;
-    const rawLocation = profile.place || aiExtracted?.location || fallback.location;
-    const eventType = familyLabel(profile.family) || aiExtracted?.eventType || fallback.eventType;
-    // 类别只认规则画像。对不上家族就留空，不用模型补类。
-    const category = profile.category || "";
+    const rawSubject = (aiExtracted?.subject || "").trim() || fallback.subject;
+    const canonicalSubject = resolveEntityAlias(rawSubject, aliasMap);
+    const rawLocation = (aiExtracted?.location || "").trim() || fallback.location;
+    const eventType = (aiExtracted?.eventType || "").trim() || fallback.eventType;
+    const category =
+      canonicalizeCategory(ticket.systemOneCategory) ||
+      canonicalizeCategory(aiExtracted?.category) ||
+      "";
     const confidence =
       typeof aiExtracted?.confidence === "number"
         ? aiExtracted.confidence
@@ -414,11 +418,13 @@ export async function extractNode(
 
     const canonicalLocation = resolveEntityAlias(rawLocation, aliasMap);
     const area = adminFromLocation(canonicalLocation, ticket);
+    const fromLlm = llmTicketIndexes.has(index);
+    const modelTown =
+      legalTownshipName(ticket.systemOneTownship, regionVocab) ||
+      legalTownshipName(fromLlm ? aiExtracted?.location : ticket.address, regionVocab);
     const subdistrict =
-      canonicalizeTownship(ticket.subdistrict, regionVocab) ||
-      profile.township ||
-      canonicalizeTownship(area.subdistrict, regionVocab) ||
-      undefined;
+      modelTown ||
+      (fromLlm ? undefined : legalTownshipName(ticket.subdistrict, regionVocab) || undefined);
 
     return {
       ...ticket,
@@ -426,7 +432,7 @@ export async function extractNode(
       subdistrict,
       sourceCategory: category || undefined,
       address: canonicalLocation || ticket.address,
-      urgency: profile.urgent ? "URGENT" : ticket.urgency,
+      urgency: ticket.urgency,
       summarizeTitle,
       confidence,
       canonicalSubject,

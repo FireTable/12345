@@ -8,6 +8,7 @@ import { vocabulariesTable } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import fs from "fs";
 import path from "path";
+import { parseAdminArea } from "@/lib/admin-area";
 
 export interface TownshipInfo {
   name: string; // 简写，如 "大良" 或 "琶洲"
@@ -315,6 +316,43 @@ export function isValidTownship(name?: string | null, vocab?: RegionVocabulary):
     if (clean.includes(t.fullName) || clean.includes(t.name)) return true;
     return t.aliases.some((a) => clean.includes(a)) || t.communities.some((c) => clean.includes(c));
   });
+}
+
+const EMPTY_MODEL_TOWNSHIP = new Set([
+  "UNKNOWN",
+  "未知",
+  "未归属镇街",
+  "未归属",
+  "未指定",
+  "本区",
+]);
+
+function exactTownshipName(name: string, vocab: RegionVocabulary): string | null {
+  const clean = name.trim();
+  if (!clean || EMPTY_MODEL_TOWNSHIP.has(clean)) return null;
+  for (const town of vocab.townships) {
+    if (town.fullName === clean || town.name === clean || (town.aliases || []).includes(clean)) {
+      return town.fullName;
+    }
+  }
+  return null;
+}
+
+/**
+ * 模型已经写出的镇街。只认当前城市的法定全称、简称或别名，以及地点里的「镇 / 街道」结构。
+ * 社区和地标不参与，避免模型没写镇街时被词典猜一个。
+ */
+export function legalTownshipName(text?: string | null, vocab?: RegionVocabulary): string | null {
+  const target = vocab || loadPresetVocabulary("shunde");
+  const raw = (text || "").trim();
+  if (!raw || EMPTY_MODEL_TOWNSHIP.has(raw)) return null;
+
+  const exact = exactTownshipName(raw, target);
+  if (exact) return exact;
+
+  const parsed = parseAdminArea(raw).subdistrict;
+  if (!parsed || parsed === raw) return null;
+  return exactTownshipName(parsed, target);
 }
 
 /**

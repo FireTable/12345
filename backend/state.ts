@@ -48,6 +48,7 @@ export interface RawTicket {
   systemOneSlaHours?: number;
   systemOneStabilityRisk?: boolean;
   systemOneConfidence?: number;
+  systemOneTownship?: string;
   isSystemOneFastTrack?: boolean;
 }
 

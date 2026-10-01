@@ -52,6 +52,9 @@ export function evaluateIncrementalTicket(
     },
     townships
   );
+  incoming.township = newTicket.subdistrict || null;
+  incoming.subject = newTicket.canonicalSubject || null;
+  incoming.place = newTicket.canonicalLocation || null;
 
   for (const theme of activeThemes) {
     if (theme.status === "DISMISSED") continue;

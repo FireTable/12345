@@ -15,6 +15,24 @@ import { updateTaskProgress } from "@/lib/task-progress";
 import { HANDLING_STATUS } from "@/lib/civic-dto";
 import { clusterIncidents, familyLabel, profileTicket } from "../ticket-profile";
 
+function majority(values: Array<string | null | undefined>): string | null {
+  const counts = new Map<string, number>();
+  for (const value of values) {
+    const text = (value || "").trim();
+    if (!text) continue;
+    counts.set(text, (counts.get(text) || 0) + 1);
+  }
+  let best: string | null = null;
+  let n = 0;
+  for (const [value, count] of counts) {
+    if (count > n) {
+      best = value;
+      n = count;
+    }
+  }
+  return best;
+}
+
 function safeParseDate(dateStr: string): Date {
   if (!dateStr) return new Date();
   const d1 = parse(dateStr, "yyyy-MM-dd HH:mm:ss", new Date());
@@ -49,19 +67,19 @@ export async function clusterNode(
   const regionVocab = await getRegionVocabulary(state.regionId);
   for (const ticket of enrichedTickets) {
     ticket.clusterId = undefined;
-    const profile = profileTicket(ticket, regionVocab.townships);
-    ticket.sourceCategory = profile.category || undefined;
-    ticket.themes = profile.category ? [profile.category] : [];
-    if (profile.township) ticket.subdistrict = profile.township;
-    if (profile.subject) ticket.canonicalSubject = profile.subject;
-    if (profile.place) ticket.canonicalLocation = profile.place;
-    if (profile.family) ticket.eventType = familyLabel(profile.family);
   }
 
   const themes: MultiFrequencyTheme[] = [];
-  const groups = clusterIncidents(enrichedTickets, (ticket) =>
-    profileTicket(ticket, regionVocab.townships)
-  );
+  const groups = clusterIncidents(enrichedTickets, (ticket) => {
+    const profile = profileTicket(ticket, regionVocab.townships);
+    return {
+      ...profile,
+      township: ticket.subdistrict || null,
+      category: (ticket.sourceCategory as typeof profile.category) || null,
+      subject: ticket.canonicalSubject || null,
+      place: ticket.canonicalLocation || null,
+    };
+  });
 
   for (const group of groups) {
     const tickets = [...group.members].sort(
@@ -74,15 +92,17 @@ export async function clusterNode(
       differenceInHours(safeParseDate(lastTime), safeParseDate(firstTime))
     );
     const themeId = `THEME-${themes.length + 1}`;
-    const eventType = familyLabel(group.family) || "同类诉求";
+    const eventType = majority(tickets.map((ticket) => ticket.eventType)) || familyLabel(group.family) || "同类诉求";
+    const township = majority(tickets.map((ticket) => ticket.subdistrict));
+    const category = majority(tickets.map((ticket) => ticket.sourceCategory)) || "";
     const anchor = !group.anchor || group.anchor === group.family ? eventType : group.anchor;
     const location = group.place
-      ? [group.township, group.place].filter(Boolean).join("")
-      : [group.township, anchor === eventType ? "" : anchor].filter(Boolean).join("") || anchor;
+      ? [township, group.place].filter(Boolean).join("")
+      : [township, anchor === eventType ? "" : anchor].filter(Boolean).join("") || anchor;
     const title =
       anchor === eventType
-        ? [group.township, eventType].filter(Boolean).join(" ")
-        : [group.township, anchor, eventType].filter(Boolean).join(" · ");
+        ? [township, eventType].filter(Boolean).join(" ")
+        : [township, anchor, eventType].filter(Boolean).join(" · ");
 
     tickets.forEach((ticket) => {
       ticket.clusterId = themeId;
@@ -117,7 +137,7 @@ export async function clusterNode(
       canonicalSubject: anchor,
       canonicalLocation: location,
       eventType,
-      category: group.category || "",
+      category,
       riskLevel,
       patternType,
       civicMode: civicModeFromPattern(patternType),

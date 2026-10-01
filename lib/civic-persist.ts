@@ -15,6 +15,7 @@ export type TicketAgentPatch = {
   confidence: number | null;
   summarizeTitle: string | null;
   primaryThemeId: string | null;
+  urgency: string | null;
 };
 
 export type ThemePersistRow = {
@@ -52,6 +53,7 @@ export const AGENT_TICKET_NULLS: TicketAgentPatch = {
   confidence: null,
   summarizeTitle: null,
   primaryThemeId: null,
+  urgency: null,
 };
 
 function parseThemeDate(value?: string | null): Date | null {
@@ -68,12 +70,13 @@ export function buildTicketAgentPatch(
   const themeId = opts?.themeId === undefined ? ticket.clusterId || ticket.primaryThemeId || null : opts.themeId;
   return {
     district: area.district,
-    subdistrict: area.subdistrict,
+    subdistrict: ticket.subdistrict || null,
     sourceCategory: ticket.themes?.[0] || ticket.sourceCategory || null,
     address: ticket.canonicalLocation || ticket.address || null,
     confidence: typeof ticket.confidence === "number" ? ticket.confidence : null,
     summarizeTitle: ticket.summarizeTitle || null,
     primaryThemeId: themeId,
+    urgency: ticket.urgency || null,
   };
 }
 
