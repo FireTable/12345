@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ChevronDown, MessageCircle, User, LogOut, Film } from "lucide-react";
+import { ChevronDown, MessageCircle, User, LogOut, Film, Sparkles } from "lucide-react";
 import { useCivicWorkflow } from "./civic-workflow";
 import { NAV_ITEMS } from "./nav-items";
 import { authClient } from "@/lib/auth/client";
@@ -155,15 +155,21 @@ export function CivicNav() {
     <>
     <nav className="navbar">
       <div className="navbar__brand" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-        <Link href="/" style={{ display: "flex", alignItems: "center", textDecoration: "none", color: "inherit" }}>
-          <div className="brand-logo">民声智理</div>
+        <Link href="/" style={{ display: "flex", alignItems: "center", textDecoration: "none", color: "inherit" }} title="民声智理 · 12345 AI 智能研判系统">
+          <div className="brand-morph-capsule">
+            <span className="brand-morph-icon">
+              <Sparkles size={13} />
+            </span>
+            <span className="brand-morph-viewport">
+              <span className="brand-morph-roller">
+                <span className="brand-morph-item">民声智理</span>
+                <span className="brand-morph-item brand-morph-item--sub">12345 AI 研判</span>
+                <span className="brand-morph-item">民声智理</span>
+              </span>
+            </span>
+          </div>
         </Link>
         <RegionSelector />
-        <Link href="/" style={{ display: "flex", alignItems: "center", textDecoration: "none", color: "inherit" }}>
-          <span className="brand-text-full">
-            12345 AI 智能研判系统
-          </span>
-        </Link>
       </div>
 
       {isLoginPage ? (

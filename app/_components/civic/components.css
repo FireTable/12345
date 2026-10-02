@@ -38,6 +38,99 @@
   letter-spacing: 0.6px; box-shadow: 0 2px 6px rgba(22,119,255,0.3);
   line-height: 1;
 }
+
+/* ============== 灵动双态微胶囊 (方案 1) ============== */
+.brand-morph-capsule {
+  height: 28px;
+  padding: 0 10px 0 8px;
+  background: linear-gradient(135deg, #1677FF 0%, #0958D9 50%, #3B82F6 100%);
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  box-shadow: 0 2px 8px rgba(22, 119, 255, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  line-height: 28px;
+  user-select: none;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  position: relative;
+}
+
+.brand-morph-capsule:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(22, 119, 255, 0.4);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.brand-morph-capsule:hover .brand-morph-roller {
+  animation-play-state: paused;
+}
+
+.brand-morph-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #BAE0FF;
+  animation: brandSparkle 3s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.brand-morph-viewport {
+  height: 28px;
+  line-height: 28px;
+  overflow: hidden;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.brand-morph-roller {
+  display: flex;
+  flex-direction: column;
+  animation: brandRoll 7s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+
+.brand-morph-item {
+  height: 28px;
+  line-height: 28px;
+  white-space: nowrap;
+  display: block;
+}
+
+.brand-morph-item--sub {
+  color: #E6F4FF;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+@keyframes brandRoll {
+  0%, 42% {
+    transform: translateY(0);
+  }
+  48%, 92% {
+    transform: translateY(-28px);
+  }
+  98%, 100% {
+    transform: translateY(-56px);
+  }
+}
+
+@keyframes brandSparkle {
+  0%, 100% {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15) rotate(6deg);
+    color: #FFFFFF;
+  }
+}
 .navbar__menu {
   display: flex; gap: var(--s-2);
   margin-left: var(--s-8);
