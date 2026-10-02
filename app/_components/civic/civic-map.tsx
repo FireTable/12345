@@ -153,9 +153,9 @@ export function CivicMap({
           const townColor = getTownshipColor(name);
           return {
             fillColor: townColor,
-            fillOpacity: isSelected ? 0.65 : count > 0 ? 0.42 : 0.28,
-            color: isSelected ? "#0F172A" : townColor, // 边框跟随镇街专属色，清晰立体
-            weight: isSelected ? 2.5 : 1.5,           // 默认 1.5px 纤细精致边框
+            fillOpacity: isSelected ? 0.32 : 0.18, // 柔和空灵通透度，绝不遮挡底图道路水系
+            color: townColor,                      // 绝不使用突兀黑边，始终保持专属纯净色彩
+            weight: isSelected ? 2.0 : 1.2,        // 纤细精致线条 (默认 1.2px，选中 2.0px)
             dashArray: isSelected ? "" : "4, 2",
             lineJoin: "round",
           };
@@ -231,9 +231,9 @@ export function CivicMap({
             mouseover: (e: any) => {
               const l = e.target;
               l.setStyle({
-                weight: 2,          // 精准控制在 2px
-                color: isSelected ? "#0F172A" : townColor,
-                fillOpacity: 0.65,  // hover 时加深该镇街的专属色彩
+                weight: 1.8,         // 悬停时仅微增至 1.8px
+                color: townColor,    // 保持同色系，不跳出黑边
+                fillOpacity: 0.30,   // 轻微加深至 0.30，轻盈通透
                 dashArray: "",
               });
               if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) {
