@@ -1675,12 +1675,17 @@
   box-shadow: 0 6px 16px rgba(15, 23, 42, 0.22) !important;
 }
 
-/* 禁用 Leaflet 多边形点击时的浏览器原生黑色 focus 描边 */
+/* 禁用 Leaflet 多边形点击时的浏览器原生黑色 focus 描边，并彻底消除 zoom 缩放动画期间的描边放大 */
 path.leaflet-interactive,
 path.leaflet-interactive:focus,
-path.leaflet-interactive:active {
+path.leaflet-interactive:active,
+.leaflet-zoom-animated svg path,
+.leaflet-pane svg path {
   outline: none !important;
   box-shadow: none !important;
+  vector-effect: non-scaling-stroke !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
 }
 
 /* 镇街多边形板块几何正中央常驻胶囊徽标 */

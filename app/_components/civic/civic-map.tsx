@@ -141,9 +141,9 @@ export function CivicMap({
           if (isDistrictLevel) {
             return {
               fillColor: "#3B82F6",
-              fillOpacity: 0.12,
+              fillOpacity: 0.10,
               color: "#1E5AFF",
-              weight: 3,
+              weight: 1.5,
               dashArray: "4, 2",
               lineJoin: "round",
             };
@@ -153,20 +153,16 @@ export function CivicMap({
           const townColor = getTownshipColor(name);
           return {
             fillColor: townColor,
-            fillOpacity: isSelected ? 0.32 : 0.18, // 柔和空灵通透度，绝不遮挡底图道路水系
+            fillOpacity: isSelected ? 0.28 : 0.14, // 极通透空灵质感，底图道路水系一清二楚
             color: townColor,                      // 绝不使用突兀黑边，始终保持专属纯净色彩
-            weight: isSelected ? 2.0 : 1.2,        // 纤细精致线条 (默认 1.2px，选中 2.0px)
-            dashArray: isSelected ? "" : "4, 2",
+            weight: isSelected ? 1.6 : 1.0,        // 纤细精致线条 (默认 1.0px，选中 1.6px，绝不变粗)
+            dashArray: isSelected ? "" : "3, 2",
             lineJoin: "round",
           };
         },
         onEachFeature: (feature: any, layer: Layer) => {
           const name = feature?.properties?.name || activeRegion?.name || "本辖区";
           const count = isDistrictLevel ? totalTickets : (counts[name] || counts[`${name}街道`] || counts[`${name}镇`] || 0);
-          const clusters = isDistrictLevel
-            ? Object.values(clusterCounts).reduce((a, b) => a + b, 0)
-            : (clusterCounts[name] || clusterCounts[`${name}街道`] || clusterCounts[`${name}镇`] || 0);
-          const share = totalTickets > 0 ? ((count / totalTickets) * 100).toFixed(1) : "0.0";
           const townColor = getTownshipColor(name);
           const isSelected = selected === name || selected === `${name}街道` || selected === `${name}镇`;
 
@@ -191,7 +187,7 @@ export function CivicMap({
                 border: 1.5px solid ${isSelected ? "#FFFFFF" : townColor};
                 border-radius: 14px;
                 padding: 2px 7px;
-                box-shadow: ${isSelected ? `0 0 0 3px ${townColor}40, 0 3px 8px rgba(0,0,0,0.2)` : "0 2px 6px rgba(0,0,0,0.12)"};
+                box-shadow: ${isSelected ? `0 0 0 3px ${townColor}35, 0 3px 8px rgba(0,0,0,0.18)` : "0 2px 6px rgba(0,0,0,0.12)"};
                 user-select: none;
                 white-space: nowrap;
                 transform: translate3d(0, 0, 0);
@@ -231,9 +227,9 @@ export function CivicMap({
             mouseover: (e: any) => {
               const l = e.target;
               l.setStyle({
-                weight: 1.8,         // 悬停时仅微增至 1.8px
-                color: townColor,    // 保持同色系，不跳出黑边
-                fillOpacity: 0.30,   // 轻微加深至 0.30，轻盈通透
+                weight: 1.4,         // 悬停时仅微增至 1.4px
+                color: townColor,    // 保持同色系
+                fillOpacity: 0.24,   // 柔和微光加深至 0.24
                 dashArray: "",
               });
               if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) {
@@ -247,9 +243,6 @@ export function CivicMap({
               if (onSelect && !isDistrictLevel) {
                 const isSel = selected === name || selected === `${name}街道` || selected === `${name}镇`;
                 onSelect(isSel ? "" : name);
-              }
-              if (centerLatLng) {
-                map.flyTo([centerLatLng.lat, centerLatLng.lng], 13, { duration: 0.6 });
               }
             },
           });
@@ -265,26 +258,48 @@ export function CivicMap({
           map.fitBounds(bounds, { padding: [24, 24], maxZoom: 13 });
         }
       } catch (e) {}
-
-      // 3.2 若有选中项，平滑聚焦该区域板块正中央
-      if (selected) {
-        const selName = selected.replace(/(街道|镇)$/, "");
-        geoLayer.eachLayer((l: any) => {
-          const fName = l.feature?.properties?.name;
-          if (fName && (fName === selName || fName.includes(selName) || selName.includes(fName))) {
-            if (typeof l.getBounds === "function") {
-              const c = l.getBounds().getCenter();
-              map.flyTo([c.lat, c.lng], 13, { duration: 0.6 });
-            }
-          }
-        });
-      }
     });
 
     return () => {
       isMounted = false;
     };
-  }, [geoData, counts, clusterCounts, selected, maxCount, totalTickets, onSelect]);
+  }, [geoData, counts, clusterCounts, totalTickets, onSelect]);
+
+  // 4. 监听选中状态切换，就地更新多边形样式并平滑飞向该区域，绝不重建 DOM
+  useEffect(() => {
+    if (!geojsonLayerRef.current || !mapRef.current) return;
+    const geoLayer = geojsonLayerRef.current;
+    const map = mapRef.current;
+
+    // 4.1 动态更新样式
+    geoLayer.setStyle((feature: any) => {
+      const name = feature?.properties?.name || "";
+      const isSelected = selected === name || selected === `${name}街道` || selected === `${name}镇`;
+      const townColor = getTownshipColor(name);
+      return {
+        fillColor: townColor,
+        fillOpacity: isSelected ? 0.28 : 0.14,
+        color: townColor,
+        weight: isSelected ? 1.6 : 1.0,
+        dashArray: isSelected ? "" : "3, 2",
+        lineJoin: "round",
+      };
+    });
+
+    // 4.2 若有选中项，精准平滑飞入一次
+    if (selected) {
+      const selName = selected.replace(/(街道|镇)$/, "");
+      geoLayer.eachLayer((l: any) => {
+        const fName = l.feature?.properties?.name;
+        if (fName && (fName === selName || fName.includes(selName) || selName.includes(fName))) {
+          if (typeof l.getBounds === "function") {
+            const c = l.getBounds().getCenter();
+            map.flyTo([c.lat, c.lng], 13, { duration: 0.6 });
+          }
+        }
+      });
+    }
+  }, [selected]);
 
   const handleResetView = () => {
     if (onSelect) onSelect("");
