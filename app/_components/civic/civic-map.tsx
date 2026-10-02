@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState, useMemo } from "react";
 import type { Map as LeafletMap, GeoJSON as LeafletGeoJSON, Layer } from "leaflet";
 import { mapColorByShare } from "@/lib/civic-cluster";
 import { useRegion } from "./region-context";
-import { RefreshCw, ZoomIn, ZoomOut, Layers, Eye } from "lucide-react";
+import { RefreshCw, ZoomIn, ZoomOut, Layers, Eye, Map, Compass } from "lucide-react";
 
 export type CivicMapProps = {
   counts: Record<string, number>;
@@ -16,8 +16,35 @@ export type CivicMapProps = {
 };
 
 /**
+ * 重点城市区县下辖第四级法定乡镇/街道的精确行政经纬度坐标字典 (CGCS2000 / WGS84)
+ */
+const DEFAULT_TOWNSHIP_CENTERS: Record<string, Record<string, [number, number]>> = {
+  shunde: {
+    "陈村": [113.2212, 22.9911],
+    "北滘": [113.2155, 22.9480],
+    "乐从": [113.1038, 22.9455],
+    "龙江": [113.0570, 22.8614],
+    "伦教": [113.2395, 22.8807],
+    "勒流": [113.1498, 22.8559],
+    "大良": [113.2769, 22.8333],
+    "杏坛": [113.1144, 22.7878],
+    "容桂": [113.2555, 22.7820],
+    "均安": [113.1061, 22.7230],
+  },
+  tianhe: {
+    "猎德": [113.332, 23.118],
+    "冼村": [113.334, 23.131],
+    "石牌": [113.345, 23.135],
+    "天河南": [113.325, 23.135],
+    "天园": [113.365, 23.128],
+    "五山": [113.352, 23.158],
+    "棠下": [113.385, 23.132],
+    "车陂": [113.405, 23.125],
+  },
+};
+
+/**
  * 自动计算任意 GeoJSON Feature 或 Leaflet Layer 的几何行政中心点 (Centroid)
- * 无需任何写死的经纬度字典，支持任意区县/镇街自适应挂载徽标
  */
 function getFeatureCenter(feature: any, layer?: any): [number, number] | null {
   if (Array.isArray(feature?.properties?.center) && feature.properties.center.length === 2) {
@@ -57,44 +84,70 @@ export function CivicMap({
   const [loading, setLoading] = useState(true);
   const [geoData, setGeoData] = useState<any>(null);
 
+  // 两种方案一键切换：
+  // "overlay" -> 方案一：天地图底图自然实景 + 官方区县高精轮廓 + 镇街中心高亮徽标阵列
+  // "subdistricts" -> 方案二：第四级镇街独立多边形网格面 (Choropleth 各自填色)
+  const [mapMode, setMapMode] = useState<"overlay" | "subdistricts">("overlay");
+
   // 统计工单总量与最大值
   const values = Object.values(counts);
   const totalTickets = useMemo(() => values.reduce((a, b) => a + b, 0), [values]);
   const maxCount = useMemo(() => (values.length ? Math.max(...values) : 1), [values]);
 
-  // 1. 优先拉取当前站点在站点管理中心持久化保存的官方高精行政区划 GeoJSON 数据
+  const cleanRegionId = useMemo(() => {
+    return (activeRegion?.id || "fs_shunde").replace(/^(fs_|gz_|sz_)/, "");
+  }, [activeRegion?.id]);
+
+  // 1. 根据当前方案拉取对应 GeoJSON
   useEffect(() => {
     let cancelled = false;
     const regionId = activeRegion?.id || "fs_shunde";
 
-    fetch(`/api/regions/${regionId}/boundary`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((res) => {
-        if (cancelled) return;
-        if (res?.data?.geojson?.features) {
-          setGeoData(res.data.geojson);
-        } else {
-          // 若暂无专门数据，回退到本地官方标准 GeoJSON 资产
-          const cleanId = regionId.replace(/^(fs_|gz_|sz_)/, "");
-          fetch(`/civic/${regionId}-townships.geojson`)
-            .then((r) => (r.ok ? r.json() : fetch(`/civic/${cleanId}-townships.geojson`).then((r2) => (r2.ok ? r2.json() : null))))
-            .catch(() => null)
-            .then((fallback) => {
-              if (cancelled) return;
-              if (fallback && fallback.features) {
-                setGeoData(fallback);
-              }
-            });
-        }
-      })
-      .catch(() => {});
+    if (mapMode === "overlay") {
+      // 方案一：拉取官方国家自然资源部 CGCS2000 高精边界
+      fetch(`/api/regions/${regionId}/boundary`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((res) => {
+          if (cancelled) return;
+          if (res?.data?.geojson?.features) {
+            setGeoData(res.data.geojson);
+          } else {
+            fetch(`/civic/${cleanRegionId}-townships.geojson`)
+              .then((r) => (r.ok ? r.json() : null))
+              .then((fb) => {
+                if (cancelled) return;
+                if (fb?.features) setGeoData(fb);
+              });
+          }
+        })
+        .catch(() => {});
+    } else {
+      // 方案二：拉取第四级多镇街多边形面
+      fetch(`/civic/${cleanRegionId}-subdistricts.geojson`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (cancelled) return;
+          if (data?.features) {
+            setGeoData(data);
+          } else {
+            // 回退到 townships 兼容文件
+            fetch(`/civic/${cleanRegionId}-townships.geojson`)
+              .then((r) => (r.ok ? r.json() : null))
+              .then((fb) => {
+                if (cancelled) return;
+                if (fb?.features) setGeoData(fb);
+              });
+          }
+        })
+        .catch(() => {});
+    }
 
     return () => {
       cancelled = true;
     };
-  }, [activeRegion?.id]);
+  }, [activeRegion?.id, mapMode, cleanRegionId]);
 
-  // 2. 初始化天地图 GIS 底图
+  // 2. 初始化天地图 GIS 实景底图
   useEffect(() => {
     let isMounted = true;
 
@@ -112,12 +165,12 @@ export function CivicMap({
         maxZoom: 18,
       });
 
-      // 天地图矢量底图 (通过安全后端代理)
+      // 天地图矢量底图 (通过服务端安全代理)
       L.tileLayer("/api/map/tile?type=vec&z={z}&x={x}&y={y}", {
         maxZoom: 18,
       }).addTo(map);
 
-      // 天地图中文道路/注记
+      // 天地图中文道路/街道注记 (包含各镇街天然境界标注)
       L.tileLayer("/api/map/tile?type=cva&z={z}&x={x}&y={y}", {
         maxZoom: 18,
       }).addTo(map);
@@ -141,7 +194,7 @@ export function CivicMap({
     };
   }, [activeRegion?.id]);
 
-  // 3. 在真实地图上渲染行政区划 GeoJSON 边界多边形与数量胶囊徽标
+  // 3. 渲染 GeoJSON 与镇街徽标
   useEffect(() => {
     if (!mapRef.current || !geoData) return;
 
@@ -151,7 +204,7 @@ export function CivicMap({
       const L = module.default;
       const map = mapRef.current;
 
-      // 清除旧行政区划图层与徽标
+      // 清除旧图层与徽标
       if (geojsonLayerRef.current) {
         geojsonLayerRef.current.remove();
         geojsonLayerRef.current = null;
@@ -159,41 +212,53 @@ export function CivicMap({
       badgesLayerRef.current.forEach((b) => b.remove());
       badgesLayerRef.current = [];
 
-      // 3.1 绘制行政区域 GeoJSON 边界多边形面 (Choropleth 行政区划)
       const isDistrictLevel = geoData.features.length === 1;
 
+      // 3.1 绘制多边形面 (Choropleth 填色或高亮外边框)
       const geoLayer = L.geoJSON(geoData, {
         style: (feature: any) => {
           const name = feature?.properties?.name || "";
           const count = isDistrictLevel ? totalTickets : (counts[name] || counts[`${name}街道`] || counts[`${name}镇`] || 0);
           const isSelected = selected === name || selected === `${name}街道` || selected === `${name}镇`;
 
-          // 根据诉求量赋予半透明渐变热力色彩
-          const fillColor = count === 0 ? "#94A3B8" : mapColorByShare(count, isDistrictLevel ? count : maxCount);
+          if (isDistrictLevel) {
+            // 方案一（区县轮廓）：清透的半透明水蓝色底，配合清晰发光边界，让底图镇街道路清晰可见
+            return {
+              fillColor: "#3B82F6",
+              fillOpacity: 0.12,
+              color: "#1E5AFF",
+              weight: 3,
+              dashArray: "4, 2",
+              lineJoin: "round",
+            };
+          }
 
+          // 方案二（镇街独立分区块）：根据各自诉求量赋予热力梯度色彩
+          const fillColor = count === 0 ? "#94A3B8" : mapColorByShare(count, maxCount);
           return {
             fillColor,
-            fillOpacity: isSelected ? 0.65 : count > 0 ? 0.38 : 0.2,
+            fillOpacity: isSelected ? 0.65 : count > 0 ? 0.45 : 0.22,
             color: isSelected ? "#1E5AFF" : "#FFFFFF",
-            weight: isSelected ? 3.5 : 2,
-            dashArray: isSelected ? "" : "2, 1",
+            weight: isSelected ? 3.5 : 1.8,
+            dashArray: isSelected ? "" : "3, 2",
             lineJoin: "round",
           };
         },
         onEachFeature: (feature: any, layer: Layer) => {
           const name = feature?.properties?.name || activeRegion?.name || "本辖区";
           const count = isDistrictLevel ? totalTickets : (counts[name] || counts[`${name}街道`] || counts[`${name}镇`] || 0);
-          const clusters = isDistrictLevel ? Object.values(clusterCounts).reduce((a, b) => a + b, 0) : (clusterCounts[name] || clusterCounts[`${name}街道`] || clusterCounts[`${name}镇`] || 0);
+          const clusters = isDistrictLevel
+            ? Object.values(clusterCounts).reduce((a, b) => a + b, 0)
+            : (clusterCounts[name] || clusterCounts[`${name}街道`] || clusterCounts[`${name}镇`] || 0);
           const share = totalTickets > 0 ? ((count / totalTickets) * 100).toFixed(1) : "0.0";
 
-          // 悬停高亮与交互
           layer.on({
             mouseover: (e: any) => {
               const l = e.target;
               l.setStyle({
                 weight: 4,
                 color: "#1E5AFF",
-                fillOpacity: 0.55,
+                fillOpacity: isDistrictLevel ? 0.25 : 0.65,
                 dashArray: "",
               });
               if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) {
@@ -204,14 +269,14 @@ export function CivicMap({
               geoLayer.resetStyle(e.target);
             },
             click: () => {
-              if (onSelect) {
+              if (onSelect && !isDistrictLevel) {
                 const isSel = selected === name || selected === `${name}街道` || selected === `${name}镇`;
                 onSelect(isSel ? "" : name);
               }
             },
           });
 
-          // 悬浮 Tooltip 详细卡片
+          // Tooltip 详细卡片
           layer.bindTooltip(
             `
             <div style="font-family: ui-sans-serif, system-ui; font-size: 12px; padding: 4px 6px;">
@@ -234,7 +299,7 @@ export function CivicMap({
 
       geojsonLayerRef.current = geoLayer;
 
-      // 自动自适应视野包裹整个辖区行政多边形
+      // 自动自适应视野
       try {
         const bounds = geoLayer.getBounds();
         if (bounds.isValid()) {
@@ -242,14 +307,64 @@ export function CivicMap({
         }
       } catch (e) {}
 
-      // 3.2 在各行政几何中心自动挂载数量徽标 Badge (完全动态计算质心)
-      geoData.features.forEach((feature: any) => {
-        const name = feature?.properties?.name || activeRegion?.name || "全境";
-        const centerCoords = getFeatureCenter(feature);
-        if (!centerCoords) return;
+      // 3.2 收集需要挂载胶囊徽标的镇街项
+      const itemsToBadge: Array<{
+        name: string;
+        centerCoords: [number, number];
+        count: number;
+        clusters: number;
+      }> = [];
 
-        const count = isDistrictLevel ? totalTickets : (counts[name] || counts[`${name}街道`] || counts[`${name}镇`] || 0);
-        const clusters = isDistrictLevel ? Object.values(clusterCounts).reduce((a, b) => a + b, 0) : (clusterCounts[name] || clusterCounts[`${name}街道`] || clusterCounts[`${name}镇`] || 0);
+      if (isDistrictLevel) {
+        // 方案一：在官方区县实景底图上，根据预置镇街字典打出每一个第四级镇街的中心徽标！
+        const townMap = DEFAULT_TOWNSHIP_CENTERS[cleanRegionId] || {};
+        const townNames = Object.keys(townMap);
+
+        if (townNames.length > 0) {
+          townNames.forEach((tName) => {
+            const coords = townMap[tName];
+            const c = counts[tName] || counts[`${tName}街道`] || counts[`${tName}镇`] || 0;
+            const cl = clusterCounts[tName] || clusterCounts[`${tName}街道`] || clusterCounts[`${tName}镇`] || 0;
+            itemsToBadge.push({
+              name: tName,
+              centerCoords: coords,
+              count: c,
+              clusters: cl,
+            });
+          });
+        } else {
+          // Fallback 单个中心
+          const f = geoData.features[0];
+          const coords = getFeatureCenter(f);
+          if (coords) {
+            itemsToBadge.push({
+              name: activeRegion?.name || "全境",
+              centerCoords: coords,
+              count: totalTickets,
+              clusters: Object.values(clusterCounts).reduce((a, b) => a + b, 0),
+            });
+          }
+        }
+      } else {
+        // 方案二：第四级多边形面模式，为各个镇街独立挂载徽标
+        geoData.features.forEach((feature: any) => {
+          const name = feature?.properties?.name || "未知";
+          const coords = getFeatureCenter(feature);
+          if (!coords) return;
+          const c = counts[name] || counts[`${name}街道`] || counts[`${name}镇`] || 0;
+          const cl = clusterCounts[name] || clusterCounts[`${name}街道`] || clusterCounts[`${name}镇`] || 0;
+          itemsToBadge.push({
+            name,
+            centerCoords: coords,
+            count: c,
+            clusters: cl,
+          });
+        });
+      }
+
+      // 3.3 绘制各镇街中心胶囊徽标
+      itemsToBadge.forEach((item) => {
+        const { name, centerCoords, count, clusters } = item;
         const isSelected = selected === name || selected === `${name}街道` || selected === `${name}镇`;
 
         const badgeHtml = `
@@ -325,18 +440,19 @@ export function CivicMap({
           if (onSelect) {
             onSelect(isSelected ? "" : name);
           }
+          // 平滑飞行平移聚焦到该镇街
+          map.flyTo([centerCoords[1], centerCoords[0]], 13, { duration: 0.8 });
         });
 
         badgesLayerRef.current.push(badgeMarker);
       });
 
-      // 3.3 若有选中项，聚焦该区域
+      // 3.4 若有选中项，聚焦该区域
       if (selected) {
         const selName = selected.replace(/(街道|镇)$/, "");
-        const targetFeature = geoData.features.find((f: any) => f.properties?.name === selName);
-        if (targetFeature) {
-          const tempLayer = L.geoJSON(targetFeature);
-          map.fitBounds(tempLayer.getBounds(), { padding: [50, 50], maxZoom: 13, animate: true });
+        const targetBadge = itemsToBadge.find((b) => b.name === selName);
+        if (targetBadge) {
+          map.flyTo([targetBadge.centerCoords[1], targetBadge.centerCoords[0]], 13, { duration: 0.6 });
         }
       }
     });
@@ -344,7 +460,7 @@ export function CivicMap({
     return () => {
       isMounted = false;
     };
-  }, [geoData, counts, clusterCounts, selected, maxCount, totalTickets, onSelect]);
+  }, [geoData, counts, clusterCounts, selected, maxCount, totalTickets, onSelect, cleanRegionId, mapMode]);
 
   const handleResetView = () => {
     if (onSelect) onSelect("");
@@ -376,7 +492,7 @@ export function CivicMap({
     >
       <div ref={mapContainerRef} style={{ width: "100%", height: "100%", minHeight: 460, background: "#F1F5F9" }} />
 
-      {/* 顶部标题与选区筛选指示条 */}
+      {/* 顶部标题与选区指示 */}
       <div
         style={{
           position: "absolute",
@@ -408,7 +524,7 @@ export function CivicMap({
           <span>
             {selected
               ? `聚焦辖区：${selected}`
-              : `${activeRegion ? activeRegion.name : "全区"}行政区划热力透势 (GIS 实景底图)`}
+              : `${activeRegion ? activeRegion.name : "全区"}行政热力透势 (${mapMode === "overlay" ? "方案一：天地图底图+镇街透视" : "方案二：第四级多边形面"})`}
           </span>
           <span style={{ color: "#64748B", fontWeight: 400, marginLeft: 2 }}>
             ({totalTickets.toLocaleString()} 件诉求)
@@ -440,7 +556,71 @@ export function CivicMap({
         )}
       </div>
 
-      {/* 右侧缩放按钮 */}
+      {/* 顶部右侧方案切换开关 (方案一 vs 方案二 对比) */}
+      <div
+        style={{
+          position: "absolute",
+          top: 12,
+          right: 12,
+          zIndex: 800,
+          background: "rgba(255, 255, 255, 0.96)",
+          backdropFilter: "blur(6px)",
+          padding: "3px",
+          borderRadius: 20,
+          border: "1px solid #CBD5E1",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+          display: "flex",
+          alignItems: "center",
+          gap: 2,
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setMapMode("overlay")}
+          title="方案一：官方区县实景底图 + 第四级镇街中心徽标交互"
+          style={{
+            padding: "4px 10px",
+            borderRadius: 16,
+            fontSize: 11,
+            fontWeight: mapMode === "overlay" ? 700 : 500,
+            background: mapMode === "overlay" ? "#1E5AFF" : "transparent",
+            color: mapMode === "overlay" ? "#ffffff" : "#475569",
+            border: "none",
+            cursor: "pointer",
+            transition: "all 0.15s ease",
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+          }}
+        >
+          <Map style={{ width: 12, height: 12 }} />
+          <span>方案一：实景底图+镇街徽标</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setMapMode("subdistricts")}
+          title="方案二：第四级镇街独立多边形网格面填色"
+          style={{
+            padding: "4px 10px",
+            borderRadius: 16,
+            fontSize: 11,
+            fontWeight: mapMode === "subdistricts" ? 700 : 500,
+            background: mapMode === "subdistricts" ? "#1E5AFF" : "transparent",
+            color: mapMode === "subdistricts" ? "#ffffff" : "#475569",
+            border: "none",
+            cursor: "pointer",
+            transition: "all 0.15s ease",
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+          }}
+        >
+          <Layers style={{ width: 12, height: 12 }} />
+          <span>方案二：镇街多边形面</span>
+        </button>
+      </div>
+
+      {/* 右侧缩放控制按钮 */}
       <div
         style={{
           position: "absolute",
