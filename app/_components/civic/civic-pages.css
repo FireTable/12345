@@ -1675,4 +1675,16 @@
   box-shadow: 0 6px 16px rgba(15, 23, 42, 0.22) !important;
 }
 
+/* 镇街多边形板块几何正中央常驻胶囊徽标 */
+.civic-polygon-center-tooltip {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  pointer-events: none !important;
+}
+.civic-polygon-center-tooltip::before {
+  display: none !important;
+}
+
 
