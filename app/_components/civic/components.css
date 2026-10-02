@@ -39,60 +39,49 @@
   line-height: 1;
 }
 
-/* ============== 灵动双态微胶囊 (方案 1) ============== */
+/* ============== 灵动双态微徽标 (精益饱满版) ============== */
 .brand-morph-capsule {
   height: 28px;
-  padding: 0 10px 0 8px;
-  background: linear-gradient(135deg, #1677FF 0%, #0958D9 50%, #3B82F6 100%);
-  border-radius: 6px;
+  padding: 0 12px;
+  background: linear-gradient(135deg, #1677FF 0%, #0958D9 50%, #2563EB 100%);
+  border-radius: 5px;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
   color: #fff;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.4px;
-  box-shadow: 0 2px 8px rgba(22, 119, 255, 0.28);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 2px 8px rgba(9, 88, 217, 0.32);
+  border: 1px solid rgba(255, 255, 255, 0.22);
   line-height: 28px;
   user-select: none;
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
   position: relative;
+  text-align: center;
 }
 
 .brand-morph-capsule:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(22, 119, 255, 0.4);
-  border-color: rgba(255, 255, 255, 0.35);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 4px 12px rgba(22, 119, 255, 0.42);
+  border-color: rgba(255, 255, 255, 0.4);
 }
 
 .brand-morph-capsule:hover .brand-morph-roller {
   animation-play-state: paused;
 }
 
-.brand-morph-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: #BAE0FF;
-  animation: brandSparkle 3s ease-in-out infinite;
-  flex-shrink: 0;
-}
-
 .brand-morph-viewport {
   height: 28px;
   line-height: 28px;
   overflow: hidden;
-  display: inline-block;
-  vertical-align: middle;
+  display: block;
+  width: 100%;
 }
 
 .brand-morph-roller {
   display: flex;
   flex-direction: column;
-  animation: brandRoll 7s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+  animation: brandRoll 6.5s cubic-bezier(0.65, 0, 0.35, 1) infinite;
 }
 
 .brand-morph-item {
@@ -100,12 +89,19 @@
   line-height: 28px;
   white-space: nowrap;
   display: block;
+  font-size: 13.5px;
+  font-weight: 800;
+  letter-spacing: 1.4px;
+  text-shadow: 0 1px 2px rgba(0, 16, 50, 0.35);
+  text-align: center;
 }
 
 .brand-morph-item--sub {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
   color: #E6F4FF;
-  font-weight: 600;
-  letter-spacing: 0.2px;
+  text-shadow: 0 1px 2px rgba(0, 16, 50, 0.35);
 }
 
 @keyframes brandRoll {
@@ -117,18 +113,6 @@
   }
   98%, 100% {
     transform: translateY(-56px);
-  }
-}
-
-@keyframes brandSparkle {
-  0%, 100% {
-    opacity: 0.85;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.15) rotate(6deg);
-    color: #FFFFFF;
   }
 }
 .navbar__menu {
