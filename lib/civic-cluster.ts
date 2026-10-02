@@ -112,6 +112,105 @@ export function categoryColor(name: string): string {
   return "#86909C";
 }
 
+/**
+ * 通用镇街行政区划协调调色盘数组 (16 色高辨识度低饱和政务调色板)
+ */
+export const CIVIC_TOWNSHIP_PALETTE: string[] = [
+  "#1E5AFF", // 0. 科技蓝 (大良)
+  "#722ED1", // 1. 雅致紫 (容桂)
+  "#08979C", // 2. 青碧 (伦教)
+  "#2F54EB", // 3. 极客深蓝 (勒流)
+  "#FA8C16", // 4. 活力橙 (北滘)
+  "#52C41A", // 5. 生态绿 (陈村)
+  "#EB2F96", // 6. 胭脂红 (乐从)
+  "#D46B08", // 7. 琥珀棕 (龙江)
+  "#1890FF", // 8. 明净天蓝 (杏坛)
+  "#7CB305", // 9. 青柠绿 (均安)
+  "#13C2C2", // 10. 薄荷绿
+  "#9254DE", // 11. 鸢尾紫
+  "#FA541C", // 12. 暖朱红
+  "#36CFC9", // 13. 浅湖蓝
+  "#F759AB", // 14. 樱花粉
+  "#A0D911", // 15. 嫩草绿
+];
+
+/**
+ * 标准法定重点城市镇街指定色彩对照表 (与数据字典完全统一)
+ */
+export const KNOWN_TOWNSHIP_COLORS: Record<string, string> = {
+  // 顺德区 10 大法定镇街
+  "大良": "#1E5AFF",
+  "大良街道": "#1E5AFF",
+  "容桂": "#722ED1",
+  "容桂街道": "#722ED1",
+  "伦教": "#08979C",
+  "伦教街道": "#08979C",
+  "勒流": "#2F54EB",
+  "勒流街道": "#2F54EB",
+  "北滘": "#FA8C16",
+  "北滘镇": "#FA8C16",
+  "陈村": "#52C41A",
+  "陈村镇": "#52C41A",
+  "乐从": "#EB2F96",
+  "乐从镇": "#EB2F96",
+  "龙江": "#D46B08",
+  "龙江镇": "#D46B08",
+  "杏坛": "#1890FF",
+  "杏坛镇": "#1890FF",
+  "均安": "#7CB305",
+  "均安镇": "#7CB305",
+
+  // 广州市天河区主要街道映射
+  "猎德": "#722ED1",
+  "猎德街道": "#722ED1",
+  "天园": "#1E5AFF",
+  "天园街道": "#1E5AFF",
+  "石牌": "#FA8C16",
+  "石牌街道": "#FA8C16",
+  "五山": "#52C41A",
+  "五山街道": "#52C41A",
+  "冼村": "#08979C",
+  "冼村街道": "#08979C",
+  "林和": "#2F54EB",
+  "林和街道": "#2F54EB",
+  "天河南": "#1890FF",
+  "天河南街道": "#1890FF",
+  "棠下": "#EB2F96",
+  "棠下街道": "#EB2F96",
+  "员村": "#D46B08",
+  "员村街道": "#D46B08",
+  "车陂": "#7CB305",
+  "车陂街道": "#7CB305",
+};
+
+/**
+ * 统一获取镇街的专属法定色彩（单一事实来源 SSOT）
+ * 1. 优先从 KNOWN_TOWNSHIP_COLORS 精确对照表读取
+ * 2. 否则通过字符串确定性哈希均匀映射到 CIVIC_TOWNSHIP_PALETTE 调色盘
+ */
+export function getTownshipColor(name?: string | null): string {
+  if (!name) return "#1E5AFF";
+  const raw = name.trim();
+  const short = raw.replace(/(街道|镇|办事处)$/, "");
+
+  if (KNOWN_TOWNSHIP_COLORS[raw]) return KNOWN_TOWNSHIP_COLORS[raw];
+  if (KNOWN_TOWNSHIP_COLORS[short]) return KNOWN_TOWNSHIP_COLORS[short];
+
+  // 模糊匹配已知项
+  for (const [k, c] of Object.entries(KNOWN_TOWNSHIP_COLORS)) {
+    if (raw.includes(k) || k.includes(raw)) return c;
+  }
+
+  // Hash 算法映射到统一调色盘，保证同一镇街颜色绝对稳定且互不相同
+  let hash = 0;
+  for (let i = 0; i < raw.length; i++) {
+    hash = (hash << 5) - hash + raw.charCodeAt(i);
+    hash |= 0;
+  }
+  const idx = Math.abs(hash) % CIVIC_TOWNSHIP_PALETTE.length;
+  return CIVIC_TOWNSHIP_PALETTE[idx];
+}
+
 export interface CategoryVisual {
   color: string;
   bg: string;

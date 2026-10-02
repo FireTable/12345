@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import type { Map as LeafletMap, GeoJSON as LeafletGeoJSON, Layer } from "leaflet";
-import { mapColorByShare } from "@/lib/civic-cluster";
+import { mapColorByShare, getTownshipColor } from "@/lib/civic-cluster";
 import { useRegion } from "./region-context";
 import { RefreshCw, ZoomIn, ZoomOut } from "lucide-react";
 
@@ -212,12 +212,12 @@ export function CivicMap({
             };
           }
 
-          // 镇街独立分区块：根据各自诉求量赋予热力梯度色彩
-          const fillColor = count === 0 ? "#94A3B8" : mapColorByShare(count, maxCount);
+          // 镇街独立分区块：统一使用标准镇街专属色彩 (SSOT 单一事实来源)
+          const townColor = getTownshipColor(name);
           return {
-            fillColor,
-            fillOpacity: isSelected ? 0.55 : count > 0 ? 0.38 : 0.18,
-            color: isSelected ? "#1E40AF" : "#2563EB", // 采用高辨识度的深蓝边界，替代原隐形且不易辨识的白色
+            fillColor: townColor,
+            fillOpacity: isSelected ? 0.65 : count > 0 ? 0.42 : 0.28,
+            color: isSelected ? "#0F172A" : townColor, // 边框跟随镇街专属色，清晰立体
             weight: isSelected ? 2.5 : 1.5,           // 默认 1.5px 纤细精致边框
             dashArray: isSelected ? "" : "4, 2",
             lineJoin: "round",
@@ -230,14 +230,16 @@ export function CivicMap({
             ? Object.values(clusterCounts).reduce((a, b) => a + b, 0)
             : (clusterCounts[name] || clusterCounts[`${name}街道`] || clusterCounts[`${name}镇`] || 0);
           const share = totalTickets > 0 ? ((count / totalTickets) * 100).toFixed(1) : "0.0";
+          const townColor = getTownshipColor(name);
+          const isSelected = selected === name || selected === `${name}街道` || selected === `${name}镇`;
 
           layer.on({
             mouseover: (e: any) => {
               const l = e.target;
               l.setStyle({
-                weight: 2,          // 精准控制在 2px，告别过粗边框
-                color: "#1E40AF",   // 深邃高饱和聚焦蓝
-                fillOpacity: 0.5,   // 柔和半透明高亮，不遮挡底图道路注记
+                weight: 2,          // 精准控制在 2px
+                color: isSelected ? "#0F172A" : townColor,
+                fillOpacity: 0.65,  // hover 时加深该镇街的专属色彩
                 dashArray: "",
               });
               if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) {
@@ -346,6 +348,7 @@ export function CivicMap({
         const { name, centerCoords, count, clusters } = item;
         const isSelected = selected === name || selected === `${name}街道` || selected === `${name}镇`;
 
+        const townColor = getTownshipColor(name);
         const badgeHtml = `
           <div style="
             position: relative;
@@ -358,22 +361,29 @@ export function CivicMap({
             <div style="
               display: flex;
               align-items: center;
-              gap: 4px;
-              background: ${isSelected ? "#1E5AFF" : "#FFFFFF"};
-              border: 1.5px solid ${isSelected ? "#FFFFFF" : "#CBD5E1"};
+              gap: 5px;
+              background: ${isSelected ? townColor : "#FFFFFF"};
+              border: 1.5px solid ${isSelected ? "#FFFFFF" : townColor};
               border-radius: 16px;
               padding: 2px 7px;
-              box-shadow: ${isSelected ? "0 0 0 3px rgba(30, 90, 255, 0.35)" : "none"};
+              box-shadow: ${isSelected ? `0 0 0 3px ${townColor}40` : "0 2px 5px rgba(0,0,0,0.12)"};
               white-space: nowrap;
             ">
+              <span style="
+                display: inline-block;
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+                background: ${isSelected ? "#FFFFFF" : townColor};
+              "></span>
               <span style="
                 font-weight: 700;
                 font-size: 11px;
                 color: ${isSelected ? "#FFFFFF" : "#0F172A"};
               ">${name}</span>
               <span style="
-                background: ${isSelected ? "#FFFFFF" : count > maxCount * 0.5 ? "#F53F3F" : "#1E5AFF"};
-                color: ${isSelected ? "#1E5AFF" : "#FFFFFF"};
+                background: ${isSelected ? "#FFFFFF" : count > 0 ? townColor : "#94A3B8"};
+                color: ${isSelected ? townColor : "#FFFFFF"};
                 font-weight: 800;
                 font-size: 10px;
                 padding: 1px 5px;
@@ -447,13 +457,6 @@ export function CivicMap({
       mapRef.current.fitBounds(geojsonLayerRef.current.getBounds(), { padding: [20, 20], animate: true });
     }
   };
-
-  const legend = [
-    { color: "#F53F3F", label: `高热 (≥${Math.round(maxCount * 0.75)})` },
-    { color: "#FF7D00", label: `中高 (≥${Math.round(maxCount * 0.45)})` },
-    { color: "#1E5AFF", label: `一般 (≥${Math.round(maxCount * 0.2)})` },
-    { color: "#14C9C9", label: `平稳 (<${Math.round(maxCount * 0.2)})` },
-  ];
 
   return (
     <div
@@ -589,34 +592,29 @@ export function CivicMap({
         </button>
       </div>
 
-      {/* 底部热力分级图例 */}
+      {/* 底部行政网格图例 */}
       <div
         style={{
           position: "absolute",
           left: 12,
           bottom: 10,
           zIndex: 800,
-          background: "rgba(255, 255, 255, 0.92)",
-          backdropFilter: "blur(4px)",
-          padding: "4px 10px",
-          borderRadius: 8,
-          border: "1px solid #E2E8F0",
+          background: "rgba(255, 255, 255, 0.94)",
+          backdropFilter: "blur(6px)",
+          padding: "5px 12px",
+          borderRadius: 20,
+          border: "1px solid #CBD5E1",
+          boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
           display: "flex",
           alignItems: "center",
-          gap: 10,
+          gap: 8,
           fontSize: 11,
           color: "#475569",
         }}
       >
-        <span style={{ fontWeight: 600 }}>诉求密度:</span>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {legend.map((l) => (
-            <div key={l.color} style={{ display: "flex", alignItems: "center", gap: 3 }}>
-              <span style={{ width: 8, height: 8, borderRadius: 2, background: l.color }} />
-              <span style={{ fontSize: 10 }}>{l.label}</span>
-            </div>
-          ))}
-        </div>
+        <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#1E5AFF" }} />
+        <span style={{ fontWeight: 600, color: "#0F172A" }}>镇街网格:</span>
+        <span style={{ color: "#64748B" }}>法定专属区划色 · 悬停网格高亮 · 胶囊数字为诉求量</span>
       </div>
     </div>
   );

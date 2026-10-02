@@ -32,31 +32,16 @@ import { ConfirmDialog } from "@/app/_components/ui/confirm-dialog";
 import { TablePager } from "@/app/_components/civic/table-pager";
 import { useRegion } from "@/app/_components/civic/region-context";
 import { resolveApiError } from "@/lib/api-codes";
-import { categoryVisual } from "@/lib/civic-cluster";
+import { categoryVisual, getTownshipColor, KNOWN_TOWNSHIP_COLORS } from "@/lib/civic-cluster";
 import { CivicGeoMap, GeoPoint } from "@/app/_components/civic/civic-geo-map";
 
-const TOWNSHIP_COLORS: Record<string, string> = {
-  "大良": "#1E5AFF",
-  "大良街道": "#1E5AFF",
-  "容桂": "#722ED1",
-  "容桂街道": "#722ED1",
-  "伦教": "#08979C",
-  "伦教街道": "#08979C",
-  "勒流": "#2F54EB",
-  "勒流街道": "#2F54EB",
-  "北滘": "#FA8C16",
-  "北滘镇": "#FA8C16",
-  "陈村": "#52C41A",
-  "陈村镇": "#52C41A",
-  "乐从": "#EB2F96",
-  "乐从镇": "#EB2F96",
-  "龙江": "#D46B08",
-  "龙江镇": "#D46B08",
-  "杏坛": "#1890FF",
-  "杏坛镇": "#1890FF",
-  "均安": "#7CB305",
-  "均安镇": "#7CB305",
-};
+// 统一接入全局标准镇街色彩单一事实来源 (SSOT)
+const TOWNSHIP_COLORS: Record<string, string> = new Proxy(KNOWN_TOWNSHIP_COLORS, {
+  get: (target, prop: string) => {
+    if (typeof prop !== "string") return "#1E5AFF";
+    return getTownshipColor(prop);
+  },
+});
 
 interface TownshipItem {
   name: string;
