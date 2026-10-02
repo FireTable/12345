@@ -51,8 +51,7 @@ function LoginForm() {
         }
 
         toast.success("登录成功，正在进入系统...");
-        router.replace(from);
-        router.refresh();
+        window.location.href = from;
       } catch (err: any) {
         const msg = err?.message || "网络异常，登录失败";
         setErrorMessage(msg);

@@ -6,7 +6,7 @@ import { useRegion } from "./region-context";
 import { MapPin, ChevronDown, Check, Settings } from "lucide-react";
 
 export function RegionSelector() {
-  const { activeRegion, regions, switchRegion } = useRegion();
+  const { activeRegion, regions, switchRegion, isLoading } = useRegion();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -24,7 +24,30 @@ export function RegionSelector() {
     };
   }, [open]);
 
-  if (!activeRegion) return null;
+  if (!activeRegion) {
+    if (isLoading) {
+      return (
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "6px",
+            height: "28px",
+            padding: "0 10px",
+            backgroundColor: "#F1F5F9",
+            border: "1px solid #CBD5E1",
+            borderRadius: "6px",
+            fontSize: "12px",
+            color: "#64748B",
+          }}
+        >
+          <MapPin style={{ width: "13px", height: "13px", color: "#94A3B8" }} />
+          <span>加载辖区...</span>
+        </div>
+      );
+    }
+    return null;
+  }
 
   return (
     <div className="relative inline-block text-left" ref={containerRef} style={{ position: "relative" }}>

@@ -1,6 +1,7 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { usePathname } from "next/navigation";
 import { toast } from "sonner";
 
 export interface RegionInfo {
@@ -32,8 +33,17 @@ export function RegionProvider({ children }: { children: React.ReactNode }) {
   const [activeRegion, setActiveRegion] = useState<RegionInfo | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  const fetchRegions = async () => {
+  const pathname = usePathname();
+
+  const fetchRegions = useCallback(async () => {
+    // 登录页不触发，等登录成功后再拉取
+    if (pathname === "/login") {
+      setIsLoading(false);
+      return;
+    }
+
     try {
+      setIsLoading(true);
       const res = await fetch("/api/regions");
       if (res.status === 401) {
         if (typeof window !== "undefined" && window.location.pathname !== "/login") {
@@ -63,11 +73,14 @@ export function RegionProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [pathname]);
 
+  // 初次加载与路由切换监控：一旦离开 /login 且无站点数据，立即重新拉取
   useEffect(() => {
-    fetchRegions();
-  }, []);
+    if (pathname !== "/login") {
+      fetchRegions();
+    }
+  }, [pathname, fetchRegions]);
 
   const switchRegion = (regionId: string) => {
     const target = regions.find((r) => r.id === regionId);
