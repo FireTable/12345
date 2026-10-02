@@ -212,14 +212,14 @@ export function CivicMap({
             };
           }
 
-          // 方案二（镇街独立分区块）：根据各自诉求量赋予热力梯度色彩
+          // 镇街独立分区块：根据各自诉求量赋予热力梯度色彩
           const fillColor = count === 0 ? "#94A3B8" : mapColorByShare(count, maxCount);
           return {
             fillColor,
-            fillOpacity: isSelected ? 0.65 : count > 0 ? 0.45 : 0.22,
-            color: isSelected ? "#1E5AFF" : "#FFFFFF",
-            weight: isSelected ? 3.5 : 1.8,
-            dashArray: isSelected ? "" : "3, 2",
+            fillOpacity: isSelected ? 0.55 : count > 0 ? 0.38 : 0.18,
+            color: isSelected ? "#1E40AF" : "#2563EB", // 采用高辨识度的深蓝边界，替代原隐形且不易辨识的白色
+            weight: isSelected ? 2.5 : 1.5,           // 默认 1.5px 纤细精致边框
+            dashArray: isSelected ? "" : "4, 2",
             lineJoin: "round",
           };
         },
@@ -235,9 +235,9 @@ export function CivicMap({
             mouseover: (e: any) => {
               const l = e.target;
               l.setStyle({
-                weight: 4,
-                color: "#1E5AFF",
-                fillOpacity: isDistrictLevel ? 0.25 : 0.65,
+                weight: 2,          // 精准控制在 2px，告别过粗边框
+                color: "#1E40AF",   // 深邃高饱和聚焦蓝
+                fillOpacity: 0.5,   // 柔和半透明高亮，不遮挡底图道路注记
                 dashArray: "",
               });
               if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) {
