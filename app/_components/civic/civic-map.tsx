@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState, useMemo } from "react";
 import type { Map as LeafletMap, GeoJSON as LeafletGeoJSON, Layer } from "leaflet";
 import { mapColorByShare } from "@/lib/civic-cluster";
 import { useRegion } from "./region-context";
-import { RefreshCw, ZoomIn, ZoomOut, Layers, Eye, Map, Compass } from "lucide-react";
+import { RefreshCw, ZoomIn, ZoomOut } from "lucide-react";
 
 export type CivicMapProps = {
   counts: Record<string, number>;
@@ -84,11 +84,6 @@ export function CivicMap({
   const [loading, setLoading] = useState(true);
   const [geoData, setGeoData] = useState<any>(null);
 
-  // 两种方案一键切换：
-  // "overlay" -> 方案一：天地图底图自然实景 + 官方区县高精轮廓 + 镇街中心高亮徽标阵列
-  // "subdistricts" -> 方案二：第四级镇街独立多边形网格面 (Choropleth 各自填色)
-  const [mapMode, setMapMode] = useState<"overlay" | "subdistricts">("overlay");
-
   // 统计工单总量与最大值
   const values = Object.values(counts);
   const totalTickets = useMemo(() => values.reduce((a, b) => a + b, 0), [values]);
@@ -98,23 +93,20 @@ export function CivicMap({
     return (activeRegion?.id || "fs_shunde").replace(/^(fs_|gz_|sz_)/, "");
   }, [activeRegion?.id]);
 
-  // 1. 根据当前方案动态从站点数据库 API 拉取对应级别的 GeoJSON
+  // 1. 默认动态从站点数据库拉取第四级镇街多边形网格面
   useEffect(() => {
     let cancelled = false;
     const regionId = activeRegion?.id || "fs_shunde";
 
-    const targetUrl = mapMode === "overlay"
-      ? `/api/regions/${regionId}/boundary?level=district`
-      : `/api/regions/${regionId}/boundary?level=subdistricts`;
-
-    fetch(targetUrl)
+    // 优先拉取第四级镇街多边形
+    fetch(`/api/regions/${regionId}/boundary?level=subdistricts`)
       .then((r) => (r.ok ? r.json() : null))
       .then((res) => {
         if (cancelled) return;
-        if (res?.data?.geojson?.features) {
+        if (res?.data?.geojson?.features && res.data.geojson.features.length > 0) {
           setGeoData(res.data.geojson);
-        } else if (mapMode === "subdistricts") {
-          // 若站点尚未持久化第四级多边形，优雅回退至该站点的区级权威轮廓 + 徽标
+        } else {
+          // 若站点尚未持久化第四级多边形，优雅回退至区级权威审图轮廓
           fetch(`/api/regions/${regionId}/boundary?level=district`)
             .then((r) => (r.ok ? r.json() : null))
             .then((districtRes) => {
@@ -132,7 +124,7 @@ export function CivicMap({
     return () => {
       cancelled = true;
     };
-  }, [activeRegion?.id, mapMode]);
+  }, [activeRegion?.id]);
 
   // 2. 初始化天地图 GIS 实景底图
   useEffect(() => {
@@ -447,7 +439,7 @@ export function CivicMap({
     return () => {
       isMounted = false;
     };
-  }, [geoData, counts, clusterCounts, selected, maxCount, totalTickets, onSelect, cleanRegionId, mapMode]);
+  }, [geoData, counts, clusterCounts, selected, maxCount, totalTickets, onSelect, cleanRegionId]);
 
   const handleResetView = () => {
     if (onSelect) onSelect("");
@@ -511,7 +503,7 @@ export function CivicMap({
           <span>
             {selected
               ? `聚焦辖区：${selected}`
-              : `${activeRegion ? activeRegion.name : "全区"}行政热力透势 (${mapMode === "overlay" ? "方案一：天地图底图+镇街透视" : "方案二：第四级多边形面"})`}
+              : `${activeRegion ? activeRegion.name : "全区"}行政区划工单热力分布`}
           </span>
           <span style={{ color: "#64748B", fontWeight: 400, marginLeft: 2 }}>
             ({totalTickets.toLocaleString()} 件诉求)
@@ -541,70 +533,6 @@ export function CivicMap({
             <span>返回全区</span>
           </button>
         )}
-      </div>
-
-      {/* 顶部右侧方案切换开关 (方案一 vs 方案二 对比) */}
-      <div
-        style={{
-          position: "absolute",
-          top: 12,
-          right: 12,
-          zIndex: 800,
-          background: "rgba(255, 255, 255, 0.96)",
-          backdropFilter: "blur(6px)",
-          padding: "3px",
-          borderRadius: 20,
-          border: "1px solid #CBD5E1",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-          display: "flex",
-          alignItems: "center",
-          gap: 2,
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => setMapMode("overlay")}
-          title="方案一：官方区县实景底图 + 第四级镇街中心徽标交互"
-          style={{
-            padding: "4px 10px",
-            borderRadius: 16,
-            fontSize: 11,
-            fontWeight: mapMode === "overlay" ? 700 : 500,
-            background: mapMode === "overlay" ? "#1E5AFF" : "transparent",
-            color: mapMode === "overlay" ? "#ffffff" : "#475569",
-            border: "none",
-            cursor: "pointer",
-            transition: "all 0.15s ease",
-            display: "flex",
-            alignItems: "center",
-            gap: 4,
-          }}
-        >
-          <Map style={{ width: 12, height: 12 }} />
-          <span>方案一：实景底图+镇街徽标</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setMapMode("subdistricts")}
-          title="方案二：第四级镇街独立多边形网格面填色"
-          style={{
-            padding: "4px 10px",
-            borderRadius: 16,
-            fontSize: 11,
-            fontWeight: mapMode === "subdistricts" ? 700 : 500,
-            background: mapMode === "subdistricts" ? "#1E5AFF" : "transparent",
-            color: mapMode === "subdistricts" ? "#ffffff" : "#475569",
-            border: "none",
-            cursor: "pointer",
-            transition: "all 0.15s ease",
-            display: "flex",
-            alignItems: "center",
-            gap: 4,
-          }}
-        >
-          <Layers style={{ width: 12, height: 12 }} />
-          <span>方案二：镇街多边形面</span>
-        </button>
       </div>
 
       {/* 右侧缩放控制按钮 */}
