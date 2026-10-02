@@ -24,7 +24,7 @@ import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { SkTickets } from "@/app/_components/civic/skeletons";
 import { isTownLabel } from "@/lib/admin-area";
 import { normalizeStatusCode, getCategoryBadgeClass, getUrgencyLabel, categoryBadgeStyle } from "@/lib/civic-dto";
-import { AiVerdictCard, CitizenVoiceCard, TicketPropsGrid } from "@/app/_components/civic/ticket-verdict-view";
+import { AiVerdictCard, CitizenVoiceCard, TicketPropsGrid, TicketGeoMapCard } from "@/app/_components/civic/ticket-verdict-view";
 import {
   Select,
   SelectContent,
@@ -501,7 +501,10 @@ export default function TicketsPage() {
               {/* 2. 市民原始诉求 */}
               <CitizenVoiceCard data={drawer} />
 
-              {/* 3. 经办基础属性 */}
+              {/* 3. 空间地理高精打点 (天地图) */}
+              <TicketGeoMapCard data={drawer} />
+
+              {/* 4. 经办基础属性 */}
               <TicketPropsGrid data={drawer} />
             </div>
 

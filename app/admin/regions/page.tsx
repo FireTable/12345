@@ -497,11 +497,7 @@ export default function AdminRegionsPage() {
                     </span>
                     <span className="flex items-center gap-1">
                       <Map className="h-3.5 w-3.5 text-blue-600" />
-                      {r.svgMapPath ? (
-                        <span className="text-emerald-600 font-medium">SVG 地图已配置</span>
-                      ) : (
-                        <span className="text-slate-400">网格矩阵自适应热力</span>
-                      )}
+                      <span className="text-emerald-600 font-medium">天地图 GIS 行政区划</span>
                     </span>
                   </div>
                 </div>

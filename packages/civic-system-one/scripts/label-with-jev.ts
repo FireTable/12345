@@ -14,7 +14,7 @@ import fs from "node:fs";
 import path from "node:path";
 import nextEnvPkg from "@next/env";
 import * as xlsxModule from "xlsx";
-import { buildCivicQuestions } from "../src/presets/criteria.ts";
+import { buildCivicQuestions } from "../src/presets/criteria";
 
 const { loadEnvConfig } = (nextEnvPkg as any).default || nextEnvPkg;
 if (loadEnvConfig) loadEnvConfig(process.cwd());

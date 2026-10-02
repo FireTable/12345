@@ -59,10 +59,23 @@ export async function GET(req: NextRequest) {
       vocabularies = [];
     }
 
+    // 3. 查询空间地理标准地点 (type: LOCATION)
+    let locations: any[] = [];
+    try {
+      locations = await tenantDb
+        .select()
+        .from(vocabulariesTable)
+        .where(eq(vocabulariesTable.type, "LOCATION"))
+        .orderBy(desc(vocabulariesTable.createdAt));
+    } catch (e) {
+      locations = [];
+    }
+
     const stats = {
       townshipCount: regionVocab.townships.length,
       categoryCount: regionVocab.categories.length,
       departmentCount: regionVocab.departments.length,
+      locationCount: locations.length,
       aliasCount: aliases.length,
       presetAliasCount: aliases.filter((a) => a.source === "PRESET").length,
       minedAliasCount: aliases.filter((a) => a.source === "AI_MINED").length,
@@ -79,6 +92,7 @@ export async function GET(req: NextRequest) {
       townships: regionVocab.townships,
       categories: regionVocab.categories,
       departments: regionVocab.departments,
+      locations,
       vocabularies,
       aliases,
     });
@@ -149,6 +163,54 @@ export async function POST(req: NextRequest) {
         await tenantDb.delete(aliasesTable).where(eq(aliasesTable.id, id));
       } else if (alias) {
         await tenantDb.delete(aliasesTable).where(eq(aliasesTable.alias, alias));
+      }
+      return apiSuccess();
+    }
+
+    // 4. 新增或更新空间地理标准地点 (LOCATION)
+    if (action === "add_location") {
+      const { name, township, lng, lat, formattedAddress } = body;
+      if (!name) {
+        return apiError(ApiCode.INVALID_PARAMS, "规范地点名称不能为空", 400);
+      }
+      const cleanName = String(name).trim();
+      const meta = {
+        lng: lng !== undefined ? parseFloat(lng) : undefined,
+        lat: lat !== undefined ? parseFloat(lat) : undefined,
+        formattedAddress: formattedAddress || cleanName,
+        township: township || "",
+        source: "MANUAL",
+        updatedAt: new Date().toISOString(),
+      };
+      const id = `LOC-${Buffer.from(cleanName).toString("base64url").slice(0, 32)}`;
+      await tenantDb
+        .insert(vocabulariesTable)
+        .values({
+          id,
+          type: "LOCATION",
+          name: cleanName,
+          fullName: formattedAddress || cleanName,
+          parentName: township || null,
+          metaJson: JSON.stringify(meta),
+          description: `标准空间地理坐标`,
+          isStandard: true,
+        })
+        .onConflictDoUpdate({
+          target: vocabulariesTable.id,
+          set: {
+            parentName: township || undefined,
+            metaJson: JSON.stringify(meta),
+            fullName: formattedAddress || cleanName,
+          },
+        });
+      return apiSuccess({ success: true, id, name: cleanName });
+    }
+
+    // 5. 删除空间地理标准地点
+    if (action === "delete_location") {
+      const { id } = body;
+      if (id) {
+        await tenantDb.delete(vocabulariesTable).where(eq(vocabulariesTable.id, id));
       }
       return apiSuccess();
     }

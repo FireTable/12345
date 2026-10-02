@@ -1649,3 +1649,30 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ==================== Leaflet 地图标注与常显悬浮标签美化 ==================== */
+.leaflet-tooltip.civic-permanent-tooltip {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  pointer-events: auto !important;
+}
+.leaflet-tooltip-top.civic-permanent-tooltip:before {
+  display: none !important;
+}
+
+.civic-pin-anchor {
+  will-change: transform;
+}
+
+.civic-tooltip-bubble {
+  transform: translateY(var(--map-tooltip-ty, 0px));
+  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.15s ease;
+}
+.civic-tooltip-bubble:hover {
+  transform: translateY(calc(var(--map-tooltip-ty, 0px) - 2px));
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.22) !important;
+}
+
+

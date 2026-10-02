@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { getUrgencyLabel } from "@/lib/civic-dto";
+import { CivicGeoMap } from "./civic-geo-map";
 
 export interface TicketVerdictData {
   id: string;
@@ -246,3 +247,173 @@ export function TicketPropsGrid({ data }: { data: TicketVerdictData }) {
     </div>
   );
 }
+
+/**
+ * 4. 工单空间地理微观地点标注卡片 (天地图高精打点)
+ */
+export function TicketGeoMapCard({ data }: { data: TicketVerdictData }) {
+  const [geo, setGeo] = React.useState<{
+    lng?: number;
+    lat?: number;
+    formattedAddress?: string;
+    township?: string;
+    loading: boolean;
+    error?: string;
+  }>({ loading: true });
+
+  const [relatedPoints, setRelatedPoints] = React.useState<any[]>([]);
+
+  const queryAddress = data.address || data.region || "";
+  const clusterId = data.cluster_id || data.cluster_info?.id;
+
+  // 1. 解析当前工单主地点
+  React.useEffect(() => {
+    let cancelled = false;
+    if (!queryAddress || queryAddress === "辖区" || queryAddress === "未指定") {
+      setGeo({ loading: false, error: "暂无有效微观地址" });
+      return;
+    }
+
+    setGeo({ loading: true });
+    fetch("/api/map/geocode", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address: queryAddress }),
+    })
+      .then((r) => r.json())
+      .then((res) => {
+        if (cancelled) return;
+        const d = res.data || res;
+        if (d.success && d.lng && d.lat) {
+          setGeo({
+            lng: d.lng,
+            lat: d.lat,
+            formattedAddress: d.formattedAddress || queryAddress,
+            township: d.township || data.region,
+            loading: false,
+          });
+        } else {
+          setGeo({ loading: false, error: d.error || "未匹配到精确坐标" });
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) setGeo({ loading: false, error: err.message });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [queryAddress, data.region]);
+
+  // 2. 若属于多频聚类群组，拉取同专题关联工单的空间位置
+  React.useEffect(() => {
+    let cancelled = false;
+    if (!clusterId) {
+      setRelatedPoints([]);
+      return;
+    }
+
+    fetch(`/api/clusters/${encodeURIComponent(clusterId)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then(async (res) => {
+        if (cancelled || !res || !res.tickets) return;
+        const peers = (res.tickets as any[]).filter(
+          (t) => (t.id !== data.id && t.ticketId !== data.ticketId) && (t.address || t.location)
+        );
+        // 取前 4 件同专题工单微观地点解析
+        const samplePeers = peers.slice(0, 4);
+        const resolved: any[] = [];
+        for (const peer of samplePeers) {
+          const addr = peer.address || peer.location;
+          try {
+            const geoRes = await fetch("/api/map/geocode", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ address: addr }),
+            });
+            const geoJson = await geoRes.json();
+            const gd = geoJson.data || geoJson;
+            if (gd.success && gd.lng && gd.lat) {
+              resolved.push({
+                id: peer.id || peer.ticketId,
+                lng: gd.lng,
+                lat: gd.lat,
+                title: peer.title || peer.summarizeTitle || "关联工单",
+                address: gd.formattedAddress || addr,
+                township: gd.township || peer.region,
+                isMain: false,
+              });
+            }
+          } catch {}
+        }
+        if (!cancelled) {
+          setRelatedPoints(resolved);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [clusterId, data.id]);
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
+        <div className="flex items-center gap-2">
+          <span className="w-1.5 h-3.5 bg-blue-600 rounded-full" />
+          <span className="text-xs font-bold text-slate-800">事发地点空间微观标注</span>
+          <span className="text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded font-medium border border-blue-100">
+            天地图高精底图
+          </span>
+          {relatedPoints.length > 0 && (
+            <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded font-medium border border-amber-200">
+              同群组 {relatedPoints.length} 处关联诉求
+            </span>
+          )}
+        </div>
+        <div className="text-[11px] text-slate-500 font-medium">
+          {data.region ? `📍 ${data.region}` : ""}
+        </div>
+      </div>
+
+      <div className="p-3 space-y-2">
+        <div className="flex items-start gap-1.5 text-xs text-slate-700">
+          <MapPin className="w-3.5 h-3.5 text-blue-600 mt-0.5 shrink-0" />
+          <div className="leading-tight">
+            <span className="font-semibold text-slate-900">{queryAddress || "暂无详细地址"}</span>
+            {geo.formattedAddress && geo.formattedAddress !== queryAddress && (
+              <span className="text-slate-400 text-[11px] block mt-0.5">标准解析：{geo.formattedAddress}</span>
+            )}
+          </div>
+        </div>
+
+        {geo.lng && geo.lat ? (
+          <div className="mt-2 rounded-lg overflow-hidden border border-slate-200 shadow-inner">
+            <CivicGeoMap
+              mode="single"
+              height={220}
+              point={{
+                id: data.id,
+                lng: geo.lng,
+                lat: geo.lat,
+                title: data.title || "当前事发地点",
+                township: geo.township || data.region,
+                address: geo.formattedAddress || queryAddress,
+                color: data.urgency === "URGENT" ? "#F53F3F" : "#1E5AFF",
+                isMain: true,
+              }}
+              relatedPoints={relatedPoints}
+            />
+          </div>
+        ) : (
+          <div className="h-28 bg-slate-50 rounded-lg border border-dashed border-slate-200 flex flex-col items-center justify-center text-xs text-slate-400 gap-1.5">
+            <MapPin className="w-5 h-5 text-slate-300" />
+            <span>{geo.loading ? "正在精准定位事发空间位置..." : geo.error || "暂无坐标数据"}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+

@@ -30,6 +30,11 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // 2.7 Map tile proxy (public static tile images)
+  if (pathname.startsWith("/api/map/tile") || pathname.startsWith("/api/map/geocode")) {
+    return NextResponse.next();
+  }
+
   const sessionToken =
     request.cookies.get("better-auth.session_token")?.value ||
     request.cookies.get("__Secure-better-auth.session_token")?.value;

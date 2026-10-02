@@ -1,0 +1,341 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "liede",
+      "properties": {
+        "id": "liede",
+        "name": "猎德",
+        "fullName": "猎德街道",
+        "district": "天河区",
+        "city": "广州市",
+        "center": [
+          113.332,
+          23.118
+        ]
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              113.324,
+              23.125
+            ],
+            [
+              113.342,
+              23.125
+            ],
+            [
+              113.342,
+              23.11
+            ],
+            [
+              113.324,
+              23.11
+            ],
+            [
+              113.324,
+              23.125
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "xiancun",
+      "properties": {
+        "id": "xiancun",
+        "name": "冼村",
+        "fullName": "冼村街道",
+        "district": "天河区",
+        "city": "广州市",
+        "center": [
+          113.334,
+          23.131
+        ]
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              113.324,
+              23.138
+            ],
+            [
+              113.344,
+              23.138
+            ],
+            [
+              113.344,
+              23.125
+            ],
+            [
+              113.324,
+              23.125
+            ],
+            [
+              113.324,
+              23.138
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "shipai",
+      "properties": {
+        "id": "shipai",
+        "name": "石牌",
+        "fullName": "石牌街道",
+        "district": "天河区",
+        "city": "广州市",
+        "center": [
+          113.345,
+          23.135
+        ]
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              113.338,
+              23.145
+            ],
+            [
+              113.355,
+              23.145
+            ],
+            [
+              113.355,
+              23.125
+            ],
+            [
+              113.338,
+              23.125
+            ],
+            [
+              113.338,
+              23.145
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "tianhenan",
+      "properties": {
+        "id": "tianhenan",
+        "name": "天河南",
+        "fullName": "天河南街道",
+        "district": "天河区",
+        "city": "广州市",
+        "center": [
+          113.325,
+          23.135
+        ]
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              113.315,
+              23.142
+            ],
+            [
+              113.332,
+              23.142
+            ],
+            [
+              113.332,
+              23.128
+            ],
+            [
+              113.315,
+              23.128
+            ],
+            [
+              113.315,
+              23.142
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "tianyuan",
+      "properties": {
+        "id": "tianyuan",
+        "name": "天园",
+        "fullName": "天园街道",
+        "district": "天河区",
+        "city": "广州市",
+        "center": [
+          113.365,
+          23.128
+        ]
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              113.352,
+              23.138
+            ],
+            [
+              113.378,
+              23.138
+            ],
+            [
+              113.378,
+              23.118
+            ],
+            [
+              113.352,
+              23.118
+            ],
+            [
+              113.352,
+              23.138
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "wushan",
+      "properties": {
+        "id": "wushan",
+        "name": "五山",
+        "fullName": "五山街道",
+        "district": "天河区",
+        "city": "广州市",
+        "center": [
+          113.352,
+          23.158
+        ]
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              113.338,
+              23.17
+            ],
+            [
+              113.37,
+              23.17
+            ],
+            [
+              113.37,
+              23.145
+            ],
+            [
+              113.338,
+              23.145
+            ],
+            [
+              113.338,
+              23.17
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "tangxia",
+      "properties": {
+        "id": "tangxia",
+        "name": "棠下",
+        "fullName": "棠下街道",
+        "district": "天河区",
+        "city": "广州市",
+        "center": [
+          113.385,
+          23.132
+        ]
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              113.372,
+              23.145
+            ],
+            [
+              113.402,
+              23.145
+            ],
+            [
+              113.402,
+              23.12
+            ],
+            [
+              113.372,
+              23.12
+            ],
+            [
+              113.372,
+              23.145
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "chebei",
+      "properties": {
+        "id": "chebei",
+        "name": "车陂",
+        "fullName": "车陂街道",
+        "district": "天河区",
+        "city": "广州市",
+        "center": [
+          113.405,
+          23.125
+        ]
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              113.395,
+              23.14
+            ],
+            [
+              113.42,
+              23.14
+            ],
+            [
+              113.42,
+              23.11
+            ],
+            [
+              113.395,
+              23.11
+            ],
+            [
+              113.395,
+              23.14
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}
