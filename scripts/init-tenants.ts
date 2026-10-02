@@ -170,10 +170,10 @@ export async function initTenants(customSql?: postgres.Sql) {
 
     // 2. 注册顺德站点
     console.log("📍 [1/2] 注册并初始化【佛山市顺德区】(Schema: region_fs_shunde)...");
-    const shundeGeojson = fs.existsSync(path.join(process.cwd(), "public/civic/shunde-townships.geojson"))
-      ? fs.readFileSync(path.join(process.cwd(), "public/civic/shunde-townships.geojson"), "utf8")
+    const shundeGeojson = fs.existsSync(path.join(process.cwd(), "public/civic/fs_shunde-townships.geojson"))
+      ? fs.readFileSync(path.join(process.cwd(), "public/civic/fs_shunde-townships.geojson"), "utf8")
       : null;
-    const shundeSubdistrictsPath = path.join(process.cwd(), "lib/presets/geodata/shunde-subdistricts.geojson");
+    const shundeSubdistrictsPath = path.join(process.cwd(), "lib/presets/geodata/fs_shunde-subdistricts.geojson");
     const shundeSubdistrictsGeojson = fs.existsSync(shundeSubdistrictsPath)
       ? fs.readFileSync(shundeSubdistrictsPath, "utf8")
       : null;
@@ -194,10 +194,10 @@ export async function initTenants(customSql?: postgres.Sql) {
 
     // 3. 注册广州天河站点
     console.log("\n📍 [2/2] 注册并初始化【广州市天河区】(Schema: region_gz_tianhe)...");
-    const tianheGeojson = fs.existsSync(path.join(process.cwd(), "public/civic/tianhe-townships.geojson"))
-      ? fs.readFileSync(path.join(process.cwd(), "public/civic/tianhe-townships.geojson"), "utf8")
+    const tianheGeojson = fs.existsSync(path.join(process.cwd(), "public/civic/gz_tianhe-townships.geojson"))
+      ? fs.readFileSync(path.join(process.cwd(), "public/civic/gz_tianhe-townships.geojson"), "utf8")
       : null;
-    const tianheSubdistrictsPath = path.join(process.cwd(), "lib/presets/geodata/tianhe-subdistricts.geojson");
+    const tianheSubdistrictsPath = path.join(process.cwd(), "lib/presets/geodata/gz_tianhe-subdistricts.geojson");
     const tianheSubdistrictsGeojson = fs.existsSync(tianheSubdistrictsPath)
       ? fs.readFileSync(tianheSubdistrictsPath, "utf8")
       : null;
