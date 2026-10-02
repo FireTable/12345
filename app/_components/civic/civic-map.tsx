@@ -98,54 +98,41 @@ export function CivicMap({
     return (activeRegion?.id || "fs_shunde").replace(/^(fs_|gz_|sz_)/, "");
   }, [activeRegion?.id]);
 
-  // 1. 根据当前方案拉取对应 GeoJSON
+  // 1. 根据当前方案动态从站点数据库 API 拉取对应级别的 GeoJSON
   useEffect(() => {
     let cancelled = false;
     const regionId = activeRegion?.id || "fs_shunde";
 
-    if (mapMode === "overlay") {
-      // 方案一：拉取官方国家自然资源部 CGCS2000 高精边界
-      fetch(`/api/regions/${regionId}/boundary`)
-        .then((r) => (r.ok ? r.json() : null))
-        .then((res) => {
-          if (cancelled) return;
-          if (res?.data?.geojson?.features) {
-            setGeoData(res.data.geojson);
-          } else {
-            fetch(`/civic/${cleanRegionId}-townships.geojson`)
-              .then((r) => (r.ok ? r.json() : null))
-              .then((fb) => {
-                if (cancelled) return;
-                if (fb?.features) setGeoData(fb);
-              });
-          }
-        })
-        .catch(() => {});
-    } else {
-      // 方案二：拉取第四级多镇街多边形面
-      fetch(`/civic/${cleanRegionId}-subdistricts.geojson`)
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => {
-          if (cancelled) return;
-          if (data?.features) {
-            setGeoData(data);
-          } else {
-            // 回退到 townships 兼容文件
-            fetch(`/civic/${cleanRegionId}-townships.geojson`)
-              .then((r) => (r.ok ? r.json() : null))
-              .then((fb) => {
-                if (cancelled) return;
-                if (fb?.features) setGeoData(fb);
-              });
-          }
-        })
-        .catch(() => {});
-    }
+    const targetUrl = mapMode === "overlay"
+      ? `/api/regions/${regionId}/boundary?level=district`
+      : `/api/regions/${regionId}/boundary?level=subdistricts`;
+
+    fetch(targetUrl)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((res) => {
+        if (cancelled) return;
+        if (res?.data?.geojson?.features) {
+          setGeoData(res.data.geojson);
+        } else if (mapMode === "subdistricts") {
+          // 若站点尚未持久化第四级多边形，优雅回退至该站点的区级权威轮廓 + 徽标
+          fetch(`/api/regions/${regionId}/boundary?level=district`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((districtRes) => {
+              if (cancelled) return;
+              if (districtRes?.data?.geojson?.features) {
+                setGeoData(districtRes.data.geojson);
+              }
+            });
+        }
+      })
+      .catch((err) => {
+        console.warn("[CivicMap] 拉取空间地理资产失败:", err);
+      });
 
     return () => {
       cancelled = true;
     };
-  }, [activeRegion?.id, mapMode, cleanRegionId]);
+  }, [activeRegion?.id, mapMode]);
 
   // 2. 初始化天地图 GIS 实景底图
   useEffect(() => {

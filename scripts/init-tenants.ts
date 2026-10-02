@@ -173,6 +173,10 @@ export async function initTenants(customSql?: postgres.Sql) {
     const shundeGeojson = fs.existsSync(path.join(process.cwd(), "public/civic/shunde-townships.geojson"))
       ? fs.readFileSync(path.join(process.cwd(), "public/civic/shunde-townships.geojson"), "utf8")
       : null;
+    const shundeSubdistrictsPath = path.join(process.cwd(), "lib/presets/geodata/shunde-subdistricts.geojson");
+    const shundeSubdistrictsGeojson = fs.existsSync(shundeSubdistrictsPath)
+      ? fs.readFileSync(shundeSubdistrictsPath, "utf8")
+      : null;
 
     await registerRegion(sqlClient, {
       id: shundePreset.id,
@@ -182,6 +186,7 @@ export async function initTenants(customSql?: postgres.Sql) {
       schemaName: "region_fs_shunde",
       svgMapPath: "",
       geojsonBoundary: shundeGeojson || undefined,
+      subdistrictsGeojson: shundeSubdistrictsGeojson || undefined,
       description: "顺德区 10 大法定镇街政务研判站点",
       isDefault: true,
     });
@@ -192,6 +197,10 @@ export async function initTenants(customSql?: postgres.Sql) {
     const tianheGeojson = fs.existsSync(path.join(process.cwd(), "public/civic/tianhe-townships.geojson"))
       ? fs.readFileSync(path.join(process.cwd(), "public/civic/tianhe-townships.geojson"), "utf8")
       : null;
+    const tianheSubdistrictsPath = path.join(process.cwd(), "lib/presets/geodata/tianhe-subdistricts.geojson");
+    const tianheSubdistrictsGeojson = fs.existsSync(tianheSubdistrictsPath)
+      ? fs.readFileSync(tianheSubdistrictsPath, "utf8")
+      : null;
 
     await registerRegion(sqlClient, {
       id: tianhePreset.id,
@@ -201,6 +210,7 @@ export async function initTenants(customSql?: postgres.Sql) {
       schemaName: "region_gz_tianhe",
       svgMapPath: tianhePreset.svgMapPath || "",
       geojsonBoundary: tianheGeojson || undefined,
+      subdistrictsGeojson: tianheSubdistrictsGeojson || undefined,
       description: tianhePreset.description,
       isDefault: false,
     });
