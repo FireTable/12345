@@ -98,9 +98,15 @@ export function CivicMap({
       const L = (await import("leaflet")).default;
       if (!isMounted || !mapContainerRef.current) return;
 
+      const isTianhe =
+        activeRegion?.id?.includes("tianhe") ||
+        activeRegion?.name?.includes("天河") ||
+        activeRegion?.city?.includes("广州");
+      const defaultCenter: [number, number] = isTianhe ? [23.14, 113.36] : [22.84, 113.25];
+
       const map = L.map(mapContainerRef.current, {
-        center: [22.84, 113.2],
-        zoom: 11,
+        center: defaultCenter,
+        zoom: isTianhe ? 12 : 11,
         zoomControl: false,
         attributionControl: false,
         minZoom: 8,
