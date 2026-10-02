@@ -82,7 +82,7 @@ export async function loadOverview(days: number, regionId?: string) {
         .groupBy(ticketsTable.subdistrict, ticketsTable.sourceCategory),
       tenantDb
         .select({
-          month: sql<string>`to_char(date_trunc('month', ${ticketsTable.createTime} at time zone 'UTC'), 'YYYY-MM')`,
+          month: sql<string>`to_char(date_trunc('month', ${ticketsTable.createTime} at time zone 'Asia/Shanghai'), 'YYYY-MM')`,
           n: sql<number>`count(*)::int`,
         })
         .from(ticketsTable)
@@ -152,7 +152,7 @@ export async function loadTrends(days: number, regionId?: string) {
   const [dailyRows, clusterDayRows] = await Promise.all([
     tenantDb
       .select({
-        day: sql<string>`to_char(${ticketsTable.createTime} at time zone 'UTC', 'YYYY-MM-DD')`,
+        day: sql<string>`to_char(${ticketsTable.createTime} at time zone 'Asia/Shanghai', 'YYYY-MM-DD')`,
         n: sql<number>`count(*)::int`,
       })
       .from(ticketsTable)

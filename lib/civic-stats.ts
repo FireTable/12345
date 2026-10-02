@@ -1,5 +1,6 @@
 import { explicitAdmin, isTownLabel } from "./admin-area";
 import { regionLabel } from "./civic-dto";
+import { shanghaiCalendarDate } from "./work-order-date";
 
 export type TicketStatRow = {
   createTime?: Date | string | null;
@@ -24,11 +25,22 @@ function asDate(v?: Date | string | null): Date | null {
 }
 
 function ymd(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  return shanghaiCalendarDate(d);
 }
 
 function ym(d: Date): string {
-  return d.toISOString().slice(0, 7);
+  return shanghaiCalendarDate(d).slice(0, 7);
+}
+
+function weekKey(d: Date): string {
+  const [year, month, day] = shanghaiCalendarDate(d).split("-").map(Number);
+  const civil = new Date(Date.UTC(year, month - 1, day));
+  const dow = civil.getUTCDay() || 7;
+  const start = new Date(civil);
+  start.setUTCDate(start.getUTCDate() - (dow - 1));
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 6);
+  return `${shanghaiCalendarDate(start)}/${shanghaiCalendarDate(end)}`;
 }
 
 export type OverviewBuckets = {
@@ -213,12 +225,7 @@ export function buildTrends(tickets: TicketStatRow[], themes: ThemeStatRow[] = [
     const day = ymd(d);
     daily[day] = (daily[day] || 0) + 1;
     monthly[ym(d)] = (monthly[ym(d)] || 0) + 1;
-    const weekStart = new Date(d);
-    const dow = weekStart.getUTCDay() || 7;
-    weekStart.setUTCDate(weekStart.getUTCDate() - (dow - 1));
-    const weekEnd = new Date(weekStart);
-    weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
-    const wk = `${ymd(weekStart)}/${ymd(weekEnd)}`;
+    const wk = weekKey(d);
     weekly[wk] = (weekly[wk] || 0) + 1;
   }
 

@@ -1,18 +1,21 @@
 import { MODE_META, civicModeFromPattern } from "@/backend/theme-metrics";
 import type { CivicMode, PatternType } from "@/backend/state";
 import { parseAdminArea } from "@/lib/admin-area";
+import { calendarDay } from "@/lib/work-order-date";
 
+const UNKNOWN_TOWN = "未知";
+
+/** 镇街列。没有镇或街道时显示未知，不用区名来顶。district 保留给旧调用。 */
 export function regionLabel(subdistrict?: string | null, district?: string | null): string {
-  const raw = (subdistrict || district || "").trim();
-  if (!raw) return "未归属";
+  void district;
+  const raw = (subdistrict || "").trim();
+  if (!raw) return UNKNOWN_TOWN;
   const parsed = parseAdminArea(raw);
   if (parsed.subdistrict) {
     return parsed.subdistrict.replace(/(街道|镇|乡)$/g, "");
   }
-  if (parsed.district) {
-    return parsed.district;
-  }
-  return raw.replace(/(街道|镇|乡|区|县)$/g, "") || "未归属";
+  if (parsed.district) return UNKNOWN_TOWN;
+  return raw.replace(/(街道|镇|乡)$/g, "") || UNKNOWN_TOWN;
 }
 
 export const HANDLING_STATUS = {
@@ -147,14 +150,8 @@ export function toClusterDto(theme: {
       : civicModeFromPattern(theme.patternType as PatternType);
   const meta = MODE_META[mode];
   const samples = theme.tickets || [];
-  const first =
-    theme.firstOccurrence ||
-    (theme.firstAt instanceof Date ? theme.firstAt.toISOString().slice(0, 10) : theme.firstAt) ||
-    "";
-  const last =
-    theme.lastOccurrence ||
-    (theme.lastAt instanceof Date ? theme.lastAt.toISOString().slice(0, 10) : theme.lastAt) ||
-    "";
+  const first = calendarDay(theme.firstOccurrence || theme.firstAt);
+  const last = calendarDay(theme.lastOccurrence || theme.lastAt);
 
   let features = theme.features || null;
   if (!features && theme.featuresJson) {
@@ -193,7 +190,7 @@ export function toClusterDto(theme: {
     new Set(
       samples
         .map((t) => regionLabel(t.subdistrict, t.district))
-        .filter((r) => r && r !== "未归属")
+        .filter((r) => r && r !== "未归属" && r !== UNKNOWN_TOWN)
     )
   );
   const region = sampleTowns.length > 0
@@ -272,17 +269,14 @@ export function toWorkorderDto(row: {
   confidence?: number | null;
   channel?: string | null;
 }) {
-  const created =
-    row.createTime instanceof Date
-      ? row.createTime.toISOString().slice(0, 10)
-      : String(row.createTime || "").slice(0, 10);
+  const created = calendarDay(row.createTime);
   const defaultConfidence = row.confidence ?? (row.sourceCategory ? 85 : 80);
   return {
     id: row.ticketNo || row.id,
     ticketId: row.id,
     title: row.summarizeTitle || row.title || "市民诉求",
     category: row.sourceCategory || row.category || "",
-    region: regionLabel(row.subdistrict, row.district) || "辖区",
+    region: regionLabel(row.subdistrict),
     urgency: row.urgency || "NORMAL",
     status: mapTicketStatus(row.status),
     createdAt: created,

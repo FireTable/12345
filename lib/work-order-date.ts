@@ -54,6 +54,20 @@ export function shanghaiCalendarDate(date: Date): string {
   }).format(date);
 }
 
+/** 列表和总览上的日历日。编号零点的 UTC 瞬间会落在前一天，不能直接切 ISO 字符串。 */
+export function calendarDay(value: Date | string | null | undefined): string {
+  if (value == null || value === "") return "";
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? "" : shanghaiCalendarDate(value);
+  }
+  const text = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}(?:\s|$)/.test(text) && !/[Tt]|Z|[+-]\d{2}:?\d{2}$/.test(text)) {
+    return text.slice(0, 10);
+  }
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? text.slice(0, 10) : shanghaiCalendarDate(date);
+}
+
 function pad(value: number): string {
   return String(value).padStart(2, "0");
 }

@@ -327,7 +327,7 @@ export default function TicketsPage() {
               <th style={{ width: 85 }}>镇街</th>
               <th style={{ width: 95, minWidth: 90 }}>类型</th>
               <th style={{ width: 80 }}>紧急度</th>
-              <th style={{ width: 110 }}>时间</th>
+              <th style={{ width: 120 }}>时间</th>
               <th style={{ width: 85 }}>状态</th>
               <th style={{ width: 75, textAlign: "right" }}>操作</th>
             </tr>
@@ -349,7 +349,7 @@ export default function TicketsPage() {
                     {urgencyLabel(r.urgency)}
                   </span>
                 </td>
-                <td>{r.createdAt}</td>
+                <td style={{ whiteSpace: "nowrap" }}>{r.createdAt}</td>
                 <td>
                   <span className={`status-tag status-tag--${statusTag(r.status)}`}>
                     {statusLabel(r.status)}

@@ -2,7 +2,8 @@
  * 工单日期以编号前六位为准。正文里的另一个日期不能替换它。
  */
 import { buildRecordsFromRows } from "../lib/ticket-ingest";
-import { shanghaiCalendarDate, workOrderClockFromTicketNo, workOrderInstantFromTicketNo } from "../lib/work-order-date";
+import { regionLabel } from "../lib/civic-dto";
+import { calendarDay, shanghaiCalendarDate, workOrderClockFromTicketNo, workOrderInstantFromTicketNo } from "../lib/work-order-date";
 
 function assert(cond: unknown, message: string) {
   if (!cond) {
@@ -35,6 +36,9 @@ assert(createTime?.toISOString() === "2024-12-31T16:00:00.000Z", `零点瞬间�
 assert(workOrderClockFromTicketNo(ticketNo) === "2025-01-01 00:00:00", "不从流水号编造钟点");
 assert(workOrderInstantFromTicketNo("250231000000000-01") === null, "2月31日不是日期");
 assert(workOrderInstantFromTicketNo("not-a-ticket") === null, "没有年月日的编号不解析");
+assert(createTime ? calendarDay(createTime) === "2025-01-01" : false, "列表日期用上海日历日");
+assert(regionLabel(null, "顺德区") === "未知", "没有镇街时不显示区名");
+assert(regionLabel("伦教街道", "顺德区") === "伦教", "有镇街时显示镇街短名");
 
 if (process.exitCode) {
   console.error("work-order date test failed");
