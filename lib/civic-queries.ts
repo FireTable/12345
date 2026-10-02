@@ -2,7 +2,7 @@ import { getRegionDb, type DB } from "@/db/client";
 import { ticketsTable, themesTable, ticketThemesTable } from "@/db/schema";
 import { and, desc, eq, gte, isNotNull, lt, sql, type SQL } from "drizzle-orm";
 import { explicitAdmin, isTownLabel } from "@/lib/admin-area";
-import { regionLabel, toClusterDto, normalizeStatusCode } from "@/lib/civic-dto";
+import { regionLabel, toClusterDto, normalizeStatusCode, UNKNOWN_TOWN } from "@/lib/civic-dto";
 import { CIVIC_CATEGORIES, deriveClusterUrgency, spanDays, urgentCutFromUnprocessed } from "@/lib/civic-cluster";
 import {
   buildInsights,
@@ -218,9 +218,10 @@ export async function loadWorkorderStats(regionId?: string) {
 
   const regionSet = new Set<string>();
   for (const r of regionRows) {
-    const town = explicitAdmin(r.subdistrict);
-    const label = town ? regionLabel(town) : "";
-    if (isTownLabel(label)) regionSet.add(label);
+    const label = regionLabel(r.subdistrict);
+    if (label && (isTownLabel(label) || label === UNKNOWN_TOWN)) {
+      regionSet.add(label);
+    }
   }
 
   const categorySet = new Set<string>();
@@ -231,6 +232,13 @@ export async function loadWorkorderStats(regionId?: string) {
   const known = CIVIC_CATEGORIES.filter((c) => categorySet.has(c));
   const extra = [...categorySet].filter((c) => !(CIVIC_CATEGORIES as readonly string[]).includes(c));
 
+  const sortedRegions = [...regionSet]
+    .filter((r) => r !== UNKNOWN_TOWN)
+    .sort((a, b) => a.localeCompare(b, "zh-CN"));
+  if (regionSet.has(UNKNOWN_TOWN)) {
+    sortedRegions.push(UNKNOWN_TOWN);
+  }
+
   return {
     stats: {
       total,
@@ -239,10 +247,11 @@ export async function loadWorkorderStats(regionId?: string) {
       finished,
       urgent: asInt(row.urgent),
       multifreq: asInt(row.multifreq),
+      single: Math.max(0, total - asInt(row.multifreq)),
     },
     latest: row.latest ? new Date(row.latest) : null,
     facets: {
-      regions: [...regionSet].sort((a, b) => a.localeCompare(b, "zh-CN")),
+      regions: sortedRegions,
       categories: [...known, ...extra],
     },
   };
@@ -299,10 +308,10 @@ export async function loadClusterBundle(regionId?: string) {
 
   const townsByTheme = new Map<string, Set<string>>();
   for (const r of townRows) {
-    const town = explicitAdmin(r.subdistrict);
+    const town = regionLabel(r.subdistrict);
     if (!town) continue;
     const set = townsByTheme.get(r.themeId) || new Set<string>();
-    set.add(regionLabel(town));
+    set.add(town);
     townsByTheme.set(r.themeId, set);
   }
 

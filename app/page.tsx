@@ -230,11 +230,11 @@ export default function DashboardPage() {
         </div>
         <div className="card">
           <div className="card__header">
-            <div className="card__title">镇街工单量 TOP 10</div>
+            <div className="card__title">镇街工单量排行</div>
             <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>近 {daysRange} 天 · 已研判</div>
           </div>
           <div className="card__body" style={{ padding: "8px 12px 4px" }}>
-            {regions.slice(0, 10).map(([name, n], i) => {
+            {regions.map(([name, n], i) => {
               const color = RANK_COLORS[i] || "#86909C";
               const top = i < 3;
               return (
@@ -276,7 +276,7 @@ export default function DashboardPage() {
           </div>
           <div className="card__body heatmap-scroll" style={{ padding: "8px 12px" }}>
             <CivicHeatmap
-              regions={regions.slice(0, 10).map((r) => r[0])}
+              regions={regions.map((r) => r[0])}
               cats={cats.slice(0, 7).map((c) => c[0])}
               grid={ov?.regionCategory || {}}
             />

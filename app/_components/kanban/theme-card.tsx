@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import type { MultiFrequencyTheme } from "@/backend/state";
 import { Card } from "@/app/_components/ui/card";
+import { categoryBadgeStyle } from "@/lib/civic-cluster";
 
 interface ThemeCardProps {
   theme: MultiFrequencyTheme;
@@ -45,7 +46,10 @@ export const ThemeCard: React.FC<ThemeCardProps> = ({ theme, onClick }) => {
               </span>
             )}
 
-            <span className="text-[11px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+            <span
+              className="text-[11px] px-1.5 py-0.5 rounded font-medium border"
+              style={categoryBadgeStyle(theme.category)}
+            >
               {theme.category}
             </span>
           </div>

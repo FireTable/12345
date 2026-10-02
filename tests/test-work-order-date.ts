@@ -39,6 +39,8 @@ assert(workOrderInstantFromTicketNo("not-a-ticket") === null, "没有年月日�
 assert(createTime ? calendarDay(createTime) === "2025-01-01" : false, "列表日期用上海日历日");
 assert(regionLabel(null, "顺德区") === "未知", "没有镇街时不显示区名");
 assert(regionLabel("伦教街道", "顺德区") === "伦教", "有镇街时显示镇街短名");
+assert(regionLabel("未指定") === "未知", "未指定算作未知");
+assert(regionLabel("顺德ALSO店及ALSO青春家公寓B栋一楼逃生出口") === "未知", "非镇街地名算作未知");
 
 if (process.exitCode) {
   console.error("work-order date test failed");

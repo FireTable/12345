@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRegionDb } from "@/db/client";
 import { ticketsTable } from "@/db/schema";
-import { and, desc, eq, gte, ilike, isNotNull, lt, or, sql } from "drizzle-orm";
-import { toWorkorderDto } from "@/lib/civic-dto";
+import { and, desc, eq, gte, ilike, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import { toWorkorderDto, UNKNOWN_TOWN } from "@/lib/civic-dto";
 import { clampPage, clampSize } from "@/lib/api-bounds";
 import { cacheGetOrLoad } from "@/lib/civic-cache";
 import { loadWorkorderStats } from "@/lib/civic-queries";
@@ -25,15 +25,27 @@ export async function GET(req: NextRequest) {
     const urgency = searchParams.get("urgency") || "";
     const time = searchParams.get("time") || "";
     const multifreq = searchParams.get("multifreq") || "";
+    const cluster = searchParams.get("cluster") || multifreq;
 
     const { value: snap } = await cacheGetOrLoad(`workorders:stats:${regionId}`, () => loadWorkorderStats(regionId));
     const { stats, latest, facets } = snap;
 
     const filters = [];
     if (region) {
-      filters.push(
-        or(ilike(ticketsTable.subdistrict, `%${region}%`), ilike(ticketsTable.district, `%${region}%`))
-      );
+      if (region === UNKNOWN_TOWN || region === "未知") {
+        filters.push(
+          or(
+            isNull(ticketsTable.subdistrict),
+            eq(ticketsTable.subdistrict, ""),
+            eq(ticketsTable.subdistrict, "未知"),
+            eq(ticketsTable.subdistrict, "未指定")
+          )
+        );
+      } else {
+        filters.push(
+          or(ilike(ticketsTable.subdistrict, `%${region}%`), ilike(ticketsTable.district, `%${region}%`))
+        );
+      }
     }
     if (category) {
       filters.push(eq(ticketsTable.sourceCategory, category));
@@ -58,8 +70,16 @@ export async function GET(req: NextRequest) {
     if (urgency === "URGENT" || tab === "urgent") {
       filters.push(eq(ticketsTable.urgency, "URGENT"));
     }
-    if (multifreq === "1" || tab === "multifreq") {
+    if (cluster === "1" || cluster === "multifreq" || tab === "multifreq") {
       filters.push(isNotNull(ticketsTable.primaryThemeId));
+    } else if (
+      cluster === "0" ||
+      cluster === "single" ||
+      cluster === "unclustered" ||
+      tab === "single" ||
+      tab === "unclustered"
+    ) {
+      filters.push(isNull(ticketsTable.primaryThemeId));
     }
     if (keyword) {
       filters.push(

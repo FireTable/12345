@@ -98,19 +98,28 @@ export const PipelineFlowView: React.FC<PipelineFlowViewProps> = ({ progress }) 
     return 0;
   }, [stage, percent, isCompleted]);
 
-  // 各板块预设色调
+  // 各板块预设色调（与全局 categoryColor 统一）
   const categoryPalette = (cat: string) => {
     if (cat.includes("城管") || cat.includes("市容") || cat.includes("城市管理")) {
       return "from-blue-500/20 to-indigo-500/20 border-blue-500/30 text-blue-400";
     }
-    if (cat.includes("市场") || cat.includes("物价") || cat.includes("消费")) {
+    if (cat.includes("交通") || cat.includes("路况") || cat.includes("出行") || cat.includes("违停")) {
       return "from-amber-500/20 to-orange-500/20 border-amber-500/30 text-amber-400";
     }
-    if (cat.includes("环保") || cat.includes("生态") || cat.includes("噪音")) {
+    if (cat.includes("环保") || cat.includes("生态") || cat.includes("噪音") || cat.includes("水务")) {
       return "from-emerald-500/20 to-teal-500/20 border-emerald-500/30 text-emerald-400";
     }
-    if (cat.includes("交通") || cat.includes("路况") || cat.includes("违停")) {
-      return "from-purple-500/20 to-pink-500/20 border-purple-500/30 text-purple-400";
+    if (cat.includes("市场") || cat.includes("物价") || cat.includes("消费") || cat.includes("市监")) {
+      return "from-cyan-500/20 to-teal-500/20 border-cyan-500/30 text-cyan-400";
+    }
+    if (cat.includes("劳动") || cat.includes("社保") || cat.includes("劳资") || cat.includes("欠薪")) {
+      return "from-purple-500/20 to-violet-500/20 border-purple-500/30 text-purple-400";
+    }
+    if (cat.includes("安全") || cat.includes("消防") || cat.includes("应急")) {
+      return "from-rose-500/20 to-red-500/20 border-rose-500/30 text-rose-400";
+    }
+    if (cat.includes("社会") || cat.includes("治理") || cat.includes("信访") || cat.includes("调解")) {
+      return "from-indigo-500/20 to-blue-500/20 border-indigo-500/30 text-indigo-400";
     }
     return "from-slate-500/20 to-zinc-500/20 border-slate-500/30 text-slate-300";
   };

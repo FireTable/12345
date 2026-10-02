@@ -20,6 +20,7 @@ import { exportThemeTicketsToCSV } from "@/lib/export-csv";
 import { isAnonymizedCitizen } from "@/lib/alias-dict";
 import { Button } from "@/app/_components/ui/button";
 import { toast } from "sonner";
+import { categoryBadgeStyle } from "@/lib/civic-cluster";
 
 interface TicketDetailSheetProps {
   theme: MultiFrequencyTheme | null;
@@ -107,7 +108,10 @@ export const TicketDetailSheet: React.FC<TicketDetailSheetProps> = ({
                 </span>
               )}
 
-              <span className="text-xs px-2.5 py-1 rounded-md bg-muted text-muted-foreground border border-border font-medium">
+              <span
+                className="text-xs px-2.5 py-1 rounded-md font-medium border"
+                style={categoryBadgeStyle(theme.category)}
+              >
                 {theme.category}
               </span>
 

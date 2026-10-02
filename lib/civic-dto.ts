@@ -1,9 +1,9 @@
 import { MODE_META, civicModeFromPattern } from "@/backend/theme-metrics";
 import type { CivicMode, PatternType } from "@/backend/state";
-import { parseAdminArea } from "@/lib/admin-area";
+import { parseAdminArea, isTownLabel } from "@/lib/admin-area";
 import { calendarDay } from "@/lib/work-order-date";
 
-const UNKNOWN_TOWN = "未知";
+export const UNKNOWN_TOWN = "未知";
 
 /** 镇街列。没有镇或街道时显示未知，不用区名来顶。district 保留给旧调用。 */
 export function regionLabel(subdistrict?: string | null, district?: string | null): string {
@@ -12,10 +12,13 @@ export function regionLabel(subdistrict?: string | null, district?: string | nul
   if (!raw) return UNKNOWN_TOWN;
   const parsed = parseAdminArea(raw);
   if (parsed.subdistrict) {
-    return parsed.subdistrict.replace(/(街道|镇|乡)$/g, "");
+    const clean = parsed.subdistrict.replace(/(街道|镇|乡)$/g, "");
+    return clean || UNKNOWN_TOWN;
   }
   if (parsed.district) return UNKNOWN_TOWN;
-  return raw.replace(/(街道|镇|乡)$/g, "") || UNKNOWN_TOWN;
+  const clean = raw.replace(/(街道|镇|乡)$/g, "");
+  if (isTownLabel(clean)) return clean;
+  return UNKNOWN_TOWN;
 }
 
 export const HANDLING_STATUS = {
@@ -90,18 +93,21 @@ export function handlingColor(label?: string | null): string {
   return "#F53F3F";
 }
 
+export { categoryColor, categoryVisual, categoryBadgeStyle, type CategoryVisual } from "@/lib/civic-cluster";
+
 /**
  * 统一样式分类徽章映射 (支持标准民生分类与动态扩展)
  */
 export function getCategoryBadgeClass(category?: string | null): string {
   if (!category) return "badge-pill--default";
   const cat = category.trim();
-  if (/(?:生态|环境|环保|河道|水污染)/.test(cat)) return "badge-pill--success";
-  if (/(?:劳动|社保|劳资|欠薪|工伤)/.test(cat)) return "badge-pill--warning";
-  if (/(?:市场|市监|消费|物价|欺诈)/.test(cat)) return "badge-pill--danger";
-  if (/(?:城市|城管|市政|环卫|违建)/.test(cat)) return "badge-pill--info";
-  if (/(?:交通|交警|出行|道路|拥堵)/.test(cat)) return "badge-pill--primary";
-  if (/(?:安全|消防|燃气|应急)/.test(cat)) return "badge-pill--danger";
+  if (/(?:生态|环境|环保|河道|水污染|水务)/.test(cat)) return "badge-pill--environment";
+  if (/(?:劳动|社保|劳资|欠薪|工伤)/.test(cat)) return "badge-pill--labor";
+  if (/(?:市场|市监|消费|物价|欺诈)/.test(cat)) return "badge-pill--market";
+  if (/(?:城市|城管|市政|环卫|违建|市容)/.test(cat)) return "badge-pill--urban";
+  if (/(?:交通|交警|出行|道路|拥堵)/.test(cat)) return "badge-pill--traffic";
+  if (/(?:安全|消防|燃气|应急)/.test(cat)) return "badge-pill--safety";
+  if (/(?:社会|治理|信访|纠纷|社区|邻里)/.test(cat)) return "badge-pill--social";
   return "badge-pill--default";
 }
 
@@ -268,6 +274,11 @@ export function toWorkorderDto(row: {
   primaryThemeId?: string | null;
   confidence?: number | null;
   channel?: string | null;
+  slaHours?: number | null;
+  stabilityRisk?: boolean | null;
+  canonicalSubject?: string | null;
+  eventType?: string | null;
+  isFakeClosure?: boolean | null;
 }) {
   const created = calendarDay(row.createTime);
   const defaultConfidence = row.confidence ?? (row.sourceCategory ? 85 : 80);
@@ -275,6 +286,8 @@ export function toWorkorderDto(row: {
     id: row.ticketNo || row.id,
     ticketId: row.id,
     title: row.summarizeTitle || row.title || "市民诉求",
+    rawTitle: row.title || "",
+    summarizeTitle: row.summarizeTitle || "",
     category: row.sourceCategory || row.category || "",
     region: regionLabel(row.subdistrict),
     urgency: row.urgency || "NORMAL",
@@ -289,5 +302,10 @@ export function toWorkorderDto(row: {
     cluster_id: row.primaryThemeId || "",
     confidence: defaultConfidence,
     multifreq: Boolean(row.primaryThemeId),
+    slaHours: row.slaHours ?? null,
+    stabilityRisk: Boolean(row.stabilityRisk),
+    canonicalSubject: row.canonicalSubject || "",
+    eventType: row.eventType || "",
+    isFakeClosure: Boolean(row.isFakeClosure),
   };
 }

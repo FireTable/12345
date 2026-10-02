@@ -1,18 +1,31 @@
 export type ClusterUrgency = "urgent" | "high" | "medium" | "low";
 
 export const CIVIC_CATEGORIES = [
-  "市容城管",
+  "城市管理",
   "交通出行",
-  "环保水务",
+  "生态环境",
   "市场监管",
+  "劳动社保",
+  "公共安全",
+  "社会治理",
+  // 历史兼容
+  "市容城管",
+  "环保水务",
   "社区物业",
   "劳资社保",
-  "公共安全",
 ] as const;
 
 /** 城管 / 劳资及七类对应项视为“重要”民生类型 */
 const IMPORTANT_TYPES = [
-  "市容城管", "城市管理", "劳资社保", "劳动社保", "城管", "劳资", "公共安全"
+  "市容城管",
+  "城市管理",
+  "劳资社保",
+  "劳动社保",
+  "城管",
+  "劳资",
+  "公共安全",
+  "社会治理",
+  "交通出行",
 ];
 
 export function spanDays(first?: string | null, last?: string | null): number {
@@ -59,36 +72,90 @@ export function mapColorByShare(count: number, max: number): string {
 }
 
 export function categoryColor(name: string): string {
+  const raw = (name || "").trim();
   const map: Record<string, string> = {
-    // 官方 7 大法定诉求分类
-    市容城管: "#1677FF", // 经典政务科技蓝
+    // 官方 7 大法定诉求分类（标准单一事实来源）
+    城市管理: "#1677FF", // 经典政务科技蓝
     交通出行: "#FA8C16", // 交通活力橙黄
-    环保水务: "#52C41A", // 生态水务清新绿
+    生态环境: "#52C41A", // 生态水务清新绿
     市场监管: "#13C2C2", // 市场营商青碧色
-    社区物业: "#EB2F96", // 社区物业温和品红
-    劳资社保: "#722ED1", // 劳动权益高贵紫
+    劳动社保: "#722ED1", // 劳动权益高贵紫
     公共安全: "#F5222D", // 公共安全警示红
+    社会治理: "#2F54EB", // 社会治理极客蓝
 
     // 历史与别名拓展映射
+    市容城管: "#1677FF",
     城管: "#1677FF",
-    城市管理: "#1677FF",
     交通: "#FA8C16",
+    出行: "#FA8C16",
+    环保水务: "#52C41A",
     环保: "#52C41A",
     水务: "#52C41A",
-    生态环境: "#52C41A",
+    环境: "#52C41A",
     消费: "#13C2C2",
     消费维权: "#13C2C2",
+    社区物业: "#EB2F96",
     物业: "#EB2F96",
     物业管理: "#EB2F96",
+    劳资社保: "#722ED1",
     劳资: "#722ED1",
-    劳动社保: "#722ED1",
     社保: "#722ED1",
     安全: "#F5222D",
-    社会治理: "#2F54EB",
+    消防: "#F5222D",
     政务服务: "#391085",
     其他: "#86909C",
   };
-  return map[name] || "#86909C";
+  if (map[raw]) return map[raw];
+  for (const [key, color] of Object.entries(map)) {
+    if (raw.includes(key)) return color;
+  }
+  return "#86909C";
+}
+
+export interface CategoryVisual {
+  color: string;
+  bg: string;
+  border: string;
+}
+
+/**
+ * 统一获取分类的色系方案（主色、柔和底色、精致边框）
+ */
+export function categoryVisual(name?: string | null): CategoryVisual {
+  const raw = (name || "").trim();
+  const color = categoryColor(raw);
+  const palette: Record<string, { bg: string; text?: string; border?: string }> = {
+    "#1677FF": { bg: "#E8F3FF", text: "#1677FF", border: "#BEDBFF" }, // 城市管理
+    "#FA8C16": { bg: "#FFF7E6", text: "#D46B08", border: "#FFD591" }, // 交通出行 (温和暖橙底，暖深橙字，柔和浅橙边框)
+    "#52C41A": { bg: "#E8FFEA", text: "#389E0D", border: "#B7EB8F" }, // 生态环境
+    "#13C2C2": { bg: "#E6FFFB", text: "#08979C", border: "#87E8DE" }, // 市场监管
+    "#722ED1": { bg: "#F9F0FF", text: "#722ED1", border: "#D3ADF7" }, // 劳动社保
+    "#F5222D": { bg: "#FFECE8", text: "#F5222D", border: "#FFA39E" }, // 公共安全
+    "#2F54EB": { bg: "#F0F5FF", text: "#2F54EB", border: "#ADC6FF" }, // 社会治理
+    "#EB2F96": { bg: "#FFF0F6", text: "#EB2F96", border: "#FFADD2" }, // 社区物业 (历史/兼容)
+  };
+  const item = palette[color] || { bg: "#F0F1F3", text: "#86909C", border: "#E2E8F0" };
+  return {
+    color: item.text || color,
+    bg: item.bg,
+    border: item.border || "#E2E8F0",
+  };
+}
+
+/**
+ * 统一样式分类徽章内联属性 (用于各处 Badge / Pill 渲染)
+ */
+export function categoryBadgeStyle(name?: string | null): {
+  color: string;
+  backgroundColor: string;
+  borderColor: string;
+} {
+  const v = categoryVisual(name);
+  return {
+    color: v.color,
+    backgroundColor: v.bg,
+    borderColor: v.border,
+  };
 }
 
 export const RANK_COLORS = [

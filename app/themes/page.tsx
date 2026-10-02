@@ -67,7 +67,7 @@ export default function ThemesPage() {
       .then((r) => r.json())
       .then((j) => {
         setRows(j.topClusters || []);
-        setRegions((j.facets?.regions || []).filter((r: string) => isTownLabel(r)));
+        setRegions((j.facets?.regions || []).filter((r: string) => isTownLabel(r) || r === "未知"));
       })
       .catch(() => setRows([]))
       .finally(() => setReady(true));
@@ -395,7 +395,7 @@ export default function ThemesPage() {
                           <span className={`status-tag ${sCls}`}>{g.status.label}</span>
                         </td>
                         <td style={{ textAlign: "right" }}>
-                          <span style={{ color: "var(--c-brand)", fontWeight: 500, fontSize: 12 }}>查看 →</span>
+                          <span style={{ color: "var(--c-brand)", fontWeight: 500, fontSize: 12 }}>查看</span>
                         </td>
                       </tr>
                     );

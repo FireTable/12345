@@ -1,5 +1,5 @@
 import { explicitAdmin, isTownLabel } from "./admin-area";
-import { regionLabel } from "./civic-dto";
+import { regionLabel, UNKNOWN_TOWN } from "./civic-dto";
 import { shanghaiCalendarDate } from "./work-order-date";
 
 export type TicketStatRow = {
@@ -69,9 +69,8 @@ export function buildOverviewFromBuckets(b: OverviewBuckets) {
 
   const regionDistribution: Record<string, number> = {};
   for (const row of b.regionRows) {
-    const town = explicitAdmin(row.subdistrict);
-    const region = town ? regionLabel(town) : "";
-    if (region && isTownLabel(region)) {
+    const region = regionLabel(row.subdistrict);
+    if (region && (isTownLabel(region) || region === UNKNOWN_TOWN)) {
       regionDistribution[region] = (regionDistribution[region] || 0) + Number(row.n || 0);
     }
   }
@@ -84,10 +83,9 @@ export function buildOverviewFromBuckets(b: OverviewBuckets) {
 
   const regionCategory: Record<string, Record<string, number>> = {};
   for (const row of b.regionCategoryRows) {
-    const town = explicitAdmin(row.subdistrict);
-    const region = town ? regionLabel(town) : "";
+    const region = regionLabel(row.subdistrict);
     const cat = (row.category || "").trim();
-    if (region && isTownLabel(region) && cat) {
+    if (region && (isTownLabel(region) || region === UNKNOWN_TOWN) && cat) {
       if (!regionCategory[region]) regionCategory[region] = {};
       regionCategory[region][cat] = (regionCategory[region][cat] || 0) + Number(row.n || 0);
     }
@@ -99,7 +97,9 @@ export function buildOverviewFromBuckets(b: OverviewBuckets) {
   }
 
   const topRegion =
-    Object.entries(regionDistribution).sort((a, c) => c[1] - a[1])[0]?.[0] || "";
+    Object.entries(regionDistribution)
+      .filter(([name]) => name !== UNKNOWN_TOWN)
+      .sort((a, c) => c[1] - a[1])[0]?.[0] || "";
   const topCategory =
     Object.entries(categoryDistribution).sort((a, c) => c[1] - a[1])[0]?.[0] || "";
 
@@ -175,24 +175,25 @@ export function buildOverview(tickets: TicketStatRow[], themeCount: number) {
     if (t.confidence == null) continue;
     analyzedCount += 1;
 
-    const town = explicitAdmin(t.subdistrict);
-    const region = town ? regionLabel(town) : "";
+    const region = regionLabel(t.subdistrict);
     const cat = (t.sourceCategory || t.category || "").trim();
 
-    if (region && isTownLabel(region)) {
+    if (region && (isTownLabel(region) || region === UNKNOWN_TOWN)) {
       regionDistribution[region] = (regionDistribution[region] || 0) + 1;
     }
     if (cat) {
       categoryDistribution[cat] = (categoryDistribution[cat] || 0) + 1;
     }
-    if (region && isTownLabel(region) && cat) {
+    if (region && (isTownLabel(region) || region === UNKNOWN_TOWN) && cat) {
       if (!regionCategory[region]) regionCategory[region] = {};
       regionCategory[region][cat] = (regionCategory[region][cat] || 0) + 1;
     }
   }
 
   const topRegion =
-    Object.entries(regionDistribution).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+    Object.entries(regionDistribution)
+      .filter(([name]) => name !== UNKNOWN_TOWN)
+      .sort((a, b) => b[1] - a[1])[0]?.[0] || "";
   const topCategory =
     Object.entries(categoryDistribution).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
 

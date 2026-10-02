@@ -58,9 +58,12 @@ export async function GET(req: Request) {
         status: c.status.label,
       })),
       facets: {
-        regions: [...new Set(allForFacets.filter((r) => isTownLabel(r)))].sort((a, b) =>
-          a.localeCompare(b, "zh-CN")
-        ),
+        regions: (() => {
+          const set = new Set(allForFacets.filter((r) => isTownLabel(r) || r === "未知"));
+          const list = Array.from(set).filter((r) => r !== "未知").sort((a, b) => a.localeCompare(b, "zh-CN"));
+          if (set.has("未知")) list.push("未知");
+          return list;
+        })(),
       },
     });
   } catch (err: any) {

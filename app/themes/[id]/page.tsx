@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { classifyDetailPayload, type DetailLoadStatus } from "@/lib/detail-load";
 import { MODE_META } from "@/backend/theme-metrics";
 import type { CivicMode } from "@/backend/state";
-import { spanDays } from "@/lib/civic-cluster";
+import { spanDays, categoryBadgeStyle } from "@/lib/civic-cluster";
 import { CivicEChart, radarOption } from "@/app/_components/civic/civic-charts";
 import { SkThemeDetail } from "@/app/_components/civic/skeletons";
 import { useRegion } from "@/app/_components/civic/region-context";
@@ -504,7 +504,10 @@ function ThemeDetailInner() {
                       {m.confidence == null ? "已校准" : `置信度 ${m.confidence}%`}
                     </span>
                     {m.category && (
-                      <span className="text-[11px] font-medium text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-md">
+                      <span
+                        className="badge-pill text-[11px] font-medium"
+                        style={categoryBadgeStyle(m.category)}
+                      >
                         {m.category}
                       </span>
                     )}
