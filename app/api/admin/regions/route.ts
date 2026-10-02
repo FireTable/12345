@@ -42,7 +42,13 @@ export async function GET() {
       })
     );
 
-    return apiSuccess({ regions: statsList });
+    return Response.json({
+      success: true,
+      code: ApiCode.OK,
+      message: "操作成功",
+      regions: statsList,
+      data: { regions: statsList },
+    });
   } catch (error: any) {
     console.error("[admin/regions] GET failed:", error);
     return apiError(ApiCode.INTERNAL_ERROR, error.message, 500);

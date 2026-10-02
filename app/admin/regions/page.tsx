@@ -93,9 +93,10 @@ export default function AdminRegionsPage() {
     try {
       setLoading(true);
       const res = await fetch("/api/admin/regions");
-      const data = await res.json();
-      if (data.success && Array.isArray(data.regions)) {
-        setRegions(data.regions);
+      const raw = await res.json();
+      const list = raw.data?.regions || raw.regions;
+      if (Array.isArray(list)) {
+        setRegions(list);
       }
     } catch (err: any) {
       toast.error("获取地区站点列表失败");
