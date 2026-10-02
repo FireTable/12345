@@ -286,19 +286,7 @@ export function CivicMap({
       };
     });
 
-    // 4.2 若有选中项，精准平滑飞入一次
-    if (selected) {
-      const selName = selected.replace(/(街道|镇)$/, "");
-      geoLayer.eachLayer((l: any) => {
-        const fName = l.feature?.properties?.name;
-        if (fName && (fName === selName || fName.includes(selName) || selName.includes(fName))) {
-          if (typeof l.getBounds === "function") {
-            const c = l.getBounds().getCenter();
-            map.flyTo([c.lat, c.lng], 13, { duration: 0.6 });
-          }
-        }
-      });
-    }
+    // 4.2 视口保持完全静止，不执行任何平移或变焦，仅响应高亮样式与数据筛选联动
   }, [selected]);
 
   const handleResetView = () => {

@@ -231,7 +231,7 @@ function MultifreqInner() {
                 <div className="card__title">{activeRegion ? activeRegion.name : "全区"}多频工单地理透势</div>
                 <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>点击镇街筛选 · 悬停查看详情</div>
               </div>
-              <div className="card__body" style={{ padding: 8, paddingTop: 40, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 460 }}>
+              <div className="card__body" style={{ padding: 8, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 460 }}>
                 <CivicMap
                   counts={ov?.regionDistribution || {}}
                   clusterCounts={clusterByRegion}
