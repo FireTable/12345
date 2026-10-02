@@ -107,15 +107,15 @@ export function CivicMap({
         maxZoom: 18,
       });
 
-      // 1. 前端直连标准矢量底图与注记 CDN（完全走浏览器直连，0 服务端带宽与 CPU 消耗）
-      L.tileLayer(
-        "https://wprd0{s}.is.autonavi.com/appmaptile?x={x}&y={y}&z={z}&lang=zh_cn&size=1&scale=1&style=7",
-        {
-          subdomains: ["1", "2", "3", "4"],
-          maxZoom: 18,
-          attribution: "© AutoNavi",
-        }
-      ).addTo(map);
+      // 恢复天地图 CGCS2000 标准底图（与 GeoJSON WGS-84/CGCS2000 严丝合缝像素级对齐，杜绝火星坐标偏移）
+      L.tileLayer("/api/map/tile?type=vec&z={z}&x={x}&y={y}", {
+        maxZoom: 18,
+      }).addTo(map);
+
+      // 天地图中文道路/街道注记 (各镇街天然境界与道路完美重合)
+      L.tileLayer("/api/map/tile?type=cva&z={z}&x={x}&y={y}", {
+        maxZoom: 18,
+      }).addTo(map);
 
       mapRef.current = map;
       setMapInstance(map);
