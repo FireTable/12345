@@ -25,6 +25,7 @@ export function CivicMap({
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const geojsonLayerRef = useRef<LeafletGeoJSON | null>(null);
+  const [mapInstance, setMapInstance] = useState<LeafletMap | null>(null);
   const [loading, setLoading] = useState(true);
   const [geoData, setGeoData] = useState<any>(null);
 
@@ -33,33 +34,55 @@ export function CivicMap({
   const totalTickets = useMemo(() => values.reduce((a, b) => a + b, 0), [values]);
   const maxCount = useMemo(() => (values.length ? Math.max(...values) : 1), [values]);
 
-  // 1. 默认动态从站点数据库拉取第四级镇街多边形网格面
+  // 1. 默认动态从站点数据库拉取第四级镇街多边形网格面（内置本地静态兜底，确保 100% 出现）
   useEffect(() => {
     let cancelled = false;
     const regionId = activeRegion?.id || "fs_shunde";
 
-    // 优先拉取第四级镇街多边形
-    fetch(`/api/regions/${regionId}/boundary?level=subdistricts`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((res) => {
+    async function loadBoundary() {
+      try {
+        // 第一优先级：从服务端数据库拉取最新高精第四级镇街多边形
+        const res = await fetch(`/api/regions/${regionId}/boundary?level=subdistricts`).then((r) =>
+          r.ok ? r.json() : null
+        );
         if (cancelled) return;
         if (res?.data?.geojson?.features && res.data.geojson.features.length > 0) {
           setGeoData(res.data.geojson);
-        } else {
-          // 若站点尚未持久化第四级多边形，优雅回退至区级权威审图轮廓
-          fetch(`/api/regions/${regionId}/boundary?level=district`)
-            .then((r) => (r.ok ? r.json() : null))
-            .then((districtRes) => {
-              if (cancelled) return;
-              if (districtRes?.data?.geojson?.features) {
-                setGeoData(districtRes.data.geojson);
-              }
-            });
+          return;
         }
-      })
-      .catch((err) => {
-        console.warn("[CivicMap] 拉取空间地理资产失败:", err);
-      });
+
+        // 第二优先级：本地静态权威多边形兜底（如 public/civic/fs_shunde-townships.geojson）
+        const localRes = await fetch(`/civic/${regionId}-townships.geojson`).then((r) =>
+          r.ok ? r.json() : null
+        );
+        if (cancelled) return;
+        if (localRes?.features && localRes.features.length > 0) {
+          setGeoData(localRes);
+          return;
+        }
+
+        // 第三优先级：回退至区级权威审图轮廓
+        const districtRes = await fetch(`/api/regions/${regionId}/boundary?level=district`).then((r) =>
+          r.ok ? r.json() : null
+        );
+        if (cancelled) return;
+        if (districtRes?.data?.geojson?.features) {
+          setGeoData(districtRes.data.geojson);
+        }
+      } catch (err) {
+        console.warn("[CivicMap] 拉取空间地理资产异常，尝试本地静态兜底:", err);
+        try {
+          const fallback = await fetch(`/civic/${regionId}-townships.geojson`).then((r) =>
+            r.ok ? r.json() : null
+          );
+          if (!cancelled && fallback?.features) {
+            setGeoData(fallback);
+          }
+        } catch (e) {}
+      }
+    }
+
+    loadBoundary();
 
     return () => {
       cancelled = true;
@@ -95,6 +118,7 @@ export function CivicMap({
       }).addTo(map);
 
       mapRef.current = map;
+      setMapInstance(map);
       setLoading(false);
 
       setTimeout(() => {
@@ -110,18 +134,19 @@ export function CivicMap({
         mapRef.current.remove();
         mapRef.current = null;
       }
+      setMapInstance(null);
     };
   }, [activeRegion?.id]);
 
-  // 3. 渲染 GeoJSON 与镇街徽标
+  // 3. 渲染 GeoJSON 与镇街徽标（当 mapInstance 和 geoData 均准备就绪时必然触发，杜绝竞态）
   useEffect(() => {
-    if (!mapRef.current || !geoData) return;
+    if (!mapInstance || !geoData) return;
 
     let isMounted = true;
     import("leaflet").then((module) => {
-      if (!isMounted || !mapRef.current) return;
+      if (!isMounted || !mapInstance) return;
       const L = module.default;
-      const map = mapRef.current;
+      const map = mapInstance;
 
       // 清除旧图层
       if (geojsonLayerRef.current) {
@@ -263,7 +288,7 @@ export function CivicMap({
     return () => {
       isMounted = false;
     };
-  }, [geoData, counts, clusterCounts, totalTickets, onSelect]);
+  }, [mapInstance, geoData, counts, clusterCounts, totalTickets, onSelect]);
 
   // 4. 监听选中状态切换，就地更新多边形样式并平滑飞向该区域，绝不重建 DOM
   useEffect(() => {
