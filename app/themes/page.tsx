@@ -322,11 +322,9 @@ export default function ThemesPage() {
                     <th style={{ width: 130, minWidth: 120 }}>研判模式</th>
                     <th style={{ width: 130, minWidth: 130 }}>辖区 · 业务</th>
                     <th>代表性诉求标题</th>
-                    <th style={{ width: 75, textAlign: "right" }}>工单数</th>
-                    <th style={{ width: 75, textAlign: "right" }}>未处理</th>
+                    <th style={{ width: 110, textAlign: "center" }}>待处理 / 总数</th>
                     <th style={{ width: 80, textAlign: "center" }}>紧急度</th>
                     <th style={{ width: 85, textAlign: "right" }}>持续天数</th>
-                    <th style={{ width: 125 }}>AI 置信度</th>
                     <th style={{ width: 85 }}>处置状态</th>
                     <th style={{ width: 75, textAlign: "right" }}>操作</th>
                   </tr>
@@ -336,8 +334,6 @@ export default function ThemesPage() {
                     const u = URGENCY_META[g.urgency];
                     const statusCode = g.status.code || normalizeStatusCode(g.status.label);
                     const sCls = statusCode === HANDLING_STATUS.RESOLVED ? "status-tag--done" : statusCode === HANDLING_STATUS.IN_PROGRESS ? "status-tag--progress" : "status-tag--pending";
-                    const conf = g.ai_confidence;
-                    const confColor = conf == null ? "#86909C" : conf >= 90 ? "#52C41A" : conf >= 85 ? "#1677FF" : "#FF7D00";
                     return (
                       <tr key={g.id} onClick={() => router.push(`/themes/${g.id}`)} className="hover:bg-blue-50/40 transition-colors">
                         <td style={{ fontFeatureSettings: "'tnum'", color: "var(--c-ink-3)", fontSize: 12 }} className="font-mono">
@@ -367,29 +363,20 @@ export default function ThemesPage() {
                             {g.first_date} ~ {g.last_date}
                           </div>
                         </td>
-                        <td style={{ textAlign: "right", fontWeight: 700, fontFeatureSettings: "'tnum'", color: "#1E293B" }}>
-                          {g.count}
-                        </td>
-                        <td style={{ textAlign: "right", fontFeatureSettings: "'tnum'", fontWeight: 600, color: g.unprocessed > 0 ? "#F53F3F" : "var(--c-ink-3)" }}>
-                          {g.unprocessed}
+                        <td style={{ textAlign: "center", fontFeatureSettings: "'tnum'" }}>
+                          <span style={{ fontWeight: 700, color: g.unprocessed > 0 ? "#F53F3F" : "var(--c-ink-3)", fontSize: 13 }}>
+                            {g.unprocessed}
+                          </span>
+                          <span style={{ color: "#94A3B8", margin: "0 3px", fontSize: 12 }}>/</span>
+                          <span style={{ fontWeight: 600, color: "#1E293B", fontSize: 13 }}>
+                            {g.count}
+                          </span>
                         </td>
                         <td style={{ textAlign: "center" }}>
                           <span className={`urgency-tag ${u.cls}`}>{u.label}</span>
                         </td>
                         <td style={{ textAlign: "right", fontFeatureSettings: "'tnum'", color: "var(--c-ink-2)" }}>
                           {g.days} 天
-                        </td>
-                        <td>
-                          {conf == null ? (
-                            "—"
-                          ) : (
-                            <div className="flex items-center gap-2">
-                              <span className="conf-bar" style={{ width: 54 }}>
-                                <span className="conf-bar__fill" style={{ width: `${conf}%`, background: confColor, display: "block" }} />
-                              </span>
-                              <span style={{ fontSize: 12, fontWeight: 700, color: confColor }}>{conf}%</span>
-                            </div>
-                          )}
                         </td>
                         <td>
                           <span className={`status-tag ${sCls}`}>{g.status.label}</span>

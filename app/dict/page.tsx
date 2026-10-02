@@ -27,6 +27,7 @@ import { ConfirmDialog } from "@/app/_components/ui/confirm-dialog";
 import { TablePager } from "@/app/_components/civic/table-pager";
 import { useRegion } from "@/app/_components/civic/region-context";
 import { resolveApiError } from "@/lib/api-codes";
+import { categoryVisual } from "@/lib/civic-cluster";
 
 interface TownshipItem {
   name: string;
@@ -96,16 +97,17 @@ export default function DictionaryManagementPage() {
       const res = await fetch(`/api/dict?q=${encodeURIComponent(searchQuery)}${regionParam}`);
       const data = await res.json();
       if (data.success) {
-        setAliases(data.aliases || []);
-        setTownships(data.townships || []);
-        setCategories(data.categories || []);
+        const payload = data.data || data;
+        setAliases(payload.aliases || []);
+        setTownships(payload.townships || []);
+        setCategories(payload.categories || []);
         const totalCommunities =
-          data.townships?.reduce((acc: number, t: any) => acc + (t.communities?.length || 0), 0) || 0;
+          payload.townships?.reduce((acc: number, t: any) => acc + (t.communities?.length || 0), 0) || 0;
         setStats({
-          townshipCount: data.stats?.townshipCount || data.townships?.length || 0,
-          categoryCount: data.stats?.categoryCount || data.categories?.length || 0,
-          aliasCount: data.stats?.aliasCount || data.aliases?.length || 0,
-          communityCount: totalCommunities || data.stats?.communityCount || 0,
+          townshipCount: payload.stats?.townshipCount || payload.townships?.length || 0,
+          categoryCount: payload.stats?.categoryCount || payload.categories?.length || 0,
+          aliasCount: payload.stats?.aliasCount || payload.aliases?.length || 0,
+          communityCount: totalCommunities || payload.stats?.communityCount || 0,
         });
       }
     } catch (err) {
@@ -140,7 +142,8 @@ export default function DictionaryManagementPage() {
       });
       const data = await res.json();
       if (data.success) {
-        setNormalizedTestResult(data.normalized);
+        const payload = data.data || data;
+        setNormalizedTestResult(payload.normalized || "");
       }
     } catch (e) {}
   };
@@ -324,280 +327,307 @@ export default function DictionaryManagementPage() {
         </div>
       </div>
 
-      {/* 统一 Tab 栏与筛选栏 */}
-      <div className="filter-tabs">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            className={`filter-tab${activeTab === t.key ? " is-active" : ""}`}
-            onClick={() => {
-              setActiveTab(t.key as any);
-              setPage(1);
-            }}
-          >
-            {t.label}
-            <span className="filter-tab__count">
-              {t.key === "aliases"
-                ? aliases.length
-                : t.key === "townships"
-                ? townships.length
-                : categories.length}
-            </span>
-          </button>
-        ))}
-      </div>
-
-      {/* 别名 Tab 下的筛选栏 */}
-      {activeTab === "aliases" && (
-        <div className="filter-bar mb-4">
-          <div className="search-input">
-            <span>⌕</span>
-            <input
-              placeholder="搜索别名 · 俗称 / 规范全称关键词"
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
+      {/* 统一卡片容器：Tab 与数据/列表无缝聚合为一个整体 */}
+      <div className="card list-card">
+        {/* 顶部 Tab 栏：内嵌在卡片顶端 */}
+        <div className="filter-tabs">
+          {tabs.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              className={`filter-tab${activeTab === t.key ? " is-active" : ""}`}
+              onClick={() => {
+                setActiveTab(t.key as any);
                 setPage(1);
               }}
-            />
-          </div>
-          <div className="filter-bar__divider" />
-          <Select
-            value={typeFilter}
-            onValueChange={(val) => {
-              setTypeFilter(val);
-              setPage(1);
-            }}
-          >
-            <SelectTrigger className="w-[140px] h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
-              <SelectValue placeholder="类型：全部" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">类型：全部</SelectItem>
-              <SelectItem value="TOWNSHIP">镇街区划</SelectItem>
-              <SelectItem value="LOCATION">微观点位</SelectItem>
-              <SelectItem value="DEPARTMENT">责任部门</SelectItem>
-              <SelectItem value="ENTITY">涉事主体</SelectItem>
-            </SelectContent>
-          </Select>
+            >
+              {t.label}
+              <span className="filter-tab__count">
+                {t.key === "aliases"
+                  ? aliases.length
+                  : t.key === "townships"
+                  ? townships.length
+                  : categories.length}
+              </span>
+            </button>
+          ))}
         </div>
-      )}
 
-      {/* Tab 1: 别名知识库映射列表 (Table) */}
-      {activeTab === "aliases" && (
-        <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden">
-          <div className="table-scroll overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50/80 border-b border-slate-200/80 text-[11px] font-semibold text-slate-600">
-                <tr>
-                  <th className="px-4 py-3">俗称 / 别名 (Alias)</th>
-                  <th className="px-4 py-3">对应标准规范全称 (Canonical)</th>
-                  <th className="px-4 py-3">实体类型</th>
-                  <th className="px-4 py-3">来源渠道</th>
-                  <th className="px-4 py-3">替换生效</th>
-                  <th className="px-4 py-3 text-right">操作</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-700">
-                {filteredAliases.length === 0 ? (
+        {/* Tab 1: 别名知识库映射 */}
+        {activeTab === "aliases" && (
+          <>
+            <div className="filter-bar">
+              <div className="search-input">
+                <span>⌕</span>
+                <input
+                  placeholder="搜索别名 · 俗称 / 规范全称关键词"
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setPage(1);
+                  }}
+                />
+              </div>
+              <div className="filter-bar__divider" />
+              <Select
+                value={typeFilter}
+                onValueChange={(val) => {
+                  setTypeFilter(val);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="w-[140px] h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
+                  <SelectValue placeholder="类型：全部" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">类型：全部</SelectItem>
+                  <SelectItem value="TOWNSHIP">镇街区划</SelectItem>
+                  <SelectItem value="LOCATION">微观点位</SelectItem>
+                  <SelectItem value="DEPARTMENT">责任部门</SelectItem>
+                  <SelectItem value="ENTITY">涉事主体</SelectItem>
+                </SelectContent>
+              </Select>
+              <span className="filter-bar__summary">共 {filteredAliases.length} 条别名映射</span>
+            </div>
+
+            <div className="table-scroll">
+              <table className="group-table">
+                <thead>
                   <tr>
-                    <td colSpan={6} className="px-4 py-12 text-center text-slate-400 text-xs">
-                      未找到符合条件的别名映射规则
-                    </td>
+                    <th style={{ width: 170 }}>俗称 / 别名 (Alias)</th>
+                    <th>对应标准规范全称 (Canonical)</th>
+                    <th style={{ width: 120 }}>实体类型</th>
+                    <th style={{ width: 125 }}>来源渠道</th>
+                    <th style={{ width: 110 }}>替换生效</th>
+                    <th style={{ width: 85, textAlign: "right" }}>操作</th>
                   </tr>
-                ) : (
-                  pagedAliases.map((item) => (
-                    <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="px-4 py-3 font-medium">
-                        <span className="rounded bg-amber-50 border border-amber-200/80 px-2 py-0.5 text-[11px] font-mono text-amber-800 font-semibold">
-                          {item.alias}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 font-semibold text-slate-900">
-                        <span className="text-emerald-600 mr-1.5 font-normal">➔</span>
-                        {item.canonical}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center rounded-full bg-blue-50 border border-blue-200/80 px-2.5 py-0.5 text-[10px] font-medium text-blue-700">
-                          {item.type === "TOWNSHIP"
-                            ? "镇街区划"
-                            : item.type === "DEPARTMENT"
-                            ? "责任部门"
-                            : item.type === "LOCATION"
-                            ? "微观点位"
-                            : "业务实体"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium border ${
-                            item.source === "AI_MINED"
-                              ? "bg-purple-50 text-purple-700 border-purple-200/80"
-                              : item.source === "MANUAL"
-                              ? "bg-amber-50 text-amber-700 border-amber-200/80"
-                              : "bg-slate-100 text-slate-600 border-slate-200/80"
-                          }`}
-                        >
-                          {item.source === "AI_MINED"
-                            ? "AI 自学习沉淀"
-                            : item.source === "MANUAL"
-                            ? "人工维护"
-                            : "系统预置"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600">
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                          已启用
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => setPendingDelete({ id: item.id, alias: item.alias })}
-                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
-                          title="删除别名"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                </thead>
+                <tbody>
+                  {filteredAliases.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} style={{ textAlign: "center", padding: "48px 20px", color: "var(--c-ink-3)", fontSize: 13 }}>
+                        未找到符合条件的别名映射规则
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-          {filteredAliases.length > 0 && (
-            <TablePager
-              page={aliasPage}
-              pages={aliasPages}
-              total={filteredAliases.length}
-              pageSize={pageSize}
-              pageSizeOptions={[10, 15, 20, 50]}
-              itemLabel="条别名"
-              onPageChange={setPage}
-              onPageSizeChange={(n) => {
-                setPageSize(n);
-                setPage(1);
-              }}
-            />
-          )}
-        </div>
-      )}
+                  ) : (
+                    pagedAliases.map((item) => (
+                      <tr key={item.id} className="hover:bg-blue-50/40 transition-colors">
+                        <td>
+                          <span className="rounded bg-amber-50 border border-amber-200/80 px-2 py-0.5 text-[11px] font-mono text-amber-800 font-semibold">
+                            {item.alias}
+                          </span>
+                        </td>
+                        <td style={{ fontWeight: 600, color: "var(--c-ink)" }}>
+                          <span className="text-emerald-600 mr-1.5 font-normal">➔</span>
+                          {item.canonical}
+                        </td>
+                        <td>
+                          <span className="inline-flex items-center rounded-full bg-blue-50 border border-blue-200/80 px-2.5 py-0.5 text-[10px] font-medium text-blue-700">
+                            {item.type === "TOWNSHIP"
+                              ? "镇街区划"
+                              : item.type === "DEPARTMENT"
+                              ? "责任部门"
+                              : item.type === "LOCATION"
+                              ? "微观点位"
+                              : "业务实体"}
+                          </span>
+                        </td>
+                        <td>
+                          <span
+                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium border ${
+                              item.source === "AI_MINED"
+                                ? "bg-purple-50 text-purple-700 border-purple-200/80"
+                                : item.source === "MANUAL"
+                                ? "bg-amber-50 text-amber-700 border-amber-200/80"
+                                : "bg-slate-100 text-slate-600 border-slate-200/80"
+                            }`}
+                          >
+                            {item.source === "AI_MINED"
+                              ? "AI 自学习沉淀"
+                              : item.source === "MANUAL"
+                              ? "人工维护"
+                              : "系统预置"}
+                          </span>
+                        </td>
+                        <td>
+                          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600">
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            已启用
+                          </span>
+                        </td>
+                        <td style={{ textAlign: "right" }}>
+                          <button
+                            type="button"
+                            onClick={() => setPendingDelete({ id: item.id, alias: item.alias })}
+                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors inline-flex items-center justify-center"
+                            title="删除别名"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
 
-      {/* Tab 2: 目标辖区法定区划与镇街街道 */}
-      {activeTab === "townships" && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-          {townships.map((t) => (
-            <div
-              key={t.name}
-              className="bg-white rounded-xl border border-slate-200/90 p-4 hover:border-slate-300 transition-all shadow-2xs"
-            >
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full bg-blue-600"></span>
-                  <h3 className="text-sm font-bold text-slate-900">{t.fullName}</h3>
-                  <span className="text-xs text-slate-500 font-mono">（简称：{t.name}）</span>
-                </div>
-                <span className="text-[10px] font-medium rounded-full bg-emerald-50 text-emerald-700 px-2 py-0.5 border border-emerald-200/80">
-                  法定辖区
-                </span>
-              </div>
+            {filteredAliases.length > 0 && (
+              <TablePager
+                page={aliasPage}
+                pages={aliasPages}
+                total={filteredAliases.length}
+                pageSize={pageSize}
+                pageSizeOptions={[10, 15, 20, 50]}
+                itemLabel="条别名"
+                onPageChange={setPage}
+                onPageSizeChange={(n) => {
+                  setPageSize(n);
+                  setPage(1);
+                }}
+              />
+            )}
+          </>
+        )}
 
-              {/* 别名 Tags */}
-              <div className="mb-2.5">
-                <span className="text-[11px] text-slate-500 mr-1.5">俗称/别名:</span>
-                <div className="inline-flex flex-wrap gap-1 mt-0.5">
-                  {t.aliases.map((alias) => (
-                    <span
-                      key={alias}
-                      className="rounded bg-amber-50/80 border border-amber-200/60 px-1.5 py-0.5 text-[10px] text-amber-800 font-mono"
-                    >
-                      {alias}
+        {/* Tab 2: 目标辖区法定区划与镇街街道 */}
+        {activeTab === "townships" && (
+          <div style={{ padding: 20 }}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              {townships.map((t) => (
+                <div
+                  key={t.name}
+                  className="bg-white rounded-xl border border-slate-200/90 p-4 hover:border-slate-300 transition-all shadow-2xs"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-blue-600"></span>
+                      <h3 className="text-sm font-bold text-slate-900">{t.fullName}</h3>
+                      <span className="text-xs text-slate-500 font-mono">（简称：{t.name}）</span>
+                    </div>
+                    <span className="text-[10px] font-medium rounded-full bg-emerald-50 text-emerald-700 px-2 py-0.5 border border-emerald-200/80">
+                      法定辖区
                     </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* 代表村居社区 */}
-              <div className="mb-2.5">
-                <span className="text-[11px] text-slate-500 block mb-1">主要村居社区 ({t.communities.length}个):</span>
-                <div className="flex flex-wrap gap-1">
-                  {t.communities.map((c) => (
-                    <span
-                      key={c}
-                      className="rounded bg-blue-50/80 border border-blue-200/60 px-1.5 py-0.5 text-[10px] text-blue-700"
-                    >
-                      {c}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* 知名地标与园区 */}
-              {t.landmarks && t.landmarks.length > 0 && (
-                <div>
-                  <span className="text-[11px] text-slate-500 block mb-1">重点地标与园区:</span>
-                  <div className="flex flex-wrap gap-1">
-                    {t.landmarks.map((lm) => (
-                      <span
-                        key={lm}
-                        className="rounded bg-slate-100 border border-slate-200 px-1.5 py-0.5 text-[10px] text-slate-600"
-                      >
-                        📍 {lm}
-                      </span>
-                    ))}
                   </div>
+
+                  {/* 别名 Tags */}
+                  <div className="mb-2.5">
+                    <span className="text-[11px] text-slate-500 mr-1.5">俗称/别名:</span>
+                    <div className="inline-flex flex-wrap gap-1 mt-0.5">
+                      {t.aliases.map((alias) => (
+                        <span
+                          key={alias}
+                          className="rounded bg-amber-50/80 border border-amber-200/60 px-1.5 py-0.5 text-[10px] text-amber-800 font-mono"
+                        >
+                          {alias}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 代表村居社区 */}
+                  <div className="mb-2.5">
+                    <span className="text-[11px] text-slate-500 block mb-1">主要村居社区 ({t.communities.length}个):</span>
+                    <div className="flex flex-wrap gap-1">
+                      {t.communities.map((c) => (
+                        <span
+                          key={c}
+                          className="rounded bg-blue-50/80 border border-blue-200/60 px-1.5 py-0.5 text-[10px] text-blue-700"
+                        >
+                          {c}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 知名地标与园区 */}
+                  {t.landmarks && t.landmarks.length > 0 && (
+                    <div>
+                      <span className="text-[11px] text-slate-500 block mb-1">重点地标与园区:</span>
+                      <div className="flex flex-wrap gap-1">
+                        {t.landmarks.map((lm) => (
+                          <span
+                            key={lm}
+                            className="rounded bg-slate-100 border border-slate-200 px-1.5 py-0.5 text-[10px] text-slate-600"
+                          >
+                            📍 {lm}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
+              ))}
             </div>
-          ))}
-        </div>
-      )}
+          </div>
+        )}
 
-      {/* Tab 3: 7 大民生诉求分类标准 */}
-      {activeTab === "categories" && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-          {categories.map((c) => (
-            <div
-              key={c.category}
-              className="bg-white rounded-xl border border-slate-200/90 p-4 hover:border-slate-300 transition-all shadow-2xs"
-            >
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full bg-purple-600"></span>
-                  <h3 className="text-sm font-bold text-slate-900">{c.category}</h3>
-                </div>
-                <span className="text-[10px] font-medium rounded-full bg-purple-50 text-purple-700 px-2 py-0.5 border border-purple-200/80">
-                  7大标准分类
-                </span>
-              </div>
+        {/* Tab 3: 7 大民生诉求分类标准 */}
+        {activeTab === "categories" && (
+          <div style={{ padding: 20 }}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              {categories.map((c) => {
+                const visual = categoryVisual(c.category);
+                return (
+                  <div
+                    key={c.category}
+                    className="bg-white rounded-xl border border-slate-200/90 p-4 hover:border-slate-300 transition-all shadow-2xs relative overflow-hidden"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="h-2.5 w-2.5 rounded-full shrink-0"
+                          style={{ backgroundColor: visual.color }}
+                        />
+                        <h3 className="text-sm font-bold text-slate-900">{c.category}</h3>
+                      </div>
+                      <span
+                        className="text-[10px] font-medium rounded-full px-2 py-0.5 border"
+                        style={{
+                          color: visual.color,
+                          backgroundColor: visual.bg,
+                          borderColor: visual.border,
+                        }}
+                      >
+                        7大标准分类
+                      </span>
+                    </div>
 
-              <div className="mb-2.5">
-                <span className="text-[11px] text-slate-500 block mb-1">牵头负责科室:</span>
-                <p className="text-xs font-semibold text-slate-800 bg-slate-50 p-2 rounded-lg border border-slate-200/80">
-                  🏢 {c.leadDepartment}
-                </p>
-              </div>
+                    <div className="mb-2.5">
+                      <span className="text-[11px] text-slate-500 block mb-1">牵头负责科室:</span>
+                      <p
+                        className="text-xs font-semibold p-2 rounded-lg border flex items-center gap-1.5"
+                        style={{
+                          backgroundColor: visual.bg,
+                          borderColor: visual.border,
+                          color: visual.color,
+                        }}
+                      >
+                        <span>🏢</span>
+                        <span>{c.leadDepartment}</span>
+                      </p>
+                    </div>
 
-              <div>
-                <span className="text-[11px] text-slate-500 block mb-1">包含细分诉求事项:</span>
-                <div className="flex flex-wrap gap-1">
-                  {c.subItems.map((sub) => (
-                    <span
-                      key={sub}
-                      className="rounded bg-slate-100 border border-slate-200 px-2 py-0.5 text-[10px] text-slate-700"
-                    >
-                      • {sub}
-                    </span>
-                  ))}
-                </div>
-              </div>
+                    <div>
+                      <span className="text-[11px] text-slate-500 block mb-1">包含细分诉求事项:</span>
+                      <div className="flex flex-wrap gap-1">
+                        {c.subItems.map((sub) => (
+                          <span
+                            key={sub}
+                            className="rounded bg-slate-100 hover:bg-slate-200/70 transition-colors border border-slate-200 px-2 py-0.5 text-[10px] text-slate-700"
+                          >
+                            • {sub}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          ))}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
       </>
       )}
 

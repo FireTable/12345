@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
     const { action } = body;
 
     // 1. 测试别名规范化
-    if (action === "normalize") {
+    if (action === "normalize" || action === "test_replace") {
       const text = String(body.text || "");
       const normalized = normalizeAliasesInText(text);
       return apiSuccess({

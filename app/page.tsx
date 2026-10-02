@@ -258,15 +258,31 @@ export default function DashboardPage() {
       </section>
 
       <section className="split-row split-row--main" style={{ marginTop: 16 }}>
-        <div className="card">
+        <div className="card" style={{ display: "flex", flexDirection: "column" }}>
           <div className="card__header">
             <div className="card__title">工单类型分布</div>
             <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>
               已研判 <b>{ov?.analyzedCount || 0}</b> / {ov?.totalWorkorders || 0} 件
             </div>
           </div>
-          <div className="card__body" style={{ padding: "8px 12px" }}>
-            {hasDonut ? <CivicEChart option={donutOpt} height={300} /> : <div className="empty-hint">暂无类型分布。类型由 AI 归入七类民生业务后展示。</div>}
+          <div
+            className="card__body"
+            style={{
+              padding: "16px 12px",
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            {hasDonut ? (
+              <div style={{ width: "100%" }}>
+                <CivicEChart option={donutOpt} height={320} />
+              </div>
+            ) : (
+              <div className="empty-hint">暂无类型分布。类型由 AI 归入七类民生业务后展示。</div>
+            )}
           </div>
         </div>
         <div className="card">

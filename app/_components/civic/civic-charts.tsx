@@ -233,15 +233,12 @@ export function donutOption(dist: Record<string, number>) {
     },
     legend: {
       bottom: 0,
+      left: "center",
       icon: "circle",
       itemWidth: 8,
       itemHeight: 8,
+      itemGap: 10,
       textStyle: { color: "#64748B", fontSize: 11 },
-      formatter: (name: string) => {
-        const d = data.find((x) => x.name === name);
-        const pct = d && total ? ((d.value / total) * 100).toFixed(1) : "0.0";
-        return `${name} ${pct}%`;
-      },
     },
     series: [
       {

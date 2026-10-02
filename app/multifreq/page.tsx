@@ -5,10 +5,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { CivicMap } from "@/app/_components/civic/civic-map";
 import { QuadrantBoard } from "@/app/_components/civic/quadrant";
-import type { ClusterUrgency } from "@/lib/civic-cluster";
+import { URGENCY_META, type ClusterUrgency } from "@/lib/civic-cluster";
 import { clampTimeRef, formatYmd, inTimeWindow } from "@/lib/civic-time";
 import { isTownLabel } from "@/lib/admin-area";
-import { getCategoryBadgeClass, getUrgencyLabel, categoryBadgeStyle } from "@/lib/civic-dto";
+import { HANDLING_STATUS, normalizeStatusCode } from "@/lib/civic-dto";
 import { Clock, TrendingUp, Flame, Layers } from "lucide-react";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { SkMultifreq } from "@/app/_components/civic/skeletons";
@@ -23,6 +23,7 @@ import {
 
 type Cluster = {
   id: string;
+  code?: string;
   type: string;
   region: string;
   count: number;
@@ -30,7 +31,7 @@ type Cluster = {
   mode_name: string;
   mode_icon: string;
   ai_confidence: number | null;
-  status: { code?: "PENDING" | "IN_PROGRESS" | "RESOLVED"; label: string };
+  status: { code?: "PENDING" | "IN_PROGRESS" | "RESOLVED"; label: string; progress?: number; owner?: string };
   trend: string;
   title: string;
   urgency: ClusterUrgency;
@@ -39,6 +40,7 @@ type Cluster = {
   sample_titles?: string[];
   first_date?: string;
   last_date?: string;
+  days?: number;
 };
 
 type Overview = { regionDistribution?: Record<string, number> };
@@ -48,7 +50,7 @@ function MultifreqChrome() {
     <>
       <section className="page-hero">
         <div>
-          <h1 className="page-hero__title">多频工单实时透势</h1>
+          <h1 className="page-hero__title">工单透势</h1>
           <div className="page-hero__sub">实时识别 · AI 自动聚类</div>
         </div>
       </section>
@@ -152,7 +154,7 @@ function MultifreqInner() {
       <section className="page-hero">
         <div>
           <h1 className="page-hero__title">
-            多频工单实时透势
+            工单透势
           </h1>
           <div className="page-hero__sub">实时识别 · AI 自动聚类 · 置信度 ≥ {confMin}%</div>
         </div>
@@ -270,42 +272,33 @@ function MultifreqInner() {
               </button>
             </div>
             <div className="table-scroll">
-              <table className="workorder-table">
+              <table className="group-table">
                 <thead>
                   <tr>
-                    <th style={{ width: 55 }}>排名</th>
-                    <th style={{ width: 100 }}>辖区</th>
-                    <th style={{ width: 95 }}>业务类型</th>
-                    <th style={{ width: 125 }}>研判模式</th>
+                    <th style={{ width: 55, minWidth: 45, textAlign: "center" }}>排名</th>
+                    <th style={{ width: 90, minWidth: 80 }}>群组编号</th>
+                    <th style={{ width: 130, minWidth: 120 }}>研判模式</th>
+                    <th style={{ width: 130, minWidth: 130 }}>辖区 · 业务</th>
                     <th>代表性诉求标题</th>
-                    <th style={{ width: 70, textAlign: "right" }}>工单数</th>
-                    <th style={{ width: 125 }}>AI 置信度</th>
-                    <th style={{ width: 85 }}>风险等级</th>
-                    <th style={{ width: 65, textAlign: "center" }}>趋势</th>
-                    <th style={{ width: 75, textAlign: "center" }}>涉社区</th>
-                    <th style={{ width: 45, textAlign: "right" }} />
+                    <th style={{ width: 110, textAlign: "center" }}>待处理 / 总数</th>
+                    <th style={{ width: 80, textAlign: "center" }}>紧急度</th>
+                    <th style={{ width: 85, textAlign: "right" }}>持续天数</th>
+                    <th style={{ width: 85 }}>处置状态</th>
+                    <th style={{ width: 75, textAlign: "right" }}>操作</th>
                   </tr>
                 </thead>
                 <tbody>
                   {top5.map((c, i) => {
-                    const risk = c.urgency === "urgent" ? "urgent" : i < 3 ? "medium" : "low";
-                    const riskText = getUrgencyLabel(risk);
-                    const conf = c.ai_confidence;
+                    const u = URGENCY_META[c.urgency] || { label: "普通", cls: "urgency-tag--low" };
+                    const statusCode = c.status.code || normalizeStatusCode(c.status.label);
+                    const sCls = statusCode === HANDLING_STATUS.RESOLVED ? "status-tag--done" : statusCode === HANDLING_STATUS.IN_PROGRESS ? "status-tag--progress" : "status-tag--pending";
                     return (
-                      <tr key={c.id} onClick={() => router.push(`/themes/${c.id}`)}>
-                        <td>
+                      <tr key={c.id} onClick={() => router.push(`/themes/${c.id}`)} className="hover:bg-blue-50/40 transition-colors">
+                        <td style={{ textAlign: "center" }}>
                           <span className={`rank-badge rank-badge--${i + 1}`}>{i + 1}</span>
                         </td>
-                        <td>
-                          <span className="font-semibold text-slate-800 text-xs">{c.region || "—"}</span>
-                        </td>
-                        <td>
-                          <span
-                            className={`badge-pill ${catPill(c.type)}`}
-                            style={categoryBadgeStyle(c.type)}
-                          >
-                            {c.type}
-                          </span>
+                        <td style={{ fontFeatureSettings: "'tnum'", color: "var(--c-ink-3)", fontSize: 12 }} className="font-mono">
+                          {c.code || c.id.slice(0, 8)}
                         </td>
                         <td>
                           <span className={`mode-badge mode-badge--${c.mode}`}>
@@ -313,43 +306,44 @@ function MultifreqInner() {
                           </span>
                         </td>
                         <td>
-                          <div
-                            className="font-medium text-slate-900 text-xs line-clamp-1"
-                            style={{ maxWidth: "min(35vw, 480px)" }}
-                            title={c.sample_titles?.[0] || c.title || `${c.region} · ${c.type}`}
-                          >
-                            {c.sample_titles?.[0] || c.title || `${c.region} · ${c.type}`}
+                          <div style={{ fontWeight: 600, color: "var(--c-ink)", fontSize: 12, whiteSpace: "nowrap" }}>
+                            {c.region}
+                          </div>
+                          <div style={{ fontSize: 11, color: "var(--c-ink-3)", marginTop: 2, whiteSpace: "nowrap" }}>
+                            {c.type}
                           </div>
                         </td>
-                        <td style={{ fontWeight: 700, fontFeatureSettings: "'tnum'", textAlign: "right", color: "#1E293B" }}>
-                          {c.count}
-                        </td>
                         <td>
-                          {conf == null ? (
-                            "—"
-                          ) : (
-                            <div className="conf-inline">
-                              <span className="conf-bar conf-bar--wide">
-                                <span className="conf-bar__fill" style={{ width: `${conf}%`, display: "block" }} />
-                              </span>
-                              <span style={{ fontWeight: 600 }}>{conf}%</span>
-                            </div>
-                          )}
+                          <div
+                            style={{ maxWidth: "min(38vw, 520px)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600, color: "var(--c-ink)", fontSize: 13 }}
+                            title={c.title || c.sample_titles?.[0] || `${c.region} · ${c.type}`}
+                          >
+                            {c.title || c.sample_titles?.[0] || `${c.region} · ${c.type}`}
+                          </div>
+                          <div style={{ fontSize: 11, color: "var(--c-ink-3)", marginTop: 2, fontFamily: "ui-monospace, monospace" }}>
+                            {c.first_date || "—"} ~ {c.last_date || "—"}
+                          </div>
                         </td>
-                        <td>
-                          <span className={`risk-pill risk-pill--${risk}`}>
-                            <span className="risk-pill__dot" />
-                            {riskText}
+                        <td style={{ textAlign: "center", fontFeatureSettings: "'tnum'" }}>
+                          <span style={{ fontWeight: 700, color: c.unprocessed > 0 ? "#F53F3F" : "var(--c-ink-3)", fontSize: 13 }}>
+                            {c.unprocessed}
+                          </span>
+                          <span style={{ color: "#94A3B8", margin: "0 3px", fontSize: 12 }}>/</span>
+                          <span style={{ fontWeight: 600, color: "#1E293B", fontSize: 13 }}>
+                            {c.count}
                           </span>
                         </td>
                         <td style={{ textAlign: "center" }}>
-                          <span className="trend-up">{c.trend || "—"}</span>
+                          <span className={`urgency-tag ${u.cls}`}>{u.label}</span>
                         </td>
-                        <td style={{ textAlign: "center", color: "var(--c-ink-3)", fontFeatureSettings: "'tnum'" }}>
-                          {c.communities ? `${c.communities} 个` : `${Math.max(1, Math.ceil(c.count / 3))} 个`}
+                        <td style={{ textAlign: "right", fontFeatureSettings: "'tnum'", color: "var(--c-ink-2)" }}>
+                          {c.days ?? 1} 天
+                        </td>
+                        <td>
+                          <span className={`status-tag ${sCls}`}>{c.status.label}</span>
                         </td>
                         <td style={{ textAlign: "right" }}>
-                          <span className="row-arrow">→</span>
+                          <span style={{ color: "var(--c-brand)", fontWeight: 500, fontSize: 12 }}>查看</span>
                         </td>
                       </tr>
                     );
@@ -415,6 +409,3 @@ function MultifreqInner() {
   );
 }
 
-function catPill(cat?: string) {
-  return getCategoryBadgeClass(cat);
-}
