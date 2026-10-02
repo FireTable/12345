@@ -22,6 +22,7 @@ export const regionsTable = pgTable(
     schemaName: varchar("schema_name", { length: 64 }).notNull().unique(),
     svgMapPath: varchar("svg_map_path", { length: 255 }),
     categoryConfigJson: text("category_config_json"),
+    geojsonBoundary: text("geojson_boundary"),
     status: varchar("status", { length: 32 }).default("ACTIVE").notNull(),
     isDefault: boolean("is_default").default(false).notNull(),
     description: text("description"),

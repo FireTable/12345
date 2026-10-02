@@ -3,6 +3,12 @@ import { eq } from "drizzle-orm";
 import postgres from "postgres";
 import * as schema from "./schema";
 
+if (!process.env.DATABASE_URL && typeof process.loadEnvFile === "function") {
+  try {
+    process.loadEnvFile(".env.local");
+  } catch {}
+}
+
 const url =
   process.env.DATABASE_URL ||
   "postgresql://postgres@localhost:5432/ticket_radar";

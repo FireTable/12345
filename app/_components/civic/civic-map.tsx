@@ -62,28 +62,32 @@ export function CivicMap({
   const totalTickets = useMemo(() => values.reduce((a, b) => a + b, 0), [values]);
   const maxCount = useMemo(() => (values.length ? Math.max(...values) : 1), [values]);
 
-  // 1. 异步拉取当前辖区的行政区划 GeoJSON 数据 (告别维护分散 SVG)
+  // 1. 优先拉取当前站点在站点管理中心持久化保存的官方高精行政区划 GeoJSON 数据
   useEffect(() => {
     let cancelled = false;
-    const geoUrl = `/civic/${activeRegion?.id || "shunde"}-townships.geojson`;
+    const regionId = activeRegion?.id || "fs_shunde";
 
-    fetch(geoUrl)
+    fetch(`/api/regions/${regionId}/boundary`)
       .then((r) => (r.ok ? r.json() : null))
-      .catch(() => null)
-      .then((data) => {
+      .then((res) => {
         if (cancelled) return;
-        if (data && data.features) {
-          setGeoData(data);
+        if (res?.data?.geojson?.features) {
+          setGeoData(res.data.geojson);
         } else {
-          // 若暂无专门 geojson，回退到顺德标准
-          fetch("/civic/shunde-townships.geojson")
-            .then((r) => r.json())
-            .then((fallbackData) => {
-              if (!cancelled) setGeoData(fallbackData);
-            })
-            .catch(() => {});
+          // 若暂无专门数据，回退到本地官方标准 GeoJSON 资产
+          const cleanId = regionId.replace(/^(fs_|gz_|sz_)/, "");
+          fetch(`/civic/${regionId}-townships.geojson`)
+            .then((r) => (r.ok ? r.json() : fetch(`/civic/${cleanId}-townships.geojson`).then((r2) => (r2.ok ? r2.json() : null))))
+            .catch(() => null)
+            .then((fallback) => {
+              if (cancelled) return;
+              if (fallback && fallback.features) {
+                setGeoData(fallback);
+              }
+            });
         }
-      });
+      })
+      .catch(() => {});
 
     return () => {
       cancelled = true;
@@ -156,18 +160,20 @@ export function CivicMap({
       badgesLayerRef.current = [];
 
       // 3.1 绘制行政区域 GeoJSON 边界多边形面 (Choropleth 行政区划)
+      const isDistrictLevel = geoData.features.length === 1;
+
       const geoLayer = L.geoJSON(geoData, {
         style: (feature: any) => {
           const name = feature?.properties?.name || "";
-          const count = counts[name] || counts[`${name}街道`] || counts[`${name}镇`] || 0;
+          const count = isDistrictLevel ? totalTickets : (counts[name] || counts[`${name}街道`] || counts[`${name}镇`] || 0);
           const isSelected = selected === name || selected === `${name}街道` || selected === `${name}镇`;
 
           // 根据诉求量赋予半透明渐变热力色彩
-          const fillColor = count === 0 ? "#94A3B8" : mapColorByShare(count, maxCount);
+          const fillColor = count === 0 ? "#94A3B8" : mapColorByShare(count, isDistrictLevel ? count : maxCount);
 
           return {
             fillColor,
-            fillOpacity: isSelected ? 0.65 : count > 0 ? 0.42 : 0.2,
+            fillOpacity: isSelected ? 0.65 : count > 0 ? 0.38 : 0.2,
             color: isSelected ? "#1E5AFF" : "#FFFFFF",
             weight: isSelected ? 3.5 : 2,
             dashArray: isSelected ? "" : "2, 1",
@@ -175,9 +181,9 @@ export function CivicMap({
           };
         },
         onEachFeature: (feature: any, layer: Layer) => {
-          const name = feature?.properties?.name || "";
-          const count = counts[name] || counts[`${name}街道`] || counts[`${name}镇`] || 0;
-          const clusters = clusterCounts[name] || clusterCounts[`${name}街道`] || clusterCounts[`${name}镇`] || 0;
+          const name = feature?.properties?.name || activeRegion?.name || "本辖区";
+          const count = isDistrictLevel ? totalTickets : (counts[name] || counts[`${name}街道`] || counts[`${name}镇`] || 0);
+          const clusters = isDistrictLevel ? Object.values(clusterCounts).reduce((a, b) => a + b, 0) : (clusterCounts[name] || clusterCounts[`${name}街道`] || clusterCounts[`${name}镇`] || 0);
           const share = totalTickets > 0 ? ((count / totalTickets) * 100).toFixed(1) : "0.0";
 
           // 悬停高亮与交互
@@ -187,7 +193,7 @@ export function CivicMap({
               l.setStyle({
                 weight: 4,
                 color: "#1E5AFF",
-                fillOpacity: 0.6,
+                fillOpacity: 0.55,
                 dashArray: "",
               });
               if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) {
@@ -209,7 +215,7 @@ export function CivicMap({
           layer.bindTooltip(
             `
             <div style="font-family: ui-sans-serif, system-ui; font-size: 12px; padding: 4px 6px;">
-              <div style="font-weight: 700; color: #0F172A; font-size: 13px; margin-bottom: 3px;">📍 ${name}街道/镇</div>
+              <div style="font-weight: 700; color: #0F172A; font-size: 13px; margin-bottom: 3px;">📍 ${name}</div>
               <div style="display: flex; justify-content: space-between; gap: 12px; color: #475569; font-size: 11px;">
                 <span>工单总量</span>
                 <span style="font-weight: 800; color: #1E5AFF; font-family: monospace;">${count.toLocaleString()} 件</span>
@@ -236,14 +242,14 @@ export function CivicMap({
         }
       } catch (e) {}
 
-      // 3.2 在各镇街行政几何中心自动挂载数量徽标 Badge (完全动态计算质心)
+      // 3.2 在各行政几何中心自动挂载数量徽标 Badge (完全动态计算质心)
       geoData.features.forEach((feature: any) => {
-        const name = feature?.properties?.name || "";
+        const name = feature?.properties?.name || activeRegion?.name || "全境";
         const centerCoords = getFeatureCenter(feature);
         if (!centerCoords) return;
 
-        const count = counts[name] || counts[`${name}街道`] || counts[`${name}镇`] || 0;
-        const clusters = clusterCounts[name] || clusterCounts[`${name}街道`] || clusterCounts[`${name}镇`] || 0;
+        const count = isDistrictLevel ? totalTickets : (counts[name] || counts[`${name}街道`] || counts[`${name}镇`] || 0);
+        const clusters = isDistrictLevel ? Object.values(clusterCounts).reduce((a, b) => a + b, 0) : (clusterCounts[name] || clusterCounts[`${name}街道`] || clusterCounts[`${name}镇`] || 0);
         const isSelected = selected === name || selected === `${name}街道` || selected === `${name}镇`;
 
         const badgeHtml = `
@@ -364,6 +370,8 @@ export function CivicMap({
         borderRadius: "var(--r-md, 12px)",
         overflow: "hidden",
         border: "1px solid var(--c-border-soft, #E2E8F0)",
+        isolation: "isolate",
+        zIndex: 1,
       }}
     >
       <div ref={mapContainerRef} style={{ width: "100%", height: "100%", minHeight: 460, background: "#F1F5F9" }} />

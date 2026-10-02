@@ -15,6 +15,7 @@ export interface CreateRegionParams {
   categoryConfigJson?: string;
   description?: string;
   isDefault?: boolean;
+  geojsonBoundary?: string;
 }
 
 /**
@@ -30,6 +31,7 @@ export async function ensurePublicRegionsTable(sql: postgres.Sql) {
       schema_name VARCHAR(64) NOT NULL UNIQUE,
       svg_map_path VARCHAR(255),
       category_config_json TEXT,
+      geojson_boundary TEXT,
       status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE',
       is_default BOOLEAN NOT NULL DEFAULT false,
       description TEXT,
@@ -37,6 +39,7 @@ export async function ensurePublicRegionsTable(sql: postgres.Sql) {
       updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
     );
   `;
+  await sql`ALTER TABLE public.regions ADD COLUMN IF NOT EXISTS geojson_boundary TEXT;`;
   await sql`CREATE INDEX IF NOT EXISTS idx_regions_city ON public.regions (city);`;
   await sql`CREATE INDEX IF NOT EXISTS idx_regions_status ON public.regions (status);`;
   await sql`CREATE INDEX IF NOT EXISTS idx_regions_schema_name ON public.regions (schema_name);`;
@@ -239,7 +242,7 @@ export async function registerRegion(sql: postgres.Sql, params: CreateRegionPara
   // 3. 注册到花名册
   await sql`
     INSERT INTO public.regions (
-      id, name, city, province, schema_name, svg_map_path, category_config_json, description, is_default, status, updated_at
+      id, name, city, province, schema_name, svg_map_path, geojson_boundary, category_config_json, description, is_default, status, updated_at
     ) VALUES (
       ${params.id},
       ${params.name},
@@ -247,6 +250,7 @@ export async function registerRegion(sql: postgres.Sql, params: CreateRegionPara
       ${params.province || "广东省"},
       ${params.schemaName},
       ${params.svgMapPath || null},
+      ${params.geojsonBoundary || null},
       ${params.categoryConfigJson || null},
       ${params.description || null},
       ${params.isDefault ?? false},
@@ -259,6 +263,7 @@ export async function registerRegion(sql: postgres.Sql, params: CreateRegionPara
       province = EXCLUDED.province,
       schema_name = EXCLUDED.schema_name,
       svg_map_path = COALESCE(EXCLUDED.svg_map_path, public.regions.svg_map_path),
+      geojson_boundary = COALESCE(EXCLUDED.geojson_boundary, public.regions.geojson_boundary),
       category_config_json = COALESCE(EXCLUDED.category_config_json, public.regions.category_config_json),
       description = EXCLUDED.description,
       is_default = EXCLUDED.is_default,

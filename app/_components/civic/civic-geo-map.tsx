@@ -39,6 +39,7 @@ export type CivicGeoMapProps = {
   }) => void;
   onPointClick?: (point: GeoPoint) => void;
   showControls?: boolean;
+  selectedPointId?: string | null;
 };
 
 const DEFAULT_CENTER: [number, number] = [113.25368, 22.80477];
@@ -55,11 +56,18 @@ export function CivicGeoMap({
   onLocationPick,
   onPointClick,
   showControls = true,
+  selectedPointId,
 }: CivicGeoMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const markersRef = useRef<LeafletMarker[]>([]);
+  const lastPointsKeyRef = useRef<string>("");
+  const onPointClickRef = useRef(onPointClick);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    onPointClickRef.current = onPointClick;
+  });
 
   // 1. 初始化地图并建立自适应居中监听
   useEffect(() => {
@@ -164,13 +172,11 @@ export function CivicGeoMap({
         containerRef.current.setAttribute("data-zoom-level", currentZoom >= 14 ? "detailed" : "macro");
       };
 
+      map.off("zoom", updateMarkerScale);
+      map.off("zoomend", updateMarkerScale);
       map.on("zoom", updateMarkerScale);
       map.on("zoomend", updateMarkerScale);
       updateMarkerScale();
-
-      // 清除旧 Marker
-      markersRef.current.forEach((m) => m.remove());
-      markersRef.current = [];
 
       // 创建主事发地点大号 Pin（带脉冲微光晕）
       const createMainPinIcon = (color = "#1E5AFF") => {
@@ -227,6 +233,9 @@ export function CivicGeoMap({
 
       // 单点/工单详情模式
       if (mode === "single" && point && point.lng && point.lat) {
+        markersRef.current.forEach((m) => m.remove());
+        markersRef.current = [];
+
         // 1. 主工单点位
         const mainMarker = L.marker([point.lat, point.lng], {
           icon: createMainPinIcon(point.color || "#1E5AFF"),
@@ -319,61 +328,81 @@ export function CivicGeoMap({
       }
 
       // 多点全览模式 (批量打点)
-      if (mode === "multi" && points.length > 0) {
-        const valid = points.filter((p) => p.lng && p.lat);
-        valid.forEach((p) => {
-          const marker = L.marker([p.lat, p.lng], {
-            icon: createMainPinIcon(p.color || "#1E5AFF"),
-          }).addTo(map);
+      if (mode === "multi") {
+        const valid = points.filter((p) => typeof p.lng === "number" && typeof p.lat === "number");
+        const pointsKey = valid.map((p) => `${p.id || ""}:${p.lng},${p.lat}`).sort().join(";");
 
-          // 全览模式下的顶部 Tooltip
-          const titleText = p.title || p.address || "坐标点位";
-          const tooltipHtml = `
-            <div class="civic-tooltip-bubble" style="
-              position: relative;
-              display: inline-flex;
-              align-items: center;
-              gap: 5px;
-              background: #ffffff;
-              border: 1px solid #CBD5E1;
-              padding: 3px 8px;
-              border-radius: 5px;
-              box-shadow: 0 3px 10px rgba(15, 23, 42, 0.14);
-              font-family: ui-sans-serif, system-ui;
-              white-space: nowrap;
-              font-size: 11px;
-            ">
-              ${p.township ? `<span style="background: #EFF6FF; color: #1E5AFF; font-size: 10px; font-weight: 600; padding: 0 4px; border-radius: 3px;">${p.township}</span>` : ""}
-              <span style="font-weight: 600; color: #0F172A;">${titleText}</span>
-              <div style="
-                position: absolute;
-                bottom: -4px;
-                left: 50%;
-                transform: translateX(-50%) rotate(45deg);
-                width: 6px;
-                height: 6px;
+        // 仅在点位列表数据发生实质改变（如初始加载、镇街过滤切换）时才重新打点并 fitBounds
+        // 用户交互、点击点位、右侧详情卡片展示时，绝不重新打点，更绝不重置用户当前的 Zoom 级别
+        if (lastPointsKeyRef.current !== pointsKey) {
+          lastPointsKeyRef.current = pointsKey;
+
+          // 清除旧 Marker
+          markersRef.current.forEach((m) => m.remove());
+          markersRef.current = [];
+
+          valid.forEach((p) => {
+            const marker = L.marker([p.lat, p.lng], {
+              icon: createMainPinIcon(p.color || "#1E5AFF"),
+            }).addTo(map);
+
+            // 全览模式下的顶部 Tooltip
+            const titleText = p.title || p.address || "坐标点位";
+            const tooltipHtml = `
+              <div class="civic-tooltip-bubble" style="
+                position: relative;
+                display: inline-flex;
+                align-items: center;
+                gap: 5px;
                 background: #ffffff;
-                border-right: 1px solid #CBD5E1;
-                border-bottom: 1px solid #CBD5E1;
-              "></div>
-            </div>
-          `;
+                border: 1px solid #CBD5E1;
+                padding: 3px 8px;
+                border-radius: 5px;
+                box-shadow: 0 3px 10px rgba(15, 23, 42, 0.14);
+                font-family: ui-sans-serif, system-ui;
+                white-space: nowrap;
+                font-size: 11px;
+              ">
+                ${p.township ? `<span style="background: #EFF6FF; color: #1E5AFF; font-size: 10px; font-weight: 600; padding: 0 4px; border-radius: 3px;">${p.township}</span>` : ""}
+                <span style="font-weight: 600; color: #0F172A;">${titleText}</span>
+                <div style="
+                  position: absolute;
+                  bottom: -4px;
+                  left: 50%;
+                  transform: translateX(-50%) rotate(45deg);
+                  width: 6px;
+                  height: 6px;
+                  background: #ffffff;
+                  border-right: 1px solid #CBD5E1;
+                  border-bottom: 1px solid #CBD5E1;
+                "></div>
+              </div>
+            `;
 
-          marker.bindTooltip(tooltipHtml, {
-            direction: "top",
-            offset: [0, -44],
-            className: "civic-permanent-tooltip",
+            marker.bindTooltip(tooltipHtml, {
+              direction: "top",
+              offset: [0, -44],
+              className: "civic-permanent-tooltip",
+            });
+
+            marker.on("click", (e) => {
+              if (e && e.originalEvent) {
+                e.originalEvent.stopPropagation();
+              }
+              // 关键：绝对不恢复/改变 zoom，仅将点击点位平滑平移居中！
+              map.panTo([p.lat, p.lng], { animate: true, duration: 0.35 });
+              if (onPointClickRef.current) {
+                onPointClickRef.current(p);
+              }
+            });
+
+            markersRef.current.push(marker);
           });
 
-          if (onPointClick) {
-            marker.on("click", () => onPointClick(p));
+          if (valid.length > 0) {
+            const bounds = L.latLngBounds(valid.map((p) => [p.lat, p.lng]));
+            map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
           }
-          markersRef.current.push(marker);
-        });
-
-        if (valid.length > 0) {
-          const bounds = L.latLngBounds(valid.map((p) => [p.lat, p.lng]));
-          map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
         }
       }
     });
@@ -382,6 +411,15 @@ export function CivicGeoMap({
       isMounted = false;
     };
   }, [point, relatedPoints, points, mode, loading]);
+
+  // 外部选中点位变更时（如右侧卡片切换、列表点击打点进入全览），仅平移居中，绝不恢复或改变 zoom
+  useEffect(() => {
+    if (!mapRef.current || !selectedPointId || mode !== "multi") return;
+    const target = points.find((p) => p.id === selectedPointId);
+    if (target && typeof target.lat === "number" && typeof target.lng === "number") {
+      mapRef.current.panTo([target.lat, target.lng], { animate: true, duration: 0.35 });
+    }
+  }, [selectedPointId, mode, points]);
 
   return (
     <div
@@ -392,6 +430,8 @@ export function CivicGeoMap({
         borderRadius: "var(--r-md, 8px)",
         overflow: "hidden",
         border: "1px solid var(--c-border-soft, #E2E8F0)",
+        isolation: "isolate",
+        zIndex: 1,
       }}
       className={`civic-geo-map-container ${className}`}
     >

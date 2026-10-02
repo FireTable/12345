@@ -37,7 +37,7 @@ export async function GET() {
             city: "佛山市",
             province: "广东省",
             schemaName: "region_fs_shunde",
-            svgMapPath: "/civic/shunde-map.svg",
+            svgMapPath: "",
             isDefault: true,
           },
           {

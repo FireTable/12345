@@ -35,6 +35,12 @@ export function RegionProvider({ children }: { children: React.ReactNode }) {
   const fetchRegions = async () => {
     try {
       const res = await fetch("/api/regions");
+      if (res.status === 401) {
+        if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+          window.location.href = `/login?from=${encodeURIComponent(window.location.pathname)}`;
+        }
+        return;
+      }
       const json = await res.json();
       if (json.success && Array.isArray(json.regions)) {
         setRegions(json.regions);

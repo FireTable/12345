@@ -28,13 +28,14 @@ async function applyContent(sql: postgres.Sql, content: string) {
   }
 }
 
-async function main() {
+export async function runMigrations(customSql?: postgres.Sql) {
   console.log("==================================================");
   console.log("🐘 正在执行 Drizzle 数据库迁移 (db-migrate)...");
   console.log(`   目标数据库: ${databaseUrl}`);
   console.log("==================================================\n");
 
-  const sql = postgres(databaseUrl, { max: 1, onnotice: () => {} });
+  const sql = customSql || postgres(databaseUrl, { max: 1, onnotice: () => {} });
+  const shouldClose = !customSql;
 
   try {
     const dir = join(process.cwd(), "db", "migrations");
@@ -52,12 +53,16 @@ async function main() {
     console.log("\n✅ 数据库迁移成功完成！所有表结构已建立。");
   } catch (err: any) {
     console.error("\n❌ 数据库迁移失败:", err.message);
-    process.exit(1);
+    throw err;
   } finally {
-    await sql.end();
+    if (shouldClose) {
+      await sql.end();
+    }
   }
-
-  process.exit(0);
 }
 
-main().catch(console.error);
+if (process.argv[1]?.endsWith("db-migrate.ts")) {
+  runMigrations()
+    .then(() => process.exit(0))
+    .catch(() => process.exit(1));
+}

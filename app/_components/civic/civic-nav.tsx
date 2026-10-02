@@ -81,9 +81,18 @@ export function CivicNav() {
   const userMenuRef = useRef<HTMLDivElement>(null);
   const moreMenuRef = useRef<HTMLDivElement>(null);
   const { menuRef, measureRef, count: visibleNavCount } = useFittingNavCount(NAV_ITEMS.length);
-  const { data: session } = authClient.useSession();
+  const { data: session, isPending: sessionPending } = authClient.useSession();
   const visibleNav = NAV_ITEMS.slice(0, visibleNavCount);
   const overflowNav = NAV_ITEMS.slice(visibleNavCount);
+
+  // 当服务端 Session 失效或被清空时，自动跳转回登录页
+  useEffect(() => {
+    if (pathname === "/login") return;
+    if (!sessionPending && !session) {
+      const from = pathname !== "/" ? `?from=${encodeURIComponent(pathname)}` : "";
+      router.replace(`/login${from}`);
+    }
+  }, [pathname, session, sessionPending, router]);
 
   useEffect(() => {
     setMenuOpen(false);

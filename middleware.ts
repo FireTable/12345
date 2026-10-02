@@ -30,8 +30,12 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // 2.7 Map tile proxy (public static tile images)
-  if (pathname.startsWith("/api/map/tile") || pathname.startsWith("/api/map/geocode")) {
+  // 2.7 Map tile proxy & Region boundary public APIs
+  if (
+    pathname.startsWith("/api/map/tile") ||
+    pathname.startsWith("/api/map/geocode") ||
+    pathname.startsWith("/api/regions/")
+  ) {
     return NextResponse.next();
   }
 
@@ -39,11 +43,8 @@ export function middleware(request: NextRequest) {
     request.cookies.get("better-auth.session_token")?.value ||
     request.cookies.get("__Secure-better-auth.session_token")?.value;
 
-  // 3. Login page handling
+  // 3. Login page handling (always allow access to login page)
   if (pathname.startsWith("/login")) {
-    if (sessionToken) {
-      return NextResponse.redirect(new URL("/", request.url));
-    }
     return NextResponse.next();
   }
 

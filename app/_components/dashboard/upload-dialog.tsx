@@ -447,7 +447,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
         {isOpen && !isMinimized && (
           <motion.div
             key="upload-backdrop"
-            className="fixed inset-0 z-[250] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4"
+            className="fixed inset-0 z-[2000] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4"
             onClick={() => {
               if (step === "CLUSTERING") {
                 setIsMinimized(true);

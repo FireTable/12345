@@ -405,11 +405,12 @@ PostgreSQL 实例 (ticket_radar)
 
 | 业务目标 | 对应 NPM 命令 | 底层脚本路径 | 说明 |
 | :--- | :--- | :--- | :--- |
+| **全量一键初始化** | `pnpm db:init` | `scripts/db-init.ts` | 一键执行表迁移、顺德/天河双站点注册、天地图高精边界、数据字典、管理员账号 |
+| **管理员账号初始化** | `pnpm db:init-admin` | `scripts/init-admin.ts` | 初始化/重置默认系统管理员账号 (`admin` / `admin`) |
+| **多租户站点拓荒** | `pnpm db:init-tenants` | `scripts/init-tenants.ts` | 初始化/重置顺德与天河 Schema、高精边界及标准字典 |
 | **数据库迁移** | `pnpm db:migrate` | `scripts/db-migrate.ts` | 执行 `db/migrations/` 下的 SQL 迁移脚本 |
-| **全量词库填充** | `pnpm db:vocab` | `scripts/seed-vocabulary.ts` | 导入预置辖区（默认顺德）法定镇街、村居及预置别名知识库 |
-| **管理员账号初始化** | `pnpm db:seed-admin` | `scripts/seed-admin.ts` | 初始化/重置默认系统管理员账号 (`admin` / `admin`) |
-| **脱敏样例工单** | `pnpm db:seed` | `scripts/db-seed.ts` | 写入 200 条真实脱敏抽样工单用于冒烟演示 |
+| **词库同步** | `pnpm db:vocab` | `scripts/seed-vocabulary.ts` | 导入辖区法定镇街、村居及预置别名知识库 |
 | **数据备份导出** | `pnpm db:export` | `scripts/db-export.ts` | 导出全库数据为 `db/dumps/ticket_radar_data.json` |
 | **数据离线恢复** | `pnpm db:import` | `scripts/db-import.ts` | 从 json dump 快速全量恢复库数据 |
+| **清空业务表** | `pnpm db:clear` | `scripts/db-clear.ts` | 安全清空工单与主题数据（保留多租户站点与字典配置） |
 | **Drizzle Studio** | `pnpm db:studio` | `drizzle-kit studio` | 启动本地可视化数据库管理控制台 (Port 4983) |
-| **清空业务表** | `pnpm db:clear` | `scripts/db-clear.ts` | 安全清空工单与主题数据（保留词汇白名单） |

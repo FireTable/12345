@@ -22,6 +22,7 @@ import {
   AlertTriangle,
   Loader2,
   Star,
+  Compass,
 } from "lucide-react";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { useRegion, RegionInfo } from "@/app/_components/civic/region-context";
@@ -306,6 +307,31 @@ export default function AdminRegionsPage() {
     }
   };
 
+  // 官方高精区县边界在线拉取与持久化存库
+  const [fetchingBoundaryId, setFetchingBoundaryId] = useState<string | null>(null);
+
+  const handleFetchBoundary = async (region: RegionWithStats) => {
+    setFetchingBoundaryId(region.id);
+    try {
+      const res = await fetch(`/api/admin/regions/${region.id}/fetch-boundary`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success(data.message || `已为【${region.name}】成功拉取并持久化官方高精行政边界`);
+        fetchRegions();
+      } else {
+        toast.error(resolveApiError(data, "拉取官方边界失败"));
+      }
+    } catch (e: any) {
+      toast.error("网络请求异常");
+    } finally {
+      setFetchingBoundaryId(null);
+    }
+  };
+
   // 计算多租户汇总指标
   const totalTickets = regions.reduce((acc, r) => acc + (r.ticketCount || 0), 0);
   const totalThemes = regions.reduce((acc, r) => acc + (r.themeCount || 0), 0);
@@ -507,6 +533,20 @@ export default function AdminRegionsPage() {
                   <div className="flex items-center gap-1.5">
                     <button
                       type="button"
+                      onClick={() => handleFetchBoundary(r)}
+                      disabled={fetchingBoundaryId === r.id}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100/80 rounded-md transition-colors border border-blue-200/60"
+                      title="从官方权威测绘源在线拉取区县级高精边界并存放在站点中"
+                    >
+                      {fetchingBoundaryId === r.id ? (
+                        <Loader2 className="h-3 w-3 animate-spin text-blue-600" />
+                      ) : (
+                        <Compass className="h-3 w-3 text-blue-600" />
+                      )}
+                      <span>{fetchingBoundaryId === r.id ? "拉取中…" : "高精边界"}</span>
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setUploadModalRegion(r)}
                       className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200/80 rounded-md transition-colors"
                       title="上传或更换该区域的矢量地图"
@@ -551,7 +591,7 @@ export default function AdminRegionsPage() {
 
       {/* AI Scout 智能建站向导 Modal */}
       {showScoutModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
           <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-150 flex flex-col max-h-[90vh]">
             {/* Modal 头部 */}
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-blue-50/50 to-indigo-50/50">
@@ -932,7 +972,7 @@ export default function AdminRegionsPage() {
 
       {/* SVG 矢量地图上传弹窗 */}
       {uploadModalRegion && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
           <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl animate-in fade-in zoom-in duration-150">
             <h3 className="text-base font-bold text-slate-900 mb-1">
               上传【{uploadModalRegion.name}】矢量行政地图 (SVG)

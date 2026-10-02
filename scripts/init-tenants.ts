@@ -45,10 +45,11 @@ interface PresetData {
   }>;
 }
 
-async function seedVocabForSchema(schemaName: string, preset: PresetData) {
+async function seedVocabForSchema(schemaName: string, preset: PresetData, customSql?: postgres.Sql) {
   console.log(`  🌱 正在为 [${schemaName}] 导入标准字典与别名库...`);
+  const activeSql = customSql || sql;
 
-  await sql.begin(async (tx) => {
+  await activeSql.begin(async (tx) => {
     await tx.unsafe(`SET LOCAL search_path TO "${schemaName}", public;`);
 
     // 1. 清空旧字典
@@ -149,53 +150,75 @@ async function seedVocabForSchema(schemaName: string, preset: PresetData) {
   console.log(`  ✅ [${schemaName}] 字典初始化完毕: ${preset.townships.length} 个镇街/街道, ${preset.departments.length} 个部门, ${preset.categories.length} 个分类。`);
 }
 
-async function main() {
+export async function initTenants(customSql?: postgres.Sql) {
   console.log("==================================================");
   console.log("🚀 开始执行多租户 Schema 初始化与标准站点注册...");
   console.log("==================================================\n");
 
-  await ensurePublicRegionsTable(sql);
+  const sqlClient = customSql || postgres(url, { max: 5 });
+  const shouldClose = !customSql;
 
-  // 1. 加载预置
-  const shundePresetPath = path.resolve(process.cwd(), "lib/presets/foshan_shunde.json");
-  const tianhePresetPath = path.resolve(process.cwd(), "lib/presets/guangzhou_tianhe.json");
+  try {
+    await ensurePublicRegionsTable(sqlClient);
 
-  const shundePreset: PresetData = JSON.parse(fs.readFileSync(shundePresetPath, "utf-8"));
-  const tianhePreset: PresetData = JSON.parse(fs.readFileSync(tianhePresetPath, "utf-8"));
+    // 1. 加载预置
+    const shundePresetPath = path.resolve(process.cwd(), "lib/presets/foshan_shunde.json");
+    const tianhePresetPath = path.resolve(process.cwd(), "lib/presets/guangzhou_tianhe.json");
 
-  // 2. 注册顺德站点
-  console.log("📍 [1/2] 注册并初始化【佛山市顺德区】(Schema: region_fs_shunde)...");
-  await registerRegion(sql, {
-    id: shundePreset.id,
-    name: shundePreset.name,
-    city: shundePreset.city,
-    province: shundePreset.province,
-    schemaName: "region_fs_shunde",
-    svgMapPath: "/civic/shunde-map.svg",
-    description: "顺德区 10 大法定镇街政务研判站点",
-    isDefault: true,
-  });
-  await seedVocabForSchema("region_fs_shunde", shundePreset);
+    const shundePreset: PresetData = JSON.parse(fs.readFileSync(shundePresetPath, "utf-8"));
+    const tianhePreset: PresetData = JSON.parse(fs.readFileSync(tianhePresetPath, "utf-8"));
 
-  // 3. 注册广州天河站点
-  console.log("\n📍 [2/2] 注册并初始化【广州市天河区】(Schema: region_gz_tianhe)...");
-  await registerRegion(sql, {
-    id: tianhePreset.id,
-    name: tianhePreset.name,
-    city: tianhePreset.city,
-    province: tianhePreset.province,
-    schemaName: "region_gz_tianhe",
-    svgMapPath: tianhePreset.svgMapPath || "",
-    description: tianhePreset.description,
-    isDefault: false,
-  });
-  await seedVocabForSchema("region_gz_tianhe", tianhePreset);
+    // 2. 注册顺德站点
+    console.log("📍 [1/2] 注册并初始化【佛山市顺德区】(Schema: region_fs_shunde)...");
+    const shundeGeojson = fs.existsSync(path.join(process.cwd(), "public/civic/shunde-townships.geojson"))
+      ? fs.readFileSync(path.join(process.cwd(), "public/civic/shunde-townships.geojson"), "utf8")
+      : null;
 
-  console.log("\n🎉 多租户 Schema 初始化圆满成功！");
-  await sql.end();
+    await registerRegion(sqlClient, {
+      id: shundePreset.id,
+      name: shundePreset.name,
+      city: shundePreset.city,
+      province: shundePreset.province,
+      schemaName: "region_fs_shunde",
+      svgMapPath: "",
+      geojsonBoundary: shundeGeojson || undefined,
+      description: "顺德区 10 大法定镇街政务研判站点",
+      isDefault: true,
+    });
+    await seedVocabForSchema("region_fs_shunde", shundePreset, sqlClient);
+
+    // 3. 注册广州天河站点
+    console.log("\n📍 [2/2] 注册并初始化【广州市天河区】(Schema: region_gz_tianhe)...");
+    const tianheGeojson = fs.existsSync(path.join(process.cwd(), "public/civic/tianhe-townships.geojson"))
+      ? fs.readFileSync(path.join(process.cwd(), "public/civic/tianhe-townships.geojson"), "utf8")
+      : null;
+
+    await registerRegion(sqlClient, {
+      id: tianhePreset.id,
+      name: tianhePreset.name,
+      city: tianhePreset.city,
+      province: tianhePreset.province,
+      schemaName: "region_gz_tianhe",
+      svgMapPath: tianhePreset.svgMapPath || "",
+      geojsonBoundary: tianheGeojson || undefined,
+      description: tianhePreset.description,
+      isDefault: false,
+    });
+    await seedVocabForSchema("region_gz_tianhe", tianhePreset, sqlClient);
+
+    console.log("\n🎉 多租户 Schema 初始化圆满成功！");
+  } finally {
+    if (shouldClose) {
+      await sqlClient.end();
+    }
+  }
 }
 
-main().catch((err) => {
-  console.error("❌ 初始化失败:", err);
-  process.exit(1);
-});
+if (process.argv[1]?.endsWith("init-tenants.ts")) {
+  initTenants()
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error("❌ 初始化失败:", err);
+      process.exit(1);
+    });
+}

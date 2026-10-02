@@ -204,7 +204,7 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
       {isOpen && (
       <motion.div
         key="copilot-backdrop"
-        className="fixed inset-0 z-[250] flex justify-end bg-slate-900/50 backdrop-blur-xs overscroll-contain"
+        className="fixed inset-0 z-[1000] flex justify-end bg-slate-900/50 backdrop-blur-xs overscroll-contain"
         onClick={onClose}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}

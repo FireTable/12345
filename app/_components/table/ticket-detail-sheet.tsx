@@ -79,7 +79,7 @@ export const TicketDetailSheet: React.FC<TicketDetailSheetProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-[250] flex justify-end bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-200 overscroll-contain"
+      className="fixed inset-0 z-[1000] flex justify-end bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-200 overscroll-contain"
       onClick={onClose}
     >
       <div

@@ -172,21 +172,15 @@ ADMIN_USERNAME=admin
 ADMIN_PASSWORD=admin
 ```
 
-> 注：`pnpm db:seed-admin` 通过 `process.env` 读取上述 `ADMIN_*`。本地开发若直接 `pnpm db:seed-admin` 而未在 shell 里 source `.env.local`,将使用代码内置默认值 `admin@civic.local / admin / admin`。生产环境务必用 `.env.vps` 覆盖后执行。
+> 注：`pnpm db:init-admin` 通过 `process.env` 读取上述 `ADMIN_*`。本地开发若直接 `pnpm db:init-admin` 而未在 shell 里 source `.env.local`,将使用代码内置默认值 `admin@civic.local / admin / admin`。生产环境务必用 `.env.vps` 覆盖后执行。
 
-### 3. 初始化数据库结构与标准词汇表
+### 3. 一键初始化数据库与双站点体系
 ```bash
-# 1. 执行数据库迁移（自动创建 regions, tickets, themes, vocabularies, aliases, user, session 等全部表）
-pnpm db:migrate
+# 一键完成全量初始化：自动执行表迁移、顺德与天河双站点、高精行政边界、全套数据字典与管理员账号
+pnpm db:init
 
-# 2. 一键初始化预置辖区（默认佛山顺德，亦可通过 /admin/regions 随时一键 AI 拓荒任意城市）法定镇街、社区与 72+ 条别名映射知识库
-pnpm db:vocab
-
-# 3. 初始化系统默认管理员账号 (admin / admin)
-pnpm db:seed-admin
-
-# 4. （可选）写入内置样本工单数据
-pnpm db:seed
+# 若仅需单独重置管理员账号
+pnpm db:init-admin
 ```
 
 ### 4. 核对日期和聚类规则
@@ -216,9 +210,10 @@ pnpm dev
 | `pnpm dev:web` | **轻量启动**：仅启动 Next.js 本地开发服务 (大模型依赖云端 API 灾备模式) |
 | `pnpm dev:llm` | **独立调试**：单独拉起 System-2 本地 Metal 推理服务 (Bonsai 2 27B) |
 | `pnpm build` | 编译 Next.js 生产版本构建 |
+| `pnpm db:init` | **全量一键初始化**：表结构迁移、顺德与天河双站点、高精天地图边界、全量字典、管理员账号 |
+| `pnpm db:init-admin` | 初始化/重置默认系统管理员账号 (`admin` / `admin`) |
 | `pnpm db:migrate` | 运行 Drizzle SQL 数据库迁移 |
-| `pnpm db:vocab` | 一键初始化/同步标准政务词汇表与别名知识库 |
-| `pnpm db:seed-admin` | 初始化/重置默认系统管理员账号 (`admin` / `admin`) |
-| `pnpm db:seed` | 导入样例脱敏工单数据 |
+| `pnpm db:init-tenants` | 初始化/同步多租户站点、行政边界与标准词汇别名知识库 |
+| `pnpm db:clear` | 清空当前站点的工单与聚类主题数据 |
 | `pnpm db:studio` | 打开 Drizzle Studio 可视化数据管理面板 |
 | `npx tsc --noEmit` | 执行 TypeScript 全局静态类型检查 |
