@@ -30,7 +30,7 @@ export function DossierNode({ data }: NodeProps<DossierNodeType>) {
       status={data.status}
       statusText={isActive ? "正在生成" : isCompleted ? "案卷就绪" : "待归档"}
       hasTargetHandle={true}
-      targetHandlePosition={Position.Left}
+      targetHandlePosition={Position.Right}
       targetHandleColor="#0891B2"
       hasSourceHandle={false}
     >

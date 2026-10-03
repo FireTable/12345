@@ -130,7 +130,7 @@ function InnerPipelineCanvas({
       {
         id: "node-triage",
         type: "triage",
-        position: { x: 500, y: 60 },
+        position: { x: 520, y: 60 },
         data: {
           urgentCount: stateData?.metrics.urgentTickets ?? 0,
           stabilityRiskCount: stateData?.metrics.stabilityRiskTickets ?? 0,
@@ -142,7 +142,7 @@ function InnerPipelineCanvas({
       {
         id: "node-entity",
         type: "entity",
-        position: { x: 920, y: 60 },
+        position: { x: 960, y: 60 },
         data: {
           processed: targetProcessed,
           total,
@@ -157,7 +157,7 @@ function InnerPipelineCanvas({
       {
         id: "node-cluster",
         type: "cluster",
-        position: { x: 80, y: 480 },
+        position: { x: 960, y: 500 },
         data: {
           themeCount: stateData?.metrics.totalThemes ?? 0,
           totalTickets: total,
@@ -174,7 +174,7 @@ function InnerPipelineCanvas({
       {
         id: "node-dossier",
         type: "dossier",
-        position: { x: 500, y: 480 },
+        position: { x: 520, y: 500 },
         data: {
           dossierCount: stateData?.metrics.totalThemes ?? 0,
           totalTickets: total,
@@ -225,7 +225,7 @@ function InnerPipelineCanvas({
         data: {
           active: isRunning,
           completed: isCompleted,
-          label: "换行 · 时空聚类",
+          label: "时空聚类",
         },
       },
       {

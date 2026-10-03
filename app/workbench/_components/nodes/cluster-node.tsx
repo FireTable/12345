@@ -43,7 +43,7 @@ export function ClusterNode({ data }: NodeProps<ClusterNodeType>) {
       targetHandlePosition={Position.Top}
       targetHandleColor="#7C3AED"
       hasSourceHandle={true}
-      sourceHandlePosition={Position.Right}
+      sourceHandlePosition={Position.Left}
       sourceHandleColor="#0891B2"
     >
       {/* 聚类成果指标看板 */}
