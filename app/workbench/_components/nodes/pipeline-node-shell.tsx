@@ -14,8 +14,10 @@ export interface PipelineNodeShellProps {
   statusText?: string;
   hasTargetHandle?: boolean;
   targetHandleColor?: string;
+  targetHandlePosition?: Position;
   hasSourceHandle?: boolean;
   sourceHandleColor?: string;
+  sourceHandlePosition?: Position;
   children: React.ReactNode;
 }
 
@@ -28,8 +30,10 @@ export function PipelineNodeShell({
   statusText,
   hasTargetHandle = true,
   targetHandleColor = "#3B82F6",
+  targetHandlePosition = Position.Left,
   hasSourceHandle = true,
   sourceHandleColor = "#3B82F6",
+  sourceHandlePosition = Position.Right,
   children,
 }: PipelineNodeShellProps) {
   const isActive = status === "running";
@@ -49,16 +53,17 @@ export function PipelineNodeShell({
         isActive ? "pipeline-node--active" : isCompleted ? "pipeline-node--completed" : ""
       }`}
     >
-      {/* 左侧输入连接 Handle */}
+      {/* 输入连接 Handle */}
       {hasTargetHandle && (
         <Handle
           type="target"
-          position={Position.Left}
+          position={targetHandlePosition}
           style={{
             width: 10,
             height: 10,
             background: targetHandleColor,
             border: "2px solid #FFFFFF",
+            boxShadow: "0 0 6px rgba(0, 0, 0, 0.18)",
           }}
         />
       )}
@@ -93,16 +98,17 @@ export function PipelineNodeShell({
       {/* 节点主体内容插槽：严格统一 padding 和间距 */}
       <div className="pipeline-node__body">{children}</div>
 
-      {/* 右侧输出连接 Handle */}
+      {/* 输出连接 Handle */}
       {hasSourceHandle && (
         <Handle
           type="source"
-          position={Position.Right}
+          position={sourceHandlePosition}
           style={{
             width: 10,
             height: 10,
             background: sourceHandleColor,
             border: "2px solid #FFFFFF",
+            boxShadow: "0 0 6px rgba(0, 0, 0, 0.18)",
           }}
         />
       )}

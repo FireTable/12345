@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef } from "react";
-import { type NodeProps, type Node } from "@xyflow/react";
+import { type NodeProps, type Node, Position } from "@xyflow/react";
 import { Inbox, Upload, FileSpreadsheet, CheckCircle2, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { PipelineNodeShell } from "./pipeline-node-shell";
@@ -75,9 +75,10 @@ export function IngestNode({ data }: NodeProps<IngestNodeType>) {
       hasTargetHandle={false}
       hasSourceHandle={true}
       sourceHandleColor="#1677FF"
+      sourceHandlePosition={Position.Right}
     >
       {/* 指标看板 */}
-      <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+      <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
         <div>
           <div className="pipeline-metric-label">辖区在库总量</div>
           <div className="pipeline-metric-value text-blue-600 mt-1">{data.totalTickets}</div>
@@ -87,6 +88,10 @@ export function IngestNode({ data }: NodeProps<IngestNodeType>) {
           <div className={`pipeline-metric-value mt-1 ${data.unprocessedTickets > 0 ? "text-amber-600" : "text-emerald-600"}`}>
             {data.unprocessedTickets}
           </div>
+        </div>
+        <div className="border-l border-slate-200 pl-2 flex flex-col justify-center">
+          <div className="text-[10px] text-slate-400 font-medium">接入渠道</div>
+          <div className="text-[11px] font-semibold text-slate-700 mt-0.5">热线 · 微信 · 网格</div>
         </div>
       </div>
 
@@ -126,16 +131,21 @@ export function IngestNode({ data }: NodeProps<IngestNodeType>) {
       {data.recentTickets && data.recentTickets.length > 0 && (
         <div className="pipeline-snippet-box">
           <div className="pipeline-snippet-title">
-            <span className="flex items-center gap-1 text-slate-600">
-              <Clock size={11} className="shrink-0" />
+            <span className="flex items-center gap-1.5 text-slate-700">
+              <Clock size={11} className="shrink-0 text-blue-500" />
               最新接入流水
+              {data.recentTickets[0]?.subdistrict && (
+                <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-200 text-slate-600 font-medium">
+                  {data.recentTickets[0].subdistrict}
+                </span>
+              )}
             </span>
-            <span className="font-mono text-[9px] text-slate-400">
+            <span className="font-mono text-[10px] text-slate-400">
               {data.recentTickets[0]?.ticketNo}
             </span>
           </div>
-          <div className="pipeline-snippet-text mt-1 text-[11px] text-slate-700">
-            {data.recentTickets[0]?.title || data.recentTickets[0]?.content.slice(0, 36) || "--"}
+          <div className="mt-1 text-[11.5px] text-slate-700 leading-snug line-clamp-2">
+            {data.recentTickets[0]?.title || data.recentTickets[0]?.content || "--"}
           </div>
         </div>
       )}

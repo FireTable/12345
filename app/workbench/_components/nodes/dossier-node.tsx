@@ -1,8 +1,8 @@
 "use client";
 
 import React from "react";
-import { type NodeProps, type Node } from "@xyflow/react";
-import { ShieldCheck, FileSpreadsheet, MapPin, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { type NodeProps, type Node, Position } from "@xyflow/react";
+import { ShieldCheck, FileSpreadsheet, MapPin, AlertTriangle, CheckCircle2, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { PipelineNodeShell } from "./pipeline-node-shell";
 
@@ -30,6 +30,7 @@ export function DossierNode({ data }: NodeProps<DossierNodeType>) {
       status={data.status}
       statusText={isActive ? "正在生成" : isCompleted ? "案卷就绪" : "待归档"}
       hasTargetHandle={true}
+      targetHandlePosition={Position.Top}
       targetHandleColor="#0891B2"
       hasSourceHandle={false}
     >

@@ -1,8 +1,8 @@
 "use client";
 
 import React from "react";
-import { type NodeProps, type Node } from "@xyflow/react";
-import { Network, FolderKanban, Compass, TrendingUp } from "lucide-react";
+import { type NodeProps, type Node, Position } from "@xyflow/react";
+import { Network, FolderKanban, Compass, TrendingUp, Tag } from "lucide-react";
 import { PipelineNodeShell } from "./pipeline-node-shell";
 
 export type ClusterNodeData = {
@@ -40,8 +40,10 @@ export function ClusterNode({ data }: NodeProps<ClusterNodeType>) {
       status={data.status}
       statusText={isActive ? "时空吸附中" : isCompleted ? "聚类成组" : "待命中"}
       hasTargetHandle={true}
+      targetHandlePosition={Position.Left}
       targetHandleColor="#7C3AED"
       hasSourceHandle={true}
+      sourceHandlePosition={Position.Bottom}
       sourceHandleColor="#0891B2"
     >
       {/* 聚类成果指标看板 */}
@@ -52,40 +54,56 @@ export function ClusterNode({ data }: NodeProps<ClusterNodeType>) {
             已归集多频群组
           </div>
           <div className="pipeline-metric-value text-blue-600 mt-1">
-            {data.themeCount} <span className="text-xs font-normal text-slate-500">组</span>
+            {data.themeCount} <span className="text-xs font-normal text-slate-500">组专题</span>
           </div>
         </div>
         <div>
           <div className="pipeline-metric-label flex items-center gap-1">
             <TrendingUp size={11} className="text-emerald-600 shrink-0" />
-            矛盾收敛率
+            时空矛盾收敛率
           </div>
           <div className="pipeline-metric-value text-emerald-600 mt-1">
-            {compressionRatio}%
+            {compressionRatio}% <span className="text-xs font-normal text-slate-400">({data.totalTickets} ➔ {data.themeCount})</span>
           </div>
         </div>
       </div>
 
-      {/* 最新生成的多频主题展示 */}
+      {/* 最新生成的多频主题展示 (520px 下宽裕平铺) */}
       <div className="pipeline-snippet-box">
         <div className="pipeline-snippet-title">
-          <span className="flex items-center gap-1 text-cyan-800">
-            <Compass size={11} className="shrink-0" />
+          <span className="flex items-center gap-1.5 text-cyan-800">
+            <Compass size={11} className="shrink-0 text-cyan-600" />
             最新聚合民生矛盾专题
           </span>
-          <span className="text-[9px] px-1 py-0.2 rounded bg-cyan-100 text-cyan-800 font-bold">空间网格绑定</span>
+          <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-100 text-cyan-800 font-bold">
+            多维时空拓扑绑定
+          </span>
         </div>
 
         {data.recentClusters && data.recentClusters.length > 0 ? (
           <div className="space-y-1.5 mt-2">
-            {data.recentClusters.slice(0, 2).map((c, i) => (
+            {data.recentClusters.slice(0, 3).map((c, i) => (
               <div key={i} className="flex items-center justify-between text-[11px] py-1 border-b border-slate-100 last:border-0">
-                <span className="font-semibold text-slate-800 truncate max-w-[190px]">
-                  {c.title}
-                </span>
-                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-bold shrink-0">
-                  {c.ticketCount} 件聚合
-                </span>
+                <div className="flex items-center gap-1.5 min-w-0 pr-2">
+                  {c.subdistrict && (
+                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 shrink-0 font-medium">
+                      {c.subdistrict}
+                    </span>
+                  )}
+                  <span className="font-semibold text-slate-800 truncate max-w-[280px]">
+                    {c.title}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {c.category && (
+                    <span className="text-[9.5px] text-slate-400 hidden sm:inline">
+                      {c.category}
+                    </span>
+                  )}
+                  <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-bold">
+                    {c.ticketCount} 件吸附
+                  </span>
+                </div>
               </div>
             ))}
           </div>

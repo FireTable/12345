@@ -112,7 +112,7 @@ function InnerPipelineCanvas({
       {
         id: "node-ingest",
         type: "ingest",
-        position: { x: 50, y: 60 },
+        position: { x: 100, y: 60 },
         data: {
           totalTickets: total,
           unprocessedTickets: stateData?.metrics.unprocessedTickets ?? 0,
@@ -130,7 +130,7 @@ function InnerPipelineCanvas({
       {
         id: "node-triage",
         type: "triage",
-        position: { x: 490, y: 60 },
+        position: { x: 740, y: 60 },
         data: {
           urgentCount: stateData?.metrics.urgentTickets ?? 0,
           stabilityRiskCount: stateData?.metrics.stabilityRiskTickets ?? 0,
@@ -142,7 +142,7 @@ function InnerPipelineCanvas({
       {
         id: "node-entity",
         type: "entity",
-        position: { x: 930, y: 60 },
+        position: { x: 100, y: 540 },
         data: {
           processed: targetProcessed,
           total,
@@ -157,7 +157,7 @@ function InnerPipelineCanvas({
       {
         id: "node-cluster",
         type: "cluster",
-        position: { x: 1370, y: 60 },
+        position: { x: 740, y: 540 },
         data: {
           themeCount: stateData?.metrics.totalThemes ?? 0,
           totalTickets: total,
@@ -174,7 +174,7 @@ function InnerPipelineCanvas({
       {
         id: "node-dossier",
         type: "dossier",
-        position: { x: 1810, y: 60 },
+        position: { x: 100, y: 1020 },
         data: {
           dossierCount: stateData?.metrics.totalThemes ?? 0,
           totalTickets: total,
@@ -185,7 +185,7 @@ function InnerPipelineCanvas({
     ];
   }, [stateData, isRunning, processed, onRefresh]);
 
-  // 2. 连接边配置 (带流光脉冲效果)
+  // 2. 连接边配置 (带流光脉冲效果与换行平滑导轨)
   const initialEdges: Edge[] = useMemo(() => {
     const isCompleted = (stateData?.metrics.totalTickets || 0) > 0 &&
       (stateData?.metrics.analyzedTickets || 0) >= (stateData?.metrics.totalTickets || 0) &&
@@ -213,7 +213,7 @@ function InnerPipelineCanvas({
         data: {
           active: isRunning,
           completed: isCompleted,
-          label: "主体提炼",
+          label: "换行 · 实体提炼",
         },
       },
       {
@@ -237,7 +237,7 @@ function InnerPipelineCanvas({
         data: {
           active: isRunning,
           completed: isCompleted,
-          label: "成卷建档",
+          label: "换行 · 成卷建档",
         },
       },
     ];
@@ -258,7 +258,7 @@ function InnerPipelineCanvas({
   // 挂载初始自动居中
   useEffect(() => {
     const timer = setTimeout(() => {
-      fitView({ padding: 0.18, duration: 600 });
+      fitView({ padding: 0.12, duration: 600 });
     }, 150);
     return () => clearTimeout(timer);
   }, [fitView]);
