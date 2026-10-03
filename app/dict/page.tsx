@@ -936,7 +936,7 @@ export default function DictionaryManagementPage() {
                                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                                   <span style={{ color: "#64748B" }}>所属法定辖区:</span>
                                   <span style={{ fontWeight: 600, color: "#1E5AFF" }}>
-                                    {activeLocItem.parentName || activeMeta.township || "顺德区"}
+                                    {activeLocItem.parentName || activeMeta.township || activeRegion?.name || "当前辖区"}
                                   </span>
                                 </div>
                                 <div style={{ display: "flex", justifyContent: "space-between" }}>

@@ -26,6 +26,7 @@ import {
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { useRegion, RegionInfo } from "@/app/_components/civic/region-context";
 import { ConfirmDialog } from "@/app/_components/ui/confirm-dialog";
+import { PageHeaderActions } from "@/app/_components/civic/page-header-actions";
 import { toast } from "sonner";
 import { resolveApiError } from "@/lib/api-codes";
 
@@ -352,28 +353,22 @@ export default function AdminRegionsPage() {
             支持全国省市县区 12345 站点动态纳管 · PostgreSQL Schema 物理隔离 · SuperAgent AI 智能梳理镇街字典 · 矢量行政地图绑定
           </div>
         </div>
-        <div className="page-hero__actions">
+        <PageHeaderActions
+          onRefresh={fetchRegions}
+          refreshing={loading}
+        >
           <button
             type="button"
-            className="btn btn--default"
-            onClick={fetchRegions}
-            disabled={loading}
-          >
-            <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? "animate-spin" : ""}`} />
-            刷新站点
-          </button>
-          <button
-            type="button"
-            className="btn btn--primary"
+            className="btn btn--primary h-[34px] px-3.5 text-xs font-medium inline-flex items-center gap-1.5"
             onClick={() => {
               setScoutStep(1);
               setShowScoutModal(true);
             }}
           >
-            <Sparkles className="h-4 w-4 mr-1.5 text-amber-300" />
-            AI 智能新建 12345 站点
+            <Sparkles className="h-3.5 w-3.5 text-amber-300 shrink-0" />
+            <span>AI 智能新建 12345 站点</span>
           </button>
-        </div>
+        </PageHeaderActions>
       </div>
 
       {/* 统一指标卡片体系 */}

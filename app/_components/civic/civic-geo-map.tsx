@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import type { Map as LeafletMap, Marker as LeafletMarker } from "leaflet";
 import { Loader2, MapPin, ZoomIn, ZoomOut } from "lucide-react";
+import { useRegion } from "./region-context";
 
 export type GeoPoint = {
   id?: string;
@@ -69,6 +70,13 @@ export function CivicGeoMap({
     onPointClickRef.current = onPointClick;
   });
 
+  const { activeRegion } = useRegion();
+  const isTianhe =
+    activeRegion?.id?.includes("tianhe") ||
+    activeRegion?.name?.includes("天河") ||
+    activeRegion?.city?.includes("广州");
+  const fallbackCenter: [number, number] = isTianhe ? [113.36, 23.14] : DEFAULT_CENTER;
+
   // 1. 初始化地图并建立自适应居中监听
   useEffect(() => {
     let isMounted = true;
@@ -79,8 +87,8 @@ export function CivicGeoMap({
       const L = (await import("leaflet")).default;
       if (!isMounted || !containerRef.current) return;
 
-      const targetLat = point && point.lat ? point.lat : center ? center[1] : DEFAULT_CENTER[1];
-      const targetLng = point && point.lng ? point.lng : center ? center[0] : DEFAULT_CENTER[0];
+      const targetLat = point && point.lat ? point.lat : center ? center[1] : fallbackCenter[1];
+      const targetLng = point && point.lng ? point.lng : center ? center[0] : fallbackCenter[0];
 
       const map = L.map(containerRef.current, {
         center: [targetLat, targetLng],
@@ -135,7 +143,7 @@ export function CivicGeoMap({
         mapRef.current = null;
       }
     };
-  }, [mode]);
+  }, [mode, activeRegion?.id]);
 
   // 2. 渲染标记点与悬浮标识 Tooltip
   useEffect(() => {
