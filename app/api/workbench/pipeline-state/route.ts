@@ -5,6 +5,7 @@ import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 import { getLatestTaskProgress } from "@/lib/task-progress";
 import { sql, desc, eq, isNull } from "drizzle-orm";
 import { apiSuccess, apiError, ApiCode } from "@/lib/api-codes";
+import { regionLabel, UNKNOWN_TOWN } from "@/lib/civic-dto";
 
 export const dynamic = "force-dynamic";
 
@@ -74,27 +75,52 @@ export async function GET(req: NextRequest) {
       .orderBy(desc(themesTable.createdAt))
       .limit(5);
 
-    // 5. 全量法定民生业务分类分布 (System-One 全量覆盖)
-    const categoryStats = await tenantDb
+    // 5. 属地镇街流向分布统计 (统一按系统单一事实来源 regionLabel 解析，缺失/非镇街统一收敛为 UNKNOWN_TOWN "未知")
+    const subdistrictRows = await tenantDb
       .select({
-        category: sql<string>`coalesce(${ticketsTable.sourceCategory}, '其他诉求')`,
-        count: sql<number>`count(*)`,
+        subdistrict: ticketsTable.subdistrict,
+        count: sql<number>`count(*)::int`,
       })
       .from(ticketsTable)
-      .groupBy(sql`coalesce(${ticketsTable.sourceCategory}, '其他诉求')`)
-      .orderBy(sql`count(*) desc`)
-      .limit(12);
+      .groupBy(ticketsTable.subdistrict);
 
-    // 6. 属地镇街流向分布统计 (System-One 镇街分流全貌)
-    const townshipStats = await tenantDb
+    const townshipMap = new Map<string, number>();
+    for (const r of subdistrictRows) {
+      const label = regionLabel(r.subdistrict);
+      townshipMap.set(label, (townshipMap.get(label) || 0) + Number(r.count || 0));
+    }
+
+    const townshipStats = [...townshipMap.entries()]
+      .sort((a, b) => {
+        if (a[0] === UNKNOWN_TOWN) return 1;
+        if (b[0] === UNKNOWN_TOWN) return -1;
+        return b[1] - a[1];
+      })
+      .map(([township, count]) => ({ township, count }));
+
+    // 6. 全量民生业务分类分布 (统一与系统分类字典对齐，空值收敛为 UNKNOWN_TOWN "未知")
+    const categoryRows = await tenantDb
       .select({
-        township: sql<string>`coalesce(${ticketsTable.subdistrict}, '未分流镇街')`,
-        count: sql<number>`count(*)`,
+        category: ticketsTable.sourceCategory,
+        count: sql<number>`count(*)::int`,
       })
       .from(ticketsTable)
-      .groupBy(sql`coalesce(${ticketsTable.subdistrict}, '未分流镇街')`)
-      .orderBy(sql`count(*) desc`)
-      .limit(10);
+      .groupBy(ticketsTable.sourceCategory);
+
+    const categoryMap = new Map<string, number>();
+    for (const r of categoryRows) {
+      const raw = (r.category || "").trim();
+      const cat = raw || UNKNOWN_TOWN;
+      categoryMap.set(cat, (categoryMap.get(cat) || 0) + Number(r.count || 0));
+    }
+
+    const categoryStats = [...categoryMap.entries()]
+      .sort((a, b) => {
+        if (a[0] === UNKNOWN_TOWN) return 1;
+        if (b[0] === UNKNOWN_TOWN) return -1;
+        return b[1] - a[1];
+      })
+      .map(([category, count]) => ({ category, count }));
 
     return apiSuccess({
       regionId,

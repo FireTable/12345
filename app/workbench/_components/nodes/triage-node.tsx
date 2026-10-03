@@ -1,9 +1,11 @@
 "use client";
 
-import React from "react";
+import React, { useMemo } from "react";
 import { type NodeProps, type Node, Position } from "@xyflow/react";
-import { Zap, ShieldAlert, AlertTriangle, Layers, MapPin } from "lucide-react";
+import { Zap, ShieldAlert, AlertTriangle, PieChart, MapPin } from "lucide-react";
 import { PipelineNodeShell } from "./pipeline-node-shell";
+import { CivicEChart, miniDonutOption } from "@/app/_components/civic/civic-charts";
+import { categoryColor, getTownshipColor } from "@/lib/civic-cluster";
 
 export type TriageNodeData = {
   urgentCount: number;
@@ -16,31 +18,27 @@ export type TriageNodeData = {
 
 export type TriageNodeType = Node<TriageNodeData, "triage">;
 
-const CATEGORY_COLORS = [
-  "#1677FF",
-  "#52C41A",
-  "#FA8C16",
-  "#722ED1",
-  "#13C2C2",
-  "#EB2F96",
-  "#FAAD14",
-  "#2F54EB",
-];
-
 const DEFAULT_TOWNSHIPS = [
-  { township: "大良街道", count: 86 },
-  { township: "容桂街道", count: 72 },
-  { township: "北滘镇", count: 48 },
-  { township: "伦教街道", count: 35 },
-  { township: "陈村镇", count: 28 },
-  { township: "乐从镇", count: 31 },
+  { township: "大良", count: 86 },
+  { township: "容桂", count: 72 },
+  { township: "北滘", count: 48 },
+  { township: "伦教", count: 35 },
+  { township: "陈村", count: 28 },
+  { township: "乐从", count: 31 },
 ];
 
 export function TriageNode({ data }: NodeProps<TriageNodeType>) {
   const isActive = data.status === "running";
   const isCompleted = data.status === "completed";
   const totalCat = data.categoryStats.reduce((sum, c) => sum + c.count, 0) || 1;
-  const townships = data.townshipStats && data.townshipStats.length > 0 ? data.townshipStats : DEFAULT_TOWNSHIPS;
+  const townships =
+    data.townshipStats && data.townshipStats.length > 0 ? data.townshipStats : DEFAULT_TOWNSHIPS;
+
+  // 与数据总览完全一致的环形饼图配置
+  const donutOpt = useMemo(
+    () => miniDonutOption(data.categoryStats || []),
+    [data.categoryStats]
+  );
 
   return (
     <PipelineNodeShell
@@ -94,65 +92,87 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
         </div>
       </div>
 
-      {/* 诉求分类全量条形分布 (全量显示全部业务分类) */}
+      {/* 诉求分类全量饼图分布 (统一图表系统，带实时鼠标悬浮联动) */}
       <div className="pipeline-snippet-box">
         <div className="pipeline-snippet-title">
           <span className="flex items-center gap-1 text-slate-700 font-semibold">
-            <Layers size={11} className="shrink-0 text-blue-500" />
-            民生诉求分类分布 (全量呈现)
+            <PieChart size={11} className="shrink-0 text-blue-500" />
+            民生诉求分类分布 (饼图总览)
           </span>
           <span className="text-[10px] text-slate-400 font-mono">
-            {data.categoryStats.length} 类业务全览
+            {data.categoryStats.length} 类业务
           </span>
         </div>
 
-        <div className="space-y-1.5 mt-2">
+        {/* 迷你环形饼图 (nodrag 保证图表内部 hover tooltip 与交互顺畅) */}
+        {data.categoryStats.length > 0 ? (
+          <div className="nodrag my-1 w-full flex justify-center">
+            <CivicEChart option={donutOpt} height={125} />
+          </div>
+        ) : (
+          <div className="py-4 text-center text-xs text-slate-400">暂无诉求分类数据</div>
+        )}
+
+        {/* 分类色标微型指标网格 (与数据总览及全局 Filter 颜色保持 100% 统一) */}
+        <div className="grid grid-cols-2 gap-x-2 gap-y-1 mt-1 pt-1.5 border-t border-slate-100 text-[10.5px]">
           {data.categoryStats.map((c, i) => {
+            const color = categoryColor(c.category);
             const pct = Math.round((c.count / totalCat) * 100);
-            const color = CATEGORY_COLORS[i % CATEGORY_COLORS.length];
             return (
-              <div key={i} className="text-[11px]">
-                <div className="flex justify-between text-slate-600 mb-0.5">
-                  <span className="font-medium text-slate-700 truncate max-w-[170px]">{c.category}</span>
-                  <span className="font-mono text-[10px] text-slate-400">
-                    {c.count}件 ({pct}%)
-                  </span>
-                </div>
-                <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
-                  <div
-                    className="h-full rounded-full transition-all duration-300"
-                    style={{
-                      width: `${pct}%`,
-                      background: color,
-                    }}
-                  />
-                </div>
+              <div key={i} className="flex items-center justify-between text-slate-600">
+                <span className="flex items-center gap-1.5 truncate max-w-[85px]" title={c.category}>
+                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                  <span className="truncate font-medium text-slate-700">{c.category}</span>
+                </span>
+                <span className="font-mono text-[10px] text-slate-400 shrink-0">
+                  {c.count}件 <span className="font-medium text-slate-600">{pct}%</span>
+                </span>
               </div>
             );
           })}
         </div>
 
-        {/* 属地镇街流向分布 (System-One 镇街全量分流) */}
+        {/* 属地镇街初筛选 (统一获取与着色，未知统一用"未知") */}
         <div className="mt-2.5 pt-2 border-t border-slate-200/70">
           <div className="flex items-center justify-between text-[10.5px] font-semibold text-slate-700 mb-1.5">
             <span className="flex items-center gap-1">
               <MapPin size={11} className="text-indigo-500 shrink-0" />
-              属地镇街初筛流向 (System-One)
+              属地镇街初筛选 (System-One)
             </span>
             <span className="text-[10px] text-slate-400 font-mono">
               {townships.length} 镇街覆盖
             </span>
           </div>
           <div className="flex flex-wrap gap-1">
-            {townships.map((ts, i) => (
-              <span
-                key={i}
-                className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200/60 font-medium"
-              >
-                <span>{ts.township}</span>
-                <span className="font-mono text-indigo-600 font-bold">{ts.count}</span>
-              </span>
-            ))}
+            {townships.map((ts, i) => {
+              const isUnknown = ts.township === "未知";
+              const color = isUnknown ? "#86909C" : getTownshipColor(ts.township);
+              return (
+                <span
+                  key={i}
+                  className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border font-medium transition-all"
+                  style={{
+                    backgroundColor: isUnknown ? "#F8FAFC" : `${color}0D`,
+                    borderColor: isUnknown ? "#E2E8F0" : `${color}35`,
+                    color: isUnknown ? "#64748B" : color,
+                  }}
+                >
+                  <span
+                    className="w-1.5 h-1.5 rounded-full shrink-0"
+                    style={{ backgroundColor: isUnknown ? "#94A3B8" : color }}
+                  />
+                  <span className={isUnknown ? "text-slate-500 font-normal" : "text-slate-700 font-medium"}>
+                    {ts.township}
+                  </span>
+                  <span
+                    className="font-mono font-bold"
+                    style={{ color: isUnknown ? "#64748B" : color }}
+                  >
+                    {ts.count}
+                  </span>
+                </span>
+              );
+            })}
           </div>
         </div>
       </div>

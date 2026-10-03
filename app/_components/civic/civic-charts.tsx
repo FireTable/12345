@@ -63,13 +63,13 @@ export function CivicEChart({ option, height }: { option: Record<string, unknown
               subtext: params.name,
               textStyle: {
                 color: params.color || "#1E5AFF",
-                fontSize: 28,
+                fontSize: defaultTitle.textStyle?.fontSize || 28,
                 fontWeight: "bold",
               },
               subtextStyle: {
                 color: "#1E293B",
                 fontWeight: "600",
-                fontSize: 12,
+                fontSize: defaultTitle.subtextStyle?.fontSize || 12,
               },
             },
           });
@@ -263,6 +263,74 @@ export function donutOption(dist: Record<string, number>) {
     ],
     animationDuration: 1000,
     animationEasing: "cubicOut",
+  };
+}
+
+export function miniDonutOption(
+  dist: Record<string, number> | Array<{ category: string; count: number }>
+) {
+  const entries = Array.isArray(dist)
+    ? dist.map((d) => [d.category, d.count] as [string, number])
+    : Object.entries(dist);
+
+  const data = entries
+    .filter(([, v]) => v > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, value]) => ({
+      value,
+      name,
+      itemStyle: { color: categoryColor(name) },
+    }));
+
+  const total = data.reduce((s, d) => s + d.value, 0);
+  const topItem = data[0];
+  const topPct = total > 0 && topItem ? ((topItem.value / total) * 100).toFixed(1) : "0.0";
+  const topColor = topItem ? categoryColor(topItem.name) : "#1677FF";
+
+  return {
+    title: {
+      text: `${topPct}%`,
+      subtext: topItem?.name || "分类分布",
+      left: "50%",
+      top: "28%",
+      textAlign: "center",
+      itemGap: 2,
+      textStyle: {
+        fontSize: 16,
+        fontWeight: "bold",
+        color: topColor,
+        fontFamily: "ui-sans-serif, system-ui, -apple-system, sans-serif",
+        lineHeight: 18,
+      },
+      subtextStyle: {
+        fontSize: 10,
+        color: "#475569",
+        fontWeight: "600",
+        lineHeight: 12,
+      },
+    },
+    tooltip: {
+      trigger: "item",
+      backgroundColor: "rgba(30, 41, 59, 0.95)",
+      borderColor: "transparent",
+      textStyle: { color: "#fff", fontSize: 11 },
+      formatter: (p: any) =>
+        `<b>${p.name}</b><br/>${Number(p.value).toLocaleString("zh-CN")} 件 (${Number(p.percent).toFixed(1)}%)`,
+    },
+    series: [
+      {
+        type: "pie",
+        radius: ["50%", "74%"],
+        center: ["50%", "45%"],
+        avoidLabelOverlap: false,
+        label: { show: false },
+        emphasis: {
+          scale: true,
+          scaleSize: 3,
+        },
+        data,
+      },
+    ],
   };
 }
 
