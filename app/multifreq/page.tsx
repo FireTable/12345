@@ -268,7 +268,7 @@ function MultifreqInner() {
                 <span style={{ fontSize: 12, color: "var(--c-ink-3)", fontWeight: 400, marginLeft: 6 }}>点击下钻到详情</span>
               </div>
               <button type="button" className="top5-header__more" onClick={() => router.push("/themes")}>
-                查看全部 {filtered.length} 个聚类 →
+                查看全部 {filtered.length} 个聚类
               </button>
             </div>
             <div className="table-scroll">

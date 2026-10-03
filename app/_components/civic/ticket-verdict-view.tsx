@@ -11,7 +11,6 @@ import {
   ShieldCheck,
   ShieldAlert,
   Layers,
-  ArrowRight,
   MessageSquareQuote,
   Copy,
   Check,
@@ -153,10 +152,9 @@ export function AiVerdictCard({ data }: { data: TicketVerdictData }) {
           </div>
           <Link
             href={`/themes/${clusterId}?ticketId=${encodeURIComponent(data.id)}&highlight=${encodeURIComponent(data.id)}#ticket-${encodeURIComponent(data.id)}`}
-            className="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-0.5 shrink-0 hover:underline"
+            className="text-blue-600 hover:text-blue-800 font-semibold flex items-center shrink-0 hover:underline"
           >
             <span>定位专题</span>
-            <ArrowRight className="w-3 h-3" />
           </Link>
         </div>
       )}

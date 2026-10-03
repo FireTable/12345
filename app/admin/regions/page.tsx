@@ -16,7 +16,6 @@ import {
   Map,
   ShieldCheck,
   Layers,
-  ArrowRight,
   ExternalLink,
   BookOpen,
   AlertTriangle,
@@ -580,7 +579,6 @@ export default function AdminRegionsPage() {
                       className="btn btn--primary text-xs py-1 px-3 h-7"
                     >
                       进入工作区
-                      <ArrowRight className="h-3 w-3 ml-1" />
                     </button>
                   )}
                 </div>

@@ -2,7 +2,7 @@
 
 import { useState, useTransition, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ShieldCheck, Lock, User, ArrowRight, Sparkles, Building2, Eye, EyeOff } from "lucide-react";
+import { ShieldCheck, Lock, User, Sparkles, Building2, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth/client";
 
@@ -167,7 +167,7 @@ function LoginForm() {
               </span>
             ) : (
               <span className="submit-btn-content">
-                安全登录进入系统 <ArrowRight size={18} />
+                安全登录进入系统
               </span>
             )}
           </button>

@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { useCivicWorkflow } from "@/app/_components/civic/civic-workflow";
 import { CivicEChart, CivicHeatmap, donutOption, trendOption } from "@/app/_components/civic/civic-charts";
 import { RANK_COLORS } from "@/lib/civic-cluster";
-import { FileText, Activity, Sparkles, FolderKanban } from "lucide-react";
+import { FileText, Activity, Sparkles, FolderKanban, Cpu } from "lucide-react";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { SkDashboard } from "@/app/_components/civic/skeletons";
 import { useRegion } from "@/app/_components/civic/region-context";
@@ -130,19 +130,17 @@ export default function DashboardPage() {
           <button type="button" className="btn btn--default" onClick={() => void exportOverview()}>
             导出
           </button>
-          <button type="button" className="btn btn--primary" onClick={openUpload}>
-            更新工单数据
+          <button type="button" className="btn btn--default" onClick={openUpload} title="录入单条或批量追加工单">
+            追加工单
           </button>
-          <button
-            type="button"
-            className="btn btn--primary"
-            onClick={runCluster}
-            disabled={analyzing || isAllAnalyzed}
-            title={analyzing ? "AI 研判执行中..." : disabledReason || undefined}
-            style={isAllAnalyzed && !analyzing ? { opacity: 0.5, cursor: "not-allowed", filter: "grayscale(0.6)" } : undefined}
+          <Link
+            href="/workbench"
+            className="btn btn--primary flex items-center gap-1.5 !text-white"
+            style={analyzing ? { background: "linear-gradient(135deg, #2563EB 0%, #0891B2 100%)", boxShadow: "0 0 12px rgba(37,99,235,0.4)" } : undefined}
           >
-            {analyzing ? "研判中…" : isAllAnalyzed ? "已全部研判" : "启动 Agent 研判"}
-          </button>
+            <Cpu size={14} className={`text-white ${analyzing ? "animate-spin" : ""}`} />
+            <span className="text-white font-medium">{analyzing ? "研判流水线作业中…" : "全流程研判工作台"}</span>
+          </Link>
         </div>
       </section>
 

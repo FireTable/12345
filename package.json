@@ -40,6 +40,7 @@
     "@tanstack/react-table": "^8.21.3",
     "@tanstack/react-virtual": "^3.14.9",
     "@types/leaflet": "^1.9.22",
+    "@xyflow/react": "^12.12.0",
     "better-auth": "^1.7.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

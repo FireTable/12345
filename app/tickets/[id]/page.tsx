@@ -6,7 +6,6 @@ import { useParams } from "next/navigation";
 import { classifyDetailPayload, type DetailLoadStatus } from "@/lib/detail-load";
 import {
   Layers,
-  ArrowRight,
   Sparkles,
   ExternalLink,
   ChevronLeft,

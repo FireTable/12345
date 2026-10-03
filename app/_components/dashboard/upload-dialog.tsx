@@ -7,7 +7,6 @@ import {
   AlertTriangle,
   X,
   Loader2,
-  ArrowRight,
   ShieldCheck,
   Database,
   Bot,
@@ -790,7 +789,6 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
               >
                 <Bot className="w-3.5 h-3.5 mr-1.5" />
                 启动 Agent 智能聚类研判
-                <ArrowRight className="w-3.5 h-3.5 ml-1" />
               </Button>
             </>
           ) : step === "CLUSTERING" ? (

@@ -11,7 +11,6 @@ import {
   AlertCircle,
   Network,
   Layers,
-  ArrowRight,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import type { TaskProgress, ActiveCategoryStats, ActiveClusterSpotlight } from "@/lib/task-progress";

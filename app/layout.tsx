@@ -4,9 +4,11 @@ import "@/app/_components/civic/tokens.css";
 import "@/app/_components/civic/components.css";
 import "@/app/_components/civic/layout.css";
 import "@/app/_components/civic/civic-pages.css";
+import "@/app/workbench/workbench.css";
 import "leaflet/dist/leaflet.css";
 import { CivicNav } from "@/app/_components/civic/civic-nav";
 import { CivicWorkflowProvider } from "@/app/_components/civic/civic-workflow";
+import { PipelineFloatingPill } from "@/app/_components/civic/pipeline-floating-pill";
 import { Toaster } from "@/app/_components/ui/sonner";
 import { appViewport } from "./viewport";
 
@@ -45,6 +47,7 @@ export default function RootLayout({
           <CivicWorkflowProvider>
             <CivicNav />
             <main className="main">{children}</main>
+            <PipelineFloatingPill />
             <Toaster />
           </CivicWorkflowProvider>
         </RegionProvider>

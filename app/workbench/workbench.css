@@ -1,0 +1,314 @@
+/* ==================================================================
+   app/workbench/workbench.css — 民声智理 · AI 研判工厂流水线画布专属样式
+   ================================================================== */
+
+.workbench-wrapper {
+  position: fixed;
+  top: var(--nav-h, 54px);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #F8FAFC;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 10;
+}
+
+/* 顶部调度工具条 */
+.workbench-header {
+  height: 52px;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--c-border-soft, #E2E8F0);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  z-index: 20;
+  flex-shrink: 0;
+}
+
+.workbench-title-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.workbench-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+.workbench-badge--running {
+  background: #E6F4FF;
+  color: #0958D9;
+  border: 1px solid #91CAFF;
+}
+
+.workbench-badge--idle {
+  background: #F0FDF4;
+  color: #166534;
+  border: 1px solid #BBF7D0;
+}
+
+.workbench-badge--busy {
+  background: #FFF7E8;
+  color: #D46B08;
+  border: 1px solid #FFD591;
+}
+
+/* 画布主体 */
+.workbench-canvas-container {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  position: relative;
+  background: #F8FAFC;
+}
+
+/* React Flow 节点通用卡片外壳 */
+.pipeline-node {
+  width: 320px;
+  border-radius: 14px;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  font-family: inherit;
+  color: #0F172A;
+}
+
+.pipeline-node:hover {
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.1), 0 2px 6px rgba(15, 23, 42, 0.06);
+  border-color: #CBD5E1;
+  transform: translateY(-2px);
+}
+
+.pipeline-node--active {
+  border-color: #3B82F6 !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18), 0 8px 24px rgba(37, 99, 235, 0.14) !important;
+}
+
+.pipeline-node--completed {
+  border-color: #86EFAC !important;
+}
+
+/* 节点头部 */
+.pipeline-node__header {
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #F1F5F9;
+  background: #FAFAFC;
+}
+
+.pipeline-node__title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pipeline-node__icon-box {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.pipeline-node__step-idx {
+  font-size: 10px;
+  font-weight: 800;
+  font-family: monospace;
+  color: #94A3B8;
+  letter-spacing: 0.5px;
+}
+
+.pipeline-node__name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0F172A;
+  line-height: 1.2;
+}
+
+.pipeline-node__tag {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+/* 节点主体内容 */
+.pipeline-node__body {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 核心数字看板行 */
+.pipeline-metric-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.pipeline-metric-value {
+  font-size: 22px;
+  font-weight: 800;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: #0F172A;
+  line-height: 1;
+}
+
+.pipeline-metric-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748B;
+}
+
+.pipeline-metric-sub {
+  font-size: 11px;
+  color: #94A3B8;
+}
+
+/* 进度槽条 */
+.pipeline-progress-track {
+  width: 100%;
+  height: 5px;
+  background: #E2E8F0;
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+
+.pipeline-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #3B82F6 0%, #1D4ED8 100%);
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.pipeline-progress-bar--animated {
+  background-size: 200% 100%;
+  animation: progressPulse 1.8s linear infinite;
+}
+
+@keyframes progressPulse {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+/* 微型卡片信息槽 */
+.pipeline-snippet-box {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: #334155;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pipeline-snippet-title {
+  font-weight: 700;
+  font-size: 10.5px;
+  color: #64748B;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.pipeline-snippet-text {
+  color: #1E293B;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 拖拽上传轻量插槽 */
+.pipeline-drop-zone {
+  border: 1.5px dashed #CBD5E1;
+  background: #F8FAFC;
+  border-radius: 8px;
+  padding: 10px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pipeline-drop-zone:hover,
+.pipeline-drop-zone.is-dragover {
+  border-color: #3B82F6;
+  background: #EFF6FF;
+}
+
+/* 自定义流光连接边样式 */
+.flowing-edge-path {
+  stroke-width: 2.2;
+  transition: stroke 0.3s;
+}
+
+.flowing-beam-circle {
+  filter: drop-shadow(0 0 5px #3B82F6);
+}
+
+/* 右下角极简常驻微型挂件 (Mini Floating Widget) */
+.pipeline-floating-widget {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 30px;
+  padding: 6px 14px 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #FFFFFF;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25), 0 2px 6px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+  text-decoration: none;
+}
+
+.pipeline-floating-widget:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  background: rgba(15, 23, 42, 0.94);
+  color: #FFFFFF;
+}
+
+.pipeline-floating-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex-shrink: 0;
+}
