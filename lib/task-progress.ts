@@ -258,12 +258,20 @@ export async function getLatestTaskProgress(): Promise<TaskProgress | null> {
       const live = progressStore.get(fromDb.taskId);
       if (live && live.updatedAt >= fromDb.updatedAt) return live;
       return fromDb;
+    } else {
+      // 数据库中已无任务记录，说明任务队列已被清空，同步重置内存，杜绝僵尸状态
+      progressStore.clear();
+      return null;
     }
   } catch (err: any) {
     console.warn("[task-progress] Failed to fetch latest task from DB:", err.message);
   }
 
   return newestMem;
+}
+
+export function clearTaskProgressStore(): void {
+  progressStore.clear();
 }
 
 export function removeTaskProgress(taskId: string): void {

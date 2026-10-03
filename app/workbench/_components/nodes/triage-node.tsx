@@ -18,15 +18,6 @@ export type TriageNodeData = {
 
 export type TriageNodeType = Node<TriageNodeData, "triage">;
 
-const DEFAULT_TOWNSHIPS = [
-  { township: "大良", count: 86 },
-  { township: "容桂", count: 72 },
-  { township: "北滘", count: 48 },
-  { township: "伦教", count: 35 },
-  { township: "陈村", count: 28 },
-  { township: "乐从", count: 31 },
-];
-
 export function TriageNode({ data }: NodeProps<TriageNodeType>) {
   const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
   const isActive = data.status === "running";
@@ -47,8 +38,7 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
   const activeColor = activeCategory ? categoryColor(activeCategory.category) : "#1677FF";
   const activeName = activeCategory?.category || "分类分布";
 
-  const townships =
-    data.townshipStats && data.townshipStats.length > 0 ? data.townshipStats : DEFAULT_TOWNSHIPS;
+  const townships = data.townshipStats || [];
 
   // 与数据总览完全一致的环形饼图配置
   const donutOpt = useMemo(
@@ -228,40 +218,44 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
               所属镇街分布
             </span>
             <span className="text-[10px] text-slate-400 font-mono">
-              覆盖 {townships.length} 个镇街
+              {townships.length > 0 ? `覆盖 ${townships.length} 个镇街` : "暂无数据"}
             </span>
           </div>
-          <div className="flex flex-wrap gap-1">
-            {townships.map((ts, i) => {
-              const isUnknown = ts.township === "未知";
-              const color = isUnknown ? "#86909C" : getTownshipColor(ts.township);
-              return (
-                <span
-                  key={i}
-                  className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border font-medium transition-all"
-                  style={{
-                    backgroundColor: isUnknown ? "#F8FAFC" : `${color}0D`,
-                    borderColor: isUnknown ? "#E2E8F0" : `${color}35`,
-                    color: isUnknown ? "#64748B" : color,
-                  }}
-                >
+          {townships.length > 0 ? (
+            <div className="flex flex-wrap gap-1">
+              {townships.map((ts, i) => {
+                const isUnknown = ts.township === "未知";
+                const color = isUnknown ? "#86909C" : getTownshipColor(ts.township);
+                return (
                   <span
-                    className="w-1.5 h-1.5 rounded-full shrink-0"
-                    style={{ backgroundColor: isUnknown ? "#94A3B8" : color }}
-                  />
-                  <span className={isUnknown ? "text-slate-500 font-normal" : "text-slate-700 font-medium"}>
-                    {ts.township}
-                  </span>
-                  <span
-                    className="font-mono font-bold"
-                    style={{ color: isUnknown ? "#64748B" : color }}
+                    key={i}
+                    className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border font-medium transition-all"
+                    style={{
+                      backgroundColor: isUnknown ? "#F8FAFC" : `${color}0D`,
+                      borderColor: isUnknown ? "#E2E8F0" : `${color}35`,
+                      color: isUnknown ? "#64748B" : color,
+                    }}
                   >
-                    {ts.count}
+                    <span
+                      className="w-1.5 h-1.5 rounded-full shrink-0"
+                      style={{ backgroundColor: isUnknown ? "#94A3B8" : color }}
+                    />
+                    <span className={isUnknown ? "text-slate-500 font-normal" : "text-slate-700 font-medium"}>
+                      {ts.township}
+                    </span>
+                    <span
+                      className="font-mono font-bold"
+                      style={{ color: isUnknown ? "#64748B" : color }}
+                    >
+                      {ts.count}
+                    </span>
                   </span>
-                </span>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="py-2 text-center text-xs text-slate-400">暂无镇街分布数据</div>
+          )}
         </div>
       </div>
     </PipelineNodeShell>

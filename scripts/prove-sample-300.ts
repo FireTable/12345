@@ -22,7 +22,14 @@ async function main() {
   const book = xlsx.readFile(xlsxPath);
   const sheet = book.Sheets[book.SheetNames[0]];
   const rows = xlsx.utils.sheet_to_json(sheet, { defval: "" }) as Record<string, unknown>[];
-  const built = buildRecordsFromRows(rows, "SAMPLE300");
+  const { loadPresetVocabulary } = await import("../lib/vocabulary");
+  const vocab = loadPresetVocabulary("fs_shunde");
+  const built = buildRecordsFromRows(rows, "SAMPLE300", {
+    townships: vocab.townships,
+    district: vocab.regionName,
+    city: vocab.cityName,
+    province: vocab.provinceName,
+  });
   console.log(`[sample] parsed ${built.records.length}, failed rows ${built.failedCount}, sheet ${book.SheetNames[0]}`);
   const ingest = await insertRecordsBatch(built.records, "fs_shunde");
   console.log(`[sample] ingest inserted ${ingest.insertedCount}, duplicate ${ingest.duplicateCount}, failed ${ingest.failedCount}`);

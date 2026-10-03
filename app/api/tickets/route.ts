@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { MOCK_RAW_TICKETS } from "@/lib/mock-data";
 import { getRegionDb } from "@/db/client";
 import { ticketsTable, themesTable } from "@/db/schema";
 import { sql, inArray, eq } from "drizzle-orm";
@@ -38,15 +37,19 @@ export async function GET(req: Request) {
         data: tickets,
       });
     }
-  } catch (e) {
-    // Fallback
+  } catch (e: any) {
+    console.error("[tickets/route] GET error:", e?.message);
+    return NextResponse.json(
+      { success: false, error: e?.message || "Failed to fetch tickets" },
+      { status: 500 }
+    );
   }
 
   return NextResponse.json({
     success: true,
-    source: "memory",
-    total: MOCK_RAW_TICKETS.length,
-    data: MOCK_RAW_TICKETS,
+    source: "postgresql",
+    total: 0,
+    data: [],
   });
 }
 
@@ -190,9 +193,11 @@ export async function POST(req: Request) {
         }
       }
     } catch (dbErr: any) {
-      console.warn("DB insert fallback to memory:", dbErr.message);
-      insertedCount = validRecords.length;
-      duplicateCount = 0;
+      console.error("[tickets/route] DB insert error:", dbErr.message);
+      return NextResponse.json(
+        { success: false, error: `工单写入数据库失败: ${dbErr.message}` },
+        { status: 500 }
+      );
     }
 
     const durationMs = Date.now() - startTime;

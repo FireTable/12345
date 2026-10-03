@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server";
-import { db } from "@/db/client";
+import { getRegionDb } from "@/db/client";
 import { ticketsTable, themesTable } from "@/db/schema";
 import { sql } from "drizzle-orm";
+import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const regionId = await resolveRequestRegionId(req);
+    const { db: tenantDb } = await getRegionDb(regionId);
+
     const [ticketCountRes, themeRows] = await Promise.all([
-      db.select({ count: sql<number>`count(*)` }).from(ticketsTable),
-      db.select().from(themesTable),
+      tenantDb.select({ count: sql<number>`count(*)` }).from(ticketsTable),
+      tenantDb.select().from(themesTable),
     ]);
 
     const totalTickets = Number(ticketCountRes[0]?.count || 0);
@@ -44,14 +48,14 @@ export async function GET() {
       data: {
         totalTickets,
         multiFrequencyTickets,
-        multiFrequencyRate: multiFrequencyRate || 38,
+        multiFrequencyRate,
         themeCount,
         highRiskCount,
         mediumRiskCount,
         lowRiskCount,
-        compressionRatio: compressionRatio || 95,
+        compressionRatio,
         topSubject: themes[0]?.canonicalSubject || "暂无重点多频诉求",
-        avgResponseTimeSavedHours: 5.2,
+        avgResponseTimeSavedHours: 0,
       },
     });
   } catch (err) {

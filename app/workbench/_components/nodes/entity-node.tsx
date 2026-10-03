@@ -78,7 +78,7 @@ export function EntityNode({ data }: NodeProps<EntityNodeType>) {
             <MapPin size={12} className="text-purple-500 shrink-0 mt-0.5" />
             <span className="text-slate-400 shrink-0">发生地点：</span>
             <span className="font-medium text-slate-800 truncate">
-              {data.currentLocation || "伦教街道南苑中路一号润汉幸福汇小区"}
+              {data.currentLocation || (data.total > 0 ? "要素提取中..." : "暂无提取数据")}
             </span>
           </div>
 
@@ -87,7 +87,7 @@ export function EntityNode({ data }: NodeProps<EntityNodeType>) {
             <Building2 size={12} className="text-purple-500 shrink-0 mt-0.5" />
             <span className="text-slate-400 shrink-0">责任主体：</span>
             <span className="font-medium text-slate-800 truncate">
-              {data.currentSubject || "沿街排档商户 / 物业责任方"}
+              {data.currentSubject || (data.total > 0 ? "责任主体研判中..." : "暂无数据")}
             </span>
           </div>
 
@@ -96,7 +96,7 @@ export function EntityNode({ data }: NodeProps<EntityNodeType>) {
             <Tag size={12} className="text-purple-500 shrink-0 mt-0.5" />
             <span className="text-slate-400 shrink-0">问题类型：</span>
             <span className="font-medium text-slate-800 truncate">
-              {data.currentEventType || "噪声扰民 / 物业失管"}
+              {data.currentEventType || (data.total > 0 ? "诉求类型定性中..." : "暂无数据")}
             </span>
           </div>
         </div>

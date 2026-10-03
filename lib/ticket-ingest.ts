@@ -5,7 +5,7 @@ import { desensitizeContent } from "@/backend/anonymizer";
 import { profileTicket } from "@/backend/ticket-profile";
 import { AGENT_TICKET_NULLS } from "@/lib/civic-persist";
 import { invalidateCivicAggregates } from "@/lib/civic-cache";
-import type { TownshipInfo } from "@/lib/vocabulary";
+import { loadPresetVocabulary, type TownshipInfo } from "@/lib/vocabulary";
 import { workOrderInstantFromTicketNo } from "@/lib/work-order-date";
 
 const HEADER_MAP: Record<string, string> = {
@@ -109,9 +109,14 @@ export function buildRecordsFromRows(
       normalized.ticketNo || `${idPrefix}-${baseTs}-${String(idx + 1).padStart(6, "0")}`
     );
     const createTime = workOrderInstantFromTicketNo(ticketNo) ?? extractDate(content);
+    const effectiveTownships =
+      options.townships && options.townships.length > 0
+        ? options.townships
+        : loadPresetVocabulary(options.district || "fs_shunde").townships;
+
     const profile = profileTicket(
       { title, content, subdistrict: optionalText(normalized.subdistrict) },
-      options.townships || []
+      effectiveTownships
     );
 
     const channel = normalized.channel || normalized.sourceChannel || "市民服务热线";
@@ -146,8 +151,8 @@ export function buildRecordsFromRows(
       province: options.province || null,
       city: options.city || null,
       district: optionalText(normalized.district) || options.district || null,
-      subdistrict: optionalText(normalized.subdistrict),
-      sourceCategory: optionalText(normalized.sourceCategory),
+      subdistrict: optionalText(normalized.subdistrict) || profile.township || null,
+      sourceCategory: optionalText(normalized.sourceCategory) || profile.category || null,
       urgency: profile.urgent ? "URGENT" : "NORMAL",
       channel,
       status: "PENDING",

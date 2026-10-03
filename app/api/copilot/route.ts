@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { db } from "@/db/client";
+import { getRegionDb } from "@/db/client";
 import { ticketsTable, themesTable } from "@/db/schema";
 import { sql, desc } from "drizzle-orm";
 import { buildCopilotPrompt } from "@/backend/prompt";
+import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,16 +28,19 @@ function decodeSseDelta(payload: string): string {
 
 export async function POST(req: Request) {
   try {
+    const regionId = await resolveRequestRegionId(req);
+    const { db: tenantDb } = await getRegionDb(regionId);
+
     const { prompt } = await req.json();
     const query = String(prompt || "").trim();
     if (!query) {
       return NextResponse.json({ success: false, error: "empty prompt" }, { status: 400 });
     }
 
-    const countRes = await db.select({ count: sql<number>`count(*)` }).from(ticketsTable);
+    const countRes = await tenantDb.select({ count: sql<number>`count(*)` }).from(ticketsTable);
     const totalCount = Number(countRes[0]?.count || 0);
 
-    const currentThemes = await db
+    const currentThemes = await tenantDb
       .select()
       .from(themesTable)
       .orderBy(desc(themesTable.ticketCount))

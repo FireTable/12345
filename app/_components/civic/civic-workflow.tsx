@@ -3,9 +3,11 @@
 import React, { createContext, useCallback, useContext, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { UploadDialog } from "@/app/_components/dashboard/upload-dialog";
+import { DataEntryDialog } from "@/app/_components/dashboard/data-entry-dialog";
+import { FloatingProgressPill } from "@/app/_components/dashboard/floating-progress-pill";
 import { LightCopilot } from "@/app/_components/copilot/light-copilot";
 import type { MultiFrequencyTheme, OverallStats } from "@/backend/state";
+import type { TaskProgress } from "@/lib/task-progress";
 
 const emptyStats: OverallStats = {
   totalTickets: 0,
@@ -44,7 +46,6 @@ export function useCivicWorkflow() {
 export function CivicWorkflowProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [clusterOnly, setClusterOnly] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [pipelineDrawerOpen, setPipelineDrawerOpen] = useState(false);
   const togglePipelineDrawer = useCallback(() => {
@@ -87,12 +88,39 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
     }
   }, []);
 
+  const [taskProgress, setTaskProgress] = useState<TaskProgress | null>(null);
+
+  const pollTaskProgress = useCallback(async () => {
+    try {
+      const res = await fetch("/api/cluster/progress?taskId=latest", { cache: "no-store" });
+      const json = await res.json();
+      if (json.success && json.data) {
+        const data = json.data as TaskProgress;
+        setTaskProgress(data);
+        if (data.status === "RUNNING") {
+          setAnalyzing(true);
+        } else if (data.status === "COMPLETED" || data.status === "FAILED") {
+          setAnalyzing(false);
+        }
+      }
+    } catch {
+      // silent
+    }
+  }, []);
+
   React.useEffect(() => {
-    loadTicketStatus();
-    const handleRefresh = () => loadTicketStatus();
+    pollTaskProgress();
+    const interval = setInterval(pollTaskProgress, analyzing ? 3000 : 12000);
+    const handleRefresh = () => {
+      loadTicketStatus();
+      pollTaskProgress();
+    };
     window.addEventListener("civic-data-refresh", handleRefresh);
-    return () => window.removeEventListener("civic-data-refresh", handleRefresh);
-  }, [loadTicketStatus]);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("civic-data-refresh", handleRefresh);
+    };
+  }, [analyzing, loadTicketStatus, pollTaskProgress]);
 
   const isAllAnalyzed =
     ticketStatus.loaded &&
@@ -109,13 +137,13 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
   const refreshPages = useCallback(() => {
     router.refresh();
     loadTicketStatus();
+    pollTaskProgress();
     if (typeof window !== "undefined") {
       window.dispatchEvent(new Event("civic-data-refresh"));
     }
-  }, [router, loadTicketStatus]);
+  }, [router, loadTicketStatus, pollTaskProgress]);
 
   const openUpload = useCallback(() => {
-    setClusterOnly(false);
     setUploadOpen(true);
   }, []);
 
@@ -124,9 +152,9 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
       toast.info(`当前 ${ticketStatus.total} 条工单已全部研判完毕，无需重复执行`);
       return;
     }
-    setClusterOnly(true);
-    setUploadOpen(true);
-  }, [isAllAnalyzed, ticketStatus.total]);
+    // 直接直达并唤醒 AI 研判全流程流水线工作台
+    router.push("/workbench");
+  }, [isAllAnalyzed, ticketStatus.total, router]);
 
   const openCopilot = useCallback(async () => {
     try {
@@ -202,27 +230,21 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
       }}
     >
       {children}
-      <UploadDialog
+      {/* 工单数据录入弹窗 (仅保留文件上传与手动文本录入，无多余 progress 进度条) */}
+      <DataEntryDialog
         isOpen={uploadOpen}
-        autoStartCluster={clusterOnly}
-        onClusteringChange={setAnalyzing}
-        onShowProgress={() => setUploadOpen(true)}
-        onClose={() => {
-          if (analyzing) return;
-          setUploadOpen(false);
-          setClusterOnly(false);
-        }}
+        onClose={() => setUploadOpen(false)}
         onDatabaseUpdated={refreshPages}
-        onUploadSuccess={(data) => {
-          setThemes(data.themes || []);
-          if (data.stats) setStats({ ...emptyStats, ...data.stats });
-          toast.success(clusterOnly ? "研判完成" : "入库并研判完成");
-          setAnalyzing(false);
-          setUploadOpen(false);
-          setClusterOnly(false);
-          refreshPages();
-        }}
       />
+
+      {/* 后台研判任务浮动胶囊：点击直接唤醒全工序智能研判工作台 */}
+      {taskProgress && (taskProgress.status === "RUNNING" || analyzing) && (
+        <FloatingProgressPill
+          progress={taskProgress}
+          isVisible={true}
+          onClickWorkbench={() => router.push("/workbench")}
+        />
+      )}
       <LightCopilot
         isOpen={copilotOpen}
         onClose={() => setCopilotOpen(false)}

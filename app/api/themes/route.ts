@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
-import { db } from "@/db/client";
+import { getRegionDb } from "@/db/client";
 import { themesTable } from "@/db/schema";
 import { desc } from "drizzle-orm";
 import type { MultiFrequencyTheme } from "@/backend/state";
+import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const themeRows = await db
+    const regionId = await resolveRequestRegionId(req);
+    const { db: tenantDb } = await getRegionDb(regionId);
+
+    const themeRows = await tenantDb
       .select()
       .from(themesTable)
       .orderBy(desc(themesTable.createdAt));

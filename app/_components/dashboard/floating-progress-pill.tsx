@@ -1,25 +1,45 @@
 "use client";
 
 import React from "react";
-import { Loader2, Maximize2, Sparkles, CheckCircle2, AlertTriangle } from "lucide-react";
+import { useRouter, usePathname } from "next/navigation";
+import { Loader2, ArrowRight, CheckCircle2, AlertTriangle, Cpu } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import type { TaskProgress } from "@/lib/task-progress";
 
-interface FloatingProgressPillProps {
+export interface FloatingProgressPillProps {
   progress: TaskProgress;
   isVisible: boolean;
-  onExpand: () => void;
+  onExpand?: () => void;
+  onClickWorkbench?: () => void;
 }
 
 export const FloatingProgressPill: React.FC<FloatingProgressPillProps> = ({
   progress,
   isVisible,
   onExpand,
+  onClickWorkbench,
 }) => {
-  if (!isVisible) return null;
+  const router = useRouter();
+  const pathname = usePathname();
+
+  // 如果当前已经在 workbench 页面，避免遮挡
+  if (!isVisible || pathname === "/workbench") return null;
 
   const isCompleted = progress.status === "COMPLETED";
   const isFailed = progress.status === "FAILED";
+
+  const handleClick = () => {
+    if (onClickWorkbench) {
+      onClickWorkbench();
+      return;
+    }
+    if (onExpand) {
+      onExpand();
+      return;
+    }
+    // 默认直接唤醒工作台
+    router.push("/workbench");
+  };
 
   return (
     <AnimatePresence>
@@ -31,8 +51,9 @@ export const FloatingProgressPill: React.FC<FloatingProgressPillProps> = ({
         className="fixed bottom-6 right-6 z-[280] select-none"
       >
         <button
-          onClick={onExpand}
-          className="group flex items-center gap-3 px-3.5 py-2 rounded-full border border-border/70 bg-card/90 hover:bg-card text-foreground shadow-xl backdrop-blur-md transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer ring-1 ring-primary/20 hover:ring-primary/40"
+          onClick={handleClick}
+          title="点击唤醒 AI 研判工作台"
+          className="group flex items-center gap-3 px-3.5 py-2 rounded-full border border-border/70 bg-card/95 hover:bg-card text-foreground shadow-xl backdrop-blur-md transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer ring-1 ring-primary/20 hover:ring-primary/40"
         >
           {/* 状态动效图标 */}
           <div className="relative flex items-center justify-center">
@@ -60,23 +81,24 @@ export const FloatingProgressPill: React.FC<FloatingProgressPillProps> = ({
                   : isFailed
                   ? "流水线异常"
                   : progress.stage === "SYNTHESIZING"
-                  ? "主题建议"
+                  ? "主题建议生成"
                   : progress.stage === "CLUSTERING"
                   ? "同一事件归并"
-                  : "分类与抽取"}
+                  : "分类初筛与抽取"}
               </span>
               <span className="font-mono text-xs font-bold text-primary">
                 {progress.percent}%
               </span>
             </div>
-            <p className="text-[10px] text-muted-foreground line-clamp-1 max-w-[140px]">
-              {progress.stageText || "后台运行中..."}
+            <p className="text-[10px] text-muted-foreground line-clamp-1 max-w-[150px]">
+              {progress.stageText || "后台研判运行中 · 点击唤醒工作台"}
             </p>
           </div>
 
-          {/* 悬浮展开提示 */}
-          <div className="pl-1 border-l border-border/50 text-muted-foreground group-hover:text-primary transition-colors">
-            <Maximize2 className="w-3.5 h-3.5" />
+          {/* 唤醒工作台提示 */}
+          <div className="pl-1.5 border-l border-border/50 text-muted-foreground group-hover:text-primary transition-colors flex items-center gap-1 text-[10px] font-medium">
+            <span>工作台</span>
+            <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
           </div>
         </button>
       </motion.div>
