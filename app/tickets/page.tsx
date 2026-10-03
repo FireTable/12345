@@ -85,7 +85,7 @@ const TABS = [
 
 export default function TicketsPage() {
   const router = useRouter();
-  const { activeRegion } = useRegion();
+  const { activeRegion, isLoading: regionLoading } = useRegion();
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(20);
   const [keyword, setKeyword] = useState("");
@@ -135,10 +135,11 @@ export default function TicketsPage() {
   }
 
   useEffect(() => {
+    if (regionLoading) return;
     load();
     window.addEventListener("civic-data-refresh", load);
     return () => window.removeEventListener("civic-data-refresh", load);
-  }, [page, size, keyword, tab, region, category, cluster, time, activeRegion?.id]);
+  }, [page, size, keyword, tab, region, category, cluster, time, activeRegion?.id, regionLoading]);
 
   const s = data.stats;
   const pages = Math.max(1, Math.ceil(data.total / size));

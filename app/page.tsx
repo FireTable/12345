@@ -38,7 +38,7 @@ type Overview = {
 type Trends = { daily: Record<string, number>; dailyNewClusters?: Record<string, number> };
 
 export default function DashboardPage() {
-  const { activeRegion } = useRegion();
+  const { activeRegion, isLoading: regionLoading } = useRegion();
   const router = useRouter();
   const [daysRange, setDaysRange] = useState(0);
   const [ov, setOv] = useState<Overview | null>(null);
@@ -60,12 +60,13 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
+    if (regionLoading) return;
     setReady(false);
     load();
     const onRefresh = () => load();
     window.addEventListener("civic-data-refresh", onRefresh);
     return () => window.removeEventListener("civic-data-refresh", onRefresh);
-  }, [daysRange, activeRegion?.id]);
+  }, [daysRange, activeRegion?.id, regionLoading]);
 
   async function exportOverview() {
     const res = await fetch("/api/clusters");

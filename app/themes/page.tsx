@@ -50,7 +50,7 @@ const TABS = [
 
 export default function ThemesPage() {
   const router = useRouter();
-  const { activeRegion } = useRegion();
+  const { activeRegion, isLoading: regionLoading } = useRegion();
   const [rows, setRows] = useState<Cluster[]>([]);
   const [regions, setRegions] = useState<string[]>([]);
   const [tab, setTab] = useState("all");
@@ -75,10 +75,11 @@ export default function ThemesPage() {
   }
 
   useEffect(() => {
+    if (regionLoading) return;
     load();
     window.addEventListener("civic-data-refresh", load);
     return () => window.removeEventListener("civic-data-refresh", load);
-  }, [activeRegion?.id]);
+  }, [activeRegion?.id, regionLoading]);
 
   const counts = {
     all: rows.length,

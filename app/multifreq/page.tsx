@@ -71,7 +71,7 @@ export default function MultifreqPage() {
 function MultifreqInner() {
   const router = useRouter();
   const search = useSearchParams();
-  const { activeRegion } = useRegion();
+  const { activeRegion, isLoading: regionLoading } = useRegion();
   const [rows, setRows] = useState<Cluster[]>([]);
   const [ov, setOv] = useState<Overview | null>(null);
   const [region, setRegion] = useState(search.get("region") || "");
@@ -83,7 +83,11 @@ function MultifreqInner() {
   const [ready, setReady] = useState(false);
 
   function load() {
-    Promise.all([fetch("/api/clusters").then((r) => r.json()), fetch("/api/overview").then((r) => r.json())])
+    const regParam = activeRegion?.id ? `?region=${encodeURIComponent(activeRegion.id)}` : "";
+    Promise.all([
+      fetch(`/api/clusters${regParam}`).then((r) => r.json()),
+      fetch(`/api/overview${regParam}`).then((r) => r.json()),
+    ])
       .then(([c, o]) => {
         setRows(c.topClusters || []);
         setOv(o);
@@ -93,10 +97,12 @@ function MultifreqInner() {
   }
 
   useEffect(() => {
+    if (regionLoading) return;
     load();
-    window.addEventListener("civic-data-refresh", load);
-    return () => window.removeEventListener("civic-data-refresh", load);
-  }, []);
+    const onRefresh = () => load();
+    window.addEventListener("civic-data-refresh", onRefresh);
+    return () => window.removeEventListener("civic-data-refresh", onRefresh);
+  }, [activeRegion?.id, regionLoading]);
 
   const filtered = useMemo(() => {
     const latestStr = rows.reduce((acc, r) => {
