@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { useCivicWorkflow } from "@/app/_components/civic/civic-workflow";
 import {
   FileText,
   Clock,
@@ -85,7 +84,6 @@ const TABS = [
 
 export default function TicketsPage() {
   const router = useRouter();
-  const { openUpload, runCluster, analyzing, isAllAnalyzed, disabledReason } = useCivicWorkflow();
   const { activeRegion } = useRegion();
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(20);
@@ -186,19 +184,6 @@ export default function TicketsPage() {
           </button>
           <button type="button" className="btn btn--default" onClick={exportCsv}>
             导出
-          </button>
-          <button type="button" className="btn btn--primary" onClick={openUpload}>
-            新增工单
-          </button>
-          <button
-            type="button"
-            className="btn btn--primary"
-            onClick={runCluster}
-            disabled={analyzing || isAllAnalyzed}
-            title={analyzing ? "AI 研判执行中..." : disabledReason || undefined}
-            style={isAllAnalyzed && !analyzing ? { opacity: 0.5, cursor: "not-allowed", filter: "grayscale(0.6)" } : undefined}
-          >
-            {analyzing ? "研判中…" : isAllAnalyzed ? "已全部研判" : "启动 Agent 研判"}
           </button>
         </div>
       </div>

@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { useCivicWorkflow } from "@/app/_components/civic/civic-workflow";
 import { CivicEChart, CivicHeatmap, donutOption, trendOption } from "@/app/_components/civic/civic-charts";
 import { RANK_COLORS } from "@/lib/civic-cluster";
 import { FileText, Activity, Sparkles, FolderKanban } from "lucide-react";
@@ -38,7 +37,6 @@ type Overview = {
 type Trends = { daily: Record<string, number>; dailyNewClusters?: Record<string, number> };
 
 export default function DashboardPage() {
-  const { runCluster, analyzing, isAllAnalyzed, disabledReason } = useCivicWorkflow();
   const { activeRegion } = useRegion();
   const router = useRouter();
   const [daysRange, setDaysRange] = useState(0);
