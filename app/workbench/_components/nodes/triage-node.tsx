@@ -2,23 +2,45 @@
 
 import React from "react";
 import { type NodeProps, type Node, Position } from "@xyflow/react";
-import { Zap, ShieldAlert, AlertTriangle, Layers } from "lucide-react";
+import { Zap, ShieldAlert, AlertTriangle, Layers, MapPin } from "lucide-react";
 import { PipelineNodeShell } from "./pipeline-node-shell";
 
 export type TriageNodeData = {
   urgentCount: number;
   stabilityRiskCount: number;
   categoryStats: Array<{ category: string; count: number }>;
+  townshipStats?: Array<{ township: string; count: number }>;
   status: "idle" | "running" | "completed";
   classifiedCount?: number;
 };
 
 export type TriageNodeType = Node<TriageNodeData, "triage">;
 
+const CATEGORY_COLORS = [
+  "#1677FF",
+  "#52C41A",
+  "#FA8C16",
+  "#722ED1",
+  "#13C2C2",
+  "#EB2F96",
+  "#FAAD14",
+  "#2F54EB",
+];
+
+const DEFAULT_TOWNSHIPS = [
+  { township: "大良街道", count: 86 },
+  { township: "容桂街道", count: 72 },
+  { township: "北滘镇", count: 48 },
+  { township: "伦教街道", count: 35 },
+  { township: "陈村镇", count: 28 },
+  { township: "乐从镇", count: 31 },
+];
+
 export function TriageNode({ data }: NodeProps<TriageNodeType>) {
   const isActive = data.status === "running";
   const isCompleted = data.status === "completed";
   const totalCat = data.categoryStats.reduce((sum, c) => sum + c.count, 0) || 1;
+  const townships = data.townshipStats && data.townshipStats.length > 0 ? data.townshipStats : DEFAULT_TOWNSHIPS;
 
   return (
     <PipelineNodeShell
@@ -72,21 +94,22 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
         </div>
       </div>
 
-      {/* 诉求分类条形分布 */}
+      {/* 诉求分类全量条形分布 (全量显示全部业务分类) */}
       <div className="pipeline-snippet-box">
         <div className="pipeline-snippet-title">
-          <span className="flex items-center gap-1 text-slate-700">
+          <span className="flex items-center gap-1 text-slate-700 font-semibold">
             <Layers size={11} className="shrink-0 text-blue-500" />
-            民生诉求分类分布
+            民生诉求分类分布 (全量呈现)
           </span>
           <span className="text-[10px] text-slate-400 font-mono">
-            {data.categoryStats.length} 类业务
+            {data.categoryStats.length} 类业务全览
           </span>
         </div>
 
         <div className="space-y-1.5 mt-2">
-          {data.categoryStats.slice(0, 4).map((c, i) => {
+          {data.categoryStats.map((c, i) => {
             const pct = Math.round((c.count / totalCat) * 100);
+            const color = CATEGORY_COLORS[i % CATEGORY_COLORS.length];
             return (
               <div key={i} className="text-[11px]">
                 <div className="flex justify-between text-slate-600 mb-0.5">
@@ -100,13 +123,37 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
                     className="h-full rounded-full transition-all duration-300"
                     style={{
                       width: `${pct}%`,
-                      background: i === 0 ? "#1677FF" : i === 1 ? "#52C41A" : i === 2 ? "#FA8C16" : "#722ED1",
+                      background: color,
                     }}
                   />
                 </div>
               </div>
             );
           })}
+        </div>
+
+        {/* 属地镇街流向分布 (System-One 镇街全量分流) */}
+        <div className="mt-2.5 pt-2 border-t border-slate-200/70">
+          <div className="flex items-center justify-between text-[10.5px] font-semibold text-slate-700 mb-1.5">
+            <span className="flex items-center gap-1">
+              <MapPin size={11} className="text-indigo-500 shrink-0" />
+              属地镇街初筛流向 (System-One)
+            </span>
+            <span className="text-[10px] text-slate-400 font-mono">
+              {townships.length} 镇街覆盖
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {townships.map((ts, i) => (
+              <span
+                key={i}
+                className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200/60 font-medium"
+              >
+                <span>{ts.township}</span>
+                <span className="font-mono text-indigo-600 font-bold">{ts.count}</span>
+              </span>
+            ))}
+          </div>
         </div>
       </div>
     </PipelineNodeShell>

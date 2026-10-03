@@ -46,6 +46,7 @@ export type PipelineStateResponse = {
     highRiskThemes: number;
   };
   categoryStats: Array<{ category: string; count: number }>;
+  townshipStats?: Array<{ township: string; count: number }>;
   recentTickets: Array<{
     id: string;
     ticketNo: string;
@@ -60,6 +61,7 @@ export type PipelineStateResponse = {
     stabilityRisk?: boolean;
     confidence?: number;
     createTime?: string;
+    eventType?: string;
   }>;
   recentThemes: Array<{
     id: string;
@@ -135,6 +137,7 @@ function InnerPipelineCanvas({
           urgentCount: stateData?.metrics.urgentTickets ?? 0,
           stabilityRiskCount: stateData?.metrics.stabilityRiskTickets ?? 0,
           categoryStats: stateData?.categoryStats || [],
+          townshipStats: stateData?.townshipStats || [],
           status: isRunning ? "running" : isCompleted ? "completed" : "idle",
           classifiedCount: targetProcessed,
         } as TriageNodeData,
@@ -147,9 +150,16 @@ function InnerPipelineCanvas({
           processed: targetProcessed,
           total,
           extractedCount: targetProcessed,
-          currentTicketNo: isRunning ? (stateData?.taskProgress?.taskId || "进行中") : undefined,
-          currentSubject: stateData?.taskProgress?.currentSubject,
+          currentTicketNo: isRunning
+            ? (stateData?.taskProgress?.taskId || "进行中")
+            : (stateData?.recentTickets?.[0]?.ticketNo || undefined),
+          currentTime: stateData?.recentTickets?.[0]?.createTime || undefined,
           currentLocation: stateData?.recentTickets?.[0]?.address || undefined,
+          currentSubject:
+            stateData?.taskProgress?.currentSubject ||
+            stateData?.recentTickets?.[0]?.canonicalSubject ||
+            undefined,
+          currentEventType: stateData?.recentTickets?.[0]?.eventType || undefined,
           status: isRunning ? "running" : isCompleted ? "completed" : "idle",
           percent: entityPercent,
         } as EntityNodeData,
@@ -157,7 +167,7 @@ function InnerPipelineCanvas({
       {
         id: "node-cluster",
         type: "cluster",
-        position: { x: 960, y: 500 },
+        position: { x: 960, y: 540 },
         data: {
           themeCount: stateData?.metrics.totalThemes ?? 0,
           totalTickets: total,
@@ -174,7 +184,7 @@ function InnerPipelineCanvas({
       {
         id: "node-dossier",
         type: "dossier",
-        position: { x: 520, y: 500 },
+        position: { x: 520, y: 540 },
         data: {
           dossierCount: stateData?.metrics.totalThemes ?? 0,
           totalTickets: total,

@@ -2,7 +2,7 @@
 
 import React from "react";
 import { type NodeProps, type Node, Position } from "@xyflow/react";
-import { Cpu, MapPin, Building2, Sparkles, CheckCircle2, ShieldCheck } from "lucide-react";
+import { Cpu, MapPin, Building2, Sparkles, CheckCircle2, Clock, Tag } from "lucide-react";
 import { PipelineNodeShell } from "./pipeline-node-shell";
 
 export type EntityNodeData = {
@@ -10,26 +10,46 @@ export type EntityNodeData = {
   total: number;
   extractedCount: number;
   currentTicketNo?: string;
-  currentSubject?: string;
+  currentTime?: string;
   currentLocation?: string;
+  currentSubject?: string;
+  currentEventType?: string;
   status: "idle" | "running" | "completed";
   percent: number;
 };
 
 export type EntityNodeType = Node<EntityNodeData, "entity">;
 
+function formatDisplayTime(rawTime?: string): string {
+  if (!rawTime) return "2025-01-01 09:57:04";
+  try {
+    const d = new Date(rawTime);
+    if (isNaN(d.getTime())) return rawTime;
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    const hh = String(d.getHours()).padStart(2, "0");
+    const min = String(d.getMinutes()).padStart(2, "0");
+    const ss = String(d.getSeconds()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}`;
+  } catch {
+    return rawTime;
+  }
+}
+
 export function EntityNode({ data }: NodeProps<EntityNodeType>) {
   const isActive = data.status === "running";
   const isCompleted = data.status === "completed" || (data.total > 0 && data.processed >= data.total);
+  const displayTime = formatDisplayTime(data.currentTime);
 
   return (
     <PipelineNodeShell
       stepNumber="03"
-      title="微观地点与主体研判台"
+      title="实体要素与发生时间抽取台"
       icon={<Cpu size={15} />}
       iconGradient="linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%)"
       status={data.status}
-      statusText={isActive ? "深度研判中" : isCompleted ? "抽取完毕" : "待命中"}
+      statusText={isActive ? "时空实体抽取中" : isCompleted ? "抽取对齐完毕" : "待命中"}
       hasTargetHandle={true}
       targetHandlePosition={Position.Left}
       targetHandleColor="#0958D9"
@@ -41,7 +61,7 @@ export function EntityNode({ data }: NodeProps<EntityNodeType>) {
       <div>
         <div className="flex items-center justify-between text-[11px] font-medium text-slate-600 mb-1">
           <span className="flex items-center gap-1.5">
-            <span>实体与地点抽取进度</span>
+            <span>实体要素与时间抽取进度</span>
             {data.currentTicketNo && (
               <span className="font-mono text-[9px] px-1.5 py-0.2 rounded bg-purple-50 text-purple-700 font-semibold border border-purple-200">
                 {data.currentTicketNo}
@@ -60,12 +80,12 @@ export function EntityNode({ data }: NodeProps<EntityNodeType>) {
         </div>
       </div>
 
-      {/* 实时抽取结果微型面板 (520px 宽下充盈展示) */}
+      {/* 实时抽取结果微型面板 (突出时空实体与时间抽取双核) */}
       <div className="pipeline-snippet-box">
         <div className="pipeline-snippet-title">
-          <span className="flex items-center gap-1.5 text-purple-700">
+          <span className="flex items-center gap-1.5 text-purple-700 font-semibold">
             <Sparkles size={11} className="shrink-0" />
-            微观空间基底提炼 (AI消歧对齐)
+            时空实体与时间结构化提炼
           </span>
           <div className="flex items-center gap-2">
             <span className="text-[10px] text-purple-600 bg-purple-50 px-1.5 py-0.2 rounded font-mono font-medium border border-purple-100">
@@ -79,20 +99,45 @@ export function EntityNode({ data }: NodeProps<EntityNodeType>) {
           </div>
         </div>
 
-        <div className="space-y-1.5 text-[11px] mt-2">
-          <div className="flex items-start gap-1 text-slate-600">
-            <MapPin size={12} className="text-purple-500 shrink-0 mt-0.5" />
-            <span className="text-slate-400 shrink-0">微观道路点位：</span>
-            <span className="font-medium text-slate-800 truncate">
-              {data.currentLocation || "大良街道新从路新兴横二街"}
+        <div className="space-y-2 text-[11px] mt-2">
+          {/* 1. 发生时间抽取 */}
+          <div className="flex items-center justify-between text-slate-600 bg-purple-50/50 px-2 py-1 rounded border border-purple-100/60">
+            <div className="flex items-center gap-1.5">
+              <Clock size={12} className="text-purple-600 shrink-0" />
+              <span className="text-slate-500 font-medium shrink-0">诉求发生时间：</span>
+              <span className="font-mono font-semibold text-purple-900 truncate">
+                {displayTime}
+              </span>
+            </div>
+            <span className="text-[9px] px-1 rounded bg-purple-100 text-purple-700 font-medium">
+              精确时钟
             </span>
           </div>
 
-          <div className="flex items-start gap-1 text-slate-600">
+          {/* 2. 微观空间实体 */}
+          <div className="flex items-start gap-1.5 text-slate-600">
+            <MapPin size={12} className="text-purple-500 shrink-0 mt-0.5" />
+            <span className="text-slate-400 shrink-0">微观空间实体：</span>
+            <span className="font-medium text-slate-800 truncate">
+              {data.currentLocation || "伦教街道南苑中路一号润汉幸福汇小区"}
+            </span>
+          </div>
+
+          {/* 3. 涉事责任主体 */}
+          <div className="flex items-start gap-1.5 text-slate-600">
             <Building2 size={12} className="text-purple-500 shrink-0 mt-0.5" />
-            <span className="text-slate-400 shrink-0">责任/涉事主体：</span>
+            <span className="text-slate-400 shrink-0">涉事责任主体：</span>
             <span className="font-medium text-slate-800 truncate">
               {data.currentSubject || "沿街排档商户 / 物业责任方"}
+            </span>
+          </div>
+
+          {/* 4. 诉求事件实体 */}
+          <div className="flex items-start gap-1.5 text-slate-600">
+            <Tag size={12} className="text-purple-500 shrink-0 mt-0.5" />
+            <span className="text-slate-400 shrink-0">诉求事件类型：</span>
+            <span className="font-medium text-slate-800 truncate">
+              {data.currentEventType || "噪声扰民 / 物业失管"}
             </span>
           </div>
         </div>

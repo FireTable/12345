@@ -50,6 +50,7 @@ export async function GET(req: NextRequest) {
         stabilityRisk: ticketsTable.stabilityRisk,
         confidence: ticketsTable.confidence,
         createTime: ticketsTable.createTime,
+        eventType: ticketsTable.eventType,
       })
       .from(ticketsTable)
       .orderBy(desc(ticketsTable.createTime))
@@ -73,7 +74,7 @@ export async function GET(req: NextRequest) {
       .orderBy(desc(themesTable.createdAt))
       .limit(5);
 
-    // 5. 分类统计分布
+    // 5. 全量法定民生业务分类分布 (System-One 全量覆盖)
     const categoryStats = await tenantDb
       .select({
         category: sql<string>`coalesce(${ticketsTable.sourceCategory}, '其他诉求')`,
@@ -82,7 +83,18 @@ export async function GET(req: NextRequest) {
       .from(ticketsTable)
       .groupBy(sql`coalesce(${ticketsTable.sourceCategory}, '其他诉求')`)
       .orderBy(sql`count(*) desc`)
-      .limit(7);
+      .limit(12);
+
+    // 6. 属地镇街流向分布统计 (System-One 镇街分流全貌)
+    const townshipStats = await tenantDb
+      .select({
+        township: sql<string>`coalesce(${ticketsTable.subdistrict}, '未分流镇街')`,
+        count: sql<number>`count(*)`,
+      })
+      .from(ticketsTable)
+      .groupBy(sql`coalesce(${ticketsTable.subdistrict}, '未分流镇街')`)
+      .orderBy(sql`count(*) desc`)
+      .limit(10);
 
     return apiSuccess({
       regionId,
@@ -101,6 +113,10 @@ export async function GET(req: NextRequest) {
       categoryStats: categoryStats.map((c) => ({
         category: c.category,
         count: Number(c.count || 0),
+      })),
+      townshipStats: townshipStats.map((ts) => ({
+        township: ts.township,
+        count: Number(ts.count || 0),
       })),
       recentTickets: recentTickets.map((t) => ({
         ...t,
