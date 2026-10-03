@@ -3,7 +3,7 @@
 import React, { createContext, useCallback, useContext, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { DataEntryDialog } from "@/app/_components/dashboard/data-entry-dialog";
+import { UploadDialog } from "@/app/_components/dashboard/upload-dialog";
 import { FloatingProgressPill } from "@/app/_components/dashboard/floating-progress-pill";
 import { LightCopilot } from "@/app/_components/copilot/light-copilot";
 import type { MultiFrequencyTheme, OverallStats } from "@/backend/state";
@@ -230,8 +230,8 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
       }}
     >
       {children}
-      {/* 工单数据录入弹窗 (仅保留文件上传与手动文本录入，无多余 progress 进度条) */}
-      <DataEntryDialog
+      {/* 工单数据录入弹窗 (复用经典的 upload-dialog 样式，仅保留完成按钮) */}
+      <UploadDialog
         isOpen={uploadOpen}
         onClose={() => setUploadOpen(false)}
         onDatabaseUpdated={refreshPages}
