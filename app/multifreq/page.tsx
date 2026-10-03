@@ -157,7 +157,9 @@ function MultifreqInner() {
           <h1 className="page-hero__title">
             工单透势
           </h1>
-          <div className="page-hero__sub">实时识别 · AI 自动聚类 · 置信度 ≥ {confMin}%</div>
+          <div className="page-hero__sub">
+            {activeRegion ? `${activeRegion.name} · ` : ""}实时识别 · AI 自动聚类 · 置信度 ≥ {confMin}%
+          </div>
         </div>
         <PageHeaderActions onRefresh={load}>
           <button type="button" className="btn btn--default h-[34px] px-3 text-xs font-medium" onClick={cycleTime}>
