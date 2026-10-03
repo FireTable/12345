@@ -1288,7 +1288,7 @@
 }
 
 /* ==================================================================
-   Header AI 研判流水线科技感控制台图标按钮 (纯图标形态 + 炫酷质感)
+   Header AI 研判流水线控制台图标按钮 (纯扁平极简风，0 阴影)
    ================================================================== */
 .pipeline-console-icon-btn {
   display: inline-flex;
@@ -1296,14 +1296,14 @@
   justify-content: center;
   width: 34px;
   height: 34px;
-  background: linear-gradient(135deg, #1E40AF 0%, #2563EB 50%, #3B82F6 100%);
-  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: #1677FF;
+  border: 1px solid transparent;
   border-radius: 8px;
   color: #FFFFFF;
   cursor: pointer;
   user-select: none;
-  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.32);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: none;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
   position: relative;
   overflow: hidden;
   flex-shrink: 0;
@@ -1316,16 +1316,15 @@
   left: -100%;
   width: 60%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.28), transparent);
   transform: skewX(-20deg);
   transition: left 0.5s ease;
 }
 
 .pipeline-console-icon-btn:hover {
-  transform: translateY(-1px);
-  background: linear-gradient(135deg, #1D4ED8 0%, #2563EB 50%, #60A5FA 100%);
-  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.45);
-  border-color: rgba(255, 255, 255, 0.55);
+  background: #0958D9;
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .pipeline-console-icon-btn:hover::after {
@@ -1333,13 +1332,14 @@
 }
 
 .pipeline-console-icon-btn:active {
-  transform: translateY(0);
+  background: #003EB3;
+  box-shadow: none;
 }
 
 .pipeline-console-icon-btn.is-active {
-  background: linear-gradient(135deg, #0F172A 0%, #1E3A8A 100%);
-  border-color: rgba(96, 165, 250, 0.7);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35), 0 4px 14px rgba(15, 23, 42, 0.45);
+  background: #0958D9;
+  border-color: #003EB3;
+  box-shadow: none;
 }
 
 .navbar .navbar-icon-btn--video {

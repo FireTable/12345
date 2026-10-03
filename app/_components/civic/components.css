@@ -39,22 +39,22 @@
   line-height: 1;
 }
 
-/* ============== 灵动双态微徽标 (精益饱满版) ============== */
+/* ============== 灵动双态微徽标 (纯扁平无阴影版) ============== */
 .brand-morph-capsule {
   height: 28px;
   padding: 0 12px;
-  background: linear-gradient(135deg, #1677FF 0%, #0958D9 50%, #2563EB 100%);
-  border-radius: 5px;
+  background: #1677FF;
+  border-radius: 6px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: #fff;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 2px 8px rgba(9, 88, 217, 0.32);
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: none;
+  border: 1px solid transparent;
   line-height: 28px;
   user-select: none;
   cursor: pointer;
-  transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color 0.18s ease;
   overflow: hidden;
   position: relative;
   text-align: center;
@@ -67,16 +67,16 @@
   left: -120%;
   width: 60%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.38), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.28), transparent);
   transform: skewX(-20deg);
   transition: left 0.55s ease;
   pointer-events: none;
 }
 
 .brand-morph-capsule:hover {
-  transform: translateY(-1px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 4px 12px rgba(22, 119, 255, 0.42);
-  border-color: rgba(255, 255, 255, 0.4);
+  background: #0958D9;
+  box-shadow: none;
+  border-color: transparent;
 }
 
 .brand-morph-capsule:hover::after {
@@ -109,7 +109,6 @@
   font-size: 13.5px;
   font-weight: 800;
   letter-spacing: 1.4px;
-  text-shadow: 0 1px 2px rgba(0, 16, 50, 0.35);
   text-align: center;
 }
 
@@ -118,7 +117,6 @@
   font-weight: 700;
   letter-spacing: 0.5px;
   color: #E6F4FF;
-  text-shadow: 0 1px 2px rgba(0, 16, 50, 0.35);
 }
 
 @keyframes brandRoll {
