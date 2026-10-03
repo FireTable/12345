@@ -17,6 +17,7 @@ import {
 } from "@/app/_components/ui/select";
 import { TablePager } from "@/app/_components/civic/table-pager";
 import { useRegion } from "@/app/_components/civic/region-context";
+import { PageHeaderActions } from "@/app/_components/civic/page-header-actions";
 import { HANDLING_STATUS, normalizeStatusCode } from "@/lib/civic-dto";
 
 type Cluster = {
@@ -150,14 +151,10 @@ export default function ThemesPage() {
             {activeRegion ? `${activeRegion.name} · ` : ""}AI 识别的多频工单群组 · 每行为一个群组，包含多条关联工单
           </div>
         </div>
-        <div className="page-hero__actions">
-          <button type="button" className="btn btn--default" onClick={exportCsv}>
-            导出
-          </button>
-          <button type="button" className="btn btn--primary" onClick={load}>
-            刷新
-          </button>
-        </div>
+        <PageHeaderActions
+          onRefresh={load}
+          onExport={exportCsv}
+        />
       </section>
 
       {!ready ? (

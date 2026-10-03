@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { SkDict } from "@/app/_components/civic/skeletons";
+import { PageHeaderActions } from "@/app/_components/civic/page-header-actions";
 import {
   Select,
   SelectTrigger,
@@ -326,24 +327,19 @@ export default function DictionaryManagementPage() {
             {stats.townshipCount} 大法定镇街区划、{stats.categoryCount} 大民生诉求分类标准及 AI 自学习别名沉淀知识库统一管理平台
           </div>
         </div>
-        <div className="page-hero__actions">
+        <PageHeaderActions
+          onRefresh={fetchData}
+          refreshing={loading}
+        >
           <button
             type="button"
-            className="btn btn--default"
-            onClick={fetchData}
-          >
-            <RefreshCw className="h-4 w-4 mr-1.5" />
-            刷新数据
-          </button>
-          <button
-            type="button"
-            className="btn btn--primary"
+            className="btn btn--primary h-[34px] px-3.5 text-xs font-medium inline-flex items-center gap-1.5"
             onClick={() => setShowAddModal(true)}
           >
-            <Plus className="h-4 w-4 mr-1.5" />
-            新增别名映射
+            <Plus size={14} className="shrink-0" />
+            <span>新增别名映射</span>
           </button>
-        </div>
+        </PageHeaderActions>
       </div>
 
       {loading && aliases.length === 0 && townships.length === 0 ? (

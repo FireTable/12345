@@ -10,6 +10,7 @@ import { FileText, Activity, Sparkles, FolderKanban } from "lucide-react";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { SkDashboard } from "@/app/_components/civic/skeletons";
 import { useRegion } from "@/app/_components/civic/region-context";
+import { PageHeaderActions } from "@/app/_components/civic/page-header-actions";
 import {
   Select,
   SelectContent,
@@ -110,7 +111,10 @@ export default function DashboardPage() {
             </span>
           </div>
         </div>
-        <div className="page-hero__actions">
+        <PageHeaderActions
+          onRefresh={load}
+          onExport={exportOverview}
+        >
           <Select
             value={String(daysRange)}
             onValueChange={(val) => setDaysRange(Number(val))}
@@ -125,10 +129,7 @@ export default function DashboardPage() {
               <SelectItem value="90">近90天</SelectItem>
             </SelectContent>
           </Select>
-          <button type="button" className="btn btn--default" onClick={() => void exportOverview()}>
-            导出
-          </button>
-        </div>
+        </PageHeaderActions>
       </section>
 
       {!ready ? (

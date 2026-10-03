@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/app/_components/ui/select";
+import { PageHeaderActions } from "@/app/_components/civic/page-header-actions";
 
 type Cluster = {
   id: string;
@@ -158,8 +159,8 @@ function MultifreqInner() {
           </h1>
           <div className="page-hero__sub">实时识别 · AI 自动聚类 · 置信度 ≥ {confMin}%</div>
         </div>
-        <div className="page-hero__actions">
-          <button type="button" className="btn btn--default" onClick={cycleTime}>
+        <PageHeaderActions onRefresh={load}>
+          <button type="button" className="btn btn--default h-[34px] px-3 text-xs font-medium" onClick={cycleTime}>
             {timeLabel}
           </button>
           <Select
@@ -181,13 +182,10 @@ function MultifreqInner() {
               ))}
             </SelectContent>
           </Select>
-          <button type="button" className="btn btn--default" onClick={() => setThresholdOpen(true)}>
+          <button type="button" className="btn btn--default h-[34px] px-3 text-xs font-medium" onClick={() => setThresholdOpen(true)}>
             阈值设置
           </button>
-          <button type="button" className="icon-circle" title="刷新" onClick={load}>
-            ↻
-          </button>
-        </div>
+        </PageHeaderActions>
       </section>
 
       {!ready ? (

@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { SkTickets } from "@/app/_components/civic/skeletons";
+import { PageHeaderActions } from "@/app/_components/civic/page-header-actions";
 import { isTownLabel } from "@/lib/admin-area";
 import { normalizeStatusCode, getCategoryBadgeClass, getUrgencyLabel, categoryBadgeStyle } from "@/lib/civic-dto";
 import { AiVerdictCard, CitizenVoiceCard, TicketPropsGrid, TicketGeoMapCard } from "@/app/_components/civic/ticket-verdict-view";
@@ -178,14 +179,10 @@ export default function TicketsPage() {
             {activeRegion ? `${activeRegion.name} · ` : ""}全部工单 · 实时同步 · 共 <b style={{ color: "var(--c-ink)" }}>{s.total}</b> 条
           </div>
         </div>
-        <div className="page-hero__actions">
-          <button type="button" className="icon-circle" title="刷新" onClick={load}>
-            ↻
-          </button>
-          <button type="button" className="btn btn--default" onClick={exportCsv}>
-            导出
-          </button>
-        </div>
+        <PageHeaderActions
+          onRefresh={load}
+          onExport={exportCsv}
+        />
       </div>
 
       {!ready ? (
