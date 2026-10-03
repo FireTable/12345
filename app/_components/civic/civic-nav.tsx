@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ChevronDown, MessageCircle, User, LogOut, Film, Sparkles } from "lucide-react";
+import { ChevronDown, MessageCircle, User, LogOut, Film, Workflow } from "lucide-react";
 import { useCivicWorkflow } from "./civic-workflow";
 import { NAV_ITEMS } from "./nav-items";
 import { authClient } from "@/lib/auth/client";
@@ -274,48 +274,26 @@ export function CivicNav() {
             </div>
 
             <div className="navbar__user">
-              {/* 全流程 AI 研判流水线智能控制台胶囊入口 */}
+              {/* AI 研判流水线控制台入口 (极简专业风格) */}
               <button
                 type="button"
-                className={`pipeline-console-pill${
+                className={`pipeline-console-btn${
                   pipelineDrawerOpen ? " is-active" : ""
-                }${analyzing ? " is-running" : ""}`}
+                }`}
                 onClick={togglePipelineDrawer}
                 title={
                   pipelineDrawerOpen
-                    ? "收起 AI 研判流水线控制台 (再次点击关闭)"
-                    : analyzing
-                    ? "AI 研判流水线运转中 · 点击展开控制台"
-                    : "展开 AI 研判流水线控制台 (从顶部下拉)"
+                    ? "收起研判流水线控制台 (再次点击关闭)"
+                    : "展开研判流水线控制台 (从顶部下拉)"
                 }
                 aria-label="AI 研判流水线控制台"
                 aria-expanded={pipelineDrawerOpen}
               >
-                <div className="pipeline-console-pill__icon">
-                  {analyzing ? (
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-300 opacity-80" />
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400" />
-                    </span>
-                  ) : (
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#34D399]" />
-                  )}
-                  <Sparkles size={13} className="text-blue-100" />
-                </div>
-
-                <span className="pipeline-console-pill__text">
-                  AI 研判流水线
-                </span>
-
-                {analyzing ? (
-                  <span className="pipeline-console-pill__badge animate-pulse">
-                    研判中
-                  </span>
-                ) : null}
-
+                <Workflow size={14} className="shrink-0" />
+                <span>研判流水线</span>
                 <ChevronDown
                   size={12}
-                  className={`pipeline-console-pill__arrow transition-transform duration-300 ${
+                  className={`pipeline-console-btn__arrow shrink-0 ${
                     pipelineDrawerOpen ? "rotate-180" : ""
                   }`}
                 />
