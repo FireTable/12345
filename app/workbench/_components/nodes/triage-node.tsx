@@ -13,6 +13,7 @@ export type TriageNodeData = {
   categoryStats: Array<{ category: string; count: number }>;
   townshipStats?: Array<{ township: string; count: number }>;
   status: "idle" | "running" | "completed";
+  statusText?: string;
   classifiedCount?: number;
 };
 
@@ -53,7 +54,7 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
       icon={<Zap size={15} />}
       iconGradient="linear-gradient(135deg, #0958D9 0%, #003EB3 100%)"
       status={data.status}
-      statusText={isActive ? "正在分流处理" : isCompleted ? "初筛完成" : "等待处理"}
+      statusText={data.statusText || (isActive ? "正在分流处理" : isCompleted ? "初筛完成" : "等待处理")}
       hasTargetHandle={true}
       targetHandlePosition={Position.Left}
       targetHandleColor="#1677FF"

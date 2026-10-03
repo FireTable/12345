@@ -43,7 +43,8 @@ export default function WorkbenchPage() {
 
   // 轮询：若任务在 running 则每 2.5 秒刷新，否则每 10 秒微弱拉取
   useEffect(() => {
-    const isRunning = pipelineData?.taskProgress?.status === "running";
+    const rawStatus = (pipelineData?.taskProgress?.status || "").toUpperCase();
+    const isRunning = rawStatus === "RUNNING";
     const intervalMs = isRunning ? 2500 : 10000;
     const timer = setInterval(() => {
       fetchState();
@@ -58,7 +59,8 @@ export default function WorkbenchPage() {
     };
   }, [fetchState, pipelineData?.taskProgress?.status]);
 
-  const isRunning = pipelineData?.taskProgress?.status === "running";
+  const rawStatus = (pipelineData?.taskProgress?.status || "").toUpperCase();
+  const isRunning = rawStatus === "RUNNING";
   const processed = pipelineData?.taskProgress?.processed ?? 0;
   const total = pipelineData?.taskProgress?.total ?? (pipelineData?.metrics.totalTickets || 0);
   const unprocessed = pipelineData?.metrics.unprocessedTickets ?? 0;

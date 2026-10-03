@@ -17,6 +17,7 @@ export type ClusterNodeData = {
   }>;
   status: "idle" | "running" | "completed";
   stageText?: string;
+  statusText?: string;
 };
 
 export type ClusterNodeType = Node<ClusterNodeData, "cluster">;
@@ -38,7 +39,7 @@ export function ClusterNode({ data }: NodeProps<ClusterNodeType>) {
       icon={<Network size={15} />}
       iconGradient="linear-gradient(135deg, #2563EB 0%, #0891B2 100%)"
       status={data.status}
-      statusText={isActive ? "正在聚合归类" : isCompleted ? "聚合完成" : "等待分析"}
+      statusText={data.statusText || (isActive ? "正在聚合归类" : isCompleted ? "聚合完成" : "等待分析")}
       hasTargetHandle={true}
       targetHandlePosition={Position.Top}
       targetHandleColor="#7C3AED"

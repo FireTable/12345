@@ -12,6 +12,7 @@ export type DossierNodeData = {
   pseudoLoopCount?: number;
   status: "idle" | "running" | "completed";
   stageText?: string;
+  statusText?: string;
 };
 
 export type DossierNodeType = Node<DossierNodeData, "dossier">;
@@ -28,7 +29,7 @@ export function DossierNode({ data }: NodeProps<DossierNodeType>) {
       icon={<ShieldCheck size={15} />}
       iconGradient="linear-gradient(135deg, #059669 0%, #10B981 100%)"
       status={data.status}
-      statusText={isActive ? "正在生成案卷" : isCompleted ? "案卷已就绪" : "等待生成"}
+      statusText={data.statusText || (isActive ? "正在生成案卷" : isCompleted ? "案卷已就绪" : "等待生成")}
       hasTargetHandle={true}
       targetHandlePosition={Position.Right}
       targetHandleColor="#0891B2"

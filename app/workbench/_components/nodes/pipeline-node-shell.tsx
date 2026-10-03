@@ -84,13 +84,20 @@ export function PipelineNodeShell({
         </div>
 
         <span
-          className="pipeline-node__tag"
+          className="pipeline-node__tag flex items-center gap-1.5"
           style={{
             background: isActive ? "#EFF6FF" : isCompleted ? "#F0FDF4" : "#F1F5F9",
-            color: isActive ? "#2563EB" : isCompleted ? "#16A34A" : "#64748B",
-            borderColor: isActive ? "#BFDBFE" : isCompleted ? "#BBF7D0" : "#E2E8F0",
+            color: isActive ? "#1D4ED8" : isCompleted ? "#16A34A" : "#64748B",
+            borderColor: isActive ? "#93C5FD" : isCompleted ? "#BBF7D0" : "#E2E8F0",
+            fontWeight: isActive ? 600 : 500,
           }}
         >
+          {isActive && (
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-500 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-600"></span>
+            </span>
+          )}
           {tagLabel}
         </span>
       </div>

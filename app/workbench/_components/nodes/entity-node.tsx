@@ -13,6 +13,7 @@ export type EntityNodeData = {
   currentSubject?: string;
   currentEventType?: string;
   status: "idle" | "running" | "completed";
+  statusText?: string;
   percent: number;
 };
 
@@ -29,7 +30,7 @@ export function EntityNode({ data }: NodeProps<EntityNodeType>) {
       icon={<Cpu size={15} />}
       iconGradient="linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%)"
       status={data.status}
-      statusText={isActive ? "正在提取要素" : isCompleted ? "提取完成" : "等待处理"}
+      statusText={data.statusText || (isActive ? "正在提取要素" : isCompleted ? "提取完成" : "等待处理")}
       hasTargetHandle={true}
       targetHandlePosition={Position.Left}
       targetHandleColor="#0958D9"

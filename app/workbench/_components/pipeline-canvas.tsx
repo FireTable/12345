@@ -57,10 +57,12 @@ export type PipelineStateResponse = {
   cityName: string;
   taskProgress: {
     taskId?: string;
-    status: "idle" | "running" | "completed" | "error";
+    status: string;
+    stage?: string;
+    stageText?: string;
     processed: number;
     total: number;
-    stageText?: string;
+    percent?: number;
     currentSubject?: string;
   } | null;
   metrics: {
@@ -126,21 +128,62 @@ function InnerPipelineCanvas({
   const { activeRegion } = useRegion();
   const storageKey = `civic_workbench_pipeline_positions_v5_${activeRegion?.id || "default"}`;
 
-  const isRunning = stateData?.taskProgress?.status === "running";
+  const rawStatus = (stateData?.taskProgress?.status || "").toUpperCase();
+  const isRunning = rawStatus === "RUNNING";
   const processed = stateData?.taskProgress?.processed ?? 0;
   const taskTotal = stateData?.taskProgress?.total ?? (stateData?.metrics.totalTickets || 0);
 
-  // 1. 计算各个节点的活跃度与状态 (若有本地记忆则优先使用拖拽后保存的位置)
+  // 1. 各工序节点精细化状态机判定
   const initialNodes: Node[] = useMemo(() => {
     const total = stateData?.metrics.totalTickets ?? 0;
     const analyzed = stateData?.metrics.analyzedTickets ?? 0;
+    const themeCount = stateData?.metrics.totalThemes ?? 0;
     const isCompleted = total > 0 && analyzed >= total && !isRunning;
+    const stage = (stateData?.taskProgress?.stage || "EXTRACTING").toUpperCase();
 
     const targetProcessed = isRunning ? processed : analyzed;
     const entityPercent = total > 0 ? Math.round((targetProcessed / total) * 100) : 0;
 
     const savedPos = getSavedPositions(storageKey);
     const getPos = (id: string) => savedPos?.[id] || DEFAULT_POSITIONS[id] || { x: 0, y: 0 };
+
+    // 01 工序 (工单接收与导入): 只要库里有工单即已就绪完成
+    const ingestStatus = total > 0 ? "completed" : "idle";
+    const ingestStatusText = total > 0 ? `工单已接入 (${total}件)` : "等待导入";
+
+    // 02 工序 (分类初筛与分流): 接入后初筛分流统计已生成
+    const triageStatus = total > 0 ? "completed" : "idle";
+    const triageStatusText = total > 0 ? "初筛分流完成" : "等待处理";
+
+    // 03 工序 (地点与主体提取): 正在处理时 active running，完成后 completed
+    const isEntityRunning = isRunning && (stage === "EXTRACTING" || targetProcessed < total);
+    const isEntityCompleted = (total > 0 && analyzed >= total) || stage === "CLUSTERING" || stage === "SUMMARIZING" || stage === "COMPLETED" || isCompleted;
+    const entityStatus = isEntityRunning ? "running" : isEntityCompleted ? "completed" : "idle";
+    const entityStatusText = isEntityRunning
+      ? `正在抽取研判 (${targetProcessed}/${total})`
+      : isEntityCompleted
+      ? `提取完成 (${total}件)`
+      : "等待处理";
+
+    // 04 工序 (同类问题聚合分析)
+    const isClusterRunning = isRunning && (stage === "CLUSTERING" || (stage === "EXTRACTING" && targetProcessed >= total && total > 0));
+    const isClusterCompleted = isCompleted || (themeCount > 0 && (stage === "SUMMARIZING" || stage === "COMPLETED" || !isRunning));
+    const clusterStatus = isClusterRunning ? "running" : isClusterCompleted ? "completed" : "idle";
+    const clusterStatusText = isClusterRunning
+      ? "正在聚合归类"
+      : isClusterCompleted
+      ? `聚合完成 (${themeCount}组)`
+      : "等待分析";
+
+    // 05 工序 (处置建议与案卷归档)
+    const isDossierRunning = isRunning && stage === "SUMMARIZING";
+    const isDossierCompleted = isCompleted || (themeCount > 0 && !isRunning);
+    const dossierStatus = isDossierRunning ? "running" : isDossierCompleted ? "completed" : "idle";
+    const dossierStatusText = isDossierRunning
+      ? "正在生成案卷"
+      : isDossierCompleted
+      ? "案卷已就绪"
+      : "等待生成";
 
     return [
       {
@@ -157,7 +200,8 @@ function InnerPipelineCanvas({
             subdistrict: t.subdistrict,
             createTime: t.createTime,
           })),
-          status: isRunning ? "running" : isCompleted ? "completed" : "idle",
+          status: ingestStatus,
+          statusText: ingestStatusText,
           onIngestSuccess: onRefresh,
         } as IngestNodeData,
       },
@@ -170,7 +214,8 @@ function InnerPipelineCanvas({
           stabilityRiskCount: stateData?.metrics.stabilityRiskTickets ?? 0,
           categoryStats: stateData?.categoryStats || [],
           townshipStats: stateData?.townshipStats || [],
-          status: isRunning ? "running" : isCompleted ? "completed" : "idle",
+          status: triageStatus,
+          statusText: triageStatusText,
           classifiedCount: targetProcessed,
         } as TriageNodeData,
       },
@@ -188,7 +233,8 @@ function InnerPipelineCanvas({
             stateData?.recentTickets?.[0]?.canonicalSubject ||
             undefined,
           currentEventType: stateData?.recentTickets?.[0]?.eventType || undefined,
-          status: isRunning ? "running" : isCompleted ? "completed" : "idle",
+          status: entityStatus,
+          statusText: entityStatusText,
           percent: entityPercent,
         } as EntityNodeData,
       },
@@ -197,7 +243,7 @@ function InnerPipelineCanvas({
         type: "cluster",
         position: getPos("node-cluster"),
         data: {
-          themeCount: stateData?.metrics.totalThemes ?? 0,
+          themeCount: themeCount,
           totalTickets: total,
           recentClusters: (stateData?.recentThemes || []).map((th) => ({
             id: th.id,
@@ -206,7 +252,8 @@ function InnerPipelineCanvas({
             category: th.category,
             subdistrict: th.canonicalLocation,
           })),
-          status: isRunning ? "running" : isCompleted ? "completed" : "idle",
+          status: clusterStatus,
+          statusText: clusterStatusText,
         } as ClusterNodeData,
       },
       {
@@ -214,20 +261,31 @@ function InnerPipelineCanvas({
         type: "dossier",
         position: getPos("node-dossier"),
         data: {
-          dossierCount: stateData?.metrics.totalThemes ?? 0,
+          dossierCount: themeCount,
           totalTickets: total,
           pseudoLoopCount: stateData?.metrics.highRiskThemes ?? 0,
-          status: isRunning ? "running" : isCompleted ? "completed" : "idle",
+          status: dossierStatus,
+          statusText: dossierStatusText,
         } as DossierNodeData,
       },
     ];
   }, [stateData, isRunning, processed, onRefresh, storageKey]);
 
-  // 2. 连接边配置 (带流光脉冲效果与换行平滑导轨)
+  // 2. 连接边配置 (根据活跃阶段动态激活流动粒子导轨)
   const initialEdges: Edge[] = useMemo(() => {
-    const isCompleted = (stateData?.metrics.totalTickets || 0) > 0 &&
-      (stateData?.metrics.analyzedTickets || 0) >= (stateData?.metrics.totalTickets || 0) &&
-      !isRunning;
+    const total = stateData?.metrics.totalTickets ?? 0;
+    const analyzed = stateData?.metrics.analyzedTickets ?? 0;
+    const themeCount = stateData?.metrics.totalThemes ?? 0;
+    const isCompleted = total > 0 && analyzed >= total && !isRunning;
+    const stage = (stateData?.taskProgress?.stage || "EXTRACTING").toUpperCase();
+    const targetProcessed = isRunning ? processed : analyzed;
+
+    const isEntityRunning = isRunning && (stage === "EXTRACTING" || targetProcessed < total);
+    const isEntityCompleted = (total > 0 && analyzed >= total) || stage === "CLUSTERING" || stage === "SUMMARIZING" || stage === "COMPLETED" || isCompleted;
+    const isClusterRunning = isRunning && (stage === "CLUSTERING" || (stage === "EXTRACTING" && targetProcessed >= total && total > 0));
+    const isClusterCompleted = isCompleted || (themeCount > 0 && (stage === "SUMMARIZING" || stage === "COMPLETED" || !isRunning));
+    const isDossierRunning = isRunning && stage === "SUMMARIZING";
+    const isDossierCompleted = isCompleted || (themeCount > 0 && !isRunning);
 
     return [
       {
@@ -235,10 +293,10 @@ function InnerPipelineCanvas({
         source: "node-ingest",
         target: "node-triage",
         type: "flowing",
-        animated: isRunning,
+        animated: total > 0 && isRunning,
         data: {
-          active: isRunning,
-          completed: isCompleted,
+          active: total > 0,
+          completed: total > 0,
           label: "初筛分流",
         },
       },
@@ -247,10 +305,10 @@ function InnerPipelineCanvas({
         source: "node-triage",
         target: "node-entity",
         type: "flowing",
-        animated: isRunning,
+        animated: isEntityRunning,
         data: {
-          active: isRunning,
-          completed: isCompleted,
+          active: isEntityRunning,
+          completed: isEntityCompleted,
           label: "要素提取",
         },
       },
@@ -259,10 +317,10 @@ function InnerPipelineCanvas({
         source: "node-entity",
         target: "node-cluster",
         type: "flowing",
-        animated: isRunning,
+        animated: isClusterRunning,
         data: {
-          active: isRunning,
-          completed: isCompleted,
+          active: isClusterRunning,
+          completed: isClusterCompleted,
           label: "同类归并",
         },
       },
@@ -271,15 +329,15 @@ function InnerPipelineCanvas({
         source: "node-cluster",
         target: "node-dossier",
         type: "flowing",
-        animated: isRunning,
+        animated: isDossierRunning,
         data: {
-          active: isRunning,
-          completed: isCompleted,
+          active: isDossierRunning,
+          completed: isDossierCompleted,
           label: "生成案卷",
         },
       },
     ];
-  }, [isRunning, stateData]);
+  }, [isRunning, stateData, processed]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);

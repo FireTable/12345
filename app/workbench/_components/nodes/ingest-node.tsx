@@ -17,6 +17,7 @@ export type IngestNodeData = {
     createTime?: string | null;
   }>;
   status: "idle" | "running" | "completed";
+  statusText?: string;
   onIngestSuccess?: () => void;
 };
 
@@ -26,8 +27,9 @@ export function IngestNode({ data }: NodeProps<IngestNodeType>) {
   const [isDragging, setIsDragging] = useState(false);
   const { openUpload } = useCivicWorkflow();
 
-  const isActive = data.status === "running" && data.unprocessedTickets > 0;
-  const isAllReady = data.unprocessedTickets === 0 && data.totalTickets > 0;
+  const isCompleted = data.status === "completed" || data.totalTickets > 0;
+  const isRunning = data.status === "running";
+  const defaultText = isRunning ? "接收导入中" : isCompleted ? "工单已接入" : "等待导入";
 
   return (
     <PipelineNodeShell
@@ -36,7 +38,7 @@ export function IngestNode({ data }: NodeProps<IngestNodeType>) {
       icon={<Inbox size={15} />}
       iconGradient="linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)"
       status={data.status}
-      statusText={isActive ? "接收处理中" : isAllReady ? "导入完成" : "等待导入"}
+      statusText={data.statusText || defaultText}
       hasTargetHandle={false}
       hasSourceHandle={true}
       sourceHandleColor="#1677FF"

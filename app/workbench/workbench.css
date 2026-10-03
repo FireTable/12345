@@ -93,9 +93,52 @@
   transform: translateY(-2px);
 }
 
+/* 正在处理中的节点：工业级高亮流光动态边框与脉冲 */
+@keyframes pipelineBorderGlow {
+  0% {
+    box-shadow: 0 0 0 2px #2563EB, 0 0 18px rgba(37, 99, 235, 0.45), 0 8px 24px rgba(37, 99, 235, 0.2);
+    border-color: #2563EB !important;
+  }
+  50% {
+    box-shadow: 0 0 0 2.5px #06B6D4, 0 0 28px rgba(6, 182, 212, 0.65), 0 10px 32px rgba(6, 182, 212, 0.3);
+    border-color: #06B6D4 !important;
+  }
+  100% {
+    box-shadow: 0 0 0 2px #2563EB, 0 0 18px rgba(37, 99, 235, 0.45), 0 8px 24px rgba(37, 99, 235, 0.2);
+    border-color: #2563EB !important;
+  }
+}
+
+@keyframes pipelineStreamSweep {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
 .pipeline-node--active {
-  border-color: #3B82F6 !important;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18), 0 8px 24px rgba(37, 99, 235, 0.14) !important;
+  animation: pipelineBorderGlow 2.4s ease-in-out infinite !important;
+  position: relative;
+  z-index: 5;
+}
+
+/* 顶部流光动效导轨 */
+.pipeline-node--active::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #2563EB, #06B6D4, #7C3AED, #2563EB);
+  background-size: 300% 100%;
+  animation: pipelineStreamSweep 2s linear infinite;
+  z-index: 10;
 }
 
 .pipeline-node--completed {
