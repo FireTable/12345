@@ -37,6 +37,7 @@ export function IngestNode({ data }: NodeProps<IngestNodeType>) {
       title="工单接收与导入"
       icon={<Inbox size={15} />}
       iconGradient="linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)"
+      themeColor="#2563EB"
       status={data.status}
       statusText={data.statusText || defaultText}
       hasTargetHandle={false}

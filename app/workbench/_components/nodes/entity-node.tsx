@@ -29,6 +29,7 @@ export function EntityNode({ data }: NodeProps<EntityNodeType>) {
       title="地点与主体提取"
       icon={<Cpu size={15} />}
       iconGradient="linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%)"
+      themeColor="#7C3AED"
       status={data.status}
       statusText={data.statusText || (isActive ? "正在提取要素" : isCompleted ? "提取完成" : "等待处理")}
       hasTargetHandle={true}

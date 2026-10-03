@@ -52,7 +52,8 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
       stepNumber="02"
       title="分类初筛与分流"
       icon={<Zap size={15} />}
-      iconGradient="linear-gradient(135deg, #0958D9 0%, #003EB3 100%)"
+      iconGradient="linear-gradient(135deg, #F59E0B 0%, #D97706 100%)"
+      themeColor="#D97706"
       status={data.status}
       statusText={data.statusText || (isActive ? "正在分流处理" : isCompleted ? "初筛完成" : "等待处理")}
       hasTargetHandle={true}
@@ -60,7 +61,7 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
       targetHandleColor="#1677FF"
       hasSourceHandle={true}
       sourceHandlePosition={Position.Right}
-      sourceHandleColor="#0958D9"
+      sourceHandleColor="#D97706"
     >
       {/* 涉稳与急件看板 */}
       <div className="grid grid-cols-2 gap-2">

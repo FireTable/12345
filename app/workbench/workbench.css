@@ -82,7 +82,7 @@
   border: 1px solid #E2E8F0;
   box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04);
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  overflow: hidden;
+  overflow: visible;
   font-family: inherit;
   color: #0F172A;
 }
@@ -93,31 +93,22 @@
   transform: translateY(-2px);
 }
 
-/* 正在处理中的节点：工业级高亮流光动态边框与脉冲 */
+/* 正在处理中的节点：动态主题色高亮流光边框与脉冲 */
 @keyframes pipelineBorderGlow {
   0% {
-    box-shadow: 0 0 0 2px #2563EB, 0 0 18px rgba(37, 99, 235, 0.45), 0 8px 24px rgba(37, 99, 235, 0.2);
-    border-color: #2563EB !important;
+    box-shadow: 0 0 12px rgba(var(--node-accent-rgb, 37, 99, 235), 0.35),
+                0 4px 16px rgba(var(--node-accent-rgb, 37, 99, 235), 0.15);
+    border-color: var(--node-accent, #2563EB) !important;
   }
   50% {
-    box-shadow: 0 0 0 2.5px #06B6D4, 0 0 28px rgba(6, 182, 212, 0.65), 0 10px 32px rgba(6, 182, 212, 0.3);
-    border-color: #06B6D4 !important;
+    box-shadow: 0 0 20px rgba(var(--node-accent-rgb, 37, 99, 235), 0.5),
+                0 6px 24px rgba(var(--node-accent-rgb, 37, 99, 235), 0.22);
+    border-color: var(--node-accent, #2563EB) !important;
   }
   100% {
-    box-shadow: 0 0 0 2px #2563EB, 0 0 18px rgba(37, 99, 235, 0.45), 0 8px 24px rgba(37, 99, 235, 0.2);
-    border-color: #2563EB !important;
-  }
-}
-
-@keyframes pipelineStreamSweep {
-  0% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-  100% {
-    background-position: 0% 50%;
+    box-shadow: 0 0 12px rgba(var(--node-accent-rgb, 37, 99, 235), 0.35),
+                0 4px 16px rgba(var(--node-accent-rgb, 37, 99, 235), 0.15);
+    border-color: var(--node-accent, #2563EB) !important;
   }
 }
 
@@ -127,22 +118,8 @@
   z-index: 5;
 }
 
-/* 顶部流光动效导轨 */
-.pipeline-node--active::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, #2563EB, #06B6D4, #7C3AED, #2563EB);
-  background-size: 300% 100%;
-  animation: pipelineStreamSweep 2s linear infinite;
-  z-index: 10;
-}
-
 .pipeline-node--completed {
-  border-color: #86EFAC !important;
+  border-color: color-mix(in srgb, var(--node-accent, #2563EB) 45%, transparent) !important;
 }
 
 /* 节点头部 */
@@ -153,6 +130,7 @@
   justify-content: space-between;
   border-bottom: 1px solid #F1F5F9;
   background: #FAFAFC;
+  border-radius: 14px 14px 0 0;
 }
 
 .pipeline-node__title-wrap {
@@ -202,6 +180,8 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  border-radius: 0 0 14px 14px;
+  background: #FFFFFF;
 }
 
 /* 核心数字看板行 */

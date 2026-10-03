@@ -28,6 +28,7 @@ export function DossierNode({ data }: NodeProps<DossierNodeType>) {
       title="处置建议与案卷归档"
       icon={<ShieldCheck size={15} />}
       iconGradient="linear-gradient(135deg, #059669 0%, #10B981 100%)"
+      themeColor="#059669"
       status={data.status}
       statusText={data.statusText || (isActive ? "正在生成案卷" : isCompleted ? "案卷已就绪" : "等待生成")}
       hasTargetHandle={true}

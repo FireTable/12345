@@ -37,7 +37,8 @@ export function ClusterNode({ data }: NodeProps<ClusterNodeType>) {
       stepNumber="04"
       title="同类问题聚合分析"
       icon={<Network size={15} />}
-      iconGradient="linear-gradient(135deg, #2563EB 0%, #0891B2 100%)"
+      iconGradient="linear-gradient(135deg, #06B6D4 0%, #0E7490 100%)"
+      themeColor="#0E7490"
       status={data.status}
       statusText={data.statusText || (isActive ? "正在聚合归类" : isCompleted ? "聚合完成" : "等待分析")}
       hasTargetHandle={true}
@@ -45,7 +46,7 @@ export function ClusterNode({ data }: NodeProps<ClusterNodeType>) {
       targetHandleColor="#7C3AED"
       hasSourceHandle={true}
       sourceHandlePosition={Position.Left}
-      sourceHandleColor="#0891B2"
+      sourceHandleColor="#0E7490"
     >
       {/* 聚类成果指标看板 */}
       <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
