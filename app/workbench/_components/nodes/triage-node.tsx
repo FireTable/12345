@@ -32,6 +32,21 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
   const isActive = data.status === "running";
   const isCompleted = data.status === "completed";
   const totalCat = data.categoryStats.reduce((sum, c) => sum + c.count, 0) || 1;
+  const sortedCategories = useMemo(
+    () => [...data.categoryStats].sort((a, b) => b.count - a.count),
+    [data.categoryStats]
+  );
+  const topCategory = sortedCategories[0];
+  const activeCategory = hoveredCategory
+    ? sortedCategories.find((c) => c.category === hoveredCategory)
+    : topCategory;
+
+  const activePct = activeCategory
+    ? ((activeCategory.count / totalCat) * 100).toFixed(1)
+    : "0.0";
+  const activeColor = activeCategory ? categoryColor(activeCategory.category) : "#1677FF";
+  const activeName = activeCategory?.category || "分类分布";
+
   const townships =
     data.townshipStats && data.townshipStats.length > 0 ? data.townshipStats : DEFAULT_TOWNSHIPS;
 
@@ -112,13 +127,29 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
         {/* 迷你环形饼图与全量分类指标列表左右并排 (更大环形图，支持双向分类聚焦) */}
         {data.categoryStats.length > 0 ? (
           <div className="flex items-center gap-2 mt-1">
-            <div className="nodrag w-[130px] h-[134px] shrink-0">
+            <div className="relative nodrag w-[130px] h-[130px] shrink-0 flex items-center justify-center">
               <CivicEChart
                 option={donutOpt}
-                height={134}
+                height={130}
                 onHover={setHoveredCategory}
                 hoveredName={hoveredCategory}
               />
+              {/* 精准数学与视觉绝对几何正中覆盖层 */}
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none text-center">
+                <div
+                  className="font-bold text-[15px] font-mono leading-none tracking-tight transition-colors duration-150"
+                  style={{ color: activeColor }}
+                >
+                  {activePct}%
+                </div>
+                <div
+                  className="text-[10px] font-semibold text-slate-600 leading-none mt-1 max-w-[62px] truncate transition-colors duration-150"
+                  style={hoveredCategory ? { color: activeColor } : undefined}
+                  title={activeName}
+                >
+                  {activeName}
+                </div>
+              </div>
             </div>
             <div className="flex-1 min-w-0 space-y-0.5">
               {data.categoryStats.map((c, i) => {

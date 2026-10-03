@@ -68,30 +68,34 @@ export function CivicEChart({
 
       // 监听鼠标悬停交互：动态实时切换环形图圆心百分比与分类，并通知外部聚焦
       const defaultTitle = parsedOption.title ? JSON.parse(JSON.stringify(parsedOption.title)) : null;
-      if (defaultTitle && parsedOption.series?.some((s: any) => s.type === "pie")) {
+      if (parsedOption.series?.some((s: any) => s.type === "pie")) {
         chart.on("mouseover", "series.pie", (params: any) => {
           const pct = params.percent != null ? Number(params.percent).toFixed(1) : "0.0";
-          chart.setOption({
-            title: {
-              ...defaultTitle,
-              text: `${pct}%`,
-              subtext: params.name,
-              textStyle: {
-                ...defaultTitle.textStyle,
-                color: params.color || defaultTitle.textStyle?.color || "#1E5AFF",
+          if (defaultTitle && defaultTitle.show !== false) {
+            chart.setOption({
+              title: {
+                ...defaultTitle,
+                text: `${pct}%`,
+                subtext: params.name,
+                textStyle: {
+                  ...defaultTitle.textStyle,
+                  color: params.color || defaultTitle.textStyle?.color || "#1E5AFF",
+                },
+                subtextStyle: {
+                  ...defaultTitle.subtextStyle,
+                },
               },
-              subtextStyle: {
-                ...defaultTitle.subtextStyle,
-              },
-            },
-          });
+            });
+          }
           onHover?.(params.name);
         });
 
         chart.on("mouseout", "series.pie", () => {
-          chart.setOption({
-            title: defaultTitle,
-          });
+          if (defaultTitle && defaultTitle.show !== false) {
+            chart.setOption({
+              title: defaultTitle,
+            });
+          }
           onHover?.(null);
         });
       }
@@ -120,7 +124,7 @@ export function CivicEChart({
       });
       // 联动更新圆心文字
       const pieSeries = parsedOption.series?.find((s: any) => s.type === "pie");
-      if (pieSeries && defaultTitle) {
+      if (pieSeries && defaultTitle && defaultTitle.show !== false) {
         const item = pieSeries.data?.find((d: any) => d.name === hoveredName);
         const total = pieSeries.data?.reduce((sum: number, d: any) => sum + (d.value || 0), 0) || 1;
         if (item) {
@@ -143,7 +147,7 @@ export function CivicEChart({
         type: "downplay",
         seriesIndex: 0,
       });
-      if (defaultTitle) {
+      if (defaultTitle && defaultTitle.show !== false) {
         chart.setOption({
           title: defaultTitle,
         });
@@ -349,25 +353,7 @@ export function miniDonutOption(
 
   return {
     title: {
-      text: `${topPct}%`,
-      subtext: topItem?.name || "分类分布",
-      left: "50%",
-      top: "37%",
-      textAlign: "center",
-      itemGap: 2,
-      textStyle: {
-        fontSize: 15,
-        fontWeight: "bold",
-        color: topColor,
-        fontFamily: "ui-sans-serif, system-ui, -apple-system, sans-serif",
-        lineHeight: 17,
-      },
-      subtextStyle: {
-        fontSize: 10.5,
-        color: "#64748B",
-        fontWeight: "600",
-        lineHeight: 13,
-      },
+      show: false,
     },
     tooltip: {
       show: false,
