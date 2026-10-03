@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
-import { Cpu, RotateCw, X, CheckCircle2, AlertCircle } from "lucide-react";
+import { Cpu, RotateCw, X, CheckCircle2, AlertCircle, ChevronUp } from "lucide-react";
 import { useCivicWorkflow } from "./civic-workflow";
 import { useRegion } from "./region-context";
 import { PipelineCanvas, type PipelineStateResponse } from "@/app/workbench/_components/pipeline-canvas";
@@ -136,8 +136,8 @@ export function PipelineDrawer() {
               type="button"
               onClick={() => setPipelineDrawerOpen(false)}
               className="flex items-center justify-center w-8 h-8 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
-              title="收起抽屉 (ESC)"
-              aria-label="关闭抽屉"
+              title="收起控制台 (ESC)"
+              aria-label="关闭控制台"
             >
               <X size={18} />
             </button>
@@ -149,6 +149,19 @@ export function PipelineDrawer() {
           {pipelineDrawerOpen && (
             <PipelineCanvas stateData={pipelineData} onRefresh={fetchState} />
           )}
+        </div>
+
+        {/* 控制台底边收起把手条 */}
+        <div
+          onClick={() => setPipelineDrawerOpen(false)}
+          className="group w-full py-1 flex items-center justify-center bg-slate-100/90 hover:bg-slate-200/90 border-t border-slate-200 cursor-pointer select-none transition-colors shrink-0"
+          title="点击向上收起控制台 (ESC)"
+        >
+          <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500 group-hover:text-blue-600 transition-colors">
+            <ChevronUp size={13} className="group-hover:-translate-y-0.5 transition-transform" />
+            <span>收起控制台</span>
+            <span className="text-[10px] text-slate-400 font-mono font-normal">ESC</span>
+          </div>
         </div>
       </aside>
     </>

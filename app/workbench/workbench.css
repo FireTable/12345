@@ -314,7 +314,7 @@
 }
 
 /* ==================================================================
-   流水线抽屉容器与平滑进出动画 (全屏轻量侧拉抽屉)
+   流水线工厂控制台容器与平滑进出动画 (从顶部向下滑降的控制台样式)
    ================================================================== */
 .pipeline-drawer-overlay {
   position: fixed;
@@ -336,20 +336,24 @@
 .pipeline-drawer {
   position: fixed;
   top: 0;
+  left: 0;
   right: 0;
-  bottom: 0;
   z-index: 1250;
-  width: 95vw;
-  max-width: 1760px;
+  width: 100vw;
+  height: 88vh;
+  min-height: 580px;
   background: #F8FAFC;
-  box-shadow: -12px 0 48px rgba(15, 23, 42, 0.22), 0 0 1px rgba(15, 23, 42, 0.25);
+  box-shadow: 0 24px 70px -10px rgba(15, 23, 42, 0.32), 0 0 1px rgba(15, 23, 42, 0.25);
+  border-bottom: 2px solid #E2E8F0;
+  border-bottom-left-radius: 16px;
+  border-bottom-right-radius: 16px;
   display: flex;
   flex-direction: column;
-  transform: translateX(100%);
-  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  transform: translateY(-100%);
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   overflow: hidden;
 }
 
 .pipeline-drawer.is-open {
-  transform: translateX(0);
+  transform: translateY(0);
 }

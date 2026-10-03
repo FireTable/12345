@@ -281,8 +281,8 @@ export function CivicNav() {
                   pipelineDrawerOpen ? " is-active" : ""
                 }`}
                 onClick={togglePipelineDrawer}
-                title={pipelineDrawerOpen ? "收起研判流水线 (再次点击关闭)" : "展开研判流水线 (抽屉工作台)"}
-                aria-label="研判流水线"
+                title={pipelineDrawerOpen ? "收起研判流水线控制台 (再次点击关闭)" : "展开研判流水线控制台 (从顶部下拉)"}
+                aria-label="研判流水线控制台"
                 aria-expanded={pipelineDrawerOpen}
               >
                 <Workflow size={16} />
