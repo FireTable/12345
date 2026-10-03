@@ -351,8 +351,8 @@ export function miniDonutOption(
     title: {
       text: `${topPct}%`,
       subtext: topItem?.name || "分类分布",
-      left: "center",
-      top: "center",
+      left: "50%",
+      top: "37%",
       textAlign: "center",
       itemGap: 2,
       textStyle: {

@@ -112,7 +112,7 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
         {/* 迷你环形饼图与全量分类指标列表左右并排 (更大环形图，支持双向分类聚焦) */}
         {data.categoryStats.length > 0 ? (
           <div className="flex items-center gap-2 mt-1">
-            <div className="nodrag w-[130px] h-[134px] shrink-0 flex items-center justify-center">
+            <div className="nodrag w-[130px] h-[134px] shrink-0">
               <CivicEChart
                 option={donutOpt}
                 height={134}
