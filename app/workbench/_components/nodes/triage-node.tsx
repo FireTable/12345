@@ -57,37 +57,41 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
     >
       {/* 涉稳与急件看板 */}
       <div className="grid grid-cols-2 gap-2">
-        <div className="bg-red-50/70 border border-red-100/80 rounded-lg p-2.5">
-          <div className="text-[10px] text-red-700 flex items-center justify-between font-medium">
-            <span className="flex items-center gap-1">
-              <ShieldAlert size={12} className="text-red-500 shrink-0" />
-              涉稳风险工单
-            </span>
-            {data.stabilityRiskCount > 0 && (
-              <span className="text-[9px] px-1 rounded bg-red-200 text-red-800 font-bold animate-pulse">
-                需重点关注
+        <div className="bg-red-50/70 border border-red-100/80 rounded-lg p-2.5 flex flex-col justify-between">
+          <div className="flex items-center gap-1 text-[11px] font-semibold text-red-700 whitespace-nowrap">
+            <ShieldAlert size={12} className="text-red-500 shrink-0" />
+            <span>涉稳风险工单</span>
+          </div>
+          <div className="mt-1.5 flex items-baseline justify-between">
+            <div className="text-lg font-bold font-mono text-red-900 leading-none">
+              {data.stabilityRiskCount}
+              <span className="text-[11px] font-normal text-slate-500 ml-1">件</span>
+            </div>
+            {data.stabilityRiskCount > 0 ? (
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-200 text-red-800 font-bold whitespace-nowrap animate-pulse">
+                重点跟进
+              </span>
+            ) : (
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-100/80 text-red-600 font-medium whitespace-nowrap">
+                平稳正常
               </span>
             )}
           </div>
-          <div className="text-lg font-bold font-mono text-red-900 mt-1">
-            {data.stabilityRiskCount}
-            <span className="text-[11px] font-normal text-slate-500 ml-1">件 (重点跟进)</span>
-          </div>
         </div>
 
-        <div className="bg-amber-50/70 border border-amber-100/80 rounded-lg p-2.5">
-          <div className="text-[10px] text-amber-800 flex items-center justify-between font-medium">
-            <span className="flex items-center gap-1">
-              <AlertTriangle size={12} className="text-amber-500 shrink-0" />
-              加急催办工单
-            </span>
-            <span className="text-[9px] px-1 rounded bg-amber-200/80 text-amber-800 font-bold">
-              2小时内响应
-            </span>
+        <div className="bg-amber-50/70 border border-amber-100/80 rounded-lg p-2.5 flex flex-col justify-between">
+          <div className="flex items-center gap-1 text-[11px] font-semibold text-amber-800 whitespace-nowrap">
+            <AlertTriangle size={12} className="text-amber-500 shrink-0" />
+            <span>加急催办工单</span>
           </div>
-          <div className="text-lg font-bold font-mono text-amber-900 mt-1">
-            {data.urgentCount}
-            <span className="text-[11px] font-normal text-slate-500 ml-1">件</span>
+          <div className="mt-1.5 flex items-baseline justify-between">
+            <div className="text-lg font-bold font-mono text-amber-900 leading-none">
+              {data.urgentCount}
+              <span className="text-[11px] font-normal text-slate-500 ml-1">件</span>
+            </div>
+            <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-200/90 text-amber-900 font-semibold whitespace-nowrap">
+              2小时响应
+            </span>
           </div>
         </div>
       </div>
@@ -104,33 +108,28 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
           </span>
         </div>
 
-        {/* 迷你环形饼图与分类指标列表左右并排 (紧凑美观，留白适中) */}
+        {/* 迷你环形饼图与全量分类指标列表左右并排 (完整展现 7 大业务门类) */}
         {data.categoryStats.length > 0 ? (
           <div className="flex items-center gap-2 mt-1">
-            <div className="nodrag w-[105px] h-[95px] shrink-0 flex items-center justify-center">
-              <CivicEChart option={donutOpt} height={95} />
+            <div className="nodrag w-[110px] h-[122px] shrink-0 flex items-center justify-center">
+              <CivicEChart option={donutOpt} height={122} />
             </div>
-            <div className="flex-1 min-w-0 space-y-1 text-[10.5px]">
-              {data.categoryStats.slice(0, 5).map((c, i) => {
+            <div className="flex-1 min-w-0 space-y-0.5">
+              {data.categoryStats.map((c, i) => {
                 const color = categoryColor(c.category);
                 const pct = Math.round((c.count / totalCat) * 100);
                 return (
-                  <div key={i} className="flex items-center justify-between text-slate-600">
-                    <span className="flex items-center gap-1.5 truncate max-w-[90px]" title={c.category}>
+                  <div key={i} className="flex items-center justify-between text-slate-600 leading-tight py-[1.5px]">
+                    <span className="flex items-center gap-1.5 truncate max-w-[85px]" title={c.category}>
                       <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                      <span className="truncate font-medium text-slate-700">{c.category}</span>
+                      <span className="truncate font-medium text-slate-700 text-[10px] whitespace-nowrap">{c.category}</span>
                     </span>
-                    <span className="font-mono text-[10px] text-slate-400 shrink-0">
+                    <span className="font-mono text-[9.5px] text-slate-400 shrink-0 whitespace-nowrap">
                       {c.count}件 <span className="font-semibold text-slate-600">{pct}%</span>
                     </span>
                   </div>
                 );
               })}
-              {data.categoryStats.length > 5 && (
-                <div className="text-[9.5px] text-slate-400 font-mono text-right">
-                  +{data.categoryStats.length - 5} 类更多诉求
-                </div>
-              )}
             </div>
           </div>
         ) : (

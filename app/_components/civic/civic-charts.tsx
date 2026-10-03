@@ -59,17 +59,15 @@ export function CivicEChart({ option, height }: { option: Record<string, unknown
           const pct = params.percent != null ? Number(params.percent).toFixed(1) : "0.0";
           chart.setOption({
             title: {
+              ...defaultTitle,
               text: `${pct}%`,
               subtext: params.name,
               textStyle: {
-                color: params.color || "#1E5AFF",
-                fontSize: defaultTitle.textStyle?.fontSize || 28,
-                fontWeight: "bold",
+                ...defaultTitle.textStyle,
+                color: params.color || defaultTitle.textStyle?.color || "#1E5AFF",
               },
               subtextStyle: {
-                color: "#1E293B",
-                fontWeight: "600",
-                fontSize: defaultTitle.subtextStyle?.fontSize || 12,
+                ...defaultTitle.subtextStyle,
               },
             },
           });
@@ -291,22 +289,22 @@ export function miniDonutOption(
     title: {
       text: `${topPct}%`,
       subtext: topItem?.name || "分类分布",
-      left: "50%",
-      top: "24%",
+      left: "center",
+      top: "center",
       textAlign: "center",
       itemGap: 1,
       textStyle: {
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: "bold",
         color: topColor,
         fontFamily: "ui-sans-serif, system-ui, -apple-system, sans-serif",
-        lineHeight: 16,
+        lineHeight: 15,
       },
       subtextStyle: {
-        fontSize: 9,
+        fontSize: 9.5,
         color: "#64748B",
         fontWeight: "600",
-        lineHeight: 11,
+        lineHeight: 12,
       },
     },
     tooltip: {
@@ -320,13 +318,14 @@ export function miniDonutOption(
     series: [
       {
         type: "pie",
-        radius: ["50%", "74%"],
-        center: ["50%", "45%"],
+        radius: ["58%", "82%"],
+        center: ["50%", "50%"],
         avoidLabelOverlap: false,
         label: { show: false },
+        itemStyle: { borderColor: "#fff", borderWidth: 2 },
         emphasis: {
           scale: true,
-          scaleSize: 3,
+          scaleSize: 4,
         },
         data,
       },
