@@ -40,10 +40,10 @@ export function ClusterNode({ data }: NodeProps<ClusterNodeType>) {
       status={data.status}
       statusText={isActive ? "时空吸附中" : isCompleted ? "聚类成组" : "待命中"}
       hasTargetHandle={true}
-      targetHandlePosition={Position.Left}
+      targetHandlePosition={Position.Top}
       targetHandleColor="#7C3AED"
       hasSourceHandle={true}
-      sourceHandlePosition={Position.Bottom}
+      sourceHandlePosition={Position.Right}
       sourceHandleColor="#0891B2"
     >
       {/* 聚类成果指标看板 */}

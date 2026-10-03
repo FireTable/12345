@@ -31,10 +31,10 @@ export function EntityNode({ data }: NodeProps<EntityNodeType>) {
       status={data.status}
       statusText={isActive ? "深度研判中" : isCompleted ? "抽取完毕" : "待命中"}
       hasTargetHandle={true}
-      targetHandlePosition={Position.Top}
+      targetHandlePosition={Position.Left}
       targetHandleColor="#0958D9"
       hasSourceHandle={true}
-      sourceHandlePosition={Position.Right}
+      sourceHandlePosition={Position.Bottom}
       sourceHandleColor="#7C3AED"
     >
       {/* 研判进度条 */}

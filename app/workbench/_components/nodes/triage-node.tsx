@@ -32,7 +32,7 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
       targetHandlePosition={Position.Left}
       targetHandleColor="#1677FF"
       hasSourceHandle={true}
-      sourceHandlePosition={Position.Bottom}
+      sourceHandlePosition={Position.Right}
       sourceHandleColor="#0958D9"
     >
       {/* 涉稳与急件看板 */}
