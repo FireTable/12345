@@ -199,7 +199,7 @@ export default function DashboardPage() {
       </section>
 
       <section className="split-row split-row--main">
-        <div className="card">
+        <div className="card" style={{ display: "flex", flexDirection: "column" }}>
           <div className="card__header">
             <div className="card__title">{daysRange === 0 ? "全周期" : `${daysRange} 天`}工单量与多频群组新增趋势</div>
             <div className="chart-legend">
@@ -211,8 +211,24 @@ export default function DashboardPage() {
               </span>
             </div>
           </div>
-          <div className="card__body" style={{ padding: "12px 12px 8px" }}>
-            {hasTrend ? <CivicEChart option={trendOpt} height={300} /> : <div className="empty-hint">暂无按日工单</div>}
+          <div
+            className="card__body"
+            style={{
+              padding: "16px 12px",
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            {hasTrend ? (
+              <div style={{ width: "100%" }}>
+                <CivicEChart option={trendOpt} height={340} />
+              </div>
+            ) : (
+              <div className="empty-hint">暂无按日工单</div>
+            )}
           </div>
         </div>
         <div className="card">
