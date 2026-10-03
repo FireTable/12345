@@ -217,3 +217,13 @@ pnpm dev
 | `pnpm db:clear` | 清空当前站点的工单与聚类主题数据 |
 | `pnpm db:studio` | 打开 Drizzle Studio 可视化数据管理面板 |
 | `npx tsc --noEmit` | 执行 TypeScript 全局静态类型检查 |
+
+---
+
+## 📚 核心技术文档体系 (Architecture & Docs)
+
+- **[Spatial & Geo-Location Architecture](docs/SPATIAL.md)**：Fourth-level subdistrict polygon mesh, CGCS2000 zero-drift coordinates, Tianditu WMTS caching, and spatial-semantic clustering.
+- **[AI Workflow & LangGraph Pipeline](docs/WORKFLOW.md)**：System-1 ONNX fast extraction, System-2 Bonsai 27B deep entity resolution, and incident clustering rules.
+- **[Deployment & Ops Guide](docs/DEPLOY.md)**：Local dev, VPS Docker Compose orchestration, and isolated air-gapped government cloud setup.
+- **[Multi-Tenant Database Architecture](docs/DBS.md)**：PostgreSQL schema physical isolation, Better Auth tenant routing, and migrations.
+
