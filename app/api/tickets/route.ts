@@ -156,24 +156,26 @@ export async function POST(req: Request) {
                   regionId
                 );
 
-                if (incResult.action === "ATTACHED" && incResult.matchedThemeId) {
-                  await tenantDb
-                    .update(ticketsTable)
-                    .set({
-                      primaryThemeId: incResult.matchedThemeId,
-                      summarizeTitle: enrichedTicket.summarizeTitle,
-                      address: enrichedTicket.canonicalLocation,
-                      sourceCategory: enrichedTicket.sourceCategory,
-                      confidence: enrichedTicket.confidence,
-                      canonicalSubject: enrichedTicket.canonicalSubject,
-                      eventType: enrichedTicket.eventType,
-                      urgency: enrichedTicket.urgency,
-                      slaHours: enrichedTicket.slaHours,
-                      stabilityRisk: enrichedTicket.stabilityRisk,
-                      subdistrict: enrichedTicket.subdistrict,
-                    })
-                    .where(eq(ticketsTable.id, singleRec.id));
+                // 1. 无条件将抽取提炼出的结构化要素持久化回工单表 (确保单条推送必定完成自动研判)
+                await tenantDb
+                  .update(ticketsTable)
+                  .set({
+                    primaryThemeId: incResult.action === "ATTACHED" && incResult.matchedThemeId ? incResult.matchedThemeId : null,
+                    summarizeTitle: enrichedTicket.summarizeTitle || singleRec.title,
+                    address: enrichedTicket.canonicalLocation || singleRec.district,
+                    sourceCategory: enrichedTicket.sourceCategory,
+                    confidence: enrichedTicket.confidence || 0.85,
+                    canonicalSubject: enrichedTicket.canonicalSubject,
+                    eventType: enrichedTicket.eventType,
+                    urgency: enrichedTicket.urgency,
+                    slaHours: enrichedTicket.slaHours,
+                    stabilityRisk: enrichedTicket.stabilityRisk,
+                    subdistrict: enrichedTicket.subdistrict || singleRec.subdistrict,
+                  })
+                  .where(eq(ticketsTable.id, singleRec.id));
 
+                // 2. 若成功吸附到已有主题，同步刷新对应专题的工单数与案卷建议
+                if (incResult.action === "ATTACHED" && incResult.matchedThemeId) {
                   await tenantDb
                     .update(themesTable)
                     .set({
@@ -185,9 +187,14 @@ export async function POST(req: Request) {
                       recommendedAction: incResult.matchedTheme?.recommendedAction,
                     })
                     .where(eq(themesTable.id, incResult.matchedThemeId));
+                } else {
+                  // 3. 若为新事件未吸附到既有主题，自动唤醒流水线检查是否成团
+                  triggerClusterJobAuto(regionId).catch(() => {});
                 }
               } catch (asyncErr: any) {
                 console.warn("[tickets/route] Incremental ingestion background task warning:", asyncErr.message);
+                // 异常兜底：自动触发全局流水线进行研判
+                triggerClusterJobAuto(regionId).catch(() => {});
               }
             })().catch(() => {});
           } else if (recordsToInsert.length > 1) {
