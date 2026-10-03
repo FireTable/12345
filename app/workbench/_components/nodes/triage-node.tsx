@@ -104,33 +104,38 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
           </span>
         </div>
 
-        {/* 迷你环形饼图 (nodrag 保证图表内部 hover tooltip 与交互顺畅) */}
+        {/* 迷你环形饼图与分类指标列表左右并排 (紧凑美观，留白适中) */}
         {data.categoryStats.length > 0 ? (
-          <div className="nodrag my-1 w-full flex justify-center">
-            <CivicEChart option={donutOpt} height={125} />
+          <div className="flex items-center gap-2 mt-1">
+            <div className="nodrag w-[105px] h-[95px] shrink-0 flex items-center justify-center">
+              <CivicEChart option={donutOpt} height={95} />
+            </div>
+            <div className="flex-1 min-w-0 space-y-1 text-[10.5px]">
+              {data.categoryStats.slice(0, 5).map((c, i) => {
+                const color = categoryColor(c.category);
+                const pct = Math.round((c.count / totalCat) * 100);
+                return (
+                  <div key={i} className="flex items-center justify-between text-slate-600">
+                    <span className="flex items-center gap-1.5 truncate max-w-[90px]" title={c.category}>
+                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                      <span className="truncate font-medium text-slate-700">{c.category}</span>
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-400 shrink-0">
+                      {c.count}件 <span className="font-semibold text-slate-600">{pct}%</span>
+                    </span>
+                  </div>
+                );
+              })}
+              {data.categoryStats.length > 5 && (
+                <div className="text-[9.5px] text-slate-400 font-mono text-right">
+                  +{data.categoryStats.length - 5} 类更多诉求
+                </div>
+              )}
+            </div>
           </div>
         ) : (
           <div className="py-4 text-center text-xs text-slate-400">暂无诉求分类数据</div>
         )}
-
-        {/* 分类色标微型指标网格 (与数据总览及全局 Filter 颜色保持 100% 统一) */}
-        <div className="grid grid-cols-2 gap-x-2 gap-y-1 mt-1 pt-1.5 border-t border-slate-100 text-[10.5px]">
-          {data.categoryStats.map((c, i) => {
-            const color = categoryColor(c.category);
-            const pct = Math.round((c.count / totalCat) * 100);
-            return (
-              <div key={i} className="flex items-center justify-between text-slate-600">
-                <span className="flex items-center gap-1.5 truncate max-w-[85px]" title={c.category}>
-                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                  <span className="truncate font-medium text-slate-700">{c.category}</span>
-                </span>
-                <span className="font-mono text-[10px] text-slate-400 shrink-0">
-                  {c.count}件 <span className="font-medium text-slate-600">{pct}%</span>
-                </span>
-              </div>
-            );
-          })}
-        </div>
 
         {/* 属地镇街初筛选 (统一获取与着色，未知统一用"未知") */}
         <div className="mt-2.5 pt-2 border-t border-slate-200/70">

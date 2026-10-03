@@ -28,10 +28,10 @@ import { useRegion } from "@/app/_components/civic/region-context";
 
 const DEFAULT_POSITIONS: Record<string, { x: number; y: number }> = {
   "node-ingest": { x: 80, y: 60 },
-  "node-triage": { x: 520, y: 60 },
-  "node-entity": { x: 960, y: 60 },
-  "node-cluster": { x: 960, y: 540 },
-  "node-dossier": { x: 520, y: 540 },
+  "node-triage": { x: 500, y: 60 },
+  "node-entity": { x: 920, y: 60 },
+  "node-cluster": { x: 920, y: 430 },
+  "node-dossier": { x: 500, y: 430 },
 };
 
 function getSavedPositions(key: string): Record<string, { x: number; y: number }> | null {
@@ -125,7 +125,7 @@ function InnerPipelineCanvas({
 }) {
   const { fitView } = useReactFlow();
   const { activeRegion } = useRegion();
-  const storageKey = `civic_workbench_pipeline_positions_${activeRegion?.id || "default"}`;
+  const storageKey = `civic_workbench_pipeline_positions_v3_${activeRegion?.id || "default"}`;
 
   const isRunning = stateData?.taskProgress?.status === "running";
   const processed = stateData?.taskProgress?.processed ?? 0;
@@ -183,10 +183,6 @@ function InnerPipelineCanvas({
           processed: targetProcessed,
           total,
           extractedCount: targetProcessed,
-          currentTicketNo: isRunning
-            ? (stateData?.taskProgress?.taskId || "进行中")
-            : (stateData?.recentTickets?.[0]?.ticketNo || undefined),
-          currentTime: stateData?.recentTickets?.[0]?.createTime || undefined,
           currentLocation: stateData?.recentTickets?.[0]?.address || undefined,
           currentSubject:
             stateData?.taskProgress?.currentSubject ||
