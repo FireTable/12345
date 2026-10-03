@@ -131,9 +131,17 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
                     key={i}
                     onMouseEnter={() => setHoveredCategory(c.category)}
                     onMouseLeave={() => setHoveredCategory(null)}
-                    className={`flex items-center justify-between leading-tight py-[2px] px-1.5 -mx-1 rounded transition-all duration-150 cursor-pointer ${
+                    style={
                       isHovered
-                        ? "bg-blue-50/90 text-blue-900 font-semibold shadow-2xs ring-1 ring-blue-200"
+                        ? {
+                            backgroundColor: `${color}14`,
+                            boxShadow: `0 0 0 1px ${color}50, 0 1px 4px ${color}20`,
+                          }
+                        : undefined
+                    }
+                    className={`flex items-center justify-between leading-tight py-[2.5px] px-1.5 -mx-1 rounded transition-all duration-150 cursor-pointer ${
+                      isHovered
+                        ? "font-semibold shadow-2xs"
                         : isAnyHovered
                         ? "text-slate-400 opacity-40"
                         : "text-slate-600 hover:bg-slate-50/80"
@@ -144,23 +152,31 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
                         className={`w-1.5 h-1.5 rounded-full shrink-0 transition-transform ${
                           isHovered ? "scale-125" : ""
                         }`}
-                        style={{ backgroundColor: color }}
+                        style={{
+                          backgroundColor: color,
+                          boxShadow: isHovered ? `0 0 6px ${color}` : undefined,
+                        }}
                       />
                       <span
                         className={`truncate text-[10px] whitespace-nowrap transition-colors ${
-                          isHovered ? "font-bold text-blue-900" : "font-medium text-slate-700"
+                          isHovered ? "font-bold" : "font-medium text-slate-700"
                         }`}
+                        style={isHovered ? { color } : undefined}
                       >
                         {c.category}
                       </span>
                     </span>
                     <span
                       className={`font-mono text-[9.5px] shrink-0 whitespace-nowrap ${
-                        isHovered ? "text-blue-700 font-bold" : "text-slate-400"
+                        isHovered ? "font-bold" : "text-slate-400"
                       }`}
+                      style={isHovered ? { color } : undefined}
                     >
                       {c.count}件{" "}
-                      <span className={isHovered ? "font-bold text-blue-900" : "font-semibold text-slate-600"}>
+                      <span
+                        className={isHovered ? "font-bold" : "font-semibold text-slate-600"}
+                        style={isHovered ? { color } : undefined}
+                      >
                         {pct}%
                       </span>
                     </span>
