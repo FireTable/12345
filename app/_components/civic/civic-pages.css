@@ -1287,18 +1287,92 @@
   box-sizing: border-box;
 }
 
-.navbar .navbar-icon-btn--pipeline {
-  color: #1677ff !important;
-  background: #f0f7ff;
-  border-color: #bae0ff;
+/* ==================================================================
+   Header AI 研判流水线智能控制台胶囊按钮 (Control Console Pill)
+   ================================================================== */
+.pipeline-console-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 11px 0 10px;
+  background: linear-gradient(135deg, #1E40AF 0%, #2563EB 50%, #3B82F6 100%);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  color: #FFFFFF;
+  cursor: pointer;
+  user-select: none;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
 }
 
-.navbar .navbar-icon-btn--pipeline:hover,
-.navbar .navbar-icon-btn--pipeline.is-active {
-  background: #1677ff !important;
-  color: #ffffff !important;
-  border-color: #1677ff !important;
-  box-shadow: 0 2px 10px rgba(22, 119, 255, 0.35);
+.pipeline-console-pill::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.25), transparent);
+  transform: skewX(-20deg);
+  transition: left 0.6s ease;
+}
+
+.pipeline-console-pill:hover {
+  transform: translateY(-1px);
+  background: linear-gradient(135deg, #1D4ED8 0%, #2563EB 50%, #60A5FA 100%);
+  box-shadow: 0 4px 16px rgba(37, 99, 235, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+.pipeline-console-pill:hover::after {
+  left: 140%;
+}
+
+.pipeline-console-pill:active {
+  transform: translateY(0);
+}
+
+.pipeline-console-pill.is-active {
+  background: linear-gradient(135deg, #0F172A 0%, #1E3A8A 100%);
+  border-color: rgba(96, 165, 250, 0.6);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3), 0 4px 14px rgba(15, 23, 42, 0.4);
+}
+
+.pipeline-console-pill__icon {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.pipeline-console-pill__text {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: #FFFFFF;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+.pipeline-console-pill__badge {
+  font-size: 9.5px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.22);
+  color: #E0F2FE;
+  line-height: 1.2;
+}
+
+.pipeline-console-pill__arrow {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.pipeline-console-pill:hover .pipeline-console-pill__arrow {
+  color: #FFFFFF;
 }
 
 .navbar .navbar-icon-btn--video {
