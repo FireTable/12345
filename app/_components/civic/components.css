@@ -60,10 +60,27 @@
   text-align: center;
 }
 
+.brand-morph-capsule::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -120%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.38), transparent);
+  transform: skewX(-20deg);
+  transition: left 0.55s ease;
+  pointer-events: none;
+}
+
 .brand-morph-capsule:hover {
   transform: translateY(-1px);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 4px 12px rgba(22, 119, 255, 0.42);
   border-color: rgba(255, 255, 255, 0.4);
+}
+
+.brand-morph-capsule:hover::after {
+  left: 160%;
 }
 
 .brand-morph-capsule:hover .brand-morph-roller {

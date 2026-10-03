@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ChevronDown, MessageCircle, User, LogOut, Film, Workflow, Sparkles } from "lucide-react";
+import { ChevronDown, MessageCircle, User, LogOut, Film, Workflow } from "lucide-react";
 import { useCivicWorkflow } from "./civic-workflow";
 import { NAV_ITEMS } from "./nav-items";
 import { authClient } from "@/lib/auth/client";
@@ -291,15 +291,7 @@ export function CivicNav() {
                 aria-label="AI 研判流水线控制台"
                 aria-expanded={pipelineDrawerOpen}
               >
-                <div className="relative flex items-center justify-center">
-                  <Workflow size={16} className="text-white" />
-                  <Sparkles
-                    size={9}
-                    className={`absolute -top-1 -right-1 text-cyan-200 ${
-                      analyzing ? "animate-pulse text-amber-300" : ""
-                    }`}
-                  />
-                </div>
+                <Workflow size={16} className="text-white" />
               </button>
 
               {/* 演示视频图标按钮 */}
