@@ -5,7 +5,6 @@ import {
   ReactFlow,
   Background,
   Controls,
-  MiniMap,
   useNodesState,
   useEdgesState,
   BackgroundVariant,
@@ -384,23 +383,6 @@ function InnerPipelineCanvas({
       </Panel>
 
       <Controls showInteractive={false} position="bottom-left" />
-      <MiniMap
-        nodeColor={(node) => {
-          if (node.id === "node-ingest") return "#2563EB";
-          if (node.id === "node-triage") return "#D97706";
-          if (node.id === "node-entity") return "#7C3AED";
-          if (node.id === "node-cluster") return "#0891B2";
-          if (node.id === "node-dossier") return "#059669";
-          return "#94A3B8";
-        }}
-        position="bottom-right"
-        style={{
-          borderRadius: 8,
-          border: "1px solid #E2E8F0",
-          background: "rgba(255, 255, 255, 0.8)",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-        }}
-      />
     </ReactFlow>
   );
 }

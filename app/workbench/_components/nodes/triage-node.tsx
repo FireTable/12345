@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { type NodeProps, type Node, Position } from "@xyflow/react";
 import { Zap, ShieldAlert, AlertTriangle, PieChart, MapPin } from "lucide-react";
 import { PipelineNodeShell } from "./pipeline-node-shell";
@@ -28,6 +28,7 @@ const DEFAULT_TOWNSHIPS = [
 ];
 
 export function TriageNode({ data }: NodeProps<TriageNodeType>) {
+  const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
   const isActive = data.status === "running";
   const isCompleted = data.status === "completed";
   const totalCat = data.categoryStats.reduce((sum, c) => sum + c.count, 0) || 1;
@@ -108,24 +109,60 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
           </span>
         </div>
 
-        {/* 迷你环形饼图与全量分类指标列表左右并排 (完整展现 7 大业务门类) */}
+        {/* 迷你环形饼图与全量分类指标列表左右并排 (更大环形图，支持双向分类聚焦) */}
         {data.categoryStats.length > 0 ? (
           <div className="flex items-center gap-2 mt-1">
-            <div className="nodrag w-[110px] h-[122px] shrink-0 flex items-center justify-center">
-              <CivicEChart option={donutOpt} height={122} />
+            <div className="nodrag w-[130px] h-[134px] shrink-0 flex items-center justify-center">
+              <CivicEChart
+                option={donutOpt}
+                height={134}
+                onHover={setHoveredCategory}
+                hoveredName={hoveredCategory}
+              />
             </div>
             <div className="flex-1 min-w-0 space-y-0.5">
               {data.categoryStats.map((c, i) => {
                 const color = categoryColor(c.category);
                 const pct = Math.round((c.count / totalCat) * 100);
+                const isHovered = hoveredCategory === c.category;
+                const isAnyHovered = Boolean(hoveredCategory);
                 return (
-                  <div key={i} className="flex items-center justify-between text-slate-600 leading-tight py-[1.5px]">
+                  <div
+                    key={i}
+                    onMouseEnter={() => setHoveredCategory(c.category)}
+                    onMouseLeave={() => setHoveredCategory(null)}
+                    className={`flex items-center justify-between leading-tight py-[2px] px-1.5 -mx-1 rounded transition-all duration-150 cursor-pointer ${
+                      isHovered
+                        ? "bg-blue-50/90 text-blue-900 font-semibold shadow-2xs ring-1 ring-blue-200"
+                        : isAnyHovered
+                        ? "text-slate-400 opacity-40"
+                        : "text-slate-600 hover:bg-slate-50/80"
+                    }`}
+                  >
                     <span className="flex items-center gap-1.5 truncate max-w-[85px]" title={c.category}>
-                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                      <span className="truncate font-medium text-slate-700 text-[10px] whitespace-nowrap">{c.category}</span>
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full shrink-0 transition-transform ${
+                          isHovered ? "scale-125" : ""
+                        }`}
+                        style={{ backgroundColor: color }}
+                      />
+                      <span
+                        className={`truncate text-[10px] whitespace-nowrap transition-colors ${
+                          isHovered ? "font-bold text-blue-900" : "font-medium text-slate-700"
+                        }`}
+                      >
+                        {c.category}
+                      </span>
                     </span>
-                    <span className="font-mono text-[9.5px] text-slate-400 shrink-0 whitespace-nowrap">
-                      {c.count}件 <span className="font-semibold text-slate-600">{pct}%</span>
+                    <span
+                      className={`font-mono text-[9.5px] shrink-0 whitespace-nowrap ${
+                        isHovered ? "text-blue-700 font-bold" : "text-slate-400"
+                      }`}
+                    >
+                      {c.count}件{" "}
+                      <span className={isHovered ? "font-bold text-blue-900" : "font-semibold text-slate-600"}>
+                        {pct}%
+                      </span>
                     </span>
                   </div>
                 );

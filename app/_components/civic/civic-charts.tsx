@@ -10,6 +10,9 @@ declare global {
         setOption: (opt: unknown) => void;
         resize: () => void;
         dispose: () => void;
+        on: (event: string, query: any, handler?: any) => void;
+        dispatchAction: (payload: any) => void;
+        [key: string]: any;
       };
     };
   }
@@ -39,20 +42,31 @@ export function loadEcharts() {
   return echartsPromise;
 }
 
-export function CivicEChart({ option, height }: { option: Record<string, unknown>; height: number }) {
+export function CivicEChart({
+  option,
+  height,
+  onHover,
+  hoveredName,
+}: {
+  option: Record<string, unknown>;
+  height: number;
+  onHover?: (name: string | null) => void;
+  hoveredName?: string | null;
+}) {
   const ref = useRef<HTMLDivElement>(null);
+  const chartInstanceRef = useRef<any>(null);
   const key = JSON.stringify(option);
 
   useEffect(() => {
-    let chart: any = null;
     let cancelled = false;
     loadEcharts().then((echarts) => {
       if (cancelled || !ref.current) return;
-      chart = echarts.init(ref.current);
+      const chart = echarts.init(ref.current);
+      chartInstanceRef.current = chart;
       const parsedOption = JSON.parse(key);
       chart.setOption(parsedOption);
 
-      // 监听鼠标悬停交互：动态实时切换环形图圆心百分比与分类
+      // 监听鼠标悬停交互：动态实时切换环形图圆心百分比与分类，并通知外部聚焦
       const defaultTitle = parsedOption.title ? JSON.parse(JSON.stringify(parsedOption.title)) : null;
       if (defaultTitle && parsedOption.series?.some((s: any) => s.type === "pie")) {
         chart.on("mouseover", "series.pie", (params: any) => {
@@ -71,23 +85,71 @@ export function CivicEChart({ option, height }: { option: Record<string, unknown
               },
             },
           });
+          onHover?.(params.name);
         });
 
         chart.on("mouseout", "series.pie", () => {
           chart.setOption({
             title: defaultTitle,
           });
+          onHover?.(null);
         });
       }
     });
-    const onResize = () => chart?.resize();
+    const onResize = () => chartInstanceRef.current?.resize();
     window.addEventListener("resize", onResize);
     return () => {
       cancelled = true;
       window.removeEventListener("resize", onResize);
-      chart?.dispose();
+      chartInstanceRef.current?.dispose();
+      chartInstanceRef.current = null;
     };
   }, [key]);
+
+  // 外部 hoverName 变化时，触发联动 highlight/downplay
+  useEffect(() => {
+    const chart = chartInstanceRef.current;
+    if (!chart) return;
+    const parsedOption = JSON.parse(key);
+    const defaultTitle = parsedOption.title ? JSON.parse(JSON.stringify(parsedOption.title)) : null;
+    if (hoveredName) {
+      chart.dispatchAction({
+        type: "highlight",
+        seriesIndex: 0,
+        name: hoveredName,
+      });
+      // 联动更新圆心文字
+      const pieSeries = parsedOption.series?.find((s: any) => s.type === "pie");
+      if (pieSeries && defaultTitle) {
+        const item = pieSeries.data?.find((d: any) => d.name === hoveredName);
+        const total = pieSeries.data?.reduce((sum: number, d: any) => sum + (d.value || 0), 0) || 1;
+        if (item) {
+          const pct = ((item.value / total) * 100).toFixed(1);
+          chart.setOption({
+            title: {
+              ...defaultTitle,
+              text: `${pct}%`,
+              subtext: item.name,
+              textStyle: {
+                ...defaultTitle.textStyle,
+                color: item.itemStyle?.color || defaultTitle.textStyle?.color || "#1E5AFF",
+              },
+            },
+          });
+        }
+      }
+    } else {
+      chart.dispatchAction({
+        type: "downplay",
+        seriesIndex: 0,
+      });
+      if (defaultTitle) {
+        chart.setOption({
+          title: defaultTitle,
+        });
+      }
+    }
+  }, [hoveredName, key]);
 
   return <div ref={ref} style={{ width: "100%", height }} />;
 }
@@ -292,40 +354,40 @@ export function miniDonutOption(
       left: "center",
       top: "center",
       textAlign: "center",
-      itemGap: 1,
+      itemGap: 2,
       textStyle: {
-        fontSize: 13,
+        fontSize: 15,
         fontWeight: "bold",
         color: topColor,
         fontFamily: "ui-sans-serif, system-ui, -apple-system, sans-serif",
-        lineHeight: 15,
+        lineHeight: 17,
       },
       subtextStyle: {
-        fontSize: 9.5,
+        fontSize: 10.5,
         color: "#64748B",
         fontWeight: "600",
-        lineHeight: 12,
+        lineHeight: 13,
       },
     },
     tooltip: {
-      trigger: "item",
-      backgroundColor: "rgba(30, 41, 59, 0.95)",
-      borderColor: "transparent",
-      textStyle: { color: "#fff", fontSize: 11 },
-      formatter: (p: any) =>
-        `<b>${p.name}</b><br/>${Number(p.value).toLocaleString("zh-CN")} 件 (${Number(p.percent).toFixed(1)}%)`,
+      show: false,
     },
     series: [
       {
         type: "pie",
-        radius: ["58%", "82%"],
+        radius: ["58%", "88%"],
         center: ["50%", "50%"],
         avoidLabelOverlap: false,
         label: { show: false },
         itemStyle: { borderColor: "#fff", borderWidth: 2 },
         emphasis: {
+          focus: "self",
           scale: true,
-          scaleSize: 4,
+          scaleSize: 6,
+          itemStyle: {
+            shadowBlur: 10,
+            shadowColor: "rgba(0, 0, 0, 0.18)",
+          },
         },
         data,
       },
