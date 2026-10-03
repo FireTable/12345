@@ -211,7 +211,7 @@ export default function DashboardPage() {
               </span>
             </div>
           </div>
-          <div className="card__body" style={{ padding: "12px 8px 8px" }}>
+          <div className="card__body" style={{ padding: "12px 12px 8px" }}>
             {hasTrend ? <CivicEChart option={trendOpt} height={300} /> : <div className="empty-hint">暂无按日工单</div>}
           </div>
         </div>

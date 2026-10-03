@@ -165,7 +165,13 @@ export function trendOption(daily: Record<string, number>, clusters: Record<stri
   const aligned = entries.map(([d]) => clusters[d] || 0);
 
   return {
-    grid: { left: 50, right: 50, top: 30, bottom: 36 },
+    grid: {
+      left: 16,
+      right: 16,
+      top: 36,
+      bottom: 24,
+      containLabel: true,
+    },
     tooltip: {
       trigger: "axis",
       backgroundColor: "rgba(31,35,41,0.95)",
@@ -193,7 +199,7 @@ export function trendOption(daily: Record<string, number>, clusters: Record<stri
       {
         type: "value",
         name: "工单量",
-        nameTextStyle: { color: "#94A3B8", fontSize: 10 },
+        nameTextStyle: { color: "#94A3B8", fontSize: 11, align: "left" },
         axisLine: { show: false },
         axisTick: { show: false },
         splitLine: { lineStyle: { color: "#F0F1F3", type: "dashed" } },
@@ -202,7 +208,7 @@ export function trendOption(daily: Record<string, number>, clusters: Record<stri
       {
         type: "value",
         name: "新增群组",
-        nameTextStyle: { color: "#94A3B8", fontSize: 10 },
+        nameTextStyle: { color: "#94A3B8", fontSize: 11, align: "right" },
         axisLine: { show: false },
         axisTick: { show: false },
         splitLine: { show: false },
