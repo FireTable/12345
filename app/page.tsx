@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { CivicEChart, CivicHeatmap, donutOption, trendOption } from "@/app/_components/civic/civic-charts";
-import { RANK_COLORS } from "@/lib/civic-cluster";
+import { getTownshipColor } from "@/lib/civic-cluster";
 import { FileText, Activity, Sparkles, FolderKanban } from "lucide-react";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { SkDashboard } from "@/app/_components/civic/skeletons";
@@ -221,11 +221,18 @@ export default function DashboardPage() {
           </div>
           <div className="card__body" style={{ padding: "8px 12px 4px" }}>
             {regions.map(([name, n], i) => {
-              const color = RANK_COLORS[i] || "#86909C";
+              const isUnknown = name === "未知" || !name;
+              const color = isUnknown ? "#86909C" : getTownshipColor(name);
               const top = i < 3;
               return (
                 <div key={name} className="rank-item" onClick={() => router.push(`/multifreq?region=${encodeURIComponent(name)}`)}>
-                  <span className="rank-item__no" style={{ background: top ? color : "var(--c-border-soft)", color: top ? "#fff" : "var(--c-ink-3)" }}>
+                  <span
+                    className="rank-item__no"
+                    style={{
+                      background: top ? color : "var(--c-border-soft)",
+                      color: top ? "#fff" : "var(--c-ink-3)",
+                    }}
+                  >
                     {i + 1}
                   </span>
                   <span style={{ color: "var(--c-ink)", fontWeight: 500, minWidth: 42 }}>{name}</span>
