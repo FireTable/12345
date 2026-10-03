@@ -1,6 +1,5 @@
 export const NAV_ITEMS = [
   { href: "/", key: "dashboard", label: "数据总览" },
-  { href: "/workbench", key: "workbench", label: "研判流水线" },
   { href: "/themes", key: "grouplist", label: "多频工单" },
   { href: "/multifreq", key: "multifreq", label: "工单透势" },
   { href: "/tickets", key: "center", label: "工单中心" },

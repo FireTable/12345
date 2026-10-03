@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ChevronDown, MessageCircle, User, LogOut, Film } from "lucide-react";
+import { ChevronDown, MessageCircle, User, LogOut, Film, Workflow } from "lucide-react";
 import { useCivicWorkflow } from "./civic-workflow";
 import { NAV_ITEMS } from "./nav-items";
 import { authClient } from "@/lib/auth/client";
@@ -72,7 +72,7 @@ function useFittingNavCount(itemCount: number) {
 export function CivicNav() {
   const pathname = usePathname();
   const router = useRouter();
-  const { openCopilot, copilotOpen } = useCivicWorkflow();
+  const { openCopilot, copilotOpen, pipelineDrawerOpen, togglePipelineDrawer } = useCivicWorkflow();
   const { activeRegion } = useRegion();
   const [menuOpen, setMenuOpen] = useState(false);
   const [videoModalOpen, setVideoModalOpen] = useState(false);
@@ -274,6 +274,20 @@ export function CivicNav() {
             </div>
 
             <div className="navbar__user">
+              {/* 研判流水线抽屉入口按钮 (用户指定红框位置) */}
+              <button
+                type="button"
+                className={`navbar-icon-btn navbar-icon-btn--pipeline${
+                  pipelineDrawerOpen ? " is-active" : ""
+                }`}
+                onClick={togglePipelineDrawer}
+                title={pipelineDrawerOpen ? "收起研判流水线 (再次点击关闭)" : "展开研判流水线 (抽屉工作台)"}
+                aria-label="研判流水线"
+                aria-expanded={pipelineDrawerOpen}
+              >
+                <Workflow size={16} />
+              </button>
+
               {/* 演示视频图标按钮 */}
               <button
                 type="button"

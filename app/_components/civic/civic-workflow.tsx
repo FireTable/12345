@@ -28,6 +28,9 @@ type CivicWorkflow = {
   isAllAnalyzed: boolean;
   disabledReason: string;
   copilotOpen: boolean;
+  pipelineDrawerOpen: boolean;
+  setPipelineDrawerOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  togglePipelineDrawer: () => void;
 };
 
 const CivicWorkflowContext = createContext<CivicWorkflow | null>(null);
@@ -43,6 +46,10 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
   const [uploadOpen, setUploadOpen] = useState(false);
   const [clusterOnly, setClusterOnly] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
+  const [pipelineDrawerOpen, setPipelineDrawerOpen] = useState(false);
+  const togglePipelineDrawer = useCallback(() => {
+    setPipelineDrawerOpen((prev) => !prev);
+  }, []);
   const [analyzing, setAnalyzing] = useState(false);
   const [themes, setThemes] = useState<MultiFrequencyTheme[]>([]);
   const [stats, setStats] = useState<OverallStats>(emptyStats);
@@ -189,6 +196,9 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
         isAllAnalyzed,
         disabledReason,
         copilotOpen,
+        pipelineDrawerOpen,
+        setPipelineDrawerOpen,
+        togglePipelineDrawer,
       }}
     >
       {children}

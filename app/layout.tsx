@@ -8,7 +8,7 @@ import "@/app/workbench/workbench.css";
 import "leaflet/dist/leaflet.css";
 import { CivicNav } from "@/app/_components/civic/civic-nav";
 import { CivicWorkflowProvider } from "@/app/_components/civic/civic-workflow";
-import { PipelineFloatingPill } from "@/app/_components/civic/pipeline-floating-pill";
+import { PipelineDrawer } from "@/app/_components/civic/pipeline-drawer";
 import { Toaster } from "@/app/_components/ui/sonner";
 import { appViewport } from "./viewport";
 
@@ -47,7 +47,7 @@ export default function RootLayout({
           <CivicWorkflowProvider>
             <CivicNav />
             <main className="main">{children}</main>
-            <PipelineFloatingPill />
+            <PipelineDrawer />
             <Toaster />
           </CivicWorkflowProvider>
         </RegionProvider>
