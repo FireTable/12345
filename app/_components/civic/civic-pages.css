@@ -1288,68 +1288,58 @@
 }
 
 /* ==================================================================
-   Header AI 研判流水线控制台展开按钮 (克制极简企业级风格)
+   Header AI 研判流水线科技感控制台图标按钮 (纯图标形态 + 炫酷质感)
    ================================================================== */
-.pipeline-console-btn {
+.pipeline-console-icon-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  width: 34px;
   height: 34px;
-  padding: 0 10px;
-  background: #ffffff;
-  border: 1px solid var(--c-border, #e2e8f0);
+  background: linear-gradient(135deg, #1E40AF 0%, #2563EB 50%, #3B82F6 100%);
+  border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: 8px;
-  color: var(--c-ink-2, #334155);
-  font-size: 12px;
-  font-weight: 500;
+  color: #FFFFFF;
   cursor: pointer;
   user-select: none;
-  transition: all 0.15s ease;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.32);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  overflow: hidden;
   flex-shrink: 0;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
-.pipeline-console-btn svg {
-  color: #1677ff;
-  transition: color 0.15s ease;
+.pipeline-console-icon-btn::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  transform: skewX(-20deg);
+  transition: left 0.5s ease;
 }
 
-.pipeline-console-btn .pipeline-console-btn__arrow {
-  color: #94a3b8;
-  transition: transform 0.25s ease, color 0.15s ease;
+.pipeline-console-icon-btn:hover {
+  transform: translateY(-1px);
+  background: linear-gradient(135deg, #1D4ED8 0%, #2563EB 50%, #60A5FA 100%);
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  border-color: rgba(255, 255, 255, 0.55);
 }
 
-.pipeline-console-btn:hover {
-  background: #f0f7ff;
-  border-color: #bae0ff;
-  color: #1677ff;
+.pipeline-console-icon-btn:hover::after {
+  left: 140%;
 }
 
-.pipeline-console-btn:hover svg {
-  color: #1677ff;
+.pipeline-console-icon-btn:active {
+  transform: translateY(0);
 }
 
-.pipeline-console-btn:hover .pipeline-console-btn__arrow {
-  color: #1677ff;
-}
-
-.pipeline-console-btn.is-active {
-  background: #1677ff;
-  border-color: #1677ff;
-  color: #ffffff;
-  box-shadow: 0 2px 8px rgba(22, 119, 255, 0.28);
-}
-
-.pipeline-console-btn.is-active svg {
-  color: #ffffff !important;
-}
-
-.pipeline-console-btn.is-active span {
-  color: #ffffff;
-}
-
-.pipeline-console-btn.is-active .pipeline-console-btn__arrow {
-  color: rgba(255, 255, 255, 0.85) !important;
+.pipeline-console-icon-btn.is-active {
+  background: linear-gradient(135deg, #0F172A 0%, #1E3A8A 100%);
+  border-color: rgba(96, 165, 250, 0.7);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35), 0 4px 14px rgba(15, 23, 42, 0.45);
 }
 
 .navbar .navbar-icon-btn--video {

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ChevronDown, MessageCircle, User, LogOut, Film, Workflow } from "lucide-react";
+import { ChevronDown, MessageCircle, User, LogOut, Film, Workflow, Sparkles } from "lucide-react";
 import { useCivicWorkflow } from "./civic-workflow";
 import { NAV_ITEMS } from "./nav-items";
 import { authClient } from "@/lib/auth/client";
@@ -274,29 +274,32 @@ export function CivicNav() {
             </div>
 
             <div className="navbar__user">
-              {/* AI 研判流水线控制台入口 (极简专业风格) */}
+              {/* AI 研判流水线控制台入口 (纯图标形态 + 炫酷科技质感) */}
               <button
                 type="button"
-                className={`pipeline-console-btn${
+                className={`pipeline-console-icon-btn${
                   pipelineDrawerOpen ? " is-active" : ""
                 }`}
                 onClick={togglePipelineDrawer}
                 title={
                   pipelineDrawerOpen
-                    ? "收起研判流水线控制台 (再次点击关闭)"
-                    : "展开研判流水线控制台 (从顶部下拉)"
+                    ? "收起 AI 研判流水线控制台 (再次点击关闭)"
+                    : analyzing
+                    ? "AI 研判流水线运转中 · 点击展开控制台 (从顶部下拉)"
+                    : "展开 AI 研判流水线控制台 (从顶部下拉)"
                 }
                 aria-label="AI 研判流水线控制台"
                 aria-expanded={pipelineDrawerOpen}
               >
-                <Workflow size={14} className="shrink-0" />
-                <span>研判流水线</span>
-                <ChevronDown
-                  size={12}
-                  className={`pipeline-console-btn__arrow shrink-0 ${
-                    pipelineDrawerOpen ? "rotate-180" : ""
-                  }`}
-                />
+                <div className="relative flex items-center justify-center">
+                  <Workflow size={16} className="text-white" />
+                  <Sparkles
+                    size={9}
+                    className={`absolute -top-1 -right-1 text-cyan-200 ${
+                      analyzing ? "animate-pulse text-amber-300" : ""
+                    }`}
+                  />
+                </div>
               </button>
 
               {/* 演示视频图标按钮 */}
