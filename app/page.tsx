@@ -38,7 +38,7 @@ type Overview = {
 type Trends = { daily: Record<string, number>; dailyNewClusters?: Record<string, number> };
 
 export default function DashboardPage() {
-  const { openUpload, runCluster, analyzing, isAllAnalyzed, disabledReason } = useCivicWorkflow();
+  const { runCluster, analyzing, isAllAnalyzed, disabledReason } = useCivicWorkflow();
   const { activeRegion } = useRegion();
   const router = useRouter();
   const [daysRange, setDaysRange] = useState(0);
@@ -129,9 +129,6 @@ export default function DashboardPage() {
           </Select>
           <button type="button" className="btn btn--default" onClick={() => void exportOverview()}>
             导出
-          </button>
-          <button type="button" className="btn btn--default" onClick={openUpload} title="录入单条或批量追加工单">
-            追加工单
           </button>
         </div>
       </section>
