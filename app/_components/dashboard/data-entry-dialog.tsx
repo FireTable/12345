@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import {
   FileSpreadsheet,
   CheckCircle2,
@@ -11,7 +10,6 @@ import {
   Database,
   ClipboardPaste,
   Sparkles,
-  ArrowRight,
   Upload,
   FileText,
   Trash2,
@@ -46,7 +44,6 @@ export const DataEntryDialog: React.FC<DataEntryDialogProps> = ({
   onClose,
   onDatabaseUpdated,
 }) => {
-  const router = useRouter();
   const [tab, setTab] = useState<"file" | "paste">("file");
   const [file, setFile] = useState<File | null>(null);
   const [pasteText, setPasteText] = useState("");
@@ -189,11 +186,6 @@ export const DataEntryDialog: React.FC<DataEntryDialogProps> = ({
     }
   };
 
-  const handleGoToWorkbench = () => {
-    onClose();
-    router.push("/workbench");
-  };
-
   return (
     <AnimatePresence>
       <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4">
@@ -246,47 +238,55 @@ export const DataEntryDialog: React.FC<DataEntryDialogProps> = ({
             {report ? (
               /* 入库成功报告视图 */
               <div className="py-2 space-y-4">
-                <div className="flex items-center gap-3 p-3.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-800 dark:text-emerald-300">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <div className="flex items-center gap-3.5 p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 shadow-2xs">
+                  <div className="w-9 h-9 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                    <CheckCircle2 className="w-5 h-5 stroke-[2.5]" />
+                  </div>
                   <div>
-                    <div className="text-xs font-semibold">工单入库成功！</div>
-                    <div className="text-[11px] opacity-90">
+                    <div className="text-sm font-bold text-emerald-950 dark:text-emerald-100">
+                      工单入库成功！
+                    </div>
+                    <div className="text-xs text-emerald-800/90 dark:text-emerald-300 mt-0.5">
                       数据已安全存入本地专属数据表，已就绪供全流程 AI 流水线调用。
                     </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-4 gap-2.5">
-                  <div className="p-2.5 rounded-lg border border-border/70 bg-muted/30 text-center">
-                    <div className="text-[10.5px] text-muted-foreground">解析总数</div>
-                    <div className="text-base font-bold font-mono text-foreground mt-0.5">
+                <div className="grid grid-cols-4 gap-3">
+                  <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/60 shadow-2xs text-center">
+                    <div className="text-xs font-medium text-slate-500 dark:text-slate-400">解析总数</div>
+                    <div className="text-xl font-bold font-mono text-slate-900 dark:text-slate-100 mt-1">
                       {report.totalParsed}
                     </div>
                   </div>
-                  <div className="p-2.5 rounded-lg border border-border/70 bg-emerald-500/5 text-center">
-                    <div className="text-[10.5px] text-emerald-600 dark:text-emerald-400 font-medium">
+                  <div className="p-3.5 rounded-xl border border-emerald-300/90 dark:border-emerald-700/80 bg-emerald-50 dark:bg-emerald-950/50 shadow-2xs text-center">
+                    <div className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">
                       成功入库
                     </div>
-                    <div className="text-base font-bold font-mono text-emerald-600 dark:text-emerald-400 mt-0.5">
+                    <div className="text-xl font-bold font-mono text-emerald-600 dark:text-emerald-400 mt-1">
                       {report.insertedCount}
                     </div>
                   </div>
-                  <div className="p-2.5 rounded-lg border border-border/70 bg-muted/30 text-center">
-                    <div className="text-[10.5px] text-muted-foreground">重复过滤</div>
-                    <div className="text-base font-bold font-mono text-muted-foreground mt-0.5">
+                  <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/60 shadow-2xs text-center">
+                    <div className="text-xs font-medium text-slate-500 dark:text-slate-400">重复过滤</div>
+                    <div className="text-xl font-bold font-mono text-slate-700 dark:text-slate-300 mt-1">
                       {report.duplicateCount}
                     </div>
                   </div>
-                  <div className="p-2.5 rounded-lg border border-border/70 bg-muted/30 text-center">
-                    <div className="text-[10.5px] text-muted-foreground">耗时</div>
-                    <div className="text-base font-bold font-mono text-foreground mt-0.5">
-                      {report.durationMs}ms
+                  <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/60 shadow-2xs text-center">
+                    <div className="text-xs font-medium text-slate-500 dark:text-slate-400">处理耗时</div>
+                    <div className="text-xl font-bold font-mono text-slate-900 dark:text-slate-100 mt-1">
+                      {report.durationMs}<span className="text-xs font-normal text-slate-500 ml-0.5">ms</span>
                     </div>
                   </div>
                 </div>
 
-                <div className="text-xs text-muted-foreground bg-muted/20 p-3 rounded-lg border border-border/50">
-                  💡 提示：前往全工序智能研判工作台，可直观查看工单接入、分类初筛、要素提取与微观空间聚类流向。
+                <div className="flex items-start gap-2.5 text-xs text-amber-900 dark:text-amber-200 bg-amber-50/80 dark:bg-amber-950/40 p-3 rounded-xl border border-amber-200/90 dark:border-amber-800/60 leading-relaxed shadow-2xs">
+                  <span className="text-sm shrink-0">💡</span>
+                  <div>
+                    <span className="font-semibold">提示：</span>
+                    数据已即时同步，全流程流水线将自动执行要素提取、微观主体分析与问题空间归集。
+                  </div>
                 </div>
               </div>
             ) : (
@@ -437,24 +437,15 @@ export const DataEntryDialog: React.FC<DataEntryDialogProps> = ({
           {/* Footer */}
           <div className="flex items-center justify-between px-5 py-3 border-t border-border/80 bg-muted/20">
             {report ? (
-              /* 入库成功后的动作 */
-              <div className="flex items-center justify-end w-full gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onClose}
-                  className="h-8 text-xs cursor-pointer"
-                >
-                  完成并关闭
-                </Button>
+              /* 入库成功后的动作：仅保留单个完成按钮 */
+              <div className="flex items-center justify-end w-full">
                 <Button
                   variant="default"
                   size="sm"
-                  onClick={handleGoToWorkbench}
-                  className="h-8 text-xs bg-primary text-primary-foreground hover:bg-primary/90 font-medium cursor-pointer shadow-sm"
+                  onClick={onClose}
+                  className="h-8.5 px-6 text-xs bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white font-medium cursor-pointer shadow-sm rounded-lg transition-colors"
                 >
-                  进入 AI 研判工作台
-                  <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+                  完成
                 </Button>
               </div>
             ) : (

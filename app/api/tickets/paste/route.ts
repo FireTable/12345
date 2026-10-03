@@ -3,6 +3,7 @@ import { buildRecordsFromTexts, insertRecordsBatch } from "@/lib/ticket-ingest";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 import { getRegionVocabulary } from "@/lib/vocabulary";
 import { apiSuccess, apiError, ApiCode } from "@/lib/api-codes";
+import { triggerClusterJobAuto } from "@/lib/cluster-runner";
 
 const MAX_LINES = 2000;
 const MAX_LINE_CHARS = 4000;
@@ -46,6 +47,13 @@ export async function POST(req: NextRequest) {
     const { insertedCount, duplicateCount, failedCount: batchFailed } =
       await insertRecordsBatch(records, regionId);
     const failedCount = normalizedFailed + batchFailed;
+
+    // 若有新工单成功入库，后台自动开启研判流水线任务，无需人工干预
+    if (insertedCount > 0) {
+      triggerClusterJobAuto(regionId).catch((err) => {
+        console.warn("[paste/route] Auto cluster trigger warning:", err?.message || err);
+      });
+    }
 
     const durationMs = Date.now() - startTime;
 

@@ -5,6 +5,7 @@ import { sql } from "drizzle-orm";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 import { enqueueClusterJob } from "@/lib/cluster-queue";
 import { apiSuccess, apiError, ApiCode } from "@/lib/api-codes";
+import { triggerClusterJobAuto } from "@/lib/cluster-runner";
 
 export async function POST(req: NextRequest) {
   try {
@@ -25,6 +26,9 @@ export async function POST(req: NextRequest) {
 
     const taskId = body.taskId || body.threadId || `cluster-${Date.now()}`;
     const queued = await enqueueClusterJob(regionId, taskId, totalTickets);
+    triggerClusterJobAuto(regionId).catch((err) => {
+      console.warn("[cluster/route] Auto cluster trigger warning:", err?.message || err);
+    });
     return apiSuccess({
       taskId: queued.taskId,
       status: queued.status,

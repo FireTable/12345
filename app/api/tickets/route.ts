@@ -8,6 +8,7 @@ import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 import { ingestSingleTicketPipeline } from "@/backend/agent";
 import { HANDLING_STATUS, normalizeStatusCode } from "@/lib/civic-dto";
 import { CATEGORY } from "@/lib/vocabulary";
+import { triggerClusterJobAuto } from "@/lib/cluster-runner";
 
 export async function GET(req: Request) {
   try {
@@ -189,6 +190,11 @@ export async function POST(req: Request) {
                 console.warn("[tickets/route] Incremental ingestion background task warning:", asyncErr.message);
               }
             })().catch(() => {});
+          } else if (recordsToInsert.length > 1) {
+            // 若为批量新工单接入，后台自动开启研判流水线
+            triggerClusterJobAuto(regionId).catch((err) => {
+              console.warn("[tickets/route] Auto cluster trigger warning:", err?.message || err);
+            });
           }
         }
       }

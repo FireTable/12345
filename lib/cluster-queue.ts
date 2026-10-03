@@ -71,38 +71,69 @@ export async function enqueueClusterJob(
   return { taskId, status: "PENDING", alreadyRunning: false };
 }
 
-export async function claimNextClusterJob(): Promise<ClusterJob | null> {
+export async function claimNextClusterJob(targetRegionId?: string): Promise<ClusterJob | null> {
   await ensureQueueColumns();
-  const rows = await sql<
-    { task_id: string; region_id: string | null; status: string; processed: number; total: number }[]
-  >`
-    WITH next_job AS (
-      SELECT task_id
-      FROM task_progress
-      WHERE region_id IS NOT NULL
-        AND (
-          status = 'PENDING'
-          OR (
-            status = 'RUNNING'
-            AND COALESCE(heartbeat_at, updated_at) < now() - make_interval(secs => ${STALE_SECONDS})
-          )
+  const rows = targetRegionId
+    ? await sql<
+        { task_id: string; region_id: string | null; status: string; processed: number; total: number }[]
+      >`
+        WITH next_job AS (
+          SELECT task_id
+          FROM task_progress
+          WHERE region_id = ${targetRegionId}
+            AND (
+              status = 'PENDING'
+              OR (
+                status = 'RUNNING'
+                AND COALESCE(heartbeat_at, updated_at) < now() - make_interval(secs => ${STALE_SECONDS})
+              )
+            )
+          ORDER BY created_at
+          LIMIT 1
+          FOR UPDATE SKIP LOCKED
         )
-      ORDER BY created_at
-      LIMIT 1
-      FOR UPDATE SKIP LOCKED
-    )
-    UPDATE task_progress AS task
-    SET status = 'RUNNING',
-        stage_text = CASE
-          WHEN task.status = 'RUNNING' THEN '继续未完成的研判...'
-          ELSE task.stage_text
-        END,
-        heartbeat_at = now(),
-        updated_at = now()
-    FROM next_job
-    WHERE task.task_id = next_job.task_id
-    RETURNING task.task_id, task.region_id, task.status, task.processed, task.total
-  `;
+        UPDATE task_progress AS task
+        SET status = 'RUNNING',
+            stage_text = CASE
+              WHEN task.status = 'RUNNING' THEN '继续未完成的研判...'
+              ELSE task.stage_text
+            END,
+            heartbeat_at = now(),
+            updated_at = now()
+        FROM next_job
+        WHERE task.task_id = next_job.task_id
+        RETURNING task.task_id, task.region_id, task.status, task.processed, task.total
+      `
+    : await sql<
+        { task_id: string; region_id: string | null; status: string; processed: number; total: number }[]
+      >`
+        WITH next_job AS (
+          SELECT task_id
+          FROM task_progress
+          WHERE region_id IS NOT NULL
+            AND (
+              status = 'PENDING'
+              OR (
+                status = 'RUNNING'
+                AND COALESCE(heartbeat_at, updated_at) < now() - make_interval(secs => ${STALE_SECONDS})
+              )
+            )
+          ORDER BY created_at
+          LIMIT 1
+          FOR UPDATE SKIP LOCKED
+        )
+        UPDATE task_progress AS task
+        SET status = 'RUNNING',
+            stage_text = CASE
+              WHEN task.status = 'RUNNING' THEN '继续未完成的研判...'
+              ELSE task.stage_text
+            END,
+            heartbeat_at = now(),
+            updated_at = now()
+        FROM next_job
+        WHERE task.task_id = next_job.task_id
+        RETURNING task.task_id, task.region_id, task.status, task.processed, task.total
+      `;
   const row = rows[0];
   if (!row?.region_id) return null;
   return {
