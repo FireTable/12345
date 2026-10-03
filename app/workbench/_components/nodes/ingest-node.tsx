@@ -78,7 +78,7 @@ export function IngestNode({ data }: NodeProps<IngestNodeType>) {
       sourceHandlePosition={Position.Right}
     >
       {/* 指标看板 */}
-      <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+      <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
         <div>
           <div className="pipeline-metric-label">辖区在库总量</div>
           <div className="pipeline-metric-value text-blue-600 mt-1">{data.totalTickets}</div>
@@ -88,10 +88,6 @@ export function IngestNode({ data }: NodeProps<IngestNodeType>) {
           <div className={`pipeline-metric-value mt-1 ${data.unprocessedTickets > 0 ? "text-amber-600" : "text-emerald-600"}`}>
             {data.unprocessedTickets}
           </div>
-        </div>
-        <div className="border-l border-slate-200 pl-2 flex flex-col justify-center">
-          <div className="text-[10px] text-slate-400 font-medium">接入渠道</div>
-          <div className="text-[11px] font-semibold text-slate-700 mt-0.5">热线 · 微信 · 网格</div>
         </div>
       </div>
 

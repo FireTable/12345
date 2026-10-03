@@ -79,25 +79,21 @@ export function EntityNode({ data }: NodeProps<EntityNodeType>) {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 text-[11px] mt-2 bg-white/70 p-2 rounded-md border border-slate-100">
-          <div className="flex items-start gap-1.5 text-slate-600">
-            <MapPin size={13} className="text-purple-600 shrink-0 mt-0.5" />
-            <div className="min-w-0">
-              <span className="text-slate-400 block text-[10px]">微观道路点位</span>
-              <span className="font-semibold text-slate-800 break-words">
-                {data.currentLocation || "大良街道新从路新兴横二街"}
-              </span>
-            </div>
+        <div className="space-y-1.5 text-[11px] mt-2">
+          <div className="flex items-start gap-1 text-slate-600">
+            <MapPin size={12} className="text-purple-500 shrink-0 mt-0.5" />
+            <span className="text-slate-400 shrink-0">微观道路点位：</span>
+            <span className="font-medium text-slate-800 truncate">
+              {data.currentLocation || "大良街道新从路新兴横二街"}
+            </span>
           </div>
 
-          <div className="flex items-start gap-1.5 text-slate-600 border-l border-slate-100 pl-3">
-            <Building2 size={13} className="text-purple-600 shrink-0 mt-0.5" />
-            <div className="min-w-0">
-              <span className="text-slate-400 block text-[10px]">责任/涉事主体</span>
-              <span className="font-semibold text-slate-800 break-words">
-                {data.currentSubject || "沿街餐饮排档商户 / 物业责任方"}
-              </span>
-            </div>
+          <div className="flex items-start gap-1 text-slate-600">
+            <Building2 size={12} className="text-purple-500 shrink-0 mt-0.5" />
+            <span className="text-slate-400 shrink-0">责任/涉事主体：</span>
+            <span className="font-medium text-slate-800 truncate">
+              {data.currentSubject || "沿街排档商户 / 物业责任方"}
+            </span>
           </div>
         </div>
       </div>

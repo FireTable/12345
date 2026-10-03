@@ -112,7 +112,7 @@ function InnerPipelineCanvas({
       {
         id: "node-ingest",
         type: "ingest",
-        position: { x: 100, y: 60 },
+        position: { x: 140, y: 60 },
         data: {
           totalTickets: total,
           unprocessedTickets: stateData?.metrics.unprocessedTickets ?? 0,
@@ -130,7 +130,7 @@ function InnerPipelineCanvas({
       {
         id: "node-triage",
         type: "triage",
-        position: { x: 740, y: 60 },
+        position: { x: 620, y: 60 },
         data: {
           urgentCount: stateData?.metrics.urgentTickets ?? 0,
           stabilityRiskCount: stateData?.metrics.stabilityRiskTickets ?? 0,
@@ -142,7 +142,7 @@ function InnerPipelineCanvas({
       {
         id: "node-entity",
         type: "entity",
-        position: { x: 100, y: 540 },
+        position: { x: 140, y: 480 },
         data: {
           processed: targetProcessed,
           total,
@@ -157,7 +157,7 @@ function InnerPipelineCanvas({
       {
         id: "node-cluster",
         type: "cluster",
-        position: { x: 740, y: 540 },
+        position: { x: 620, y: 480 },
         data: {
           themeCount: stateData?.metrics.totalThemes ?? 0,
           totalTickets: total,
@@ -174,7 +174,7 @@ function InnerPipelineCanvas({
       {
         id: "node-dossier",
         type: "dossier",
-        position: { x: 100, y: 1020 },
+        position: { x: 140, y: 900 },
         data: {
           dossierCount: stateData?.metrics.totalThemes ?? 0,
           totalTickets: total,

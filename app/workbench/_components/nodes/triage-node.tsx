@@ -72,7 +72,7 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
         </div>
       </div>
 
-      {/* 诉求分类条形分布 (520px 下两列展开) */}
+      {/* 诉求分类条形分布 */}
       <div className="pipeline-snippet-box">
         <div className="pipeline-snippet-title">
           <span className="flex items-center gap-1 text-slate-700">
@@ -84,18 +84,18 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
           </span>
         </div>
 
-        <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-2">
+        <div className="space-y-1.5 mt-2">
           {data.categoryStats.slice(0, 4).map((c, i) => {
             const pct = Math.round((c.count / totalCat) * 100);
             return (
               <div key={i} className="text-[11px]">
                 <div className="flex justify-between text-slate-600 mb-0.5">
-                  <span className="font-medium text-slate-700 truncate max-w-[150px]">{c.category}</span>
+                  <span className="font-medium text-slate-700 truncate max-w-[170px]">{c.category}</span>
                   <span className="font-mono text-[10px] text-slate-400">
                     {c.count}件 ({pct}%)
                   </span>
                 </div>
-                <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
                   <div
                     className="h-full rounded-full transition-all duration-300"
                     style={{

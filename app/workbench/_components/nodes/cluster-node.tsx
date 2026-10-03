@@ -82,7 +82,7 @@ export function ClusterNode({ data }: NodeProps<ClusterNodeType>) {
 
         {data.recentClusters && data.recentClusters.length > 0 ? (
           <div className="space-y-1.5 mt-2">
-            {data.recentClusters.slice(0, 3).map((c, i) => (
+            {data.recentClusters.slice(0, 2).map((c, i) => (
               <div key={i} className="flex items-center justify-between text-[11px] py-1 border-b border-slate-100 last:border-0">
                 <div className="flex items-center gap-1.5 min-w-0 pr-2">
                   {c.subdistrict && (
@@ -90,18 +90,13 @@ export function ClusterNode({ data }: NodeProps<ClusterNodeType>) {
                       {c.subdistrict}
                     </span>
                   )}
-                  <span className="font-semibold text-slate-800 truncate max-w-[280px]">
+                  <span className="font-semibold text-slate-800 truncate max-w-[170px]">
                     {c.title}
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  {c.category && (
-                    <span className="text-[9.5px] text-slate-400 hidden sm:inline">
-                      {c.category}
-                    </span>
-                  )}
                   <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-bold">
-                    {c.ticketCount} 件吸附
+                    {c.ticketCount} 件聚合
                   </span>
                 </div>
               </div>
