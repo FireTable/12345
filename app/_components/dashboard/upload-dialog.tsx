@@ -348,13 +348,17 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
     }
   };
 
-  // 阶段 2：启动 LangGraph Agent 智能聚类（基于后端真实 p-queue 进度轮询）
+  // 阶段 2：启动 LangGraph Agent 智能聚类（基于后端真实 p-queue 进度轮询并移交流水线控制台）
   const handleStartAgentClustering = async () => {
     const claimed = claimClusterTask(`task-cluster-${Date.now()}`);
     const taskId = claimed.taskId;
     const isOwner = claimed.claimed;
-    setStep("CLUSTERING");
+
+    // 立即关闭上传弹窗，将视觉舞台完全移交由背后的全流程流水线控制台接管
+    onClose();
     onClusteringChange?.(true);
+    toast.success("🚀 工单入库完毕，全流程研判流水线已自动开始运转！");
+    window.dispatchEvent(new CustomEvent("civic-data-refresh"));
 
     if (isOwner) {
       setTaskProgress({
@@ -387,8 +391,6 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
     if (!isOwner) {
       return;
     }
-
-    toast.info("研判已进入队列，刷新页面也会继续");
 
     try {
       const clusterRes = await fetch("/api/cluster", {
@@ -788,7 +790,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                 className="h-8 text-xs bg-primary text-primary-foreground hover:bg-primary/90 font-medium cursor-pointer"
               >
                 <Bot className="w-3.5 h-3.5 mr-1.5" />
-                启动 Agent 智能聚类研判
+                进入流水线全自动研判
               </Button>
             </>
           ) : step === "CLUSTERING" ? (
