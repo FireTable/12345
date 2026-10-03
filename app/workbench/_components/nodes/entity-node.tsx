@@ -25,11 +25,11 @@ export function EntityNode({ data }: NodeProps<EntityNodeType>) {
   return (
     <PipelineNodeShell
       stepNumber="03"
-      title="微观地点与主体研判台"
+      title="地点与主体提取"
       icon={<Cpu size={15} />}
       iconGradient="linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%)"
       status={data.status}
-      statusText={isActive ? "深度抽取中" : isCompleted ? "抽取对齐完毕" : "待命中"}
+      statusText={isActive ? "正在提取要素" : isCompleted ? "提取完成" : "等待处理"}
       hasTargetHandle={true}
       targetHandlePosition={Position.Left}
       targetHandleColor="#0958D9"
@@ -40,7 +40,7 @@ export function EntityNode({ data }: NodeProps<EntityNodeType>) {
       {/* 研判进度条 (纯净进度，不列出具体工单号) */}
       <div>
         <div className="flex items-center justify-between text-[11px] font-medium text-slate-600 mb-1">
-          <span className="text-slate-700 font-medium">实体要素抽取进度</span>
+          <span className="text-slate-700 font-medium">工单要素提取进度</span>
           <span className="font-mono text-slate-800 font-bold">
             {data.processed} / {data.total} ({data.percent}%)
           </span>
@@ -58,15 +58,15 @@ export function EntityNode({ data }: NodeProps<EntityNodeType>) {
         <div className="pipeline-snippet-title">
           <span className="flex items-center gap-1.5 text-purple-700 font-semibold">
             <Sparkles size={11} className="shrink-0" />
-            微观空间基底提炼 (AI消歧对齐)
+            核心要素提取结果
           </span>
           <div className="flex items-center gap-2">
             <span className="text-[10px] text-purple-600 bg-purple-50 px-1.5 py-0.2 rounded font-mono font-medium border border-purple-100">
-              置信度 98.4%
+              准确率 98%
             </span>
             {isCompleted && (
               <span className="flex items-center gap-0.5 text-[10px] text-emerald-600 font-bold">
-                <CheckCircle2 size={11} className="shrink-0" /> 全量对齐
+                <CheckCircle2 size={11} className="shrink-0" /> 已匹配标准库
               </span>
             )}
           </div>
@@ -76,7 +76,7 @@ export function EntityNode({ data }: NodeProps<EntityNodeType>) {
           {/* 1. 微观空间实体 */}
           <div className="flex items-start gap-1.5 text-slate-600">
             <MapPin size={12} className="text-purple-500 shrink-0 mt-0.5" />
-            <span className="text-slate-400 shrink-0">微观空间地点：</span>
+            <span className="text-slate-400 shrink-0">发生地点：</span>
             <span className="font-medium text-slate-800 truncate">
               {data.currentLocation || "伦教街道南苑中路一号润汉幸福汇小区"}
             </span>
@@ -85,7 +85,7 @@ export function EntityNode({ data }: NodeProps<EntityNodeType>) {
           {/* 2. 涉事责任主体 */}
           <div className="flex items-start gap-1.5 text-slate-600">
             <Building2 size={12} className="text-purple-500 shrink-0 mt-0.5" />
-            <span className="text-slate-400 shrink-0">涉事责任主体：</span>
+            <span className="text-slate-400 shrink-0">责任主体：</span>
             <span className="font-medium text-slate-800 truncate">
               {data.currentSubject || "沿街排档商户 / 物业责任方"}
             </span>
@@ -94,7 +94,7 @@ export function EntityNode({ data }: NodeProps<EntityNodeType>) {
           {/* 3. 诉求事件定性 */}
           <div className="flex items-start gap-1.5 text-slate-600">
             <Tag size={12} className="text-purple-500 shrink-0 mt-0.5" />
-            <span className="text-slate-400 shrink-0">诉求事件类型：</span>
+            <span className="text-slate-400 shrink-0">问题类型：</span>
             <span className="font-medium text-slate-800 truncate">
               {data.currentEventType || "噪声扰民 / 物业失管"}
             </span>

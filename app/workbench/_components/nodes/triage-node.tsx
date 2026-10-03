@@ -43,11 +43,11 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
   return (
     <PipelineNodeShell
       stepNumber="02"
-      title="要素初筛与涉稳分流站"
+      title="分类初筛与分流"
       icon={<Zap size={15} />}
       iconGradient="linear-gradient(135deg, #0958D9 0%, #003EB3 100%)"
       status={data.status}
-      statusText={isActive ? "毫秒级定性中" : isCompleted ? "定性完成" : "待命中"}
+      statusText={isActive ? "正在分流处理" : isCompleted ? "初筛完成" : "等待处理"}
       hasTargetHandle={true}
       targetHandlePosition={Position.Left}
       targetHandleColor="#1677FF"
@@ -61,17 +61,17 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
           <div className="text-[10px] text-red-700 flex items-center justify-between font-medium">
             <span className="flex items-center gap-1">
               <ShieldAlert size={12} className="text-red-500 shrink-0" />
-              涉稳隐患排查
+              涉稳风险工单
             </span>
             {data.stabilityRiskCount > 0 && (
               <span className="text-[9px] px-1 rounded bg-red-200 text-red-800 font-bold animate-pulse">
-                重点监控
+                需重点关注
               </span>
             )}
           </div>
           <div className="text-lg font-bold font-mono text-red-900 mt-1">
             {data.stabilityRiskCount}
-            <span className="text-[11px] font-normal text-slate-500 ml-1">件 (自动安保报送)</span>
+            <span className="text-[11px] font-normal text-slate-500 ml-1">件 (重点跟进)</span>
           </div>
         </div>
 
@@ -79,10 +79,10 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
           <div className="text-[10px] text-amber-800 flex items-center justify-between font-medium">
             <span className="flex items-center gap-1">
               <AlertTriangle size={12} className="text-amber-500 shrink-0" />
-              特急诉求催办
+              加急催办工单
             </span>
             <span className="text-[9px] px-1 rounded bg-amber-200/80 text-amber-800 font-bold">
-              2h 催办响应
+              2小时内响应
             </span>
           </div>
           <div className="text-lg font-bold font-mono text-amber-900 mt-1">
@@ -97,10 +97,10 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
         <div className="pipeline-snippet-title">
           <span className="flex items-center gap-1 text-slate-700 font-semibold">
             <PieChart size={11} className="shrink-0 text-blue-500" />
-            民生诉求分类分布 (饼图总览)
+            诉求业务分类分布
           </span>
           <span className="text-[10px] text-slate-400 font-mono">
-            {data.categoryStats.length} 类业务
+            共 {data.categoryStats.length} 个分类
           </span>
         </div>
 
@@ -137,15 +137,15 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
           <div className="py-4 text-center text-xs text-slate-400">暂无诉求分类数据</div>
         )}
 
-        {/* 属地镇街初筛选 (统一获取与着色，未知统一用"未知") */}
+        {/* 所属镇街分布 */}
         <div className="mt-2.5 pt-2 border-t border-slate-200/70">
           <div className="flex items-center justify-between text-[10.5px] font-semibold text-slate-700 mb-1.5">
             <span className="flex items-center gap-1">
               <MapPin size={11} className="text-indigo-500 shrink-0" />
-              属地镇街初筛选 (System-One)
+              所属镇街分布
             </span>
             <span className="text-[10px] text-slate-400 font-mono">
-              {townships.length} 镇街覆盖
+              覆盖 {townships.length} 个镇街
             </span>
           </div>
           <div className="flex flex-wrap gap-1">

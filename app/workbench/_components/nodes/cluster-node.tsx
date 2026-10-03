@@ -34,11 +34,11 @@ export function ClusterNode({ data }: NodeProps<ClusterNodeType>) {
   return (
     <PipelineNodeShell
       stepNumber="04"
-      title="同类事件与网格聚类"
+      title="同类问题聚合分析"
       icon={<Network size={15} />}
       iconGradient="linear-gradient(135deg, #2563EB 0%, #0891B2 100%)"
       status={data.status}
-      statusText={isActive ? "时空吸附中" : isCompleted ? "聚类成组" : "待命中"}
+      statusText={isActive ? "正在聚合归类" : isCompleted ? "聚合完成" : "等待分析"}
       hasTargetHandle={true}
       targetHandlePosition={Position.Top}
       targetHandleColor="#7C3AED"
@@ -51,32 +51,32 @@ export function ClusterNode({ data }: NodeProps<ClusterNodeType>) {
         <div>
           <div className="pipeline-metric-label flex items-center gap-1">
             <FolderKanban size={11} className="text-blue-600 shrink-0" />
-            已归集多频群组
+            聚合问题专题
           </div>
           <div className="pipeline-metric-value text-blue-600 mt-1">
-            {data.themeCount} <span className="text-xs font-normal text-slate-500">组专题</span>
+            {data.themeCount} <span className="text-xs font-normal text-slate-500">个专题</span>
           </div>
         </div>
         <div>
           <div className="pipeline-metric-label flex items-center gap-1">
             <TrendingUp size={11} className="text-emerald-600 shrink-0" />
-            时空矛盾收敛率
+            工单归集率
           </div>
           <div className="pipeline-metric-value text-emerald-600 mt-1">
-            {compressionRatio}% <span className="text-xs font-normal text-slate-400">({data.totalTickets} ➔ {data.themeCount})</span>
+            {compressionRatio}% <span className="text-xs font-normal text-slate-400">({data.totalTickets} ➔ {data.themeCount} 组)</span>
           </div>
         </div>
       </div>
 
-      {/* 最新生成的多频主题展示 (520px 下宽裕平铺) */}
+      {/* 最新生成的多频主题展示 */}
       <div className="pipeline-snippet-box">
         <div className="pipeline-snippet-title">
           <span className="flex items-center gap-1.5 text-cyan-800">
             <Compass size={11} className="shrink-0 text-cyan-600" />
-            最新聚合民生矛盾专题
+            最新聚合问题专题
           </span>
           <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-100 text-cyan-800 font-bold">
-            多维时空拓扑绑定
+            自动相似归集
           </span>
         </div>
 
@@ -96,7 +96,7 @@ export function ClusterNode({ data }: NodeProps<ClusterNodeType>) {
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-bold">
-                    {c.ticketCount} 件聚合
+                    包含 {c.ticketCount} 条工单
                   </span>
                 </div>
               </div>
@@ -104,7 +104,7 @@ export function ClusterNode({ data }: NodeProps<ClusterNodeType>) {
           </div>
         ) : (
           <div className="text-[11px] text-slate-400 mt-2">
-            暂未聚合成组，待工单抽取完毕后自动交叉合并。
+            暂无聚合专题，工单要素提取完成后将自动合并归类。
           </div>
         )}
       </div>

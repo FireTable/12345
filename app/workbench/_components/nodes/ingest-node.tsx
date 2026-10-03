@@ -67,11 +67,11 @@ export function IngestNode({ data }: NodeProps<IngestNodeType>) {
   return (
     <PipelineNodeShell
       stepNumber="01"
-      title="诉求受理与接入台"
+      title="工单接收与导入"
       icon={<Inbox size={15} />}
       iconGradient="linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)"
       status={data.status}
-      statusText={uploading ? "正在入库" : isActive ? "持续接入" : isAllReady ? "入库就绪" : "待命中"}
+      statusText={uploading ? "正在导入" : isActive ? "接收处理中" : isAllReady ? "导入完成" : "等待导入"}
       hasTargetHandle={false}
       hasSourceHandle={true}
       sourceHandleColor="#1677FF"
@@ -80,11 +80,11 @@ export function IngestNode({ data }: NodeProps<IngestNodeType>) {
       {/* 指标看板 */}
       <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
         <div>
-          <div className="pipeline-metric-label">辖区在库总量</div>
+          <div className="pipeline-metric-label">工单总数</div>
           <div className="pipeline-metric-value text-blue-600 mt-1">{data.totalTickets}</div>
         </div>
         <div>
-          <div className="pipeline-metric-label">待研判积压</div>
+          <div className="pipeline-metric-label">待处理工单</div>
           <div className={`pipeline-metric-value mt-1 ${data.unprocessedTickets > 0 ? "text-amber-600" : "text-emerald-600"}`}>
             {data.unprocessedTickets}
           </div>
@@ -118,18 +118,18 @@ export function IngestNode({ data }: NodeProps<IngestNodeType>) {
       >
         <div className="flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-700">
           <Upload size={13} className="text-blue-600" />
-          <span>{uploading ? "正在解析导入..." : "拖入表格或点击追加工单"}</span>
+          <span>{uploading ? "正在解析导入..." : "拖入表格或点击选择文件"}</span>
         </div>
-        <div className="text-[10px] text-slate-400 mt-0.5">支持 .xlsx / .xls / .csv 批量入库</div>
+        <div className="text-[10px] text-slate-400 mt-0.5">支持 .xlsx / .xls / .csv 格式批量导入</div>
       </div>
 
-      {/* 最新入库诉求滚动预览 */}
+      {/* 最新导入工单预览 */}
       {data.recentTickets && data.recentTickets.length > 0 && (
         <div className="pipeline-snippet-box">
           <div className="pipeline-snippet-title">
             <span className="flex items-center gap-1.5 text-slate-700">
               <Clock size={11} className="shrink-0 text-blue-500" />
-              最新接入流水
+              最新导入工单
               {data.recentTickets[0]?.subdistrict && (
                 <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-200 text-slate-600 font-medium">
                   {data.recentTickets[0].subdistrict}

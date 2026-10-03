@@ -240,7 +240,7 @@ function InnerPipelineCanvas({
         data: {
           active: isRunning,
           completed: isCompleted,
-          label: "要素过滤",
+          label: "初筛分流",
         },
       },
       {
@@ -252,7 +252,7 @@ function InnerPipelineCanvas({
         data: {
           active: isRunning,
           completed: isCompleted,
-          label: "主体提炼",
+          label: "要素提取",
         },
       },
       {
@@ -264,7 +264,7 @@ function InnerPipelineCanvas({
         data: {
           active: isRunning,
           completed: isCompleted,
-          label: "时空聚类",
+          label: "同类归并",
         },
       },
       {
@@ -276,7 +276,7 @@ function InnerPipelineCanvas({
         data: {
           active: isRunning,
           completed: isCompleted,
-          label: "成卷建档",
+          label: "生成案卷",
         },
       },
     ];
