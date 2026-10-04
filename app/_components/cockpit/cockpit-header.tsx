@@ -13,7 +13,67 @@ import {
 } from "lucide-react";
 import type { RegionInfo } from "../civic/region-context";
 
-interface CockpitHeaderProps {
+/**
+ * 科技翼展式大屏无 Header 顶部中枢组件
+ * 彻底告别传统网页卡片式 Header，采用无边框悬浮流光翼展底座 + 两侧半透明微胶囊操控坞
+ */
+
+export function CockpitTitleCrown({ title }: { title: string }) {
+  return (
+    <div className="relative flex flex-col items-center pointer-events-none select-none z-30">
+      {/* 科技翼展流光 SVG 底座 */}
+      <svg
+        width="680"
+        height="46"
+        viewBox="0 0 680 46"
+        fill="none"
+        className="drop-shadow-[0_4px_20px_rgba(0,242,254,0.35)]"
+      >
+        <path
+          d="M0 0 L170 0 L215 36 L465 36 L510 0 L680 0"
+          stroke="url(#wingGrad)"
+          strokeWidth="1.8"
+          fill="url(#wingFill)"
+          opacity="0.9"
+        />
+        <path
+          d="M190 42 L230 42 L450 42 L490 42"
+          stroke="#00f2fe"
+          strokeWidth="2"
+          strokeDasharray="6 4"
+          opacity="0.75"
+        />
+        <circle cx="215" cy="36" r="3" fill="#00f2fe" />
+        <circle cx="465" cy="36" r="3" fill="#00f2fe" />
+        <defs>
+          <linearGradient id="wingGrad" x1="0" y1="0" x2="680" y2="0" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#00f2fe" stopOpacity="0" />
+            <stop offset="25%" stopColor="#1e5aff" stopOpacity="0.85" />
+            <stop offset="50%" stopColor="#00f2fe" stopOpacity="1" />
+            <stop offset="75%" stopColor="#1e5aff" stopOpacity="0.85" />
+            <stop offset="100%" stopColor="#00f2fe" stopOpacity="0" />
+          </linearGradient>
+          <linearGradient id="wingFill" x1="340" y1="0" x2="340" y2="46" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#030818" stopOpacity="0.88" />
+            <stop offset="100%" stopColor="#06193d" stopOpacity="0.35" />
+          </linearGradient>
+        </defs>
+      </svg>
+
+      {/* 居中标题与副标 */}
+      <div className="absolute top-1 flex flex-col items-center">
+        <h1 className="text-xl md:text-2xl font-black tracking-[0.22em] bg-gradient-to-b from-white via-cyan-100 to-cyan-300 bg-clip-text text-transparent drop-shadow-[0_0_16px_rgba(0,242,254,0.5)]">
+          {title} · 智能研判全景指挥大屏
+        </h1>
+        <span className="text-[9px] font-mono tracking-[0.32em] text-cyan-400/80 uppercase -mt-0.5">
+          12345 CIVIC INTELLIGENCE DISPATCH COCKPIT
+        </span>
+      </div>
+    </div>
+  );
+}
+
+interface CockpitTopControlsProps {
   activeRegion: RegionInfo | null;
   regions: RegionInfo[];
   onSelectRegion: (id: string) => void;
@@ -26,7 +86,7 @@ interface CockpitHeaderProps {
   onToggleFullscreen: () => void;
 }
 
-export function CockpitHeader({
+export function CockpitTopControls({
   activeRegion,
   regions,
   onSelectRegion,
@@ -37,7 +97,7 @@ export function CockpitHeader({
   onClose,
   isFullscreen,
   onToggleFullscreen,
-}: CockpitHeaderProps) {
+}: CockpitTopControlsProps) {
   const [currentTime, setCurrentTime] = useState<string>("");
   const [showRegionMenu, setShowRegionMenu] = useState(false);
 
@@ -55,28 +115,22 @@ export function CockpitHeader({
   }, []);
 
   return (
-    <header className="relative w-full h-[64px] px-5 flex items-center justify-between rounded-2xl border border-cyan-500/25 bg-[#051129]/85 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.6)] select-none z-30 pointer-events-auto">
-      {/* 顶部中央科幻光条 */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2/5 h-[2px] bg-gradient-to-r from-transparent via-cyan-400 to-transparent opacity-80 shadow-[0_0_12px_#00f2fe]" />
-
-      {/* 左侧：时钟、站点切换 */}
-      <div className="flex items-center gap-3 text-xs font-mono text-cyan-300">
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-cyan-950/60 border border-cyan-500/40 text-cyan-200 shadow-inner">
+    <>
+      {/* 左上角悬浮胶囊：时钟 + 辖区切换 */}
+      <div className="absolute top-3.5 left-4 z-40 flex items-center gap-2 pointer-events-auto">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#051129]/80 border border-cyan-500/30 text-cyan-200 shadow-[0_4px_20px_rgba(0,0,0,0.5)] backdrop-blur-xl text-xs font-mono">
           <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping inline-block" />
           <span className="tracking-wider font-semibold">{currentTime || "2026-10-04 17:00:00"}</span>
         </div>
 
-        {/* 站点快速切换器 */}
         <div className="relative">
           <button
             type="button"
             onClick={() => setShowRegionMenu(!showRegionMenu)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-950/70 border border-blue-500/40 text-blue-200 hover:text-white hover:border-cyan-400 transition-all cursor-pointer shadow-sm"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#051129]/80 border border-blue-500/40 text-blue-200 hover:text-white hover:border-cyan-400 transition-all cursor-pointer shadow-[0_4px_20px_rgba(0,0,0,0.5)] backdrop-blur-xl text-xs font-medium"
           >
             <MapPin size={13} className="text-cyan-400" />
-            <span className="font-sans font-medium text-xs">
-              {activeRegion ? `${activeRegion.city} · ${activeRegion.name}` : "选择辖区"}
-            </span>
+            <span>{activeRegion ? `${activeRegion.city} · ${activeRegion.name}` : "选择辖区"}</span>
             <ChevronDown size={12} className="text-slate-400" />
           </button>
 
@@ -106,38 +160,17 @@ export function CockpitHeader({
             </div>
           )}
         </div>
-
-        <div className="hidden xl:flex items-center gap-1.5 text-[11px] text-slate-300">
-          <ShieldCheck size={13} className="text-emerald-400" />
-          <span>双引擎智能协同</span>
-          <span className="text-cyan-500/40">|</span>
-          <span className="text-emerald-400 font-medium">全域态势实时研判中</span>
-        </div>
       </div>
 
-      {/* 中央：主标题 */}
-      <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none">
-        <div className="flex items-center gap-3">
-          <span className="text-cyan-400 font-mono text-xs opacity-70">◀◀</span>
-          <h1 className="text-lg md:text-xl font-black tracking-widest bg-gradient-to-b from-white via-cyan-100 to-cyan-300 bg-clip-text text-transparent drop-shadow-[0_0_12px_rgba(0,242,254,0.4)]">
-            {activeRegion ? `${activeRegion.name}` : "政务服务便民热线"} · 智能研判全景指挥大屏
-          </h1>
-          <span className="text-cyan-400 font-mono text-xs opacity-70">▶▶</span>
-        </div>
-        <span className="text-[9px] text-cyan-400/70 font-mono tracking-[0.25em] uppercase">
-          CIVIC INTELLIGENCE DISPATCH COCKPIT
-        </span>
-      </div>
-
-      {/* 右侧：实时轮询、刷新、全屏、退出 */}
-      <div className="flex items-center gap-2">
+      {/* 右上角悬浮胶囊：轮询 + 刷新 + 全屏 + 退出 (带ESC说明) */}
+      <div className="absolute top-3.5 right-4 z-40 flex items-center gap-2 pointer-events-auto">
         <button
           type="button"
           onClick={onTogglePolling}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all cursor-pointer ${
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all cursor-pointer backdrop-blur-xl shadow-[0_4px_20px_rgba(0,0,0,0.5)] ${
             isPolling
-              ? "bg-emerald-950/50 border-emerald-500/40 text-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.25)]"
-              : "bg-slate-900/60 border-slate-700 text-slate-400"
+              ? "bg-emerald-950/60 border-emerald-500/40 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.3)]"
+              : "bg-[#051129]/80 border-slate-700 text-slate-400"
           }`}
           title={isPolling ? "实时流自动轮询中 (25s)" : "已暂停自动轮询"}
         >
@@ -149,31 +182,35 @@ export function CockpitHeader({
           type="button"
           onClick={onRefresh}
           disabled={isRefreshing}
-          className="p-2 rounded-xl bg-blue-950/60 border border-blue-500/40 text-cyan-300 hover:text-white hover:border-cyan-400 transition-all cursor-pointer disabled:opacity-50"
+          className="p-1.5 px-2 rounded-full bg-[#051129]/80 border border-blue-500/40 text-cyan-300 hover:text-white hover:border-cyan-400 transition-all cursor-pointer disabled:opacity-50 backdrop-blur-xl shadow-[0_4px_20px_rgba(0,0,0,0.5)]"
           title="强制刷新全域数据"
         >
-          <RotateCw size={14} className={isRefreshing ? "animate-spin text-cyan-400" : ""} />
+          <RotateCw size={13} className={isRefreshing ? "animate-spin text-cyan-400" : ""} />
         </button>
 
         <button
           type="button"
           onClick={onToggleFullscreen}
-          className="p-2 rounded-xl bg-blue-950/60 border border-blue-500/40 text-cyan-300 hover:text-white hover:border-cyan-400 transition-all cursor-pointer"
+          className="p-1.5 px-2 rounded-full bg-[#051129]/80 border border-blue-500/40 text-cyan-300 hover:text-white hover:border-cyan-400 transition-all cursor-pointer backdrop-blur-xl shadow-[0_4px_20px_rgba(0,0,0,0.5)]"
           title={isFullscreen ? "退出全屏" : "进入全屏"}
         >
-          {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+          {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
         </button>
 
+        {/* 退出大屏按钮 (带 ESC 二次退出提示) */}
         <button
           type="button"
           onClick={onClose}
-          className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-950/50 border border-rose-500/40 text-rose-300 hover:bg-rose-900/60 hover:text-white transition-all cursor-pointer text-xs font-medium shadow-sm"
-          title="退出大屏返回数据总览"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-rose-950/70 border border-rose-500/40 text-rose-300 hover:bg-rose-900/80 hover:text-white transition-all cursor-pointer text-xs font-medium shadow-[0_4px_20px_rgba(0,0,0,0.5)] backdrop-blur-xl"
+          title="退出大屏返回数据总览 (快捷键: 连续按两次 ESC)"
         >
-          <X size={14} />
+          <X size={13} />
           <span>退出</span>
+          <kbd className="hidden sm:inline-block px-1.5 py-0.2 rounded bg-black/40 border border-rose-500/30 font-mono text-[9px] text-rose-300/80">
+            ESC
+          </kbd>
         </button>
       </div>
-    </header>
+    </>
   );
 }
