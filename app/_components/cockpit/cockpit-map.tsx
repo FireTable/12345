@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import type { Map as LeafletMap, GeoJSON as LeafletGeoJSON, Layer } from "leaflet";
-import { ZoomIn, ZoomOut, Crosshair, MapPin } from "lucide-react";
+import { MapPin } from "lucide-react";
 import { getTownshipColor } from "@/lib/civic-cluster";
 import type { RegionInfo } from "../civic/region-context";
 
@@ -315,43 +315,6 @@ export function CockpitMap({
       {/* 地图真实挂载 DOM (全屏全景呈现，带暗夜滤镜类名) */}
       <div ref={mapContainerRef} className="w-full h-full z-0 cockpit-dark-map" />
 
-      {/* 悬浮全屏地图控制按钮群 */}
-      <div className="absolute bottom-6 right-[420px] z-20 flex items-center gap-1.5 p-1 rounded-xl bg-[#051433]/85 border border-[#1677FF]/40 backdrop-blur-md shadow-2xl">
-        <button
-          type="button"
-          onClick={() => mapInstance?.zoomIn()}
-          className="p-2 rounded-lg text-blue-200 hover:text-white hover:bg-blue-900/50 transition-all cursor-pointer"
-          title="放大地图"
-        >
-          <ZoomIn size={14} />
-        </button>
-        <button
-          type="button"
-          onClick={() => mapInstance?.zoomOut()}
-          className="p-2 rounded-lg text-blue-200 hover:text-white hover:bg-blue-900/50 transition-all cursor-pointer"
-          title="缩小地图"
-        >
-          <ZoomOut size={14} />
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            if (geojsonLayerRef.current && mapInstance) {
-              const bounds = geojsonLayerRef.current.getBounds();
-              if (bounds.isValid()) {
-                mapInstance.fitBounds(bounds, {
-                  paddingTopLeft: [420, 140],
-                  paddingBottomRight: [420, 180],
-                });
-              }
-            }
-          }}
-          className="p-2 rounded-lg text-blue-200 hover:text-white hover:bg-blue-900/50 transition-all cursor-pointer"
-          title="居中重置视野"
-        >
-          <Crosshair size={14} />
-        </button>
-      </div>
 
       {loading && (
         <div className="absolute inset-0 bg-[#020612]/70 backdrop-blur-xs flex items-center justify-center z-30">

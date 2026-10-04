@@ -134,9 +134,9 @@ export function CockpitView({ onClose }: CockpitViewProps) {
             </div>
           </section>
 
-          {/* 中间开阔视区：展示底层 GIS 数字孪生地图交互，底部轻量悬浮工单时序走势 */}
-          <div className="flex-1 h-full flex flex-col justify-end items-center px-4 pointer-events-none pb-0.5">
-            <div className="w-full max-w-3xl xl:max-w-4xl h-[170px] pointer-events-auto">
+          {/* 中间开阔视区：展示底层 GIS 数字孪生地图交互，底部贯通悬浮工单时序走势 (去除两边多余 gap) */}
+          <div className="flex-1 h-full flex flex-col justify-end pointer-events-none pb-0.5 min-w-0">
+            <div className="w-full h-[170px] pointer-events-auto">
               <CockpitTrendChart
                 daily={cockpit.trendDaily}
                 clusters={cockpit.trendClusters}
