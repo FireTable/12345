@@ -19,8 +19,8 @@ export function CockpitTownshipRank({
   const maxCount = stats.length > 0 ? stats[0].count : 1;
 
   return (
-    <div className="w-full h-full flex flex-col rounded-2xl border border-[#1677FF]/25 bg-[#051433]/85 backdrop-blur-xl overflow-hidden p-4 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
-      <div className="flex items-center justify-between pb-2.5 border-b border-[#1677FF]/20 shrink-0">
+    <div className="cockpit-glass-card w-full h-full flex flex-col rounded-2xl p-4">
+      <div className="cockpit-glass-header flex items-center justify-between pb-2.5 shrink-0">
         <div className="flex items-center gap-2">
           <BarChart3 size={15} className="text-[#4096ff]" />
           <h3 className="text-xs font-semibold text-slate-100 tracking-wider">
@@ -54,7 +54,7 @@ export function CockpitTownshipRank({
                 className={`p-2 rounded-xl border transition-all cursor-pointer ${
                   isSelected
                     ? "bg-blue-950/70 border-white shadow-[0_0_16px_rgba(255,255,255,0.4)]"
-                    : "bg-[#091f48]/40 border-[#1677FF]/15 hover:border-[#1677FF]/50 hover:bg-[#0c285e]/60"
+                    : "cockpit-glass-subcard hover:bg-[#0c285e]/50"
                 }`}
               >
                 <div className="flex items-center justify-between text-xs mb-1.5">

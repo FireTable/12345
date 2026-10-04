@@ -20,8 +20,8 @@ export function CockpitStream({ tickets, selectedTownship }: CockpitStreamProps)
   const displayList = filtered.slice(0, 15);
 
   return (
-    <div className="relative w-full h-full flex flex-col rounded-2xl border border-[#1677FF]/25 bg-[#051433]/85 backdrop-blur-xl overflow-hidden p-4 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
-      <div className="flex items-center justify-between pb-2.5 border-b border-[#1677FF]/20 shrink-0">
+    <div className="cockpit-glass-card relative w-full h-full flex flex-col rounded-2xl p-4">
+      <div className="cockpit-glass-header flex items-center justify-between pb-2.5 shrink-0">
         <div className="flex items-center gap-2">
           <Activity size={15} className="text-[#4096ff] animate-pulse" />
           <h3 className="text-xs font-semibold text-slate-100 tracking-wider">
@@ -61,7 +61,7 @@ export function CockpitStream({ tickets, selectedTownship }: CockpitStreamProps)
                 className={`p-2 rounded-xl border transition-all cursor-pointer ${
                   ticket.isUrgent
                     ? "bg-rose-950/30 border-rose-500/40 hover:border-rose-400"
-                    : "bg-[#091f48]/40 border-[#1677FF]/15 hover:border-[#1677FF]/50 hover:bg-[#0c285e]/60"
+                    : "cockpit-glass-subcard hover:bg-[#0c285e]/50"
                 }`}
               >
                 <div className="flex items-center justify-between text-[11px] mb-1">

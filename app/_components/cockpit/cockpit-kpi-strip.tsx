@@ -56,6 +56,13 @@ export function CockpitKpiStrip({ kpi }: CockpitKpiStripProps) {
     },
   ];
 
+  const variantClasses = [
+    "",
+    "cockpit-glass-card--emerald",
+    "cockpit-glass-card--purple",
+    "cockpit-glass-card--danger",
+  ];
+
   return (
     <div className="w-full grid grid-cols-2 md:grid-cols-4 gap-3">
       {cards.map((card, idx) => {
@@ -63,7 +70,7 @@ export function CockpitKpiStrip({ kpi }: CockpitKpiStripProps) {
         return (
           <div
             key={idx}
-            className={`relative p-3 rounded-2xl border ${card.borderColor} bg-[#051433]/85 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.6)] group hover:border-[#1677FF]/80 transition-all`}
+            className={`cockpit-glass-card ${variantClasses[idx] || ""} relative p-3 rounded-2xl group transition-all`}
           >
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-slate-200 tracking-wider">

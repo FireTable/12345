@@ -77,22 +77,6 @@ export function CockpitView({ onClose }: CockpitViewProps) {
 
   return (
     <div className="fixed inset-0 z-[9999] w-screen h-screen bg-[#020612] text-slate-100 overflow-hidden select-none animate-in fade-in duration-300">
-      <style jsx global>{`
-        .custom-cockpit-scrollbar::-webkit-scrollbar {
-          width: 4px;
-        }
-        .custom-cockpit-scrollbar::-webkit-scrollbar-track {
-          background: rgba(22, 119, 255, 0.05);
-          border-radius: 4px;
-        }
-        .custom-cockpit-scrollbar::-webkit-scrollbar-thumb {
-          background: rgba(22, 119, 255, 0.35);
-          border-radius: 4px;
-        }
-        .custom-cockpit-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: rgba(22, 119, 255, 0.6);
-        }
-      `}</style>
 
       {/* 1. 核心底图：全屏贯通数字孪生 GIS 底图 (覆盖整个视口) */}
       <CockpitMap

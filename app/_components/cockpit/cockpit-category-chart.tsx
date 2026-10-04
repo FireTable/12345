@@ -112,8 +112,8 @@ export function CockpitCategoryChart({ data }: CockpitCategoryChartProps) {
   const hasData = Object.keys(data).length > 0;
 
   return (
-    <div className="w-full h-full flex flex-col rounded-2xl border border-[#1677FF]/25 bg-[#051433]/85 backdrop-blur-xl overflow-hidden p-4 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
-      <div className="flex items-center justify-between pb-1.5 border-b border-[#1677FF]/20 shrink-0">
+    <div className="cockpit-glass-card w-full h-full flex flex-col rounded-2xl p-4">
+      <div className="cockpit-glass-header flex items-center justify-between pb-2 shrink-0">
         <div className="flex items-center gap-2">
           <PieIcon size={15} className="text-[#4096ff]" />
           <h3 className="text-xs font-semibold text-slate-100 tracking-wider">
