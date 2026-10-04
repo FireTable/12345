@@ -122,13 +122,9 @@ export default function DashboardPage() {
           <button
             type="button"
             onClick={() => setShowCockpit(true)}
-            className="group relative inline-flex items-center gap-1.5 h-[34px] px-3 rounded-lg text-xs font-semibold text-[#1677FF] bg-blue-50/90 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/70 border border-blue-200 dark:border-blue-500/40 shadow-xs hover:shadow-blue-500/20 transition-all cursor-pointer"
+            className="group inline-flex items-center gap-1.5 h-[34px] px-3 rounded-lg text-xs font-semibold text-[#1677FF] bg-blue-50/90 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/70 border border-blue-200 dark:border-blue-500/40 shadow-2xs hover:shadow-xs transition-all cursor-pointer"
             title="展开政企科技数据大屏 (全域态势调度驾驶舱)"
           >
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#1677FF] opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#1677FF]" />
-            </span>
             <MonitorPlay
               size={13}
               className="text-[#1677FF] group-hover:scale-110 transition-transform"
