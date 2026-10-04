@@ -66,8 +66,13 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
   const handleFileSelect = (selectedFile: File) => {
     if (!selectedFile) return;
     const name = selectedFile.name.toLowerCase();
-    if (!name.endsWith(".xlsx") && !name.endsWith(".xls") && !name.endsWith(".csv")) {
-      toast.error("请上传 .xlsx, .xls 或 .csv 格式的工单文件");
+    if (
+      !name.endsWith(".xlsx") &&
+      !name.endsWith(".xls") &&
+      !name.endsWith(".csv") &&
+      !name.endsWith(".zip")
+    ) {
+      toast.error("请上传 .xlsx, .xls, .csv 或 .zip 格式的工单文件");
       return;
     }
     setFile(selectedFile);
@@ -294,7 +299,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                           <input
                             ref={fileInputRef}
                             type="file"
-                            accept=".xlsx, .xls, .csv"
+                            accept=".xlsx, .xls, .csv, .zip"
                             className="hidden"
                             onChange={(e) => {
                               if (e.target.files && e.target.files[0]) {
@@ -309,7 +314,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                             点击上传或将工单表格文件拖拽至此
                           </p>
                           <p className="text-[11px] text-muted-foreground mt-1">
-                            支持 Excel (.xlsx, .xls) 与 CSV (.csv) 格式
+                            支持 Excel (.xlsx, .xls)、CSV (.csv) 或数据压缩包 (.zip)
                           </p>
                         </div>
                       ) : (

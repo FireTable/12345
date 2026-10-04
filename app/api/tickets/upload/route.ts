@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { Readable } from "node:stream";
 import busboy from "busboy";
+import AdmZip from "adm-zip";
 import * as XLSX from "xlsx";
 import Papa from "papaparse";
 import { buildRecordsFromRows, insertRecordsBatch } from "@/lib/ticket-ingest";
@@ -42,6 +43,8 @@ async function extractUploadedFile(req: NextRequest): Promise<UploadedPayload | 
     contentType.includes("text/csv") ||
     contentType.includes("application/vnd.openxmlformats-officedocument") ||
     contentType.includes("application/vnd.ms-excel") ||
+    contentType.includes("application/zip") ||
+    contentType.includes("application/x-zip-compressed") ||
     !contentType.includes("multipart/form-data")
   ) {
     const rawHeader =
@@ -127,6 +130,134 @@ async function extractUploadedFile(req: NextRequest): Promise<UploadedPayload | 
   }
 }
 
+function parseCsvBuffer(buffer: Buffer): Record<string, any>[] {
+  let text = "";
+  try {
+    const utf8Decoder = new TextDecoder("utf-8", { fatal: true });
+    text = utf8Decoder.decode(buffer);
+  } catch {
+    // Fallback to GB18030 for Chinese government 12345 hotline CSV exports
+    try {
+      const gbkDecoder = new TextDecoder("gb18030");
+      text = gbkDecoder.decode(buffer);
+    } catch {
+      text = buffer.toString("utf-8");
+    }
+  }
+
+  const parsed = Papa.parse<Record<string, any>>(text, {
+    header: true,
+    skipEmptyLines: true,
+  });
+  return parsed.data || [];
+}
+
+function parseSingleDataBuffer(buffer: Buffer, fileName: string): Record<string, any>[] {
+  const lowerName = fileName.toLowerCase();
+
+  // If CSV
+  if (lowerName.endsWith(".csv")) {
+    return parseCsvBuffer(buffer);
+  }
+
+  // Try XLSX
+  try {
+    const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
+    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+    return XLSX.utils.sheet_to_json<Record<string, any>>(firstSheet, { defval: "" });
+  } catch (xlsxErr: any) {
+    console.warn(`[upload/route] XLSX.read failed for "${fileName}", trying CSV fallback:`, xlsxErr?.message);
+    try {
+      const csvRows = parseCsvBuffer(buffer);
+      if (csvRows.length > 0 && Object.keys(csvRows[0] || {}).length > 1) {
+        return csvRows;
+      }
+    } catch {
+      // ignore
+    }
+    throw xlsxErr;
+  }
+}
+
+function parseUploadedBuffer(buffer: Buffer, fileName: string): Record<string, any>[] {
+  const isZip =
+    buffer.length >= 4 &&
+    buffer[0] === 0x50 &&
+    buffer[1] === 0x4b &&
+    buffer[2] === 0x03 &&
+    buffer[3] === 0x04;
+
+  if (isZip) {
+    try {
+      const zip = new AdmZip(buffer);
+      const entries = zip.getEntries();
+
+      // Check if this is a direct XLSX file (has [Content_Types].xml or xl/workbook.xml)
+      const isDirectXlsx = entries.some((e) => {
+        const n = e.entryName.toLowerCase();
+        return n === "[content_types].xml" || n === "xl/workbook.xml";
+      });
+
+      if (isDirectXlsx) {
+        try {
+          return parseSingleDataBuffer(buffer, fileName.endsWith(".xlsx") ? fileName : `${fileName}.xlsx`);
+        } catch (directErr: any) {
+          console.warn("[upload/route] Direct XLSX read failed, attempting re-packed buffer:", directErr?.message);
+          try {
+            // Re-pack clean buffer using AdmZip to resolve ZIP64 or alignment issues
+            const cleanBuf = zip.toBuffer();
+            return parseSingleDataBuffer(cleanBuf, "clean.xlsx");
+          } catch (repackErr: any) {
+            console.warn("[upload/route] Repack parse also failed:", repackErr?.message);
+          }
+        }
+      }
+
+      // If it's a ZIP archive containing files (e.g. data.csv, data.xlsx, or folders inside the zip):
+      console.log(`[upload/route] Inspecting ZIP archive "${fileName}" (${entries.length} entries)...`);
+      const validEntries = entries.filter((e) => {
+        if (e.isDirectory) return false;
+        const name = e.entryName.toLowerCase();
+        if (name.includes("__macosx") || e.name.startsWith(".")) return false;
+        return name.endsWith(".csv") || name.endsWith(".xlsx") || name.endsWith(".xls");
+      });
+
+      if (validEntries.length > 0) {
+        let allRows: Record<string, any>[] = [];
+        for (const entry of validEntries) {
+          console.log(`[upload/route] Unpacking internal entry: ${entry.entryName} (${entry.header.size} bytes)`);
+          const entryBuffer = entry.getData();
+          const rows = parseSingleDataBuffer(entryBuffer, entry.name || entry.entryName);
+          allRows = allRows.concat(rows);
+        }
+        return allRows;
+      } else {
+        // If no .csv/.xlsx/.xls entry was found by extension, check if any internal file is readable as CSV
+        const textEntries = entries.filter(
+          (e) => !e.isDirectory && !e.entryName.toLowerCase().includes("__macosx") && !e.name.startsWith(".")
+        );
+        for (const entry of textEntries) {
+          try {
+            const entryBuffer = entry.getData();
+            const rows = parseCsvBuffer(entryBuffer);
+            if (rows.length > 0 && Object.keys(rows[0] || {}).length > 1) {
+              console.log(`[upload/route] Unpacked text entry as CSV: ${entry.entryName} (${rows.length} rows)`);
+              return rows;
+            }
+          } catch {
+            // try next
+          }
+        }
+      }
+    } catch (zipErr) {
+      console.warn("[upload/route] AdmZip parsing failed, falling back to direct parse:", zipErr);
+    }
+  }
+
+  // Not a zip, or fallback to single buffer parse
+  return parseSingleDataBuffer(buffer, fileName);
+}
+
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
 
@@ -139,36 +270,9 @@ export async function POST(req: NextRequest) {
     }
 
     const { buffer, fileName } = uploaded;
-    const lowerName = fileName.toLowerCase();
+    console.log(`[upload/route] Received file "${fileName}", size: ${(buffer.length / 1024 / 1024).toFixed(2)} MB`);
 
-    let rawRows: Record<string, any>[] = [];
-
-    // 1. Backend Fast Parse (Excel or CSV)
-    if (lowerName.endsWith(".csv")) {
-      let text = "";
-      try {
-        const utf8Decoder = new TextDecoder("utf-8", { fatal: true });
-        text = utf8Decoder.decode(buffer);
-      } catch {
-        // Fallback to GB18030 for Chinese government 12345 hotline CSV exports
-        try {
-          const gbkDecoder = new TextDecoder("gb18030");
-          text = gbkDecoder.decode(buffer);
-        } catch {
-          text = buffer.toString("utf-8");
-        }
-      }
-
-      const parsed = Papa.parse<Record<string, any>>(text, {
-        header: true,
-        skipEmptyLines: true,
-      });
-      rawRows = parsed.data;
-    } else {
-      const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
-      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-      rawRows = XLSX.utils.sheet_to_json<Record<string, any>>(firstSheet, { defval: "" });
-    }
+    const rawRows = parseUploadedBuffer(buffer, fileName);
 
     if (rawRows.length === 0) {
       return apiSuccess({

@@ -13,6 +13,7 @@ const nextConfig: NextConfig = {
     "@civic/system-two",
     "@civic/anonymizer",
     "busboy",
+    "adm-zip",
   ],
   experimental: {
     serverActions: {
