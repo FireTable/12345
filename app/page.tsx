@@ -118,18 +118,18 @@ export default function DashboardPage() {
           onRefresh={load}
           onExport={exportOverview}
         >
-          {/* 政企科技大屏入口按钮 (统一官方政务科技蓝 #1677FF) */}
+          {/* 政企科技大屏入口按钮 (Primary 实心科技蓝按钮) */}
           <button
             type="button"
             onClick={() => setShowCockpit(true)}
-            className="group inline-flex items-center gap-1.5 h-[34px] px-3 rounded-lg text-xs font-semibold text-[#1677FF] bg-blue-50/90 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/70 border border-blue-200 dark:border-blue-500/40 shadow-2xs hover:shadow-xs transition-all cursor-pointer"
+            className="btn btn--primary group inline-flex items-center gap-1.5 h-[34px] px-3.5 rounded-lg text-xs font-semibold text-white bg-[#1677FF] hover:bg-[#0958d9] border border-transparent shadow-[0_2px_6px_rgba(22,119,255,0.28)] hover:shadow-[0_4px_12px_rgba(22,119,255,0.38)] transition-all cursor-pointer active:scale-[0.98]"
             title="展开政企科技数据大屏 (全域态势调度驾驶舱)"
           >
             <MonitorPlay
-              size={13}
-              className="text-[#1677FF] group-hover:scale-110 transition-transform"
+              size={14}
+              className="text-white group-hover:scale-110 transition-transform shrink-0"
             />
-            <span>数据大屏</span>
+            <span className="text-white tracking-wide">数据大屏</span>
           </button>
 
           <Select
