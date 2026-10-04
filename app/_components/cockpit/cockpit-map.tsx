@@ -291,11 +291,11 @@ export function CockpitMap({
 
   return (
     <div className={`relative w-full h-full overflow-hidden bg-[#020612] ${className}`}>
-      {/* 科技暗夜地图专属 CSS 过滤器 */}
+      {/* 科技暗夜地图专属 CSS 过滤器：告别突兀紫色，采用高阶暗夜微光银灰路网 */}
       <style jsx global>{`
         .cockpit-dark-map .leaflet-tile-pane {
-          filter: invert(92%) hue-rotate(195deg) brightness(65%) contrast(150%) saturate(70%);
-          opacity: 0.65;
+          filter: invert(100%) grayscale(100%) brightness(70%) contrast(130%);
+          opacity: 0.75;
         }
         .cockpit-dark-map {
           background-color: #020612 !important;
