@@ -22,51 +22,77 @@ export function CockpitTitleCrown({ title }: { title: string }) {
     <div className="relative flex flex-col items-center pointer-events-none select-none z-30">
       {/* 科技翼展流光 SVG 底座：以政务科技蓝 #1677FF 为核心主基调 */}
       <svg
-        width="680"
-        height="46"
-        viewBox="0 0 680 46"
+        width="780"
+        height="52"
+        viewBox="0 0 780 52"
         fill="none"
-        className="drop-shadow-[0_4px_22px_rgba(22,119,255,0.45)]"
+        className="drop-shadow-[0_4px_24px_rgba(22,119,255,0.45)]"
       >
+        {/* 外围主体翼展梯形 */}
         <path
-          d="M0 0 L170 0 L215 36 L465 36 L510 0 L680 0"
+          d="M0 0 L150 0 L195 46 L585 46 L630 0 L780 0"
           stroke="url(#wingGrad)"
-          strokeWidth="1.8"
+          strokeWidth="1.6"
           fill="url(#wingFill)"
           opacity="0.95"
         />
+        {/* 左翼科技导轨 */}
         <path
-          d="M190 42 L230 42 L450 42 L490 42"
+          d="M40 3 L145 3 L185 42"
           stroke="#1677FF"
-          strokeWidth="2.2"
-          strokeDasharray="6 4"
-          opacity="0.8"
+          strokeWidth="1.2"
+          opacity="0.5"
         />
-        <circle cx="215" cy="36" r="3.5" fill="#4096FF" />
-        <circle cx="465" cy="36" r="3.5" fill="#4096FF" />
+        {/* 右翼科技导轨 */}
+        <path
+          d="M740 3 L635 3 L595 42"
+          stroke="#1677FF"
+          strokeWidth="1.2"
+          opacity="0.5"
+        />
+        {/* 翼展转折光点 */}
+        <circle cx="195" cy="46" r="3" fill="#4096FF" />
+        <circle cx="585" cy="46" r="3" fill="#4096FF" />
+        <circle cx="150" cy="0" r="2.5" fill="#1677FF" />
+        <circle cx="630" cy="0" r="2.5" fill="#1677FF" />
+
         <defs>
-          <linearGradient id="wingGrad" x1="0" y1="0" x2="680" y2="0" gradientUnits="userSpaceOnUse">
+          <linearGradient id="wingGrad" x1="0" y1="0" x2="780" y2="0" gradientUnits="userSpaceOnUse">
             <stop offset="0%" stopColor="#1677FF" stopOpacity="0" />
-            <stop offset="25%" stopColor="#0958D9" stopOpacity="0.85" />
+            <stop offset="20%" stopColor="#0958D9" stopOpacity="0.85" />
             <stop offset="50%" stopColor="#4096FF" stopOpacity="1" />
-            <stop offset="75%" stopColor="#0958D9" stopOpacity="0.85" />
+            <stop offset="80%" stopColor="#0958D9" stopOpacity="0.85" />
             <stop offset="100%" stopColor="#1677FF" stopOpacity="0" />
           </linearGradient>
-          <linearGradient id="wingFill" x1="340" y1="0" x2="340" y2="46" gradientUnits="userSpaceOnUse">
-            <stop offset="0%" stopColor="#020919" stopOpacity="0.9" />
-            <stop offset="100%" stopColor="#0a204d" stopOpacity="0.4" />
+          <linearGradient id="wingFill" x1="390" y1="0" x2="390" y2="52" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#020919" stopOpacity="0.95" />
+            <stop offset="100%" stopColor="#0a204d" stopOpacity="0.45" />
           </linearGradient>
         </defs>
       </svg>
 
-      {/* 居中标题与副标 */}
+      {/* 居中标题与副标布局 (突出 12345 核心标识，提升副标字号与呼吸空间) */}
       <div className="absolute top-1 flex flex-col items-center">
-        <h1 className="text-xl md:text-2xl font-black tracking-[0.22em] bg-gradient-to-b from-white via-blue-100 to-[#69b1ff] bg-clip-text text-transparent drop-shadow-[0_0_18px_rgba(22,119,255,0.6)]">
-          {title} · 智能研判全景指挥大屏
-        </h1>
-        <span className="text-[9px] font-mono tracking-[0.32em] text-[#4096ff] uppercase -mt-0.5 font-semibold">
-          12345 CIVIC INTELLIGENCE DISPATCH COCKPIT
-        </span>
+        {/* 主标题区：突出 12345 核心政务品牌 */}
+        <div className="flex items-center gap-2">
+          {/* 12345 高亮微胶囊与渐变大字 */}
+          <span className="font-mono font-black text-2xl md:text-[26px] tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-[#4096FF] via-[#69b1ff] to-[#e6f4ff] drop-shadow-[0_0_16px_rgba(64,150,255,0.9)]">
+            12345
+          </span>
+          <span className="text-blue-300/40 text-lg font-light">·</span>
+          <h1 className="text-xl md:text-[23px] font-black tracking-[0.16em] bg-gradient-to-b from-white via-blue-50 to-[#91caff] bg-clip-text text-transparent drop-shadow-[0_0_20px_rgba(22,119,255,0.65)]">
+            {title}智能研判全景指挥大屏
+          </h1>
+        </div>
+
+        {/* 副标题区：字号提升至 11px，两侧带微光导引线，无横线穿透 */}
+        <div className="flex items-center gap-2.5 mt-0.5">
+          <span className="h-[1px] w-10 bg-gradient-to-r from-transparent to-[#4096ff]/70" />
+          <span className="text-[11px] font-mono tracking-[0.22em] text-[#69b1ff] font-medium uppercase drop-shadow-[0_0_8px_rgba(22,119,255,0.5)]">
+            CIVIC INTELLIGENCE DISPATCH COCKPIT
+          </span>
+          <span className="h-[1px] w-10 bg-gradient-to-l from-transparent to-[#4096ff]/70" />
+        </div>
       </div>
     </div>
   );

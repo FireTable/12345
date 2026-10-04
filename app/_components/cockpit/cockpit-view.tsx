@@ -155,9 +155,9 @@ export function CockpitView({ onClose }: CockpitViewProps) {
       </section>
 
       {/* 6. 中央悬浮区域 (位于左右两坞之间)：顶部为 KPI 矩阵条，底部为 时序波形趋势 */}
-      <div className="absolute left-[402px] xl:left-[432px] right-[402px] xl:right-[432px] top-[50px] bottom-3.5 flex flex-col justify-between items-center pointer-events-none z-20">
+      <div className="absolute left-[402px] xl:left-[432px] right-[402px] xl:right-[432px] top-[54px] bottom-3.5 flex flex-col justify-between items-center pointer-events-none z-20">
         {/* 中央上浮动：四大核心 KPI 指标矩阵 */}
-        <div className="w-full max-w-4xl pointer-events-auto pt-1">
+        <div className="w-full max-w-4xl pointer-events-auto">
           <CockpitKpiStrip kpi={cockpit.kpi} />
         </div>
 
