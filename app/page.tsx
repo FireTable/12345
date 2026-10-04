@@ -123,7 +123,7 @@ export default function DashboardPage() {
             type="button"
             onClick={() => setShowCockpit(true)}
             className="btn btn--primary group inline-flex items-center gap-1.5 h-[34px] px-3.5 rounded-lg text-xs font-semibold text-white bg-[#1677FF] hover:bg-[#0958d9] border border-transparent shadow-[0_2px_6px_rgba(22,119,255,0.28)] hover:shadow-[0_4px_12px_rgba(22,119,255,0.38)] transition-all cursor-pointer active:scale-[0.98]"
-            title="展开政企科技数据大屏 (全域态势调度驾驶舱)"
+            title="展开智能研判全景指挥大屏 (全域态势调度驾驶舱)"
           >
             <MonitorPlay
               size={14}

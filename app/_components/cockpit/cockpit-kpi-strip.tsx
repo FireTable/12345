@@ -23,9 +23,9 @@ export function CockpitKpiStrip({ kpi }: CockpitKpiStripProps) {
     },
     {
       title: "实时办结率",
-      value: `${kpi.resolutionRatePct}%`,
-      unit: "达标",
-      changeText: "符合政企 SLA 指标",
+      value: `${kpi.resolutionRatePct}`,
+      unit: "%",
+      changeText: "符合工单办结时限标准",
       changeTone: "normal",
       icon: CheckCircle2,
       borderColor: "border-emerald-500/35",
