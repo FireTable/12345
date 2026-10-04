@@ -93,7 +93,7 @@ export function CockpitView({ onClose }: CockpitViewProps) {
         }
       `}</style>
 
-      {/* 1. 核心底图：全屏 GIS 数字孪生地图底层 (无缝贯穿全屏至最顶部) */}
+      {/* 1. 核心底图：全屏贯通数字孪生 GIS 底图 (覆盖整个视口) */}
       <CockpitMap
         activeRegion={activeRegion}
         counts={cockpit.subdistrictCounts}
@@ -102,7 +102,7 @@ export function CockpitView({ onClose }: CockpitViewProps) {
         className="absolute inset-0 w-full h-full z-0"
       />
 
-      {/* 2. 悬浮半透明微胶囊操控中枢 (无常规Header，两侧悬浮微胶囊) */}
+      {/* 2. 顶部微胶囊控制项 (无盒装Header，左右贴顶悬浮) */}
       <CockpitTopControls
         activeRegion={activeRegion}
         regions={regions}
@@ -116,65 +116,61 @@ export function CockpitView({ onClose }: CockpitViewProps) {
         onToggleFullscreen={toggleFullscreen}
       />
 
-      {/* 3. 悬浮 HUD 视窗内容层 */}
-      <div className="absolute inset-0 z-10 p-3 flex flex-col justify-between pointer-events-none">
-        {/* 顶部中央：无 Header 翼展流光标题 + 悬浮 KPI 矩阵 */}
-        <div className="w-full flex flex-col items-center shrink-0">
-          <CockpitTitleCrown title={activeRegion?.name || "顺德区"} />
+      {/* 3. 顶部中央：无 Header 翼展流光标题 (顶格居中) */}
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+        <CockpitTitleCrown title={activeRegion?.name || "顺德区"} />
+      </div>
 
-          <div className="w-full max-w-5xl mx-auto mt-2 pointer-events-auto">
-            <CockpitKpiStrip kpi={cockpit.kpi} />
-          </div>
+      {/* 4. 左侧贴边悬浮坞 (从顶部胶囊下方 top-[54px] 贯穿至底部 bottom-3.5，彻底消除空白) */}
+      <section className="absolute left-3.5 top-[54px] bottom-3.5 w-[380px] xl:w-[410px] flex flex-col gap-2.5 z-20 pointer-events-auto">
+        <div className="h-[31%] min-h-[160px]">
+          <CockpitCategoryChart data={cockpit.categoryStats} />
+        </div>
+        <div className="h-[27%] min-h-[140px]">
+          <CockpitAlertPanel
+            alerts={cockpit.alerts}
+            selectedTownship={cockpit.selectedTownship}
+          />
+        </div>
+        <div className="flex-1 min-h-[180px]">
+          <CockpitStream
+            tickets={cockpit.recentTickets}
+            selectedTownship={cockpit.selectedTownship}
+          />
+        </div>
+      </section>
+
+      {/* 5. 右侧贴边悬浮坞 (从顶部胶囊下方 top-[54px] 贯穿至底部 bottom-3.5，彻底消除空白) */}
+      <section className="absolute right-3.5 top-[54px] bottom-3.5 w-[380px] xl:w-[410px] flex flex-col gap-2.5 z-20 pointer-events-auto">
+        <div className="h-[55%] min-h-[260px]">
+          <CockpitTownshipRank
+            stats={cockpit.townshipStats}
+            selectedTownship={cockpit.selectedTownship}
+            onSelectTownship={cockpit.setSelectedTownship}
+          />
+        </div>
+        <div className="flex-1 min-h-[180px]">
+          <CockpitInsights insights={cockpit.insights} />
+        </div>
+      </section>
+
+      {/* 6. 中央悬浮区域 (位于左右两坞之间)：顶部为 KPI 矩阵条，底部为 时序波形趋势 */}
+      <div className="absolute left-[402px] xl:left-[432px] right-[402px] xl:right-[432px] top-[50px] bottom-3.5 flex flex-col justify-between items-center pointer-events-none z-20">
+        {/* 中央上浮动：四大核心 KPI 指标矩阵 */}
+        <div className="w-full max-w-4xl pointer-events-auto pt-1">
+          <CockpitKpiStrip kpi={cockpit.kpi} />
         </div>
 
-        {/* 中间层：左侧悬浮坞、中间开阔地图视区（底部悬浮趋势）、右侧悬浮坞 */}
-        <div className="flex-1 w-full flex justify-between gap-3.5 mt-2 min-h-0 pointer-events-none">
-          {/* 左侧悬浮窗体列 (360px ~ 380px) */}
-          <section className="w-[360px] xl:w-[380px] h-full flex flex-col gap-3 min-h-0 pointer-events-auto">
-            <div className="h-[30%] min-h-[145px]">
-              <CockpitCategoryChart data={cockpit.categoryStats} />
-            </div>
-            <div className="h-[28%] min-h-[135px]">
-              <CockpitAlertPanel
-                alerts={cockpit.alerts}
-                selectedTownship={cockpit.selectedTownship}
-              />
-            </div>
-            <div className="flex-1 min-h-[170px]">
-              <CockpitStream
-                tickets={cockpit.recentTickets}
-                selectedTownship={cockpit.selectedTownship}
-              />
-            </div>
-          </section>
-
-          {/* 中间开阔视区：完全裸露给底层 GIS 交互，底部轻量悬浮时序走势波形 */}
-          <div className="flex-1 h-full flex flex-col justify-end items-center px-4 pointer-events-none pb-1">
-            <div className="w-full max-w-2xl h-[165px] pointer-events-auto">
-              <CockpitTrendChart
-                daily={cockpit.trendDaily}
-                clusters={cockpit.trendClusters}
-              />
-            </div>
-          </div>
-
-          {/* 右侧悬浮窗体列 (360px ~ 380px) */}
-          <section className="w-[360px] xl:w-[380px] h-full flex flex-col gap-3 min-h-0 pointer-events-auto">
-            <div className="h-[52%] min-h-[220px]">
-              <CockpitTownshipRank
-                stats={cockpit.townshipStats}
-                selectedTownship={cockpit.selectedTownship}
-                onSelectTownship={cockpit.setSelectedTownship}
-              />
-            </div>
-            <div className="flex-1 min-h-[180px]">
-              <CockpitInsights insights={cockpit.insights} />
-            </div>
-          </section>
+        {/* 中央下浮动：工单时序走势与多频脉冲波形 */}
+        <div className="w-full max-w-4xl h-[175px] pointer-events-auto">
+          <CockpitTrendChart
+            daily={cockpit.trendDaily}
+            clusters={cockpit.trendClusters}
+          />
         </div>
       </div>
 
-      {/* 4. ESC 二次退出防误触 HUD 提示条 (Logo 蓝风格) */}
+      {/* 7. ESC 二次退出防误触 HUD 提示条 (Logo 蓝风格) */}
       {escWarning && (
         <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 rounded-full bg-[#051433]/95 border border-[#1677FF] text-blue-100 text-xs font-mono shadow-[0_0_25px_rgba(22,119,255,0.6)] backdrop-blur-2xl animate-in fade-in zoom-in-95 flex items-center gap-2.5">
           <span className="w-2.5 h-2.5 rounded-full bg-[#1677FF] animate-ping" />
