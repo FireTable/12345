@@ -242,7 +242,7 @@ export function CockpitMap({
                   box-shadow: 0 0 8px ${townColor};
                 "></span>
                 <span style="font-weight: 600;">${name.replace(/(街道|镇|区)$/, "")}</span>
-                <span style="color: ${isSelected ? "#FFFFFF" : "#E2E8F0"}; font-weight: 700; font-family: ui-monospace, monospace;">${count.toLocaleString()}</span>
+                ${count > 0 ? `<span style="color: ${isSelected ? "#FFFFFF" : "#E2E8F0"}; font-weight: 700; font-family: ui-monospace, monospace;">${count.toLocaleString()}</span>` : ""}
               </div>
             `;
 

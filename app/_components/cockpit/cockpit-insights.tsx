@@ -9,29 +9,7 @@ interface CockpitInsightsProps {
 }
 
 export function CockpitInsights({ insights }: CockpitInsightsProps) {
-  const items =
-    insights.length > 0
-      ? insights
-      : [
-          {
-            id: "def-ins-1",
-            title: "夜间流动餐饮油烟与占道扰民复合诉求",
-            category: "城市管理",
-            ticketCount: 86,
-            trendPct: 24,
-            canonicalLocation: "金榜上街 / 容桂大道",
-            advice: "建议区城管局会同街道办，采取“疏堵结合+分时柔性外摆”试点，协同降噪环保巡查。",
-          },
-          {
-            id: "def-ins-2",
-            title: "工业园区早晚高峰网约车违停占道拥堵",
-            category: "交通秩序",
-            ticketCount: 62,
-            trendPct: -8,
-            canonicalLocation: "五沙工业园 / 顺德新城",
-            advice: "联动交警科技科增设即停即走专属泊位，优化早晚高峰潮汐信号灯时长。",
-          },
-        ];
+  const items = insights || [];
 
   return (
     <div className="w-full h-full flex flex-col rounded-2xl border border-purple-500/30 bg-[#051129]/80 backdrop-blur-xl overflow-hidden p-4 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
@@ -52,7 +30,13 @@ export function CockpitInsights({ insights }: CockpitInsightsProps) {
           items.length <= 2 ? "flex flex-col justify-around space-y-0" : ""
         }`}
       >
-        {items.map((item) => (
+        {items.length === 0 ? (
+          <div className="h-full flex items-center justify-center text-xs text-slate-400 font-mono gap-1.5">
+            <Sparkles size={14} className="text-purple-400" />
+            <span>暂无慢思考穿透研判建议</span>
+          </div>
+        ) : (
+          items.map((item) => (
           <div
             key={item.id}
             className="p-2.5 rounded-xl border border-purple-500/20 bg-purple-950/20 hover:border-purple-400/40 transition-all"
@@ -81,7 +65,7 @@ export function CockpitInsights({ insights }: CockpitInsightsProps) {
               </div>
             )}
           </div>
-        ))}
+        )))}
       </div>
     </div>
   );

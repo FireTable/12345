@@ -23,7 +23,8 @@ export function CockpitView({ onClose }: CockpitViewProps) {
   const [escWarning, setEscWarning] = useState(false);
   const escTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const regionId = activeRegion?.id || "fs_shunde";
+  const currentRegion = activeRegion || (regions.length > 0 ? regions[0] : null);
+  const regionId = currentRegion?.id || "fs_shunde";
   const cockpit = useCockpitData(regionId);
 
   // 监听浏览器全屏状态
@@ -95,7 +96,7 @@ export function CockpitView({ onClose }: CockpitViewProps) {
 
       {/* 1. 核心底图：全屏贯通数字孪生 GIS 底图 (覆盖整个视口) */}
       <CockpitMap
-        activeRegion={activeRegion}
+        activeRegion={currentRegion}
         counts={cockpit.subdistrictCounts}
         selectedTownship={cockpit.selectedTownship}
         onSelectTownship={cockpit.setSelectedTownship}
@@ -104,7 +105,7 @@ export function CockpitView({ onClose }: CockpitViewProps) {
 
       {/* 2. 顶部微胶囊控制项 (无盒装Header，左右贴顶悬浮) */}
       <CockpitTopControls
-        activeRegion={activeRegion}
+        activeRegion={currentRegion}
         regions={regions}
         onSelectRegion={switchRegion}
         isPolling={cockpit.isPolling}
@@ -118,7 +119,7 @@ export function CockpitView({ onClose }: CockpitViewProps) {
 
       {/* 3. 顶部中央：无 Header 翼展流光标题 (顶格居中) */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
-        <CockpitTitleCrown title={activeRegion?.name || "顺德区"} />
+        <CockpitTitleCrown title={currentRegion?.name || "顺德区"} />
       </div>
 
       {/* 4. 左侧贴边悬浮坞 (从顶部胶囊下方 top-[54px] 贯穿至底部 bottom-3.5，彻底消除空白) */}
