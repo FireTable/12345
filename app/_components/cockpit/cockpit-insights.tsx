@@ -47,7 +47,11 @@ export function CockpitInsights({ insights }: CockpitInsightsProps) {
         </span>
       </div>
 
-      <div className="flex-1 overflow-y-auto mt-2.5 space-y-2 pr-1 custom-cockpit-scrollbar">
+      <div
+        className={`flex-1 overflow-y-auto mt-2.5 space-y-2 pr-1 custom-cockpit-scrollbar ${
+          items.length <= 2 ? "flex flex-col justify-around space-y-0" : ""
+        }`}
+      >
         {items.map((item) => (
           <div
             key={item.id}

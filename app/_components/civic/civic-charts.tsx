@@ -44,12 +44,14 @@ export function loadEcharts() {
 
 export function CivicEChart({
   option,
-  height,
+  height = "100%",
+  className = "",
   onHover,
   hoveredName,
 }: {
   option: Record<string, unknown>;
-  height: number;
+  height?: number | string;
+  className?: string;
   onHover?: (name: string | null) => void;
   hoveredName?: string | null;
 }) {
@@ -100,11 +102,20 @@ export function CivicEChart({
         });
       }
     });
+
     const onResize = () => chartInstanceRef.current?.resize();
     window.addEventListener("resize", onResize);
+    const ro = typeof ResizeObserver !== "undefined" && ref.current ? new ResizeObserver(() => {
+      chartInstanceRef.current?.resize();
+    }) : null;
+    if (ref.current && ro) {
+      ro.observe(ref.current);
+    }
+
     return () => {
       cancelled = true;
       window.removeEventListener("resize", onResize);
+      ro?.disconnect();
       chartInstanceRef.current?.dispose();
       chartInstanceRef.current = null;
     };
@@ -155,7 +166,8 @@ export function CivicEChart({
     }
   }, [hoveredName, key]);
 
-  return <div ref={ref} style={{ width: "100%", height }} />;
+  const heightStyle = typeof height === "number" ? `${height}px` : height;
+  return <div ref={ref} className={className} style={{ width: "100%", height: heightStyle }} />;
 }
 
 export function trendOption(daily: Record<string, number>, clusters: Record<string, number> = {}) {

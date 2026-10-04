@@ -42,10 +42,28 @@ export function CockpitCategoryChart({ data }: CockpitCategoryChartProps) {
           `;
         },
       },
+      title: {
+        text: `${total.toLocaleString()}`,
+        subtext: "诉求总数",
+        left: "35%",
+        top: "40%",
+        textAlign: "center",
+        textStyle: {
+          color: "#ffffff",
+          fontSize: 15,
+          fontWeight: "bold",
+          fontFamily: "monospace",
+        },
+        subtextStyle: {
+          color: "#69b1ff",
+          fontSize: 10,
+        },
+      },
       legend: {
         orient: "vertical",
-        right: "2%",
+        right: "3%",
         top: "middle",
+        itemGap: 10,
         itemWidth: 10,
         itemHeight: 10,
         textStyle: {
@@ -63,8 +81,8 @@ export function CockpitCategoryChart({ data }: CockpitCategoryChartProps) {
         {
           name: "诉求分类",
           type: "pie",
-          radius: ["50%", "75%"],
-          center: ["36%", "50%"],
+          radius: ["50%", "76%"],
+          center: ["35%", "50%"],
           avoidLabelOverlap: false,
           itemStyle: {
             borderRadius: 4,
@@ -107,9 +125,9 @@ export function CockpitCategoryChart({ data }: CockpitCategoryChartProps) {
         </span>
       </div>
 
-      <div className="flex-1 min-h-[140px] relative">
+      <div className="flex-1 w-full h-full min-h-[140px] relative flex items-center justify-center">
         {hasData ? (
-          <CivicEChart option={chartOption} height={145} />
+          <CivicEChart option={chartOption} height="100%" className="w-full h-full" />
         ) : (
           <div className="h-full flex items-center justify-center text-xs text-slate-500 font-mono">
             暂无诉求分类数据

@@ -123,10 +123,10 @@ export function CockpitView({ onClose }: CockpitViewProps) {
 
       {/* 4. 左侧贴边悬浮坞 (从顶部胶囊下方 top-[54px] 贯穿至底部 bottom-3.5，彻底消除空白) */}
       <section className="absolute left-3.5 top-[54px] bottom-3.5 w-[380px] xl:w-[410px] flex flex-col gap-2.5 z-20 pointer-events-auto">
-        <div className="h-[31%] min-h-[160px]">
+        <div className="h-[33%] min-h-[170px]">
           <CockpitCategoryChart data={cockpit.categoryStats} />
         </div>
-        <div className="h-[27%] min-h-[140px]">
+        <div className="h-[22%] min-h-[130px]">
           <CockpitAlertPanel
             alerts={cockpit.alerts}
             selectedTownship={cockpit.selectedTownship}

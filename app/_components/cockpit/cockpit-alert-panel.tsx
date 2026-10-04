@@ -36,7 +36,11 @@ export function CockpitAlertPanel({ alerts, selectedTownship }: CockpitAlertPane
         </span>
       </div>
 
-      <div className="flex-1 overflow-y-auto mt-2 space-y-2 pr-1 custom-cockpit-scrollbar">
+      <div
+        className={`flex-1 overflow-y-auto mt-2 space-y-2 pr-1 custom-cockpit-scrollbar ${
+          displayList.length <= 1 ? "flex flex-col justify-center space-y-0" : ""
+        }`}
+      >
         {displayList.length === 0 ? (
           <div className="h-full flex items-center justify-center text-xs text-emerald-400/80 font-mono gap-1.5">
             <CheckCircle size={14} />

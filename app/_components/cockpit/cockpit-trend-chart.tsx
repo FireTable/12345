@@ -121,9 +121,9 @@ export function CockpitTrendChart({ daily, clusters = {} }: CockpitTrendChartPro
         </span>
       </div>
 
-      <div className="flex-1 min-h-[110px] relative">
+      <div className="flex-1 w-full h-full min-h-[110px] relative">
         {hasData ? (
-          <CivicEChart option={chartOption} height={120} />
+          <CivicEChart option={chartOption} height="100%" className="w-full h-full" />
         ) : (
           <div className="h-full flex items-center justify-center text-xs text-slate-400 font-mono">
             等待时序数据沉淀...
