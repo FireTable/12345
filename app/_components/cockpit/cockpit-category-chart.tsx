@@ -3,6 +3,7 @@
 import React, { useMemo } from "react";
 import { PieChart as PieIcon } from "lucide-react";
 import { CivicEChart } from "../civic/civic-charts";
+import { categoryColor } from "@/lib/civic-cluster";
 
 interface CockpitCategoryChartProps {
   data: Record<string, number>;
@@ -13,23 +14,15 @@ export function CockpitCategoryChart({ data }: CockpitCategoryChartProps) {
     const entries = Object.entries(data).filter(([, v]) => v > 0);
     const total = entries.reduce((acc, [, v]) => acc + v, 0) || 1;
 
-    // 格式化为 ECharts 系列数据，按数量从多到少排序
-    const sorted = entries.sort((a, b) => b[1] - a[1]);
+    // 按数量从大到小排序
+    const sorted = [...entries].sort((a, b) => b[1] - a[1]);
     const seriesData = sorted.map(([name, value]) => ({
       name,
       value,
+      itemStyle: {
+        color: categoryColor(name),
+      },
     }));
-
-    const colors = [
-      "#00f2fe", // 极光青
-      "#1890ff", // 科技蓝
-      "#52c41a", // 翡翠绿
-      "#faad14", // 琥珀黄
-      "#722ed1", // 紫晶
-      "#f5222d", // 珊瑚红
-      "#13c2c2", // 湖蓝
-      "#fa8c16", // 橘橙
-    ];
 
     return {
       backgroundColor: "transparent",
@@ -43,16 +36,16 @@ export function CockpitCategoryChart({ data }: CockpitCategoryChartProps) {
           const pct = Math.round((params.value / total) * 1000) / 10;
           return `
             <div style="font-family: sans-serif; padding: 2px;">
-              <span style="font-weight: 600; color: #38bdf8;">${params.name}</span><br/>
+              <span style="font-weight: 600; color: ${params.color};">${params.name}</span><br/>
               工单数量：<b style="color: #fff;">${params.value.toLocaleString()}</b> 件<br/>
-              全域占比：<b style="color: #00f2fe;">${pct}%</b>
+              分类占比：<b style="color: #00f2fe;">${pct}%</b>
             </div>
           `;
         },
       },
       legend: {
         orient: "vertical",
-        right: "4%",
+        right: "2%",
         top: "middle",
         itemWidth: 10,
         itemHeight: 10,
@@ -75,8 +68,8 @@ export function CockpitCategoryChart({ data }: CockpitCategoryChartProps) {
           center: ["36%", "50%"],
           avoidLabelOverlap: false,
           itemStyle: {
-            borderRadius: 5,
-            borderColor: "#061226",
+            borderRadius: 4,
+            borderColor: "#051129",
             borderWidth: 2,
           },
           label: {
@@ -84,7 +77,7 @@ export function CockpitCategoryChart({ data }: CockpitCategoryChartProps) {
           },
           emphasis: {
             scale: true,
-            scaleSize: 6,
+            scaleSize: 5,
             label: {
               show: true,
               fontSize: 12,
@@ -93,7 +86,6 @@ export function CockpitCategoryChart({ data }: CockpitCategoryChartProps) {
               formatter: "{b}\n{d}%",
             },
           },
-          color: colors,
           data: seriesData,
         },
       ],
@@ -103,20 +95,22 @@ export function CockpitCategoryChart({ data }: CockpitCategoryChartProps) {
   const hasData = Object.keys(data).length > 0;
 
   return (
-    <div className="w-full h-full flex flex-col rounded-xl border border-cyan-500/20 bg-[#061226]/85 backdrop-blur-md overflow-hidden p-3.5 shadow-lg">
-      <div className="flex items-center justify-between pb-1.5 border-b border-cyan-500/15 shrink-0">
+    <div className="w-full h-full flex flex-col rounded-2xl border border-cyan-500/25 bg-[#051129]/80 backdrop-blur-xl overflow-hidden p-4 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
+      <div className="flex items-center justify-between pb-1.5 border-b border-cyan-500/20 shrink-0">
         <div className="flex items-center gap-2">
-          <PieIcon size={14} className="text-cyan-400" />
-          <h3 className="text-xs font-semibold text-slate-200 tracking-wider">
+          <PieIcon size={15} className="text-cyan-400" />
+          <h3 className="text-xs font-semibold text-slate-100 tracking-wider">
             七大民生诉求分类态势
           </h3>
         </div>
-        <span className="text-[10px] font-mono text-slate-400">CATEGORY RATIO</span>
+        <span className="text-[10px] font-mono text-cyan-400/80 uppercase">
+          CATEGORY RATIO
+        </span>
       </div>
 
-      <div className="flex-1 min-h-[160px] relative">
+      <div className="flex-1 min-h-[140px] relative">
         {hasData ? (
-          <CivicEChart option={chartOption} height={160} />
+          <CivicEChart option={chartOption} height={145} />
         ) : (
           <div className="h-full flex items-center justify-center text-xs text-slate-500 font-mono">
             暂无诉求分类数据

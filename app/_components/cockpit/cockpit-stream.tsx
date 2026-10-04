@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Activity, Clock, ShieldAlert, Sparkles, ChevronRight } from "lucide-react";
+import { getTownshipColor } from "@/lib/civic-cluster";
 import type { CockpitTicket } from "./cockpit-types";
 
 interface CockpitStreamProps {
@@ -12,7 +13,6 @@ interface CockpitStreamProps {
 export function CockpitStream({ tickets, selectedTownship }: CockpitStreamProps) {
   const [selectedTicket, setSelectedTicket] = useState<CockpitTicket | null>(null);
 
-  // 如果有选中的镇街，优先筛选该镇街工单
   const filtered = selectedTownship
     ? tickets.filter((t) => t.subdistrict?.includes(selectedTownship) || selectedTownship.includes(t.subdistrict || ""))
     : tickets;
@@ -20,30 +20,28 @@ export function CockpitStream({ tickets, selectedTownship }: CockpitStreamProps)
   const displayList = filtered.slice(0, 15);
 
   return (
-    <div className="relative w-full h-full flex flex-col rounded-xl border border-cyan-500/20 bg-[#061226]/85 backdrop-blur-md overflow-hidden p-3.5 shadow-lg">
-      {/* 头部标题与脉冲状态 */}
-      <div className="flex items-center justify-between pb-2 border-b border-cyan-500/15 shrink-0">
+    <div className="relative w-full h-full flex flex-col rounded-2xl border border-cyan-500/25 bg-[#051129]/80 backdrop-blur-xl overflow-hidden p-4 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
+      <div className="flex items-center justify-between pb-2.5 border-b border-cyan-500/20 shrink-0">
         <div className="flex items-center gap-2">
-          <Activity size={14} className="text-cyan-400 animate-pulse" />
-          <h3 className="text-xs font-semibold text-slate-200 tracking-wider">
+          <Activity size={15} className="text-cyan-400 animate-pulse" />
+          <h3 className="text-xs font-semibold text-slate-100 tracking-wider">
             实时工单接入流水
           </h3>
           {selectedTownship && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-950 border border-cyan-500/30 text-cyan-300">
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-950 border border-cyan-400 text-cyan-300">
               仅看 {selectedTownship}
             </span>
           )}
         </div>
-        <div className="flex items-center gap-1.5 text-[10px] font-mono text-cyan-300/80">
+        <div className="flex items-center gap-1.5 text-[10px] font-mono text-cyan-300">
           <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
           <span>LIVE STREAM</span>
         </div>
       </div>
 
-      {/* 滚动工单列表 */}
-      <div className="flex-1 overflow-y-auto mt-2 space-y-2 pr-1 custom-cockpit-scrollbar">
+      <div className="flex-1 overflow-y-auto mt-2.5 space-y-2 pr-1 custom-cockpit-scrollbar">
         {displayList.length === 0 ? (
-          <div className="h-full flex items-center justify-center text-xs text-slate-500 font-mono">
+          <div className="h-full flex items-center justify-center text-xs text-slate-400 font-mono">
             等待新工单接入...
           </div>
         ) : (
@@ -54,30 +52,35 @@ export function CockpitStream({ tickets, selectedTownship }: CockpitStreamProps)
                 : ticket.createTime
               : "刚刚";
 
+            const townColor = ticket.subdistrict ? getTownshipColor(ticket.subdistrict) : "#1E5AFF";
+
             return (
               <div
                 key={ticket.id}
                 onClick={() => setSelectedTicket(ticket)}
-                className={`p-2 rounded-lg border transition-all cursor-pointer ${
+                className={`p-2 rounded-xl border transition-all cursor-pointer ${
                   ticket.isUrgent
-                    ? "bg-rose-950/20 border-rose-500/40 hover:border-rose-400"
+                    ? "bg-rose-950/30 border-rose-500/40 hover:border-rose-400"
                     : "bg-[#091b38]/40 border-cyan-500/15 hover:border-cyan-400/40 hover:bg-[#0c2246]/60"
                 }`}
               >
                 <div className="flex items-center justify-between text-[11px] mb-1">
                   <div className="flex items-center gap-1.5 font-medium">
                     {ticket.subdistrict && (
-                      <span className="px-1.5 py-0.5 rounded bg-blue-950/80 border border-blue-500/30 text-cyan-300 font-mono text-[10px]">
+                      <span
+                        className="px-2 py-0.5 rounded-full text-white font-mono text-[10px] font-semibold shadow-xs"
+                        style={{ backgroundColor: townColor }}
+                      >
                         {ticket.subdistrict}
                       </span>
                     )}
                     {ticket.isUrgent ? (
-                      <span className="px-1.5 py-0.5 rounded bg-rose-950/80 border border-rose-500/40 text-rose-300 font-mono text-[10px] flex items-center gap-0.5">
+                      <span className="px-1.5 py-0.5 rounded-full bg-rose-950/80 border border-rose-500/40 text-rose-300 font-mono text-[10px] flex items-center gap-0.5">
                         <ShieldAlert size={10} />
                         紧急突发
                       </span>
                     ) : (
-                      <span className="text-slate-300 font-mono text-[10px] opacity-70">
+                      <span className="text-slate-400 font-mono text-[10px]">
                         {ticket.ticketNo}
                       </span>
                     )}
@@ -88,7 +91,7 @@ export function CockpitStream({ tickets, selectedTownship }: CockpitStreamProps)
                   </span>
                 </div>
 
-                <p className="text-xs text-slate-300 line-clamp-1 leading-relaxed">
+                <p className="text-xs text-slate-200 line-clamp-1 leading-relaxed">
                   {ticket.title || ticket.content}
                 </p>
               </div>
@@ -97,9 +100,8 @@ export function CockpitStream({ tickets, selectedTownship }: CockpitStreamProps)
         )}
       </div>
 
-      {/* 工单详情抽屉式浮层 */}
       {selectedTicket && (
-        <div className="absolute inset-0 bg-[#061226]/95 backdrop-blur-md p-4 flex flex-col justify-between z-30 animate-in fade-in zoom-in-95 duration-150">
+        <div className="absolute inset-0 bg-[#051129]/95 backdrop-blur-md p-4 flex flex-col justify-between z-30 animate-in fade-in zoom-in-95 duration-150">
           <div>
             <div className="flex items-center justify-between border-b border-cyan-500/20 pb-2 mb-3">
               <div className="flex items-center gap-2">
@@ -107,7 +109,7 @@ export function CockpitStream({ tickets, selectedTownship }: CockpitStreamProps)
                   {selectedTicket.ticketNo}
                 </span>
                 {selectedTicket.isUrgent && (
-                  <span className="px-1.5 py-0.5 rounded bg-rose-950 text-rose-300 text-[10px] border border-rose-500/30">
+                  <span className="px-2 py-0.5 rounded-full bg-rose-950 text-rose-300 text-[10px] border border-rose-500/30">
                     高危预警
                   </span>
                 )}
@@ -123,7 +125,7 @@ export function CockpitStream({ tickets, selectedTownship }: CockpitStreamProps)
             <div className="space-y-2 text-xs text-slate-300">
               <div className="flex items-center gap-2">
                 <span className="text-slate-400">诉求地点：</span>
-                <span className="text-cyan-200">
+                <span className="text-cyan-200 font-medium">
                   {selectedTicket.district || ""} {selectedTicket.subdistrict || "未归属"}
                 </span>
               </div>
@@ -133,7 +135,7 @@ export function CockpitStream({ tickets, selectedTownship }: CockpitStreamProps)
               </div>
               <div className="pt-2">
                 <span className="text-slate-400 block mb-1">市民诉求原貌：</span>
-                <div className="p-2.5 rounded-lg bg-black/40 border border-cyan-500/20 text-slate-200 text-xs leading-relaxed max-h-36 overflow-y-auto">
+                <div className="p-2.5 rounded-xl bg-black/40 border border-cyan-500/20 text-slate-200 text-xs leading-relaxed max-h-36 overflow-y-auto">
                   {selectedTicket.content}
                 </div>
               </div>

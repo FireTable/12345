@@ -12,7 +12,7 @@ interface CockpitTrendChartProps {
 export function CockpitTrendChart({ daily, clusters = {} }: CockpitTrendChartProps) {
   const chartOption = useMemo(() => {
     const dates = Object.keys(daily).sort();
-    const displayDates = dates.slice(-14); // 近14天/时段趋势
+    const displayDates = dates.slice(-14);
     const ticketValues = displayDates.map((d) => daily[d] || 0);
     const clusterValues = displayDates.map((d) => clusters[d] || 0);
 
@@ -40,9 +40,9 @@ export function CockpitTrendChart({ daily, clusters = {} }: CockpitTrendChartPro
       },
       grid: {
         top: 25,
-        left: "3%",
-        right: "4%",
-        bottom: "8%",
+        left: "2%",
+        right: "3%",
+        bottom: "6%",
         containLabel: true,
       },
       xAxis: {
@@ -74,7 +74,7 @@ export function CockpitTrendChart({ daily, clusters = {} }: CockpitTrendChartPro
           type: "line",
           smooth: true,
           showSymbol: false,
-          lineStyle: { width: 2.5, color: "#00f2fe" },
+          lineStyle: { width: 2.5, color: "#1677ff" },
           areaStyle: {
             color: {
               type: "linear",
@@ -83,8 +83,8 @@ export function CockpitTrendChart({ daily, clusters = {} }: CockpitTrendChartPro
               x2: 0,
               y2: 1,
               colorStops: [
-                { offset: 0, color: "rgba(0, 242, 254, 0.35)" },
-                { offset: 1, color: "rgba(0, 242, 254, 0.00)" },
+                { offset: 0, color: "rgba(22, 119, 255, 0.40)" },
+                { offset: 1, color: "rgba(22, 119, 255, 0.00)" },
               ],
             },
           },
@@ -97,8 +97,8 @@ export function CockpitTrendChart({ daily, clusters = {} }: CockpitTrendChartPro
           smooth: true,
           showSymbol: true,
           symbolSize: 4,
-          lineStyle: { width: 2, color: "#f59e0b", type: "solid" },
-          itemStyle: { color: "#f59e0b" },
+          lineStyle: { width: 2, color: "#ff7d00", type: "solid" },
+          itemStyle: { color: "#ff7d00" },
           data: clusterValues,
         },
       ],
@@ -108,22 +108,24 @@ export function CockpitTrendChart({ daily, clusters = {} }: CockpitTrendChartPro
   const hasData = Object.keys(daily).length > 0;
 
   return (
-    <div className="w-full h-full flex flex-col rounded-xl border border-cyan-500/20 bg-[#061226]/85 backdrop-blur-md overflow-hidden p-3.5 shadow-lg">
-      <div className="flex items-center justify-between pb-1 border-b border-cyan-500/15 shrink-0">
+    <div className="w-full h-full flex flex-col rounded-2xl border border-cyan-500/25 bg-[#051129]/80 backdrop-blur-xl overflow-hidden p-3.5 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
+      <div className="flex items-center justify-between pb-1 border-b border-cyan-500/20 shrink-0">
         <div className="flex items-center gap-2">
-          <TrendingUp size={14} className="text-cyan-400" />
-          <h3 className="text-xs font-semibold text-slate-200 tracking-wider">
+          <TrendingUp size={15} className="text-cyan-400" />
+          <h3 className="text-xs font-semibold text-slate-100 tracking-wider">
             工单时序走势与多频激增脉冲
           </h3>
         </div>
-        <span className="text-[10px] font-mono text-cyan-400/70">WAVEFORM SURGE</span>
+        <span className="text-[10px] font-mono text-cyan-400/80 uppercase">
+          WAVEFORM SURGE
+        </span>
       </div>
 
-      <div className="flex-1 min-h-[140px] relative">
+      <div className="flex-1 min-h-[110px] relative">
         {hasData ? (
-          <CivicEChart option={chartOption} height={145} />
+          <CivicEChart option={chartOption} height={120} />
         ) : (
-          <div className="h-full flex items-center justify-center text-xs text-slate-500 font-mono">
+          <div className="h-full flex items-center justify-center text-xs text-slate-400 font-mono">
             等待时序数据沉淀...
           </div>
         )}

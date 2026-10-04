@@ -17,7 +17,6 @@ export function CockpitKpiStrip({ kpi }: CockpitKpiStripProps) {
       changeText: `+${kpi.todayGrowthPct}% 环比上周`,
       changeTone: "up",
       icon: Zap,
-      gradient: "from-blue-600/20 via-cyan-500/10 to-transparent",
       borderColor: "border-cyan-500/30",
       glowColor: "text-cyan-300",
       accentBg: "bg-cyan-500/10 text-cyan-400",
@@ -29,7 +28,6 @@ export function CockpitKpiStrip({ kpi }: CockpitKpiStripProps) {
       changeText: "符合政企 SLA 指标",
       changeTone: "normal",
       icon: CheckCircle2,
-      gradient: "from-emerald-600/20 via-emerald-500/10 to-transparent",
       borderColor: "border-emerald-500/30",
       glowColor: "text-emerald-300",
       accentBg: "bg-emerald-500/10 text-emerald-400",
@@ -41,7 +39,6 @@ export function CockpitKpiStrip({ kpi }: CockpitKpiStripProps) {
       changeText: `累计汇聚 ${kpi.multifreqCount.toLocaleString()} 件共性诉求`,
       changeTone: "normal",
       icon: Layers,
-      gradient: "from-purple-600/20 via-indigo-500/10 to-transparent",
       borderColor: "border-purple-500/30",
       glowColor: "text-purple-300",
       accentBg: "bg-purple-500/10 text-purple-400",
@@ -53,7 +50,6 @@ export function CockpitKpiStrip({ kpi }: CockpitKpiStripProps) {
       changeText: "已触发联动处置预案",
       changeTone: "danger",
       icon: AlertTriangle,
-      gradient: "from-rose-600/20 via-amber-500/10 to-transparent",
       borderColor: "border-rose-500/40",
       glowColor: "text-rose-400",
       accentBg: "bg-rose-500/20 text-rose-400 animate-pulse",
@@ -67,12 +63,10 @@ export function CockpitKpiStrip({ kpi }: CockpitKpiStripProps) {
         return (
           <div
             key={idx}
-            className={`relative p-3.5 rounded-xl border ${card.borderColor} bg-gradient-to-br ${card.gradient} bg-[#061226]/80 backdrop-blur-md overflow-hidden shadow-lg group hover:border-cyan-400/50 transition-all`}
+            className={`relative p-3 rounded-2xl border ${card.borderColor} bg-[#051129]/80 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.6)] group hover:border-cyan-400/60 transition-all`}
           >
-            {/* 角标高科技装饰点 */}
-            <div className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-cyan-400/40" />
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-slate-300 tracking-wider">
+              <span className="text-xs font-medium text-slate-200 tracking-wider">
                 {card.title}
               </span>
               <div className={`p-1.5 rounded-lg ${card.accentBg}`}>
@@ -80,20 +74,20 @@ export function CockpitKpiStrip({ kpi }: CockpitKpiStripProps) {
               </div>
             </div>
 
-            <div className="mt-2 flex items-baseline gap-1.5">
+            <div className="mt-1 flex items-baseline gap-1.5">
               <span
-                className={`text-2xl md:text-3xl font-black font-mono tracking-tight ${card.glowColor} drop-shadow-[0_0_10px_currentColor]`}
+                className={`text-2xl font-black font-mono tracking-tight ${card.glowColor}`}
               >
                 {card.value}
               </span>
               <span className="text-xs text-slate-400 font-sans font-medium">{card.unit}</span>
             </div>
 
-            <div className="mt-2 text-[11px] text-slate-400 flex items-center gap-1">
+            <div className="mt-1 text-[11px] text-slate-300 flex items-center gap-1">
               {card.changeTone === "up" && (
                 <TrendingUp size={11} className="text-cyan-400 inline" />
               )}
-              <span className={card.changeTone === "danger" ? "text-rose-300 font-medium" : ""}>
+              <span className={card.changeTone === "danger" ? "text-rose-300 font-semibold" : ""}>
                 {card.changeText}
               </span>
             </div>

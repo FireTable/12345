@@ -2,7 +2,8 @@
 
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import type { Map as LeafletMap, GeoJSON as LeafletGeoJSON, Layer } from "leaflet";
-import { ZoomIn, ZoomOut, RotateCcw, Crosshair, MapPin } from "lucide-react";
+import { ZoomIn, ZoomOut, Crosshair, MapPin } from "lucide-react";
+import { getTownshipColor } from "@/lib/civic-cluster";
 import type { RegionInfo } from "../civic/region-context";
 
 interface CockpitMapProps {
@@ -10,6 +11,7 @@ interface CockpitMapProps {
   counts: Record<string, number>;
   selectedTownship: string | null;
   onSelectTownship: (name: string | null) => void;
+  className?: string;
 }
 
 export function CockpitMap({
@@ -17,6 +19,7 @@ export function CockpitMap({
   counts,
   selectedTownship,
   onSelectTownship,
+  className = "",
 }: CockpitMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletMap | null>(null);
@@ -27,18 +30,16 @@ export function CockpitMap({
 
   const regionId = activeRegion?.id || "fs_shunde";
 
-  // 计算最大工单量以计算色阶
   const values = Object.values(counts);
-  const maxCount = useMemo(() => (values.length ? Math.max(...values, 1) : 1), [values]);
   const totalCount = useMemo(() => values.reduce((a, b) => a + b, 0), [values]);
 
-  // 1. 获取镇街 GeoJSON
+  // 1. 获取镇街多边形数据
   useEffect(() => {
     let cancelled = false;
     async function loadBoundary() {
       try {
         setLoading(true);
-        // 先查数据库第四级镇街
+        // 优先数据库第四级镇街
         const res = await fetch(`/api/regions/${regionId}/boundary?level=subdistricts`).then((r) =>
           r.ok ? r.json() : null
         );
@@ -49,7 +50,7 @@ export function CockpitMap({
           return;
         }
 
-        // 兜底本地公共静态资源
+        // 本地静态兜底
         const localRes = await fetch(`/civic/${regionId}-townships.geojson`).then((r) =>
           r.ok ? r.json() : null
         );
@@ -60,7 +61,7 @@ export function CockpitMap({
           return;
         }
 
-        // 兜底整区边界
+        // 区级兜底
         const fallbackRes = await fetch(`/api/regions/${regionId}/boundary?level=district`).then((r) =>
           r.ok ? r.json() : null
         );
@@ -81,7 +82,7 @@ export function CockpitMap({
     };
   }, [regionId]);
 
-  // 2. 初始化 Leaflet 暗黑科幻地图
+  // 2. 初始化全屏夜间底图
   useEffect(() => {
     if (!mapContainerRef.current) return;
     let isMounted = true;
@@ -96,21 +97,27 @@ export function CockpitMap({
         mapRef.current = null;
       }
 
-      // 纯净深空黑夜底图风格容器
       const map = L.map(mapContainerRef.current, {
         zoomControl: false,
         attributionControl: false,
         scrollWheelZoom: true,
         doubleClickZoom: false,
-        minZoom: 9,
-        maxZoom: 16,
-      }).setView([22.8, 113.25], 11);
+        minZoom: 8,
+        maxZoom: 18,
+      }).setView([22.84, 113.25], 11);
 
-      // 加载天地图暗黑中文道路注记 (若失败则静默降级为暗黑坐标网格)
+      // 加载天地图标准底图 (经过 CSS filter 转化为科技暗夜深蓝地图)
+      try {
+        L.tileLayer("/api/map/tile?type=vec&z={z}&x={x}&y={y}", {
+          maxZoom: 18,
+        }).addTo(map);
+      } catch (e) {}
+
+      // 加载天地图暗夜道路注记
       try {
         L.tileLayer("/api/map/tile?type=cva&z={z}&x={x}&y={y}", {
           maxZoom: 18,
-          opacity: 0.35,
+          opacity: 0.75,
         }).addTo(map);
       } catch (e) {}
 
@@ -134,7 +141,7 @@ export function CockpitMap({
     };
   }, [regionId]);
 
-  // 3. 渲染 GeoJSON 赛博发光多边形与镇街中心微观胶囊
+  // 3. 渲染 GeoJSON 镇街面，与系统标准配色统一
   useEffect(() => {
     if (!mapInstance || !geoData) return;
     let isMounted = true;
@@ -151,7 +158,6 @@ export function CockpitMap({
 
       const isDistrictLevel = geoData.features.length === 1;
 
-      // 提取并匹配镇街工单数
       const getTownshipCount = (name: string) => {
         if (!name) return 0;
         const clean = name.replace(/(街道|镇|区)$/, "");
@@ -166,42 +172,29 @@ export function CockpitMap({
       const geoLayer = L.geoJSON(geoData, {
         style: (feature: any) => {
           const name = feature?.properties?.name || "";
-          const count = isDistrictLevel ? totalCount : getTownshipCount(name);
-          const ratio = Math.min(1, count / maxCount);
-          const isSelected = selectedTownship && (name.includes(selectedTownship) || selectedTownship.includes(name));
+          const isSelected =
+            selectedTownship &&
+            (name.includes(selectedTownship) || selectedTownship.includes(name));
 
-          // 赛博渐变发光色彩体系
-          let strokeColor = "#00f2fe";
-          let fillColor = "#0284c7";
-
-          if (ratio > 0.6) {
-            strokeColor = "#f59e0b"; // 高发橙黄
-            fillColor = "#d97706";
-          } else if (ratio > 0.3) {
-            strokeColor = "#06b6d4"; // 中发青蓝
-            fillColor = "#0284c7";
-          }
-
-          if (isSelected) {
-            strokeColor = "#38bdf8";
-            fillColor = "#0ea5e9";
-          }
+          const townColor = isDistrictLevel ? "#1E5AFF" : getTownshipColor(name);
 
           return {
-            fillColor,
-            fillOpacity: isSelected ? 0.45 : Math.max(0.12, ratio * 0.35),
-            color: strokeColor,
-            weight: isSelected ? 2.5 : 1.2,
-            dashArray: isSelected ? "" : "3, 2",
+            fillColor: townColor,
+            fillOpacity: isSelected ? 0.48 : 0.22,
+            color: isSelected ? "#FFFFFF" : townColor,
+            weight: isSelected ? 2.8 : 1.6,
+            dashArray: isSelected ? "" : "4, 2",
             lineJoin: "round",
           };
         },
         onEachFeature: (feature: any, layer: Layer) => {
           const name = feature?.properties?.name || activeRegion?.name || "本辖区";
           const count = isDistrictLevel ? totalCount : getTownshipCount(name);
-          const isSelected = selectedTownship && (name.includes(selectedTownship) || selectedTownship.includes(name));
+          const isSelected =
+            selectedTownship &&
+            (name.includes(selectedTownship) || selectedTownship.includes(name));
+          const townColor = isDistrictLevel ? "#1E5AFF" : getTownshipColor(name);
 
-          // 点击镇街切换联动
           layer.on("click", (e: any) => {
             L.DomEvent.stopPropagation(e);
             if (isSelected) {
@@ -211,7 +204,7 @@ export function CockpitMap({
             }
           });
 
-          // 计算几何中心
+          // 计算几何中心添加悬浮发光微胶囊
           let centerLatLng: any = null;
           if (typeof (layer as any).getBounds === "function") {
             const b = (layer as any).getBounds();
@@ -220,36 +213,36 @@ export function CockpitMap({
             }
           }
 
-          // 添加中心悬浮科技胶囊
           if (centerLatLng && !isDistrictLevel) {
             const badgeHtml = `
-              <div class="cockpit-map-pill ${isSelected ? "is-selected" : ""}" style="
+              <div class="cockpit-town-pill ${isSelected ? "is-selected" : ""}" style="
                 display: inline-flex;
                 align-items: center;
-                gap: 5px;
-                background: ${isSelected ? "rgba(14, 165, 233, 0.95)" : "rgba(4, 18, 43, 0.85)"};
-                backdrop-filter: blur(8px);
-                border: 1px solid ${isSelected ? "#38bdf8" : "rgba(0, 242, 254, 0.4)"};
-                box-shadow: 0 0 10px ${isSelected ? "rgba(56, 189, 248, 0.5)" : "rgba(0, 242, 254, 0.2)"};
+                gap: 6px;
+                background: ${isSelected ? townColor : "rgba(6, 17, 40, 0.90)"};
+                backdrop-filter: blur(12px);
+                border: 1.5px solid ${isSelected ? "#FFFFFF" : townColor};
+                box-shadow: 0 0 16px ${isSelected ? "rgba(255, 255, 255, 0.9)" : `${townColor}77`};
                 border-radius: 9999px;
-                padding: 3px 8px;
-                color: #e0f2fe;
+                padding: 4px 10px;
+                color: #FFFFFF;
                 font-size: 11px;
-                font-family: ui-monospace, SFMono-Regular, monospace;
+                font-family: ui-sans-serif, system-ui, sans-serif;
                 white-space: nowrap;
                 cursor: pointer;
                 user-select: none;
                 transform: translate(-50%, -50%);
+                transition: all 0.2s ease;
               ">
                 <span style="
-                  width: 6px;
-                  height: 6px;
+                  width: 7px;
+                  height: 7px;
                   border-radius: 50%;
-                  background: ${count > 0 ? "#00f2fe" : "#94a3b8"};
-                  box-shadow: 0 0 6px ${count > 0 ? "#00f2fe" : "transparent"};
+                  background: ${townColor};
+                  box-shadow: 0 0 8px ${townColor};
                 "></span>
-                <span style="font-weight: 600; font-family: sans-serif;">${name.replace(/(街道|镇|区)$/, "")}</span>
-                <span style="color: #38bdf8; font-weight: 700;">${count}</span>
+                <span style="font-weight: 600;">${name.replace(/(街道|镇|区)$/, "")}</span>
+                <span style="color: ${isSelected ? "#FFFFFF" : "#E2E8F0"}; font-weight: 700; font-family: ui-monospace, monospace;">${count.toLocaleString()}</span>
               </div>
             `;
 
@@ -278,11 +271,15 @@ export function CockpitMap({
 
       geojsonLayerRef.current = geoLayer;
 
-      // 自动最佳缩放贴合
+      // 居中适配：预留两侧浮动窗 (左 420px, 右 420px, 顶 140px, 底 180px)
       try {
         const bounds = geoLayer.getBounds();
         if (bounds.isValid()) {
-          map.fitBounds(bounds, { padding: [25, 25], maxZoom: 12 });
+          map.fitBounds(bounds, {
+            paddingTopLeft: [420, 140],
+            paddingBottomRight: [420, 180],
+            maxZoom: 13,
+          });
         }
       } catch (e) {}
     });
@@ -290,71 +287,51 @@ export function CockpitMap({
     return () => {
       isMounted = false;
     };
-  }, [mapInstance, geoData, counts, selectedTownship, maxCount, totalCount, onSelectTownship, activeRegion]);
+  }, [mapInstance, geoData, counts, selectedTownship, onSelectTownship, activeRegion, totalCount]);
 
   return (
-    <div className="relative w-full h-full min-h-[380px] rounded-xl overflow-hidden border border-cyan-500/30 bg-[#030919] shadow-[inset_0_0_40px_rgba(0,10,30,0.8)]">
-      {/* 科技经纬网格线与雷达扫描装饰背景 */}
+    <div className={`relative w-full h-full overflow-hidden bg-[#020612] ${className}`}>
+      {/* 科技暗夜地图专属 CSS 过滤器 */}
+      <style jsx global>{`
+        .cockpit-dark-map .leaflet-tile-pane {
+          filter: invert(92%) hue-rotate(195deg) brightness(65%) contrast(150%) saturate(70%);
+          opacity: 0.65;
+        }
+        .cockpit-dark-map {
+          background-color: #020612 !important;
+        }
+      `}</style>
+
+      {/* 科技经纬网格装饰底纹 */}
       <div
-        className="absolute inset-0 pointer-events-none opacity-20"
+        className="absolute inset-0 pointer-events-none opacity-20 z-0"
         style={{
           backgroundImage:
-            "linear-gradient(to right, rgba(0, 242, 254, 0.1) 1px, transparent 1px), linear-gradient(to bottom, rgba(0, 242, 254, 0.1) 1px, transparent 1px)",
-          backgroundSize: "40px 40px",
+            "linear-gradient(to right, rgba(0, 242, 254, 0.08) 1px, transparent 1px), linear-gradient(to bottom, rgba(0, 242, 254, 0.08) 1px, transparent 1px)",
+          backgroundSize: "48px 48px",
         }}
       />
 
-      {/* 四角高科技标线 */}
-      <div className="absolute top-2 left-2 w-4 h-4 border-t-2 border-l-2 border-cyan-400 z-10 pointer-events-none" />
-      <div className="absolute top-2 right-2 w-4 h-4 border-t-2 border-r-2 border-cyan-400 z-10 pointer-events-none" />
-      <div className="absolute bottom-2 left-2 w-4 h-4 border-b-2 border-l-2 border-cyan-400 z-10 pointer-events-none" />
-      <div className="absolute bottom-2 right-2 w-4 h-4 border-b-2 border-r-2 border-cyan-400 z-10 pointer-events-none" />
+      {/* 地图真实挂载 DOM (全屏全景呈现，带暗夜滤镜类名) */}
+      <div ref={mapContainerRef} className="w-full h-full z-0 cockpit-dark-map" />
 
-      {/* 地图真实挂载 DOM */}
-      <div ref={mapContainerRef} className="w-full h-full" />
-
-      {/* 左上角 HUD 浮动状态 */}
-      <div className="absolute top-3 left-3 z-20 flex items-center gap-2">
-        <div className="px-3 py-1.5 rounded-lg bg-[#071738]/90 border border-cyan-500/40 backdrop-blur-md text-xs flex items-center gap-2 shadow-lg">
-          <MapPin size={13} className="text-cyan-400" />
-          <span className="text-slate-300">
-            {selectedTownship ? (
-              <>
-                已聚焦镇街：<span className="text-cyan-300 font-bold">{selectedTownship}</span>
-              </>
-            ) : (
-              <span>全域空间态势感知</span>
-            )}
-          </span>
-          {selectedTownship && (
-            <button
-              type="button"
-              onClick={() => onSelectTownship(null)}
-              className="text-[10px] text-cyan-400 underline hover:text-white ml-1 cursor-pointer"
-            >
-              重置
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* 右上角地图控制组件 */}
-      <div className="absolute top-3 right-3 z-20 flex flex-col gap-1.5">
+      {/* 悬浮全屏地图控制按钮群 */}
+      <div className="absolute bottom-6 right-[420px] z-20 flex items-center gap-1.5 p-1 rounded-xl bg-[#06132b]/85 border border-cyan-500/30 backdrop-blur-md shadow-2xl">
         <button
           type="button"
           onClick={() => mapInstance?.zoomIn()}
-          className="p-1.5 rounded-lg bg-[#071738]/80 border border-cyan-500/40 text-cyan-300 hover:text-white hover:bg-cyan-900/50 transition-all cursor-pointer shadow"
-          title="放大"
+          className="p-2 rounded-lg text-cyan-300 hover:text-white hover:bg-cyan-900/50 transition-all cursor-pointer"
+          title="放大地图"
         >
-          <ZoomIn size={13} />
+          <ZoomIn size={14} />
         </button>
         <button
           type="button"
           onClick={() => mapInstance?.zoomOut()}
-          className="p-1.5 rounded-lg bg-[#071738]/80 border border-cyan-500/40 text-cyan-300 hover:text-white hover:bg-cyan-900/50 transition-all cursor-pointer shadow"
-          title="缩小"
+          className="p-2 rounded-lg text-cyan-300 hover:text-white hover:bg-cyan-900/50 transition-all cursor-pointer"
+          title="缩小地图"
         >
-          <ZoomOut size={13} />
+          <ZoomOut size={14} />
         </button>
         <button
           type="button"
@@ -362,39 +339,25 @@ export function CockpitMap({
             if (geojsonLayerRef.current && mapInstance) {
               const bounds = geojsonLayerRef.current.getBounds();
               if (bounds.isValid()) {
-                mapInstance.fitBounds(bounds, { padding: [25, 25] });
+                mapInstance.fitBounds(bounds, {
+                  paddingTopLeft: [420, 140],
+                  paddingBottomRight: [420, 180],
+                });
               }
             }
           }}
-          className="p-1.5 rounded-lg bg-[#071738]/80 border border-cyan-500/40 text-cyan-300 hover:text-white hover:bg-cyan-900/50 transition-all cursor-pointer shadow"
-          title="居中重置"
+          className="p-2 rounded-lg text-cyan-300 hover:text-white hover:bg-cyan-900/50 transition-all cursor-pointer"
+          title="居中重置视野"
         >
-          <Crosshair size={13} />
+          <Crosshair size={14} />
         </button>
       </div>
 
-      {/* 左下角热度色标图例 */}
-      <div className="absolute bottom-3 left-3 z-20 px-3 py-1.5 rounded-lg bg-[#071738]/80 border border-cyan-500/30 backdrop-blur-md text-[11px] flex items-center gap-2">
-        <span className="text-slate-400">工单热度：</span>
-        <div className="flex items-center gap-1">
-          <span className="w-2.5 h-2.5 rounded-xs bg-[#0284c7]" />
-          <span className="text-slate-300">常规</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <span className="w-2.5 h-2.5 rounded-xs bg-[#06b6d4]" />
-          <span className="text-slate-300">活跃</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <span className="w-2.5 h-2.5 rounded-xs bg-[#f59e0b]" />
-          <span className="text-amber-400 font-semibold">热点聚焦</span>
-        </div>
-      </div>
-
       {loading && (
-        <div className="absolute inset-0 bg-[#030919]/70 backdrop-blur-xs flex items-center justify-center z-30">
-          <div className="flex items-center gap-2 text-cyan-400 text-xs font-mono animate-pulse">
-            <RotateCcw className="animate-spin" size={14} />
-            <span>加载辖区三维空间几何图层...</span>
+        <div className="absolute inset-0 bg-[#020612]/70 backdrop-blur-xs flex items-center justify-center z-30">
+          <div className="flex items-center gap-2.5 text-cyan-300 text-xs font-mono animate-pulse">
+            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping inline-block" />
+            <span>正在加载全域地理空间孪生网格...</span>
           </div>
         </div>
       )}
