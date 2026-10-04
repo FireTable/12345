@@ -47,8 +47,7 @@ export function CockpitTitleCrown({ title }: { title: string }) {
           strokeWidth="1"
           opacity="0.4"
         />
-        <circle cx="215" cy="36" r="3.5" fill="#4096FF" />
-        <circle cx="465" cy="36" r="3.5" fill="#4096FF" />
+
         <defs>
           <linearGradient id="wingGrad" x1="0" y1="0" x2="680" y2="0" gradientUnits="userSpaceOnUse">
             <stop offset="0%" stopColor="#1677FF" stopOpacity="0" />
