@@ -944,6 +944,30 @@
   line-height: 1.5;
 }
 
+.login-features-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.login-feature-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(22, 119, 255, 0.04);
+  border: 1px solid rgba(22, 119, 255, 0.12);
+  color: var(--c-ink-2);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 6px;
+  line-height: 1.2;
+}
+
+
 .login-demo-banner {
   background: linear-gradient(135deg, #f0f7ff 0%, #e6f4ff 100%);
   border: 1px dashed #91caff;
