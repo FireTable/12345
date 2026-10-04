@@ -330,16 +330,7 @@ export default function DictionaryManagementPage() {
         <PageHeaderActions
           onRefresh={fetchData}
           refreshing={loading}
-        >
-          <button
-            type="button"
-            className="btn btn--primary h-[34px] px-3.5 text-xs font-medium inline-flex items-center gap-1.5"
-            onClick={() => setShowAddModal(true)}
-          >
-            <Plus size={14} className="shrink-0" />
-            <span>新增别名映射</span>
-          </button>
-        </PageHeaderActions>
+        />
       </div>
 
       {loading && aliases.length === 0 && townships.length === 0 ? (
@@ -480,7 +471,19 @@ export default function DictionaryManagementPage() {
                       <SelectItem value="ENTITY">涉事主体</SelectItem>
                     </SelectContent>
                   </Select>
-                  <span className="filter-bar__summary">共 {filteredAliases.length} 条别名映射</span>
+                  <div className="ml-auto flex items-center gap-3">
+                    <span className="filter-bar__summary" style={{ marginLeft: 0 }}>
+                      共 {filteredAliases.length} 条别名映射
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn--primary h-[32px] px-3.5 text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer"
+                      onClick={() => setShowAddModal(true)}
+                    >
+                      <Plus size={14} className="shrink-0" />
+                      <span>新增别名映射</span>
+                    </button>
+                  </div>
                 </div>
 
                 <div className="table-scroll">
@@ -737,27 +740,9 @@ export default function DictionaryManagementPage() {
                     <button
                       type="button"
                       onClick={() => setShowAddLocationModal(true)}
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 5,
-                        height: 32,
-                        padding: "0 12px",
-                        borderRadius: 7,
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color: "#FFFFFF",
-                        background: "#1E5AFF",
-                        border: "none",
-                        boxShadow: "0 1px 3px rgba(30, 90, 255, 0.25)",
-                        cursor: "pointer",
-                        whiteSpace: "nowrap",
-                        transition: "all 0.15s ease",
-                      }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = "#1448D6")}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = "#1E5AFF")}
+                      className="btn btn--primary h-[32px] px-3.5 text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer"
                     >
-                      <Plus style={{ width: 13, height: 13 }} />
+                      <Plus size={14} className="shrink-0" />
                       <span>录入微观点位</span>
                     </button>
                   </div>
