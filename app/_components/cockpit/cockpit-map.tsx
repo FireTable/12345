@@ -24,6 +24,9 @@ export function CockpitMap({
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const geojsonLayerRef = useRef<LeafletGeoJSON | null>(null);
+  const markersLayerRef = useRef<any>(null);
+  const hasCenteredRef = useRef<string | null>(null);
+
   const [mapInstance, setMapInstance] = useState<LeafletMap | null>(null);
   const [geoData, setGeoData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -101,38 +104,65 @@ export function CockpitMap({
         zoomControl: false,
         attributionControl: false,
         scrollWheelZoom: true,
+        wheelPxPerZoomLevel: 120, // 增加滚轮阻尼，彻底消除 Mac 触控板/滚轮过于灵敏导致的帧数骤降
+        wheelDebounceTime: 50,    // 50ms 适度防抖，合并微小缩放动作
         doubleClickZoom: false,
         minZoom: 8,
         maxZoom: 18,
+        preferCanvas: true,       // 核心性能优化：多边形使用 GPU HTML5 Canvas 绘制，代替大量 DOM SVG 节点
+        zoomAnimation: true,
+        fadeAnimation: true,
+        markerZoomAnimation: true,
       }).setView([22.84, 113.25], 11);
+
+      const tileOptions = {
+        maxZoom: 18,
+        updateWhenZooming: false, // 缩放动画中不频繁向服务器发瓦片请求，GPU 平滑缩放现有瓦片
+        updateWhenIdle: true,     // 缩放/平移完全停止后再拉取新层级瓦片
+        keepBuffer: 6,            // 视口外缓冲 6 块瓦片，缩放移动时避免白块
+      };
 
       // 加载天地图标准底图 (经过 CSS filter 转化为科技暗夜深蓝地图)
       try {
-        L.tileLayer("/api/map/tile?type=vec&z={z}&x={x}&y={y}", {
-          maxZoom: 18,
-        }).addTo(map);
+        L.tileLayer("/api/map/tile?type=vec&z={z}&x={x}&y={y}", tileOptions).addTo(map);
       } catch (e) {}
 
       // 加载天地图暗夜道路注记
       try {
         L.tileLayer("/api/map/tile?type=cva&z={z}&x={x}&y={y}", {
-          maxZoom: 18,
+          ...tileOptions,
           opacity: 0.75,
         }).addTo(map);
       } catch (e) {}
+
+      // 初始化 Marker 图层组
+      markersLayerRef.current = L.layerGroup().addTo(map);
 
       mapRef.current = map;
       setMapInstance(map);
 
       setTimeout(() => {
         map.invalidateSize();
-      }, 200);
+      }, 150);
     }
 
     initMap();
 
     return () => {
       isMounted = false;
+      if (markersLayerRef.current) {
+        try {
+          markersLayerRef.current.clearLayers();
+          markersLayerRef.current.remove();
+        } catch (e) {}
+        markersLayerRef.current = null;
+      }
+      if (geojsonLayerRef.current) {
+        try {
+          geojsonLayerRef.current.remove();
+        } catch (e) {}
+        geojsonLayerRef.current = null;
+      }
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
@@ -151,9 +181,17 @@ export function CockpitMap({
       const L = module.default;
       const map = mapInstance;
 
+      // 及时清理旧 GeoJSON 图层
       if (geojsonLayerRef.current) {
         geojsonLayerRef.current.remove();
         geojsonLayerRef.current = null;
+      }
+
+      // 清理并确保 markersLayerRef 可用，彻底杜绝 DOM Marker 重复堆叠内存泄漏
+      if (!markersLayerRef.current) {
+        markersLayerRef.current = L.layerGroup().addTo(map);
+      } else {
+        markersLayerRef.current.clearLayers();
       }
 
       const isDistrictLevel = geoData.features.length === 1;
@@ -214,15 +252,15 @@ export function CockpitMap({
           }
 
           if (centerLatLng && !isDistrictLevel) {
+            // 优化：去除重量级 backdrop-filter: blur() 与 transition: all，使用 GPU 纯粹图层加速，避免缩放时重排卡顿
             const badgeHtml = `
               <div class="cockpit-town-pill ${isSelected ? "is-selected" : ""}" style="
                 display: inline-flex;
                 align-items: center;
                 gap: 6px;
-                background: ${isSelected ? townColor : "rgba(6, 17, 40, 0.90)"};
-                backdrop-filter: blur(12px);
+                background: ${isSelected ? townColor : "rgba(6, 17, 40, 0.94)"};
                 border: 1.5px solid ${isSelected ? "#FFFFFF" : townColor};
-                box-shadow: 0 0 16px ${isSelected ? "rgba(255, 255, 255, 0.9)" : `${townColor}77`};
+                box-shadow: 0 2px 10px ${isSelected ? "rgba(255, 255, 255, 0.8)" : `${townColor}66`};
                 border-radius: 9999px;
                 padding: 4px 10px;
                 color: #FFFFFF;
@@ -232,14 +270,15 @@ export function CockpitMap({
                 cursor: pointer;
                 user-select: none;
                 transform: translate(-50%, -50%);
-                transition: all 0.2s ease;
+                pointer-events: auto;
+                transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
               ">
                 <span style="
                   width: 7px;
                   height: 7px;
                   border-radius: 50%;
                   background: ${townColor};
-                  box-shadow: 0 0 8px ${townColor};
+                  box-shadow: 0 0 6px ${townColor};
                 "></span>
                 <span style="font-weight: 600;">${name.replace(/(街道|镇|区)$/, "")}</span>
                 ${count > 0 ? `<span style="color: ${isSelected ? "#FFFFFF" : "#E2E8F0"}; font-weight: 700; font-family: ui-monospace, monospace;">${count.toLocaleString()}</span>` : ""}
@@ -255,7 +294,7 @@ export function CockpitMap({
             const marker = L.marker(centerLatLng, {
               icon,
               interactive: true,
-            }).addTo(map);
+            });
 
             marker.on("click", (e: any) => {
               L.DomEvent.stopPropagation(e);
@@ -265,40 +304,60 @@ export function CockpitMap({
                 onSelectTownship(name.replace(/(街道|镇|区)$/, ""));
               }
             });
+
+            markersLayerRef.current.addLayer(marker);
           }
         },
       }).addTo(map);
 
       geojsonLayerRef.current = geoLayer;
 
-      // 居中适配：预留两侧浮动窗 (左 420px, 右 420px, 顶 140px, 底 180px)
-      try {
-        const bounds = geoLayer.getBounds();
-        if (bounds.isValid()) {
-          map.fitBounds(bounds, {
-            paddingTopLeft: [420, 140],
-            paddingBottomRight: [420, 180],
-            maxZoom: 13,
-          });
-        }
-      } catch (e) {}
+      // 仅在首次加载辖区时自动 fitBounds 居中适配，避免用户缩放后被重置打断
+      if (hasCenteredRef.current !== regionId) {
+        try {
+          const bounds = geoLayer.getBounds();
+          if (bounds.isValid()) {
+            map.fitBounds(bounds, {
+              paddingTopLeft: [420, 140],
+              paddingBottomRight: [420, 180],
+              maxZoom: 13,
+              animate: false,
+            });
+            hasCenteredRef.current = regionId;
+          }
+        } catch (e) {}
+      }
     });
 
     return () => {
       isMounted = false;
     };
-  }, [mapInstance, geoData, counts, selectedTownship, onSelectTownship, activeRegion, totalCount]);
+  }, [mapInstance, geoData, counts, selectedTownship, onSelectTownship, activeRegion, totalCount, regionId]);
 
   return (
     <div className={`relative w-full h-full overflow-hidden bg-[#020612] ${className}`}>
-      {/* 科技暗夜地图专属 CSS 过滤器：告别突兀紫色，采用高阶暗夜微光银灰路网 */}
+      {/* 科技暗夜地图专属 CSS 过滤器：GPU 硬件加速合成层 */}
       <style jsx global>{`
         .cockpit-dark-map .leaflet-tile-pane {
           filter: invert(100%) grayscale(100%) brightness(70%) contrast(130%);
           opacity: 0.75;
+          transform: translate3d(0, 0, 0);
+          will-change: transform;
+        }
+        .cockpit-dark-map .leaflet-tile {
+          will-change: transform;
+          transform: translate3d(0, 0, 0);
+          backface-visibility: hidden;
+        }
+        .cockpit-dark-map .leaflet-zoom-animated {
+          will-change: transform;
         }
         .cockpit-dark-map {
           background-color: #020612 !important;
+        }
+        .cockpit-leaflet-div-icon {
+          background: transparent !important;
+          border: none !important;
         }
       `}</style>
 
@@ -314,7 +373,6 @@ export function CockpitMap({
 
       {/* 地图真实挂载 DOM (全屏全景呈现，带暗夜滤镜类名) */}
       <div ref={mapContainerRef} className="w-full h-full z-0 cockpit-dark-map" />
-
 
       {loading && (
         <div className="absolute inset-0 bg-[#020612]/70 backdrop-blur-xs flex items-center justify-center z-30">
