@@ -118,20 +118,20 @@ export default function DashboardPage() {
           onRefresh={load}
           onExport={exportOverview}
         >
-          {/* 政企科技大屏入口按钮 */}
+          {/* 政企科技大屏入口按钮 (统一官方政务科技蓝 #1677FF) */}
           <button
             type="button"
             onClick={() => setShowCockpit(true)}
-            className="group relative inline-flex items-center gap-1.5 h-[34px] px-3 rounded-lg text-xs font-semibold text-cyan-700 dark:text-cyan-300 bg-cyan-50/80 hover:bg-cyan-100/90 dark:bg-cyan-950/60 dark:hover:bg-cyan-900/70 border border-cyan-300/80 dark:border-cyan-500/40 shadow-xs hover:shadow-cyan-500/20 transition-all cursor-pointer"
+            className="group relative inline-flex items-center gap-1.5 h-[34px] px-3 rounded-lg text-xs font-semibold text-[#1677FF] bg-blue-50/90 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/70 border border-blue-200 dark:border-blue-500/40 shadow-xs hover:shadow-blue-500/20 transition-all cursor-pointer"
             title="展开政企科技数据大屏 (全域态势调度驾驶舱)"
           >
             <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500" />
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#1677FF] opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#1677FF]" />
             </span>
             <MonitorPlay
               size={13}
-              className="text-cyan-600 dark:text-cyan-400 group-hover:scale-110 transition-transform"
+              className="text-[#1677FF] group-hover:scale-110 transition-transform"
             />
             <span>数据大屏</span>
           </button>

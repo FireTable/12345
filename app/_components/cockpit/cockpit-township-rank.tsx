@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { BarChart3, ChevronRight } from "lucide-react";
+import { BarChart3 } from "lucide-react";
 import { getTownshipColor } from "@/lib/civic-cluster";
 import type { CockpitTownshipStat } from "./cockpit-types";
 
@@ -19,15 +19,15 @@ export function CockpitTownshipRank({
   const maxCount = stats.length > 0 ? stats[0].count : 1;
 
   return (
-    <div className="w-full h-full flex flex-col rounded-2xl border border-cyan-500/25 bg-[#051129]/80 backdrop-blur-xl overflow-hidden p-4 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
-      <div className="flex items-center justify-between pb-2.5 border-b border-cyan-500/20 shrink-0">
+    <div className="w-full h-full flex flex-col rounded-2xl border border-[#1677FF]/25 bg-[#051433]/85 backdrop-blur-xl overflow-hidden p-4 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
+      <div className="flex items-center justify-between pb-2.5 border-b border-[#1677FF]/20 shrink-0">
         <div className="flex items-center gap-2">
-          <BarChart3 size={15} className="text-cyan-400" />
+          <BarChart3 size={15} className="text-[#4096ff]" />
           <h3 className="text-xs font-semibold text-slate-100 tracking-wider">
             镇街工单态势排行榜
           </h3>
         </div>
-        <span className="text-[10px] font-mono text-cyan-400/80 uppercase">
+        <span className="text-[10px] font-mono text-[#4096ff]/80 uppercase">
           TOWNSHIP RANK
         </span>
       </div>
@@ -43,7 +43,6 @@ export function CockpitTownshipRank({
               selectedTownship &&
               (item.name.includes(selectedTownship) || selectedTownship.includes(item.name));
             const widthPct = Math.max(8, Math.round((item.count / maxCount) * 100));
-            // 核心：严格吻合当前系统的镇街专属色
             const townColor = getTownshipColor(item.name);
 
             return (
@@ -54,8 +53,8 @@ export function CockpitTownshipRank({
                 }
                 className={`p-2 rounded-xl border transition-all cursor-pointer ${
                   isSelected
-                    ? "bg-cyan-950/70 border-white shadow-[0_0_16px_rgba(255,255,255,0.4)]"
-                    : "bg-[#091b38]/40 border-cyan-500/15 hover:border-cyan-400/50 hover:bg-[#0c2246]/60"
+                    ? "bg-blue-950/70 border-white shadow-[0_0_16px_rgba(255,255,255,0.4)]"
+                    : "bg-[#091f48]/40 border-[#1677FF]/15 hover:border-[#1677FF]/50 hover:bg-[#0c285e]/60"
                 }`}
               >
                 <div className="flex items-center justify-between text-xs mb-1.5">

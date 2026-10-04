@@ -14,7 +14,6 @@ export function CockpitCategoryChart({ data }: CockpitCategoryChartProps) {
     const entries = Object.entries(data).filter(([, v]) => v > 0);
     const total = entries.reduce((acc, [, v]) => acc + v, 0) || 1;
 
-    // 按数量从大到小排序
     const sorted = [...entries].sort((a, b) => b[1] - a[1]);
     const seriesData = sorted.map(([name, value]) => ({
       name,
@@ -28,8 +27,8 @@ export function CockpitCategoryChart({ data }: CockpitCategoryChartProps) {
       backgroundColor: "transparent",
       tooltip: {
         trigger: "item",
-        backgroundColor: "rgba(5, 14, 33, 0.95)",
-        borderColor: "rgba(0, 242, 254, 0.4)",
+        backgroundColor: "rgba(5, 20, 51, 0.95)",
+        borderColor: "rgba(22, 119, 255, 0.5)",
         borderWidth: 1,
         textStyle: { color: "#e0f2fe", fontSize: 12 },
         formatter: (params: any) => {
@@ -38,7 +37,7 @@ export function CockpitCategoryChart({ data }: CockpitCategoryChartProps) {
             <div style="font-family: sans-serif; padding: 2px;">
               <span style="font-weight: 600; color: ${params.color};">${params.name}</span><br/>
               工单数量：<b style="color: #fff;">${params.value.toLocaleString()}</b> 件<br/>
-              分类占比：<b style="color: #00f2fe;">${pct}%</b>
+              分类占比：<b style="color: #4096ff;">${pct}%</b>
             </div>
           `;
         },
@@ -69,7 +68,7 @@ export function CockpitCategoryChart({ data }: CockpitCategoryChartProps) {
           avoidLabelOverlap: false,
           itemStyle: {
             borderRadius: 4,
-            borderColor: "#051129",
+            borderColor: "#051433",
             borderWidth: 2,
           },
           label: {
@@ -82,7 +81,7 @@ export function CockpitCategoryChart({ data }: CockpitCategoryChartProps) {
               show: true,
               fontSize: 12,
               fontWeight: "bold",
-              color: "#38bdf8",
+              color: "#4096ff",
               formatter: "{b}\n{d}%",
             },
           },
@@ -95,15 +94,15 @@ export function CockpitCategoryChart({ data }: CockpitCategoryChartProps) {
   const hasData = Object.keys(data).length > 0;
 
   return (
-    <div className="w-full h-full flex flex-col rounded-2xl border border-cyan-500/25 bg-[#051129]/80 backdrop-blur-xl overflow-hidden p-4 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
-      <div className="flex items-center justify-between pb-1.5 border-b border-cyan-500/20 shrink-0">
+    <div className="w-full h-full flex flex-col rounded-2xl border border-[#1677FF]/25 bg-[#051433]/85 backdrop-blur-xl overflow-hidden p-4 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
+      <div className="flex items-center justify-between pb-1.5 border-b border-[#1677FF]/20 shrink-0">
         <div className="flex items-center gap-2">
-          <PieIcon size={15} className="text-cyan-400" />
+          <PieIcon size={15} className="text-[#4096ff]" />
           <h3 className="text-xs font-semibold text-slate-100 tracking-wider">
             七大民生诉求分类态势
           </h3>
         </div>
-        <span className="text-[10px] font-mono text-cyan-400/80 uppercase">
+        <span className="text-[10px] font-mono text-[#4096ff]/80 uppercase">
           CATEGORY RATIO
         </span>
       </div>

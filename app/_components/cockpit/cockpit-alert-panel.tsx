@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { AlertTriangle, Flame, ShieldAlert, CheckCircle } from "lucide-react";
+import { Flame, CheckCircle } from "lucide-react";
 import { getTownshipColor } from "@/lib/civic-cluster";
 import type { CockpitAlertItem } from "./cockpit-types";
 
@@ -23,7 +23,7 @@ export function CockpitAlertPanel({ alerts, selectedTownship }: CockpitAlertPane
   const displayList = filtered.slice(0, 3);
 
   return (
-    <div className="w-full h-full flex flex-col rounded-2xl border border-rose-500/30 bg-[#051129]/80 backdrop-blur-xl overflow-hidden p-4 shadow-[0_8px_32px_rgba(0,0,0,0.6)] relative">
+    <div className="w-full h-full flex flex-col rounded-2xl border border-rose-500/35 bg-[#051433]/85 backdrop-blur-xl overflow-hidden p-4 shadow-[0_8px_32px_rgba(0,0,0,0.6)] relative">
       <div className="flex items-center justify-between pb-2 border-b border-rose-500/20 shrink-0">
         <div className="flex items-center gap-2">
           <Flame size={15} className="text-rose-400 animate-pulse" />

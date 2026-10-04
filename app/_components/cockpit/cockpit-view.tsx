@@ -41,19 +41,16 @@ export function CockpitView({ onClose }: CockpitViewProps) {
       if (e.key === "Escape") {
         e.preventDefault();
 
-        // 如果处于原生全屏，先退出原生全屏
         if (document.fullscreenElement) {
           document.exitFullscreen().catch(() => {});
         }
 
-        // 判断是否为 2 秒内二次按下 ESC
         if (escTimerRef.current) {
           clearTimeout(escTimerRef.current);
           escTimerRef.current = null;
           setEscWarning(false);
           onClose();
         } else {
-          // 第一次按下，展示 HUD 二次确认提示浮窗
           setEscWarning(true);
           escTimerRef.current = setTimeout(() => {
             escTimerRef.current = null;
@@ -84,15 +81,15 @@ export function CockpitView({ onClose }: CockpitViewProps) {
           width: 4px;
         }
         .custom-cockpit-scrollbar::-webkit-scrollbar-track {
-          background: rgba(0, 242, 254, 0.03);
+          background: rgba(22, 119, 255, 0.05);
           border-radius: 4px;
         }
         .custom-cockpit-scrollbar::-webkit-scrollbar-thumb {
-          background: rgba(0, 242, 254, 0.25);
+          background: rgba(22, 119, 255, 0.35);
           border-radius: 4px;
         }
         .custom-cockpit-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: rgba(0, 242, 254, 0.5);
+          background: rgba(22, 119, 255, 0.6);
         }
       `}</style>
 
@@ -177,12 +174,12 @@ export function CockpitView({ onClose }: CockpitViewProps) {
         </div>
       </div>
 
-      {/* 4. ESC 二次退出防误触 HUD 提示条 */}
+      {/* 4. ESC 二次退出防误触 HUD 提示条 (Logo 蓝风格) */}
       {escWarning && (
-        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 rounded-full bg-[#051129]/95 border border-cyan-400 text-cyan-200 text-xs font-mono shadow-[0_0_25px_rgba(0,242,254,0.5)] backdrop-blur-2xl animate-in fade-in zoom-in-95 flex items-center gap-2.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping" />
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 rounded-full bg-[#051433]/95 border border-[#1677FF] text-blue-100 text-xs font-mono shadow-[0_0_25px_rgba(22,119,255,0.6)] backdrop-blur-2xl animate-in fade-in zoom-in-95 flex items-center gap-2.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-[#1677FF] animate-ping" />
           <span>
-            再按一次 <kbd className="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-400/50">ESC</kbd> 退出大屏
+            再按一次 <kbd className="px-1.5 py-0.5 rounded bg-blue-600/30 text-white font-bold border border-blue-400/50">ESC</kbd> 退出大屏
           </span>
         </div>
       )}

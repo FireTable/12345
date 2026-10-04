@@ -316,11 +316,11 @@ export function CockpitMap({
       <div ref={mapContainerRef} className="w-full h-full z-0 cockpit-dark-map" />
 
       {/* 悬浮全屏地图控制按钮群 */}
-      <div className="absolute bottom-6 right-[420px] z-20 flex items-center gap-1.5 p-1 rounded-xl bg-[#06132b]/85 border border-cyan-500/30 backdrop-blur-md shadow-2xl">
+      <div className="absolute bottom-6 right-[420px] z-20 flex items-center gap-1.5 p-1 rounded-xl bg-[#051433]/85 border border-[#1677FF]/40 backdrop-blur-md shadow-2xl">
         <button
           type="button"
           onClick={() => mapInstance?.zoomIn()}
-          className="p-2 rounded-lg text-cyan-300 hover:text-white hover:bg-cyan-900/50 transition-all cursor-pointer"
+          className="p-2 rounded-lg text-blue-200 hover:text-white hover:bg-blue-900/50 transition-all cursor-pointer"
           title="放大地图"
         >
           <ZoomIn size={14} />
@@ -328,7 +328,7 @@ export function CockpitMap({
         <button
           type="button"
           onClick={() => mapInstance?.zoomOut()}
-          className="p-2 rounded-lg text-cyan-300 hover:text-white hover:bg-cyan-900/50 transition-all cursor-pointer"
+          className="p-2 rounded-lg text-blue-200 hover:text-white hover:bg-blue-900/50 transition-all cursor-pointer"
           title="缩小地图"
         >
           <ZoomOut size={14} />
@@ -346,7 +346,7 @@ export function CockpitMap({
               }
             }
           }}
-          className="p-2 rounded-lg text-cyan-300 hover:text-white hover:bg-cyan-900/50 transition-all cursor-pointer"
+          className="p-2 rounded-lg text-blue-200 hover:text-white hover:bg-blue-900/50 transition-all cursor-pointer"
           title="居中重置视野"
         >
           <Crosshair size={14} />
@@ -355,8 +355,8 @@ export function CockpitMap({
 
       {loading && (
         <div className="absolute inset-0 bg-[#020612]/70 backdrop-blur-xs flex items-center justify-center z-30">
-          <div className="flex items-center gap-2.5 text-cyan-300 text-xs font-mono animate-pulse">
-            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping inline-block" />
+          <div className="flex items-center gap-2.5 text-blue-300 text-xs font-mono animate-pulse">
+            <span className="w-2 h-2 rounded-full bg-[#1677FF] animate-ping inline-block" />
             <span>正在加载全域地理空间孪生网格...</span>
           </div>
         </div>

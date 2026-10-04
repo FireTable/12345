@@ -17,9 +17,9 @@ export function CockpitKpiStrip({ kpi }: CockpitKpiStripProps) {
       changeText: `+${kpi.todayGrowthPct}% 环比上周`,
       changeTone: "up",
       icon: Zap,
-      borderColor: "border-cyan-500/30",
-      glowColor: "text-cyan-300",
-      accentBg: "bg-cyan-500/10 text-cyan-400",
+      borderColor: "border-[#1677FF]/40",
+      glowColor: "text-[#4096ff]",
+      accentBg: "bg-blue-600/20 text-[#4096ff]",
     },
     {
       title: "实时办结率",
@@ -28,9 +28,9 @@ export function CockpitKpiStrip({ kpi }: CockpitKpiStripProps) {
       changeText: "符合政企 SLA 指标",
       changeTone: "normal",
       icon: CheckCircle2,
-      borderColor: "border-emerald-500/30",
+      borderColor: "border-emerald-500/35",
       glowColor: "text-emerald-300",
-      accentBg: "bg-emerald-500/10 text-emerald-400",
+      accentBg: "bg-emerald-500/15 text-emerald-400",
     },
     {
       title: "活跃多频群组",
@@ -39,9 +39,9 @@ export function CockpitKpiStrip({ kpi }: CockpitKpiStripProps) {
       changeText: `累计汇聚 ${kpi.multifreqCount.toLocaleString()} 件共性诉求`,
       changeTone: "normal",
       icon: Layers,
-      borderColor: "border-purple-500/30",
+      borderColor: "border-purple-500/35",
       glowColor: "text-purple-300",
-      accentBg: "bg-purple-500/10 text-purple-400",
+      accentBg: "bg-purple-500/15 text-purple-400",
     },
     {
       title: "高危突发险情预警",
@@ -63,7 +63,7 @@ export function CockpitKpiStrip({ kpi }: CockpitKpiStripProps) {
         return (
           <div
             key={idx}
-            className={`relative p-3 rounded-2xl border ${card.borderColor} bg-[#051129]/80 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.6)] group hover:border-cyan-400/60 transition-all`}
+            className={`relative p-3 rounded-2xl border ${card.borderColor} bg-[#051433]/85 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.6)] group hover:border-[#1677FF]/80 transition-all`}
           >
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-slate-200 tracking-wider">
@@ -85,7 +85,7 @@ export function CockpitKpiStrip({ kpi }: CockpitKpiStripProps) {
 
             <div className="mt-1 text-[11px] text-slate-300 flex items-center gap-1">
               {card.changeTone === "up" && (
-                <TrendingUp size={11} className="text-cyan-400 inline" />
+                <TrendingUp size={11} className="text-[#4096ff] inline" />
               )}
               <span className={card.changeTone === "danger" ? "text-rose-300 font-semibold" : ""}>
                 {card.changeText}

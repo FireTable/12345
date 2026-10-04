@@ -22,12 +22,12 @@ export function CockpitTrendChart({ daily, clusters = {} }: CockpitTrendChartPro
       backgroundColor: "transparent",
       tooltip: {
         trigger: "axis",
-        backgroundColor: "rgba(5, 14, 33, 0.95)",
-        borderColor: "rgba(0, 242, 254, 0.4)",
+        backgroundColor: "rgba(5, 20, 51, 0.95)",
+        borderColor: "rgba(22, 119, 255, 0.5)",
         borderWidth: 1,
         textStyle: { color: "#e0f2fe", fontSize: 12 },
         axisPointer: {
-          lineStyle: { color: "rgba(0, 242, 254, 0.5)", type: "dashed" },
+          lineStyle: { color: "rgba(22, 119, 255, 0.5)", type: "dashed" },
         },
       },
       legend: {
@@ -49,7 +49,7 @@ export function CockpitTrendChart({ daily, clusters = {} }: CockpitTrendChartPro
         type: "category",
         boundaryGap: false,
         data: xLabels,
-        axisLine: { lineStyle: { color: "rgba(0, 242, 254, 0.2)" } },
+        axisLine: { lineStyle: { color: "rgba(22, 119, 255, 0.3)" } },
         axisLabel: { color: "#94a3b8", fontSize: 10 },
       },
       yAxis: [
@@ -65,7 +65,7 @@ export function CockpitTrendChart({ daily, clusters = {} }: CockpitTrendChartPro
           name: "多频",
           nameTextStyle: { color: "#64748b", fontSize: 10 },
           splitLine: { show: false },
-          axisLabel: { color: "#f59e0b", fontSize: 10 },
+          axisLabel: { color: "#ff7d00", fontSize: 10 },
         },
       ],
       series: [
@@ -74,7 +74,7 @@ export function CockpitTrendChart({ daily, clusters = {} }: CockpitTrendChartPro
           type: "line",
           smooth: true,
           showSymbol: false,
-          lineStyle: { width: 2.5, color: "#1677ff" },
+          lineStyle: { width: 2.5, color: "#1677FF" },
           areaStyle: {
             color: {
               type: "linear",
@@ -108,15 +108,15 @@ export function CockpitTrendChart({ daily, clusters = {} }: CockpitTrendChartPro
   const hasData = Object.keys(daily).length > 0;
 
   return (
-    <div className="w-full h-full flex flex-col rounded-2xl border border-cyan-500/25 bg-[#051129]/80 backdrop-blur-xl overflow-hidden p-3.5 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
-      <div className="flex items-center justify-between pb-1 border-b border-cyan-500/20 shrink-0">
+    <div className="w-full h-full flex flex-col rounded-2xl border border-[#1677FF]/25 bg-[#051433]/85 backdrop-blur-xl overflow-hidden p-3.5 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
+      <div className="flex items-center justify-between pb-1 border-b border-[#1677FF]/20 shrink-0">
         <div className="flex items-center gap-2">
-          <TrendingUp size={15} className="text-cyan-400" />
+          <TrendingUp size={15} className="text-[#4096ff]" />
           <h3 className="text-xs font-semibold text-slate-100 tracking-wider">
             工单时序走势与多频激增脉冲
           </h3>
         </div>
-        <span className="text-[10px] font-mono text-cyan-400/80 uppercase">
+        <span className="text-[10px] font-mono text-[#4096ff]/80 uppercase">
           WAVEFORM SURGE
         </span>
       </div>

@@ -20,21 +20,21 @@ export function CockpitStream({ tickets, selectedTownship }: CockpitStreamProps)
   const displayList = filtered.slice(0, 15);
 
   return (
-    <div className="relative w-full h-full flex flex-col rounded-2xl border border-cyan-500/25 bg-[#051129]/80 backdrop-blur-xl overflow-hidden p-4 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
-      <div className="flex items-center justify-between pb-2.5 border-b border-cyan-500/20 shrink-0">
+    <div className="relative w-full h-full flex flex-col rounded-2xl border border-[#1677FF]/25 bg-[#051433]/85 backdrop-blur-xl overflow-hidden p-4 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
+      <div className="flex items-center justify-between pb-2.5 border-b border-[#1677FF]/20 shrink-0">
         <div className="flex items-center gap-2">
-          <Activity size={15} className="text-cyan-400 animate-pulse" />
+          <Activity size={15} className="text-[#4096ff] animate-pulse" />
           <h3 className="text-xs font-semibold text-slate-100 tracking-wider">
             实时工单接入流水
           </h3>
           {selectedTownship && (
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-950 border border-cyan-400 text-cyan-300">
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-950 border border-[#1677FF] text-blue-300">
               仅看 {selectedTownship}
             </span>
           )}
         </div>
-        <div className="flex items-center gap-1.5 text-[10px] font-mono text-cyan-300">
-          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+        <div className="flex items-center gap-1.5 text-[10px] font-mono text-[#4096ff]">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#1677FF] animate-ping" />
           <span>LIVE STREAM</span>
         </div>
       </div>
@@ -52,7 +52,7 @@ export function CockpitStream({ tickets, selectedTownship }: CockpitStreamProps)
                 : ticket.createTime
               : "刚刚";
 
-            const townColor = ticket.subdistrict ? getTownshipColor(ticket.subdistrict) : "#1E5AFF";
+            const townColor = ticket.subdistrict ? getTownshipColor(ticket.subdistrict) : "#1677FF";
 
             return (
               <div
@@ -61,7 +61,7 @@ export function CockpitStream({ tickets, selectedTownship }: CockpitStreamProps)
                 className={`p-2 rounded-xl border transition-all cursor-pointer ${
                   ticket.isUrgent
                     ? "bg-rose-950/30 border-rose-500/40 hover:border-rose-400"
-                    : "bg-[#091b38]/40 border-cyan-500/15 hover:border-cyan-400/40 hover:bg-[#0c2246]/60"
+                    : "bg-[#091f48]/40 border-[#1677FF]/15 hover:border-[#1677FF]/50 hover:bg-[#0c285e]/60"
                 }`}
               >
                 <div className="flex items-center justify-between text-[11px] mb-1">
@@ -101,11 +101,11 @@ export function CockpitStream({ tickets, selectedTownship }: CockpitStreamProps)
       </div>
 
       {selectedTicket && (
-        <div className="absolute inset-0 bg-[#051129]/95 backdrop-blur-md p-4 flex flex-col justify-between z-30 animate-in fade-in zoom-in-95 duration-150">
+        <div className="absolute inset-0 bg-[#051433]/95 backdrop-blur-md p-4 flex flex-col justify-between z-30 animate-in fade-in zoom-in-95 duration-150">
           <div>
-            <div className="flex items-center justify-between border-b border-cyan-500/20 pb-2 mb-3">
+            <div className="flex items-center justify-between border-b border-[#1677FF]/20 pb-2 mb-3">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-mono font-bold text-cyan-300">
+                <span className="text-xs font-mono font-bold text-blue-300">
                   {selectedTicket.ticketNo}
                 </span>
                 {selectedTicket.isUrgent && (
@@ -125,7 +125,7 @@ export function CockpitStream({ tickets, selectedTownship }: CockpitStreamProps)
             <div className="space-y-2 text-xs text-slate-300">
               <div className="flex items-center gap-2">
                 <span className="text-slate-400">诉求地点：</span>
-                <span className="text-cyan-200 font-medium">
+                <span className="text-blue-200 font-medium">
                   {selectedTicket.district || ""} {selectedTicket.subdistrict || "未归属"}
                 </span>
               </div>
@@ -135,17 +135,17 @@ export function CockpitStream({ tickets, selectedTownship }: CockpitStreamProps)
               </div>
               <div className="pt-2">
                 <span className="text-slate-400 block mb-1">市民诉求原貌：</span>
-                <div className="p-2.5 rounded-xl bg-black/40 border border-cyan-500/20 text-slate-200 text-xs leading-relaxed max-h-36 overflow-y-auto">
+                <div className="p-2.5 rounded-xl bg-black/40 border border-[#1677FF]/25 text-slate-200 text-xs leading-relaxed max-h-36 overflow-y-auto">
                   {selectedTicket.content}
                 </div>
               </div>
             </div>
           </div>
-          <div className="pt-3 border-t border-cyan-500/20 flex justify-end">
+          <div className="pt-3 border-t border-[#1677FF]/20 flex justify-end">
             <button
               type="button"
               onClick={() => setSelectedTicket(null)}
-              className="px-3 py-1.5 rounded-lg bg-cyan-600/30 border border-cyan-400 text-cyan-200 hover:bg-cyan-600/50 text-xs font-medium cursor-pointer"
+              className="px-3 py-1.5 rounded-lg bg-[#1677FF]/30 border border-[#1677FF] text-blue-100 hover:bg-[#1677FF]/50 text-xs font-medium cursor-pointer"
             >
               已阅返回
             </button>
