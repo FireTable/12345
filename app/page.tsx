@@ -6,7 +6,8 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { CivicEChart, CivicHeatmap, donutOption, trendOption } from "@/app/_components/civic/civic-charts";
 import { getTownshipColor } from "@/lib/civic-cluster";
-import { FileText, Activity, Sparkles, FolderKanban } from "lucide-react";
+import { FileText, Activity, Sparkles, FolderKanban, MonitorPlay } from "lucide-react";
+import { CockpitView } from "@/app/_components/cockpit/cockpit-view";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { SkDashboard } from "@/app/_components/civic/skeletons";
 import { useRegion } from "@/app/_components/civic/region-context";
@@ -41,6 +42,7 @@ export default function DashboardPage() {
   const { activeRegion, isLoading: regionLoading } = useRegion();
   const router = useRouter();
   const [daysRange, setDaysRange] = useState(0);
+  const [showCockpit, setShowCockpit] = useState(false);
   const [ov, setOv] = useState<Overview | null>(null);
   const [tr, setTr] = useState<Trends | null>(null);
   const [ready, setReady] = useState(false);
@@ -104,7 +106,7 @@ export default function DashboardPage() {
     <>
       <section className="page-hero">
         <div>
-          <h1 className="page-hero__title">工单数据总览</h1>
+          <h1 className="page-hero__title">数据总览</h1>
           <div className="page-hero__sub flex items-center gap-2">
             <span className="status-dot status-dot--finished" style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#52C41A" }} />
             <span>
@@ -116,6 +118,24 @@ export default function DashboardPage() {
           onRefresh={load}
           onExport={exportOverview}
         >
+          {/* 政企科技大屏入口按钮 */}
+          <button
+            type="button"
+            onClick={() => setShowCockpit(true)}
+            className="group relative inline-flex items-center gap-1.5 h-[34px] px-3 rounded-lg text-xs font-semibold text-cyan-700 dark:text-cyan-300 bg-cyan-50/80 hover:bg-cyan-100/90 dark:bg-cyan-950/60 dark:hover:bg-cyan-900/70 border border-cyan-300/80 dark:border-cyan-500/40 shadow-xs hover:shadow-cyan-500/20 transition-all cursor-pointer"
+            title="展开政企科技数据大屏 (全域态势调度驾驶舱)"
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500" />
+            </span>
+            <MonitorPlay
+              size={13}
+              className="text-cyan-600 dark:text-cyan-400 group-hover:scale-110 transition-transform"
+            />
+            <span>数据大屏</span>
+          </button>
+
           <Select
             value={String(daysRange)}
             onValueChange={(val) => setDaysRange(Number(val))}
@@ -136,181 +156,184 @@ export default function DashboardPage() {
       {!ready ? (
         <SkDashboard />
       ) : (
-      <>
-      <StatCardGrid columns={4}>
-        <StatCard
-          icon={FileText}
-          tone="blue"
-          label="总工单"
-          value={ov?.totalWorkorders}
-          sub={ov?.totalDays ? `${ov.totalDays} 天` : "--"}
-          href="/tickets"
-        />
-        <StatCard
-          icon={Activity}
-          tone="green"
-          label="日均"
-          value={ov?.avgDaily}
-          sub={maxDaily ? `最高 ${maxDaily.toLocaleString("zh-CN")}` : ov?.topRegion ? `最多 ${ov.topRegion}` : ""}
-        />
-        <StatCard
-          icon={Sparkles}
-          tone="purple"
-          label="AI 多频"
-          value={ov?.multiFreqCount}
-          sub="多频工单"
-          href="/multifreq"
-        />
-        <StatCard
-          icon={FolderKanban}
-          tone="orange"
-          label="聚类数"
-          value={ov?.multiFreqClusters}
-          sub="多频聚类"
-          href="/themes"
-        />
-      </StatCardGrid>
+        <>
+          <StatCardGrid columns={4}>
+            <StatCard
+              icon={FileText}
+              tone="blue"
+              label="总工单"
+              value={ov?.totalWorkorders}
+              sub={ov?.totalDays ? `${ov.totalDays} 天` : "--"}
+              href="/tickets"
+            />
+            <StatCard
+              icon={Activity}
+              tone="green"
+              label="日均"
+              value={ov?.avgDaily}
+              sub={maxDaily ? `最高 ${maxDaily.toLocaleString("zh-CN")}` : ov?.topRegion ? `最多 ${ov.topRegion}` : ""}
+            />
+            <StatCard
+              icon={Sparkles}
+              tone="purple"
+              label="AI 多频"
+              value={ov?.multiFreqCount}
+              sub="多频工单"
+              href="/multifreq"
+            />
+            <StatCard
+              icon={FolderKanban}
+              tone="orange"
+              label="聚类数"
+              value={ov?.multiFreqClusters}
+              sub="多频聚类"
+              href="/themes"
+            />
+          </StatCardGrid>
 
-      <section className="card" style={{ marginTop: 16 }}>
-        <div className="card__header">
-          <div className="card__title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ display: "inline-block", width: 4, height: 14, background: "linear-gradient(180deg,#F53F3F 0%,#FF7D00 100%)", borderRadius: 2 }} />
-            工单透势
-            <span style={{ fontSize: 11, fontWeight: 400, color: "var(--c-ink-3)", marginLeft: 6 }}>由 AI 实时分析生成</span>
-          </div>
-        </div>
-        <div className="card__body" style={{ padding: "14px 16px" }}>
-          {ov?.insights && ov.insights.length > 0 ? (
-            <div className="insight-grid">
-              {ov.insights.map((c) => (
-                <Link key={c.title} href={c.href || "/themes"} className={`insight-card insight-card--${c.tone}`}>
-                  <div className="insight-card__icon">{(c as any).type === "GATHERING" || c.tag === "聚集" ? "🚨" : (c as any).type === "REPEAT" || c.tag === "重复" ? "🔁" : (c as any).type === "DIVERGE" || c.tag === "发散" ? "📍" : "📉"}</div>
-                  <div>
-                    <div className="insight-card__title">{c.title}</div>
-                    <div className="insight-card__text">{c.text}</div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-hint">暂无聚类洞察。请先上传工单并触发研判。</div>
-          )}
-        </div>
-      </section>
-
-      <section className="split-row split-row--main">
-        <div className="card" style={{ display: "flex", flexDirection: "column" }}>
-          <div className="card__header">
-            <div className="card__title">{daysRange === 0 ? "全周期" : `${daysRange} 天`}工单量与多频群组新增趋势</div>
-            <div className="chart-legend">
-              <span>
-                <i style={{ background: "#1677FF" }} /> 每日工单量
-              </span>
-              <span>
-                <i style={{ background: "#FF7D00" }} /> 多频群组新增
-              </span>
-            </div>
-          </div>
-          <div
-            className="card__body"
-            style={{
-              padding: "16px 12px",
-              flex: 1,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            {hasTrend ? (
-              <div style={{ width: "100%" }}>
-                <CivicEChart option={trendOpt} height={340} />
+          <section className="card" style={{ marginTop: 16 }}>
+            <div className="card__header">
+              <div className="card__title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ display: "inline-block", width: 4, height: 14, background: "linear-gradient(180deg,#F53F3F 0%,#FF7D00 100%)", borderRadius: 2 }} />
+                工单透势
+                <span style={{ fontSize: 11, fontWeight: 400, color: "var(--c-ink-3)", marginLeft: 6 }}>由 AI 实时分析生成</span>
               </div>
-            ) : (
-              <div className="empty-hint">暂无按日工单</div>
-            )}
-          </div>
-        </div>
-        <div className="card">
-          <div className="card__header">
-            <div className="card__title">镇街工单量排行</div>
-            <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>近 {daysRange} 天 · 已研判</div>
-          </div>
-          <div className="card__body" style={{ padding: "8px 12px 4px" }}>
-            {regions.map(([name, n], i) => {
-              const isUnknown = name === "未知" || !name;
-              const color = isUnknown ? "#86909C" : getTownshipColor(name);
-              const top = i < 3;
-              return (
-                <div key={name} className="rank-item" onClick={() => router.push(`/multifreq?region=${encodeURIComponent(name)}`)}>
-                  <span
-                    className="rank-item__no"
-                    style={{
-                      background: top ? color : "var(--c-border-soft)",
-                      color: top ? "#fff" : "var(--c-ink-3)",
-                    }}
-                  >
-                    {i + 1}
+            </div>
+            <div className="card__body" style={{ padding: "14px 16px" }}>
+              {ov?.insights && ov.insights.length > 0 ? (
+                <div className="insight-grid">
+                  {ov.insights.map((c) => (
+                    <Link key={c.title} href={c.href || "/themes"} className={`insight-card insight-card--${c.tone}`}>
+                      <div className="insight-card__icon">{(c as any).type === "GATHERING" || c.tag === "聚集" ? "🚨" : (c as any).type === "REPEAT" || c.tag === "重复" ? "🔁" : (c as any).type === "DIVERGE" || c.tag === "发散" ? "📍" : "📉"}</div>
+                      <div>
+                        <div className="insight-card__title">{c.title}</div>
+                        <div className="insight-card__text">{c.text}</div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-hint">暂无聚类洞察。请先上传工单并触发研判。</div>
+              )}
+            </div>
+          </section>
+
+          <section className="split-row split-row--main">
+            <div className="card" style={{ display: "flex", flexDirection: "column" }}>
+              <div className="card__header">
+                <div className="card__title">{daysRange === 0 ? "全周期" : `${daysRange} 天`}工单量与多频群组新增趋势</div>
+                <div className="chart-legend">
+                  <span>
+                    <i style={{ background: "#1677FF" }} /> 每日工单量
                   </span>
-                  <span style={{ color: "var(--c-ink)", fontWeight: 500, minWidth: 42 }}>{name}</span>
-                  <div className="rank-item__track">
-                    <div className="rank-item__bar" style={{ width: `${(n / maxR) * 100}%`, background: color }} />
-                  </div>
-                  <span style={{ color: "var(--c-ink)", fontWeight: 600, minWidth: 60, textAlign: "right", fontFeatureSettings: "'tnum'" }}>
-                    {n.toLocaleString("zh-CN")}
+                  <span>
+                    <i style={{ background: "#FF7D00" }} /> 多频群组新增
                   </span>
                 </div>
-              );
-            })}
-            {regions.length === 0 && <div className="empty-hint">暂无镇街分布。上传后请启动 Agent 研判，镇街由模型从微观地点切分。</div>}
-          </div>
-        </div>
-      </section>
-
-      <section className="split-row split-row--main" style={{ marginTop: 16 }}>
-        <div className="card" style={{ display: "flex", flexDirection: "column" }}>
-          <div className="card__header">
-            <div className="card__title">工单类型分布</div>
-            <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>
-              已研判 <b>{ov?.analyzedCount || 0}</b> / {ov?.totalWorkorders || 0} 件
-            </div>
-          </div>
-          <div
-            className="card__body"
-            style={{
-              padding: "16px 12px",
-              flex: 1,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            {hasDonut ? (
-              <div style={{ width: "100%" }}>
-                <CivicEChart option={donutOpt} height={320} />
               </div>
-            ) : (
-              <div className="empty-hint">暂无类型分布。类型由 AI 归入七类民生业务后展示。</div>
-            )}
-          </div>
-        </div>
-        <div className="card">
-          <div className="card__header">
-            <div className="card__title">镇街 × 类型 工单数量</div>
-            <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>色深表示工单数量</div>
-          </div>
-          <div className="card__body heatmap-scroll" style={{ padding: "8px 12px" }}>
-            <CivicHeatmap
-              regions={regions.map((r) => r[0])}
-              cats={cats.slice(0, 7).map((c) => c[0])}
-              grid={ov?.regionCategory || {}}
-            />
-          </div>
-        </div>
-      </section>
-      </>
+              <div
+                className="card__body"
+                style={{
+                  padding: "16px 12px",
+                  flex: 1,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {hasTrend ? (
+                  <div style={{ width: "100%" }}>
+                    <CivicEChart option={trendOpt} height={340} />
+                  </div>
+                ) : (
+                  <div className="empty-hint">暂无按日工单</div>
+                )}
+              </div>
+            </div>
+            <div className="card">
+              <div className="card__header">
+                <div className="card__title">镇街工单量排行</div>
+                <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>近 {daysRange} 天 · 已研判</div>
+              </div>
+              <div className="card__body" style={{ padding: "8px 12px 4px" }}>
+                {regions.map(([name, n], i) => {
+                  const isUnknown = name === "未知" || !name;
+                  const color = isUnknown ? "#86909C" : getTownshipColor(name);
+                  const top = i < 3;
+                  return (
+                    <div key={name} className="rank-item" onClick={() => router.push(`/multifreq?region=${encodeURIComponent(name)}`)}>
+                      <span
+                        className="rank-item__no"
+                        style={{
+                          background: top ? color : "var(--c-border-soft)",
+                          color: top ? "#fff" : "var(--c-ink-3)",
+                        }}
+                      >
+                        {i + 1}
+                      </span>
+                      <span style={{ color: "var(--c-ink)", fontWeight: 500, minWidth: 42 }}>{name}</span>
+                      <div className="rank-item__track">
+                        <div className="rank-item__bar" style={{ width: `${(n / maxR) * 100}%`, background: color }} />
+                      </div>
+                      <span style={{ color: "var(--c-ink)", fontWeight: 600, minWidth: 60, textAlign: "right", fontFeatureSettings: "'tnum'" }}>
+                        {n.toLocaleString("zh-CN")}
+                      </span>
+                    </div>
+                  );
+                })}
+                {regions.length === 0 && <div className="empty-hint">暂无镇街分布。上传后请启动 Agent 研判，镇街由模型从微观地点切分。</div>}
+              </div>
+            </div>
+          </section>
+
+          <section className="split-row split-row--main" style={{ marginTop: 16 }}>
+            <div className="card" style={{ display: "flex", flexDirection: "column" }}>
+              <div className="card__header">
+                <div className="card__title">工单类型分布</div>
+                <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>
+                  已研判 <b>{ov?.analyzedCount || 0}</b> / {ov?.totalWorkorders || 0} 件
+                </div>
+              </div>
+              <div
+                className="card__body"
+                style={{
+                  padding: "16px 12px",
+                  flex: 1,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {hasDonut ? (
+                  <div style={{ width: "100%" }}>
+                    <CivicEChart option={donutOpt} height={320} />
+                  </div>
+                ) : (
+                  <div className="empty-hint">暂无类型分布。类型由 AI 归入七类民生业务后展示。</div>
+                )}
+              </div>
+            </div>
+            <div className="card">
+              <div className="card__header">
+                <div className="card__title">镇街 × 类型 工单数量</div>
+                <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>色深表示工单数量</div>
+              </div>
+              <div className="card__body heatmap-scroll" style={{ padding: "8px 12px" }}>
+                <CivicHeatmap
+                  regions={regions.map((r) => r[0])}
+                  cats={cats.slice(0, 7).map((c) => c[0])}
+                  grid={ov?.regionCategory || {}}
+                />
+              </div>
+            </div>
+          </section>
+        </>
       )}
+
+      {/* 科技数据大屏全屏沉浸视窗 */}
+      {showCockpit && <CockpitView onClose={() => setShowCockpit(false)} />}
     </>
   );
 }

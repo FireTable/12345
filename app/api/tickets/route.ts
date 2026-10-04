@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getRegionDb } from "@/db/client";
 import { ticketsTable, themesTable } from "@/db/schema";
-import { sql, inArray, eq } from "drizzle-orm";
+import { sql, inArray, eq, desc } from "drizzle-orm";
 import type { RawTicket } from "@/backend/state";
 import { desensitizeContent } from "@/backend/anonymizer";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
@@ -14,7 +14,11 @@ export async function GET(req: Request) {
   try {
     const regionId = await resolveRequestRegionId(req);
     const { db: tenantDb } = await getRegionDb(regionId);
-    const dbRows = await tenantDb.select().from(ticketsTable).limit(500);
+    const dbRows = await tenantDb
+      .select()
+      .from(ticketsTable)
+      .orderBy(desc(ticketsTable.createTime))
+      .limit(500);
     if (dbRows && dbRows.length > 0) {
       const tickets: RawTicket[] = dbRows.map((r) => ({
         id: r.id,
