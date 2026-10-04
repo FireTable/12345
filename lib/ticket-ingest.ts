@@ -210,12 +210,22 @@ export async function insertRecordsBatch(records: any[], regionId?: string): Pro
       duplicateCount += existingSet.size;
 
       const newRecords = chunk.filter((c) => !existingSet.has(c.ticketNo));
-      for (const row of chunk) {
-        if (!existingSet.has(row.ticketNo) || !(row.createTime instanceof Date)) continue;
-        await targetDb
-          .update(ticketsTable)
-          .set({ createTime: row.createTime })
-          .where(eq(ticketsTable.ticketNo, row.ticketNo));
+      if (existingSet.size > 0) {
+        const updateRows = chunk.filter(
+          (row) => existingSet.has(row.ticketNo) && row.createTime instanceof Date
+        );
+        const CONCURRENCY = 25;
+        for (let u = 0; u < updateRows.length; u += CONCURRENCY) {
+          const sub = updateRows.slice(u, u + CONCURRENCY);
+          await Promise.all(
+            sub.map((row) =>
+              targetDb
+                .update(ticketsTable)
+                .set({ createTime: row.createTime })
+                .where(eq(ticketsTable.ticketNo, row.ticketNo))
+            )
+          );
+        }
       }
 
       if (newRecords.length > 0) {

@@ -12,7 +12,13 @@ const nextConfig: NextConfig = {
     "@civic/system-one",
     "@civic/system-two",
     "@civic/anonymizer",
+    "busboy",
   ],
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "300mb",
+    },
+  },
 };
 
 export default nextConfig;

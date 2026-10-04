@@ -97,13 +97,15 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
     setStep("INGESTING");
     toast.info("正在上传至后端服务器流式解析并入库...");
 
-    const formData = new FormData();
-    formData.append("file", file);
-
     try {
+      // 采用 application/octet-stream 直传二进制流，规避 Next.js/Undici 在大文件或中文文件名下解析 FormData 的报错
       const res = await fetch("/api/tickets/upload", {
         method: "POST",
-        body: formData,
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "X-File-Name": encodeURIComponent(file.name),
+        },
+        body: file,
       });
       const json = await res.json();
 
@@ -321,7 +323,10 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                                 {file.name}
                               </p>
                               <p className="text-[10px] text-muted-foreground">
-                                {(file.size / 1024).toFixed(1)} KB · 待流式解析入库
+                                {file.size >= 1024 * 1024
+                                  ? `${(file.size / (1024 * 1024)).toFixed(2)} MB`
+                                  : `${(file.size / 1024).toFixed(1)} KB`}{" "}
+                                · 待流式解析入库
                               </p>
                             </div>
                           </div>
