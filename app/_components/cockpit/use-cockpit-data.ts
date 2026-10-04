@@ -37,7 +37,7 @@ export function useCockpitData(regionId: string) {
 
       const [overviewRes, trendRes, clusterRes, ticketRes] = await Promise.all([
         fetch(`/api/overview${regParam}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-        fetch(`/api/overview/trend?days=30${regAmp}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+        fetch(`/api/trends?days=30${regAmp}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
         fetch(`/api/clusters${regParam}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
         fetch(`/api/tickets${regParam}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
       ]);
