@@ -16,6 +16,7 @@ const nextConfig: NextConfig = {
     "adm-zip",
   ],
   experimental: {
+    proxyClientMaxBodySize: "300mb",
     serverActions: {
       bodySizeLimit: "300mb",
     },

@@ -406,20 +406,39 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                     className="space-y-3"
                   >
                     {/* Banner */}
-                    <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                        <div>
-                          <h3 className="text-xs font-semibold">工单入库成功</h3>
-                          <p className="text-[11px] text-emerald-700">
-                            解析 {report.totalParsed} 条，耗时 {(report.durationMs / 1000).toFixed(2)} 秒
-                          </p>
+                    {report.insertedCount > 0 ? (
+                      <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <div>
+                            <h3 className="text-xs font-semibold">
+                              {report.failedCount > 0 ? "部分工单入库成功" : "工单入库成功"}
+                            </h3>
+                            <p className="text-[11px] text-emerald-700">
+                              解析 {report.totalParsed} 条，成功入库 {report.insertedCount} 条，耗时 {(report.durationMs / 1000).toFixed(2)} 秒
+                            </p>
+                          </div>
                         </div>
+                        <span className="font-mono text-xs font-semibold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded border border-emerald-300">
+                          {report.insertedCount} 条已入库
+                        </span>
                       </div>
-                      <span className="font-mono text-xs font-semibold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded border border-emerald-300">
-                        {report.totalParsed} 条
-                      </span>
-                    </div>
+                    ) : (
+                      <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                          <div>
+                            <h3 className="text-xs font-semibold">未成功入库任何工单</h3>
+                            <p className="text-[11px] text-amber-700">
+                              解析 {report.totalParsed} 条，成功 0 条（数据可能被截断、格式异常或重复过滤）
+                            </p>
+                          </div>
+                        </div>
+                        <span className="font-mono text-xs font-semibold bg-amber-100 text-amber-800 px-2 py-0.5 rounded border border-amber-300">
+                          0 条入库
+                        </span>
+                      </div>
+                    )}
 
                     {/* 3 Metrics Cards */}
                     <div className="grid grid-cols-3 gap-2.5">

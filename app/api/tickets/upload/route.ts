@@ -160,22 +160,34 @@ function parseSingleDataBuffer(buffer: Buffer, fileName: string): Record<string,
     return parseCsvBuffer(buffer);
   }
 
+  const isZip =
+    buffer.length >= 4 &&
+    buffer[0] === 0x50 &&
+    buffer[1] === 0x4b &&
+    buffer[2] === 0x03 &&
+    buffer[3] === 0x04;
+
   // Try XLSX
   try {
     const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
     const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
     return XLSX.utils.sheet_to_json<Record<string, any>>(firstSheet, { defval: "" });
   } catch (xlsxErr: any) {
-    console.warn(`[upload/route] XLSX.read failed for "${fileName}", trying CSV fallback:`, xlsxErr?.message);
-    try {
-      const csvRows = parseCsvBuffer(buffer);
-      if (csvRows.length > 0 && Object.keys(csvRows[0] || {}).length > 1) {
-        return csvRows;
+    console.warn(`[upload/route] XLSX.read failed for "${fileName}":`, xlsxErr?.message);
+    // 仅在明确不是 ZIP / XLSX 二进制包时才尝试 CSV 容错兜底，绝不把二进制字节流当作 CSV 解析
+    if (!isZip && !lowerName.endsWith(".xlsx") && !lowerName.endsWith(".xls")) {
+      try {
+        const csvRows = parseCsvBuffer(buffer);
+        if (csvRows.length > 0 && Object.keys(csvRows[0] || {}).length > 1) {
+          return csvRows;
+        }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
     }
-    throw xlsxErr;
+    throw new Error(
+      `Excel 表格解析失败 (${xlsxErr?.message || "文件损坏或格式不支持"})。请检查文件是否完整（大文件可能因网络或服务器传输限制被截断）。`
+    );
   }
 }
 
