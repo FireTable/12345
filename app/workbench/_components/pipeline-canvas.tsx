@@ -149,7 +149,7 @@ function InnerPipelineCanvas({
 
     // 01 工序 (工单接收与导入): 只要库里有工单即已就绪完成
     const ingestStatus = total > 0 ? "completed" : "idle";
-    const ingestStatusText = total > 0 ? `工单已接入 (${total}件)` : "等待导入";
+    const ingestStatusText = total > 0 ? `工单已接入 (${total.toLocaleString()}件)` : "等待导入";
 
     // 02 工序 (分类初筛与分流): 接入后初筛分流统计已生成
     const triageStatus = total > 0 ? "completed" : "idle";
@@ -160,9 +160,9 @@ function InnerPipelineCanvas({
     const isEntityCompleted = (total > 0 && analyzed >= total) || stage === "CLUSTERING" || stage === "SUMMARIZING" || stage === "COMPLETED" || isCompleted;
     const entityStatus = isEntityRunning ? "running" : isEntityCompleted ? "completed" : "idle";
     const entityStatusText = isEntityRunning
-      ? `正在抽取研判 (${targetProcessed}/${total})`
+      ? `正在抽取研判 (${targetProcessed.toLocaleString()}/${total.toLocaleString()})`
       : isEntityCompleted
-      ? `提取完成 (${total}件)`
+      ? `提取完成 (${total.toLocaleString()}件)`
       : "等待处理";
 
     // 04 工序 (同类问题聚合分析)
@@ -172,7 +172,7 @@ function InnerPipelineCanvas({
     const clusterStatusText = isClusterRunning
       ? "正在聚合归类"
       : isClusterCompleted
-      ? `聚合完成 (${themeCount}组)`
+      ? `聚合完成 (${themeCount.toLocaleString()}组)`
       : "等待分析";
 
     // 05 工序 (处置建议与案卷归档)

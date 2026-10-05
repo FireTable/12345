@@ -44,7 +44,7 @@ export function DossierNode({ data }: NodeProps<DossierNodeType>) {
             已生成案卷
           </div>
           <div className="text-lg font-bold font-mono text-emerald-950 mt-1">
-            {data.dossierCount}
+            {data.dossierCount.toLocaleString()}
             <span className="text-[11px] font-normal text-emerald-700 ml-1">份</span>
           </div>
         </div>
@@ -55,7 +55,7 @@ export function DossierNode({ data }: NodeProps<DossierNodeType>) {
             假闭环与推诿风险
           </div>
           <div className="text-lg font-bold font-mono text-amber-950 mt-1">
-            {pseudoLoop}
+            {pseudoLoop.toLocaleString()}
             <span className="text-[11px] font-normal text-amber-700 ml-1">起</span>
           </div>
         </div>

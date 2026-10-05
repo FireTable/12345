@@ -94,17 +94,17 @@ export default function WorkbenchPage() {
           {isRunning ? (
             <div className="workbench-badge workbench-badge--running flex items-center gap-1.5 animate-pulse">
               <span className="w-2 h-2 rounded-full bg-blue-600 animate-ping" />
-              <span>研判中：第 {processed}/{total} 件 · {pipelineData?.taskProgress?.stageText || "时空主体抽取"}</span>
+              <span>研判中：第 {processed.toLocaleString()}/{total.toLocaleString()} 件 · {pipelineData?.taskProgress?.stageText || "时空主体抽取"}</span>
             </div>
           ) : isAllAnalyzed ? (
             <div className="workbench-badge workbench-badge--idle flex items-center gap-1.5">
               <CheckCircle2 size={13} className="text-emerald-600" />
-              <span>全部工单已完成研判 ({pipelineData?.metrics.totalTickets} 件)</span>
+              <span>全部工单已完成研判 ({pipelineData?.metrics.totalTickets?.toLocaleString()} 件)</span>
             </div>
           ) : unprocessed > 0 ? (
             <div className="workbench-badge workbench-badge--busy flex items-center gap-1.5">
               <AlertCircle size={13} className="text-amber-600" />
-              <span>待研判积压：{unprocessed} 件工单</span>
+              <span>待研判积压：{unprocessed.toLocaleString()} 件工单</span>
             </div>
           ) : (
             <div className="workbench-badge workbench-badge--idle flex items-center gap-1.5">

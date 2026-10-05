@@ -49,12 +49,12 @@ export function IngestNode({ data }: NodeProps<IngestNodeType>) {
       <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
         <div>
           <div className="pipeline-metric-label">工单总数</div>
-          <div className="pipeline-metric-value text-blue-600 mt-1">{data.totalTickets}</div>
+          <div className="pipeline-metric-value text-blue-600 mt-1">{data.totalTickets.toLocaleString()}</div>
         </div>
         <div>
           <div className="pipeline-metric-label">待处理工单</div>
           <div className={`pipeline-metric-value mt-1 ${data.unprocessedTickets > 0 ? "text-amber-600" : "text-emerald-600"}`}>
-            {data.unprocessedTickets}
+            {data.unprocessedTickets.toLocaleString()}
           </div>
         </div>
       </div>

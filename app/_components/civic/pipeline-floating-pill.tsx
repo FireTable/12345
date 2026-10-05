@@ -59,7 +59,7 @@ export function PipelineFloatingPill() {
         <div className="text-[11px] font-bold tracking-tight text-white flex items-center gap-1.5 leading-none">
           <span>AI 流水线研判中</span>
           <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-blue-500/30 text-blue-200 border border-blue-400/30">
-            {processed}/{total} ({percent}%)
+            {processed.toLocaleString()}/{total.toLocaleString()} ({percent}%)
           </span>
         </div>
         <div className="text-[9.5px] text-slate-300 truncate max-w-[140px] leading-tight mt-0.5">

@@ -72,7 +72,7 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
           </div>
           <div className="mt-1.5 flex items-baseline justify-between">
             <div className="text-lg font-bold font-mono text-red-900 leading-none">
-              {data.stabilityRiskCount}
+              {data.stabilityRiskCount.toLocaleString()}
               <span className="text-[11px] font-normal text-slate-500 ml-1">件</span>
             </div>
             {data.stabilityRiskCount > 0 ? (
@@ -94,7 +94,7 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
           </div>
           <div className="mt-1.5 flex items-baseline justify-between">
             <div className="text-lg font-bold font-mono text-amber-900 leading-none">
-              {data.urgentCount}
+              {data.urgentCount.toLocaleString()}
               <span className="text-[11px] font-normal text-slate-500 ml-1">件</span>
             </div>
             <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-200/90 text-amber-900 font-semibold whitespace-nowrap">
@@ -195,7 +195,7 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
                       }`}
                       style={isHovered ? { color } : undefined}
                     >
-                      {c.count}件{" "}
+                      {c.count.toLocaleString()}件{" "}
                       <span
                         className={isHovered ? "font-bold" : "font-semibold text-slate-600"}
                         style={isHovered ? { color } : undefined}
@@ -249,7 +249,7 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
                       className="font-mono font-bold"
                       style={{ color: isUnknown ? "#64748B" : color }}
                     >
-                      {ts.count}
+                      {ts.count.toLocaleString()}
                     </span>
                   </span>
                 );

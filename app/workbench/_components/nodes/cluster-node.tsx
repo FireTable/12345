@@ -56,7 +56,7 @@ export function ClusterNode({ data }: NodeProps<ClusterNodeType>) {
             聚合问题专题
           </div>
           <div className="pipeline-metric-value text-blue-600 mt-1">
-            {data.themeCount} <span className="text-xs font-normal text-slate-500">个专题</span>
+            {data.themeCount.toLocaleString()} <span className="text-xs font-normal text-slate-500">个专题</span>
           </div>
         </div>
         <div>
@@ -65,7 +65,7 @@ export function ClusterNode({ data }: NodeProps<ClusterNodeType>) {
             工单归集率
           </div>
           <div className="pipeline-metric-value text-emerald-600 mt-1">
-            {compressionRatio}% <span className="text-xs font-normal text-slate-400">({data.totalTickets} ➔ {data.themeCount} 组)</span>
+            {compressionRatio}% <span className="text-xs font-normal text-slate-400">({data.totalTickets.toLocaleString()} ➔ {data.themeCount.toLocaleString()} 组)</span>
           </div>
         </div>
       </div>
@@ -98,7 +98,7 @@ export function ClusterNode({ data }: NodeProps<ClusterNodeType>) {
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-bold">
-                    包含 {c.ticketCount} 条工单
+                    包含 {c.ticketCount.toLocaleString()} 条工单
                   </span>
                 </div>
               </div>

@@ -44,7 +44,7 @@ export function EntityNode({ data }: NodeProps<EntityNodeType>) {
         <div className="flex items-center justify-between text-[11px] font-medium text-slate-600 mb-1">
           <span className="text-slate-700 font-medium">工单要素提取进度</span>
           <span className="font-mono text-slate-800 font-bold">
-            {data.processed} / {data.total} ({data.percent}%)
+            {data.processed.toLocaleString()} / {data.total.toLocaleString()} ({data.percent}%)
           </span>
         </div>
         <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
