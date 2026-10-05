@@ -1,11 +1,12 @@
 /**
- * 广州市天河区 12345 热线工单高熵拟真生成引擎 (15万条超丰富多样性版本)
+ * 广州市天河区 12345 热线工单高熵拟真生成引擎 (18万条超丰富多样性版本)
  * 严格对齐 sample_300.xlsx 结构: [index, ticketNo, title, content]
  *
  * 核心架构:
  * 1. 50,000 条 (1/3) 深度手写体高异构工单 (劳资欠薪、预付卡跑路、公文流转重办件、安全急件、疑难信访纠纷)
  * 2. 100,000 条 (2/3) 高频日常多场景工单 (涵盖天河21街道、所有真实楼盘路名、动态组合标题与多元句式)
- * 3. 彻底杜绝模板重复，动态组合度超过数百万种，完全脱敏且贴合广东天河实际政务热线语态。
+ * 3. 30,000 条 (新增) 纯市民第一人称原声口吻工单 (真实市民视角、日常抱怨、口语化情感、痛点鲜明)
+ * 总计 180,000 条，同时产出 18w 总表与 3w 纯市民口吻独立专表供查验。
  */
 
 import fs from "node:fs";
@@ -249,7 +250,6 @@ function pick<T>(arr: T[], rng: () => number): T {
   return arr[Math.floor(rng() * arr.length)];
 }
 
-// 仿真多维度语态前缀与身份口吻
 const CITIZEN_ROLES = [
   "市民",
   "诉求人",
@@ -301,7 +301,7 @@ function generateDeepCase(sub: SubdistrictDef, dateStr: string, timeStr: string,
   const comm = pick(sub.commercial, rng);
   const ending = pick(ENDINGS, rng);
 
-  // 1. 劳资纠纷与欠薪涉稳深访件 (Deep Wage & Labor Case)
+  // 1. 劳资纠纷与欠薪涉稳深访件
   if (mod === 0) {
     const job = pick(["主程序员", "UI设计主管", "外卖仓储分拣员", "工地板筋工", "物业中控员", "餐饮后厨领班", "直播运营策划"], rng);
     const company = pick([
@@ -322,7 +322,7 @@ function generateDeepCase(sub: SubdistrictDef, dateStr: string, timeStr: string,
     return [title, content];
   }
 
-  // 2. 预付卡暴雷跑路与欺诈维权件 (Deep Consumer Fraud & Pre-paid Card Collapse)
+  // 2. 预付卡暴雷跑路与欺诈维权件
   if (mod === 1) {
     const storeType = pick(["少儿平衡车及体能中心", "高端女子普拉提生活馆", "少儿戏剧英语培训班", "连锁专业头皮抗衰养护馆", "连锁高端美容SPA会所", "少儿室内滑雪模拟俱乐部"], rng);
     const storeName = `天河${sub.name}某知名品牌${storeType}`;
@@ -335,7 +335,7 @@ function generateDeepCase(sub: SubdistrictDef, dateStr: string, timeStr: string,
     return [title, content];
   }
 
-  // 3. 规范公文式重办件 - 粤省心/穗好办带调查回复追诉 (Deep Formal Reopen & Administrative Oversight)
+  // 3. 规范公文式重办件
   if (mod === 2) {
     const prevNo = `****${String(Math.floor(rng() * 8999 + 1000))}-01`;
     const targetDept = pick(["天河区综合行政执法局", "天河区住建园林局", "广州市生态环境局天河分局", "天河交警大队", "天河区市场监督管理局"], rng);
@@ -348,7 +348,7 @@ function generateDeepCase(sub: SubdistrictDef, dateStr: string, timeStr: string,
 前单编号：${prevNo}
 涉案问题：${topic}
 重办诉求内容：${role}对${targetDept}就前单（${prevNo}）所作出的办结答复结论持有强烈异议并申请重办。
-市民具体陈述：“承办单位于三天前通过系统短信反馈称‘执法人员已到场责令整改完毕’。然而事实是，执法队员到场仅口头打了个招呼并未开具责令改正通知书，执法车前脚一走，现场违法行为在十分钟内立刻死灰复燃，夜间依然震耳欲聋/臭气熏天。这种‘走过场式打卡整改’严重伤害了政府公信力。”
+市民具体陈述：“承办单位于三天前通过系统短信反馈称‘执法人员已到场责令整改完毕’。然而事实是，执法队员到场仅口头打了个招呼并未开具责令改正通知书，执法车前脚一走，现场违法行为在十分钟内立刻死灰复燃，夜间依然震耳欲聋。这种‘走过场式打卡整改’严重伤害了政府公信力。”
 市民强烈诉求：
 1. 要求${targetDept}派出督查纪检专员实地暗访督办；
 2. 彻底依法没收违法工具或依法予以行政处罚罚款；
@@ -356,7 +356,7 @@ function generateDeepCase(sub: SubdistrictDef, dateStr: string, timeStr: string,
     return [title, content];
   }
 
-  // 4. 高危安全隐患与突发应急事件急件 (Deep Public Safety & Emergency Hazards)
+  // 4. 高危安全隐患与突发应急事件急件
   if (mod === 3) {
     const hazardType = pick([
       "多名租客将大功率锂电池电动车推入高层住宅客梯入户违规充电",
@@ -371,7 +371,7 @@ function generateDeepCase(sub: SubdistrictDef, dateStr: string, timeStr: string,
     return [title, content];
   }
 
-  // 5. 疑难复杂邻里纠纷与既有住宅违法拆改结构 (Deep Structural Alteration & Neighborhood Gridlock)
+  // 5. 疑难复杂邻里纠纷与既有住宅违法拆改结构
   const floorHigh = Math.floor(rng() * 18 + 3);
   const floorLow = floorHigh - 1;
   const alterType = pick([
@@ -390,7 +390,6 @@ function generateDeepCase(sub: SubdistrictDef, dateStr: string, timeStr: string,
 // 第二部分：100,000 条 (2/3) 日常高频多场景工单生成器 (Diverse Daily Civic Cases)
 // =========================================================================
 
-// 细分核心生活事件库 (12大类，动态拼接)
 interface DynamicCivicEvent {
   cat: string;
   pfx: string;
@@ -401,7 +400,6 @@ interface DynamicCivicEvent {
 }
 
 const CIVIC_EVENTS: DynamicCivicEvent[] = [
-  // 1. 违章占道与车辆挪车
   {
     cat: "交通出行",
     pfx: "（交通）",
@@ -422,7 +420,6 @@ const CIVIC_EVENTS: DynamicCivicEvent[] = [
       "希望交通大队加派巡逻警车实施拖移处罚",
     ],
   },
-  // 2. 共享单车乱投放乱堆放
   {
     cat: "城市管理",
     pfx: "（城管）",
@@ -441,7 +438,6 @@ const CIVIC_EVENTS: DynamicCivicEvent[] = [
       "希望相关部门督促运维人员加大早晚调度转运频次",
     ],
   },
-  // 3. 沿街夜市游商占道排档
   {
     cat: "城市管理",
     pfx: "（城管）",
@@ -460,7 +456,6 @@ const CIVIC_EVENTS: DynamicCivicEvent[] = [
       "希望城管执法人员联合环卫对地面顽固油污进行全面高压冲洗",
     ],
   },
-  // 4. 商业噪音与高音喇叭
   {
     cat: "城市管理",
     pfx: "（城管）",
@@ -479,7 +474,6 @@ const CIVIC_EVENTS: DynamicCivicEvent[] = [
       "请职能部门下达限期调低音量整改通知书",
     ],
   },
-  // 5. 餐饮油烟直排扰民
   {
     cat: "生态环境",
     pfx: "（环保）",
@@ -498,7 +492,6 @@ const CIVIC_EVENTS: DynamicCivicEvent[] = [
       "责令涉案餐饮单位限期清洗净化滤芯或改为高空合规管道排放",
     ],
   },
-  // 6. 市政设施损坏与破损
   {
     cat: "城市管理",
     pfx: "（市政）",
@@ -517,7 +510,6 @@ const CIVIC_EVENTS: DynamicCivicEvent[] = [
       "请市政供水水务部门立即关闭阀门并重新平整路面",
     ],
   },
-  // 7. 交通信号灯与道路通行组织
   {
     cat: "交通出行",
     pfx: "（交通）",
@@ -536,7 +528,6 @@ const CIVIC_EVENTS: DynamicCivicEvent[] = [
       "希望增派路口早高峰执勤交警人工指挥疏导",
     ],
   },
-  // 8. 楼道杂物与楼栋卫生保洁
   {
     cat: "城市管理",
     pfx: "（城管）",
@@ -555,7 +546,6 @@ const CIVIC_EVENTS: DynamicCivicEvent[] = [
       "督促物业公司严格落实保洁消毒日常巡检职责",
     ],
   },
-  // 9. 消费物价与明码标价
   {
     cat: "市场监管",
     pfx: "（市监）",
@@ -574,7 +564,6 @@ const CIVIC_EVENTS: DynamicCivicEvent[] = [
       "要求责令商户落实明码标价制度并依法依规退回多收款项",
     ],
   },
-  // 10. 政策咨询与办事指南
   {
     cat: "政策咨询",
     pfx: "（咨询）",
@@ -593,7 +582,6 @@ const CIVIC_EVENTS: DynamicCivicEvent[] = [
       "希望通过短信告知具体官方办事指南下载网址与咨询热线",
     ],
   },
-  // 11. 公共绿化与树木遮光隐患
   {
     cat: "城市管理",
     pfx: "（绿化）",
@@ -612,7 +600,6 @@ const CIVIC_EVENTS: DynamicCivicEvent[] = [
       "请绿化工人及时清理高空悬挂枯死枝条消除险情",
     ],
   },
-  // 12. 房屋租赁押金与租房服务纠纷
   {
     cat: "社会治理",
     pfx: "（综治）",
@@ -647,11 +634,9 @@ function generateDailyCase(sub: SubdistrictDef, dateStr: string, timeStr: string
   const demand = pick(evt.demands, rng);
   const ending = pick(ENDINGS, rng);
 
-  // 动态构造标题，杜绝重复感
   const locationTag = rng() > 0.5 ? compound : road;
   const title = `${evt.pfx}${locationTag}${noun}${verb.slice(0, 8)}`;
 
-  // 动态构造正文
   const opener = pick(OPENINGS, rng)(role, dateStr, timeStr);
   const placeDesc = rng() > 0.5
     ? `天河区${sub.name}街道${compound}（靠近${road}、${landmark}）`
@@ -663,17 +648,135 @@ function generateDailyCase(sub: SubdistrictDef, dateStr: string, timeStr: string
 }
 
 // =========================================================================
-// 主入口执行逻辑 (生成 150,000 条，严格 1:2 结构)
+// 第三部分：30,000 条 (新增) 纯市民第一人称原声口吻工单生成器 (Pure First-Person Citizen Voice)
+// =========================================================================
+
+function generateFirstPersonCitizenCase(
+  sub: SubdistrictDef,
+  dateStr: string,
+  timeStr: string,
+  rng: () => number,
+  i: number
+): [string, string] {
+  const mod = i % 15;
+  const road = pick(sub.roads, rng);
+  const compound = pick(sub.compounds, rng);
+  const office = pick(sub.offices, rng);
+  const landmark = pick(sub.landmarks, rng);
+  const comm = pick(sub.commercial, rng);
+  const plate = `粤A·${String(Math.floor(rng() * 90000 + 10000))}`;
+
+  // 1. 宝妈推婴儿车遇占道
+  if (mod === 0) {
+    const title = `反映${sub.name}街道${road}共享单车占道婴儿车无法通行`;
+    const content = `我家住在天河区${sub.name}街道${compound}，我今天上午${timeStr}推着婴儿车带宝宝去${landmark}，走到${road}人行道这边，整条路全被共享单车和几台乱停的私家车堵得死死的！推车根本过不去，我只能被迫推着小孩走到主干道机动车道上，后面大货车一直按喇叭，差一点就蹭到推车，吓得我一身冷汗！每天推车出门像走迷宫一样，城管和交警能不能管管？把那些堆积的单车清理一下！（方便接听电话）`;
+    return [title, content];
+  }
+  // 2. 高考/中考考生家长求助
+  if (mod === 1) {
+    const title = `（急）求助天河${sub.name}${compound}周边夜间施工严重影响高三复习`;
+    const content = `求求街道办和环保局帮帮我们吧！我家小孩今年在天河读高三马上高考了，我们住在${compound}。最近楼下${road}旁边那个工地，每天半夜一两点还在轰隆隆浇水泥、吊钢筋，窗户关死都震得嗡嗡响，小孩这几天头疼失眠，今天模拟考都考砸了在屋里哭。我真的快给他们跪下了，能不能严格禁止夜间超时施工，给备考的孩子们一条活路？（请白天联系，谢谢理解）`;
+    return [title, content];
+  }
+  // 3. 科韵路/智慧城被欠薪员工
+  if (mod === 2) {
+    const company = pick(["某信息技术有限公司", "某游戏网络工作室", "某跨境电商科技公司", "某智能软件开发公司"], rng);
+    const wage = Math.floor(rng() * 30000 + 12000).toLocaleString();
+    const count = Math.floor(rng() * 25 + 6);
+    const title = `（劳监）投诉${sub.name}${office}${company}恶意拖欠工资`;
+    const content = `我是${office}一家科技公司（${company}）的员工，我们公司从去年底开始就一直拖欠工资，老板开会每次都说‘下周融资就到账’，结果上周五把我们所有员工的企业微信全注销了，办公室电脑全搬空了！我一个人被拖欠了${wage}块钱工资，下周房东就要赶我出门了，我们同部门${count}个同事全被坑了。麻烦天河区劳动监察大队尽快立案，帮我们讨回血汗钱！`;
+    return [title, content];
+  }
+  // 4. 预付卡健身/美发商家闭店跑路
+  if (mod === 3) {
+    const store = pick(["某健身工作室", "某少儿轮滑体适能馆", "某美发造型沙龙", "某瑜伽普拉提中心"], rng);
+    const balance = Math.floor(rng() * 6000 + 2000).toLocaleString();
+    const title = `（市监）投诉${comm}${store}突然关门老板跑路`;
+    const content = `我要实名投诉天河区${comm}那家${store}！我上个月刚在他们店充了${balance}块钱办年卡，昨天下午带小孩过去，结果大门紧锁，门口围了三四十个会员都在维权！隔壁商铺说老板前天晚上连夜把设备拉走跑路了。这也太猖狂了吧？光天化日之下卷钱跑路！消委会和市场监管所必须严查这种诈骗行为，不能让他们换个地方又去坑别人！`;
+    return [title, content];
+  }
+  // 5. 城中村租客退房押金被扣
+  if (mod === 4) {
+    const deposit = Math.floor(rng() * 1500 + 1800).toLocaleString();
+    const title = `（综治）投诉${sub.name}${compound}二房东恶意扣留租房押金`;
+    const content = `我是一个刚来广州打工的毕业生，租在天河区${sub.name}街道${compound}的自建房里。上周租期到了我正常退房，把屋子收拾得干干净净，二房东跑过来拿个放大镜挑刺，说卫生间地砖有一点水渍、墙面有点灰，硬说要扣我整整${deposit}块钱押金不给退！而且平时电费一直按1块6一度收，水费按6块钱一吨收。我一个月工资才四千多，被他这么搞饭都吃不起了。街道调解办能不能帮我把押金要回来？`;
+    return [title, content];
+  }
+  // 6. 出租车拒载加价宰客
+  if (mod === 5) {
+    const title = `（交通）投诉${landmark}出租车司机${plate}公然拒载加价`;
+    const content = `今天早上我出${landmark}地铁口/客运站赶着去上班，在路边拦了一辆出租车（车牌：${plate}），司机摇下车窗问我去哪，我一说去${road}，他就满脸不耐烦摆手说‘太近了不去，前面塞车’，后面一辆车更离谱，直接说‘不打表，给50块就走’。广州可是国际大都市，大清早就在交通枢纽公然拒载加价宰客，谁给他们的胆子？希望交通局严查这几台车！`;
+    return [title, content];
+  }
+  // 7. 沿街商户门口被死死堵住
+  if (mod === 6) {
+    const title = `反映${road}商铺门前机动车违停严重影响正常做生意`;
+    const content = `我在天河区${road}开个小便利店/早餐肠粉店，今天早上六点多开门，发现两辆小车（车牌：${plate}）直接大横着停在我们店门口盲道上，把我们卷闸门堵得只剩一条缝，进货的三轮车进不来，客人买个早餐都得侧着身子钻。我打了四个电话叫车主挪车，车主居然在电话里冲我吼说他在睡觉别吵他。这严重影响我们正常做生意了，交警同志能不能赶紧来给他们贴条拖走？`;
+    return [title, content];
+  }
+  // 8. 外卖骑手进小区受阻被罚款
+  if (mod === 7) {
+    const title = `反映${compound}物业保安违规扣留外卖车辆收取解锁费`;
+    const content = `我是送外卖的骑手，我要反映天河区${compound}的物业保安。天河区政府之前明明发通告说允许外卖骑手实名登记进小区送餐，今天中午下大雨，我提着三份盒饭登记了身份证想进去，保安死活拦着不让进，还把我电动车钥匙拔了，态度极其恶劣地骂人。手里的餐马上就要超时扣钱了，我们风里来雨里去也是靠力气赚钱，凭什么被物业这么刁难羞辱？希望住建局管管这些蛮横的物业！`;
+    return [title, content];
+  }
+  // 9. 退休阿婆反映马路井盖巨响
+  if (mod === 8) {
+    const title = `反映${road}马路下水井盖松动夜间车辆压过噪音巨大`;
+    const content = `我是住在${compound}的退休老太婆，今年快八十岁了。我们单元楼下${road}那个大马路中间有个下水道铁井盖，不知道是哪个车轮子压坏了，每天晚上几百台大货车和小车开过去，‘哐啷哐啷’像打雷一样响！我每天晚上被惊醒七八次，高血压药吃了都没用。我儿子白天要上班，我实在没办法才打12345热线，麻烦市政的师傅发发慈悲，来把那个井盖垫一层橡胶皮加固一下吧，谢谢你们了！`;
+    return [title, content];
+  }
+  // 10. 快餐吃到带血异物
+  if (mod === 9) {
+    const title = `（市监）在${comm}餐饮店就餐吃到异物后厨极度脏乱差`;
+    const content = `今天中午我跟同事在${comm}一家快餐店点了一份快餐，吃到一半居然在碗底发现一只死苍蝇/一截铁丝网！当时直接恶心得当场吐了！把服务员叫过来，服务员一把端走碗还想销毁证据，经理跑过来态度极其轻佻说‘给你退菜再送两听可乐行了吧’。这种卫生条件后厨该有多脏啊？万一生病谁负责？我拍照留存了证据，要求食品药品监督部门严查这家餐馆，必须按法律要求给我道歉赔偿！`;
+    return [title, content];
+  }
+  // 11. 咨询小孩积分入学
+  if (mod === 10) {
+    const years = Math.floor(rng() * 4 + 3);
+    const title = `咨询随迁子女在天河区就读小学积分入学政策`;
+    const content = `你好，我想向天河区教育局咨询一下我们家小孩的入学问题。我们夫妻俩在天河区租住在${compound}，在天河交社保已经连续${years}年了，持有天河区有效居住证。听邻居说今年天河区的积分入学政策有新调整，增加了社保年限的权重分，我想问一下具体是在哪个网址填报积分？房东如果不配合出具房屋租赁备案证明会不会影响积分审核？希望有负责小升初/幼升小的老师给我打个电话指导一下。`;
+    return [title, content];
+  }
+  // 12. 住宅客梯下坠困人
+  if (mod === 11) {
+    const floor = Math.floor(rng() * 12 + 6);
+    const title = `（急）${compound}住宅电梯突发下坠困住老人孩子求救`;
+    const content = `我们小区${compound}的电梯简直是夺命电梯！今天下午${timeStr}我带着三岁女儿坐电梯从${floor}楼下楼，走到中间突然一声巨响，整台电梯往下急坠了两层卡住！轿厢里灯全灭了，排风扇也停了，小孩吓得哇哇大哭拼命喊救命！我按那个黄色紧急报警按钮按了十几分钟根本没人理，手机又完全没有信号！最后是邻居听到哭声才找消防破门救出来的！物业天天收高额物业费，电梯维保却弄虚作假，强烈要求质监局彻底查封大修！`;
+    return [title, content];
+  }
+  // 13. 楼上漏水把楼下泡烂
+  if (mod === 12) {
+    const title = `（综治）${compound}楼上卫生间持续漏水导致我家天花板发霉`;
+    const content = `我家住在${compound}402，楼上502卫生间水管漏水已经漏了整整大半年了！现在我家主卧天花板大块大块往下掉石膏皮，木地板全被泡烂发黑长蘑菇，连电灯开关都在往下滴水，昨晚突然电线短路爆火花，差点引发火灾！我上去找楼上敲门，人家不仅不修，还冲我喊说‘有本事你去法院告我’。居委会每次来协调，人家直接不开门。街道办能不能派执法部门或者司法所来硬性介入做做工作？我快被逼疯了！`;
+    return [title, content];
+  }
+  // 14. 公园广场舞音响震楼
+  if (mod === 13) {
+    const title = `反映${landmark}清晨广场舞大分贝低音炮音响扰民严重`;
+    const content = `我就住在天河公园/体育中心旁边的${compound}，每天清晨6点半，公园西门那些大爷大妈就拖着两台巨大的低音炮音箱出来跳广场舞，声音开得震天响，十里八乡都能听见！我老公开夜班早上刚睡下就被震醒，整个人神经衰弱到要看心理医生。我们上去好声好气请他们把声音稍微调小一点点，那群大爷大妈几十个人围着我们指着鼻子骂，说公共场所他们爱怎么跳就怎么跳。城管部门到底能不能管管这些暴躁的音响大军？`;
+    return [title, content];
+  }
+  // 15. 城中村电瓶车推上楼充电
+  const title = `（急）举报${compound}有住户把大功率电动车推上楼飞线充电`;
+  const content = `我要实名举报！天河区${sub.name}街道${compound}3号楼，天天有外卖骑手租客把两台大容量改装锂电池电动车推进客梯，拉到8楼过道上插在排插上通宵充电！整条楼道全是发热的橡胶焦味！南京火灾的教训还不够惨痛吗？楼道是整栋楼几百号人唯一的逃生通道啊！一旦电瓶爆炸整层楼全被毒烟封死！我找物业说了三次，保安就贴张纸条根本没人管！请辖区派出所和消防大队今天晚上就来突击查扣！人命关天啊！`;
+  return [title, content];
+}
+
+// =========================================================================
+// 主入口执行逻辑 (生成 180,000 条 = 15万基础 + 3万纯市民口吻)
 // =========================================================================
 
 async function main() {
-  const TOTAL_RECORDS = 150000;
-  const DEEP_RECORDS = 50000;   // 严格 1/3 (5万条) 深度高异构手写体工单
-  const DAILY_RECORDS = 100000; // 2/3 (10万条) 多场景高频民生工单
+  const BASE_RECORDS = 150000;
+  const CITIZEN_SUPPLEMENT = 30000;
+  const TOTAL_RECORDS = BASE_RECORDS + CITIZEN_SUPPLEMENT; // 180,000 条
 
-  console.log(`🚀 开始启动高熵拟真语义引擎生成 15 万条广州天河 12345 真实工单...`);
-  console.log(`   - 深度手写体高异构工单 (1/3): ${DEEP_RECORDS.toLocaleString()} 条`);
-  console.log(`   - 丰富日常多场景工单 (2/3): ${DAILY_RECORDS.toLocaleString()} 条`);
+  console.log(`🚀 开始启动高熵拟真语义引擎生成 18 万条广州天河 12345 真实工单...`);
+  console.log(`   - 深度手写体高异构工单: 50,000 条 (原版 1/3)`);
+  console.log(`   - 丰富日常多场景工单: 100,000 条 (原版 2/3)`);
+  console.log(`   - 纯市民第一人称原声口吻工单 (本次新增补充): ${CITIZEN_SUPPLEMENT.toLocaleString()} 条`);
 
   const startTime = Date.now();
   const rng = mulberry32(20250101);
@@ -685,10 +788,12 @@ async function main() {
   const rows: any[][] = [];
   rows.push(["index", "ticketNo", "title", "content"]);
 
-  // 事项代码映射池
+  // 纯市民口吻专用记录表
+  const citizenOnlyRows: any[][] = [];
+  citizenOnlyRows.push(["index", "ticketNo", "title", "content"]);
+
   const matterCodes = ["0109", "0102", "0105", "0407", "0110", "0208", "0304", "0501", "0602", "0711", "0812"];
 
-  // 街道权重配置
   const subWeights = SUBDISTRICTS.map((s) => {
     let w = 1.0;
     if (["天河南", "石牌", "棠下", "猎德", "冼村", "车陂"].includes(s.name)) w = 1.4;
@@ -710,9 +815,9 @@ async function main() {
 
   const printStep = 30000;
 
-  // 15万条交替穿插生成：前 5万深度与后 10万日常自然混合，确保全时段、全街道均匀分布
-  for (let i = 1; i <= TOTAL_RECORDS; i++) {
-    const tMs = baseEpoch + Math.floor((i / TOTAL_RECORDS) * ninetyDaysMs + (rng() - 0.5) * 86400000);
+  // 1. 先生成 15 万条高低搭配的基础工单
+  for (let i = 1; i <= BASE_RECORDS; i++) {
+    const tMs = baseEpoch + Math.floor((i / BASE_RECORDS) * ninetyDaysMs + (rng() - 0.5) * 86400000);
     const dateObj = new Date(Math.max(baseEpoch, tMs));
     const yearStr = String(dateObj.getFullYear()).slice(-2);
     const monthStr = String(dateObj.getMonth() + 1).padStart(2, "0");
@@ -731,7 +836,6 @@ async function main() {
 
     const sub = pickWeightedSubdistrict();
 
-    // 每 3 条中精准安排 1 条为深度手写体高异构工单 (1/3 占比)
     let title = "";
     let content = "";
     if (i % 3 === 0) {
@@ -743,33 +847,73 @@ async function main() {
     rows.push([i, ticketNo, title, content]);
 
     if (i % printStep === 0) {
-      console.log(`⚡ 已生成 ${i.toLocaleString()} / ${TOTAL_RECORDS.toLocaleString()} 条 (${Math.round((i / TOTAL_RECORDS) * 100)}%)...`);
+      console.log(`⚡ 已生成前基准 ${i.toLocaleString()} / ${TOTAL_RECORDS.toLocaleString()} 条 (${Math.round((i / TOTAL_RECORDS) * 100)}%)...`);
     }
   }
 
-  console.log(`📦 数据全部生成完毕，正在将 ${TOTAL_RECORDS.toLocaleString()} 条高拟真数据写入 Excel 工作簿...`);
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "天河区12345工单_15万条");
+  // 2. 紧接着无缝生成 30,000 条纯市民第一人称原声口吻工单
+  console.log(`\n🎙️ 正在补充注入 30,000 条地道“纯市民口吻”热线工单...`);
+  for (let c = 1; c <= CITIZEN_SUPPLEMENT; c++) {
+    const globalIdx = BASE_RECORDS + c;
+    const tMs = baseEpoch + Math.floor((c / CITIZEN_SUPPLEMENT) * ninetyDaysMs + (rng() - 0.5) * 86400000);
+    const dateObj = new Date(Math.max(baseEpoch, tMs));
+    const yearStr = String(dateObj.getFullYear()).slice(-2);
+    const monthStr = String(dateObj.getMonth() + 1).padStart(2, "0");
+    const dayStr = String(dateObj.getDate()).padStart(2, "0");
+    const hourStr = String(dateObj.getHours()).padStart(2, "0");
+    const minuteStr = String(dateObj.getMinutes()).padStart(2, "0");
+    const secondStr = String(dateObj.getSeconds()).padStart(2, "0");
 
+    const yymmdd = `${yearStr}${monthStr}${dayStr}`;
+    const seqStr = String((globalIdx % 999999) + 1).padStart(6, "0");
+    const matterCode = pick(matterCodes, rng);
+    const ticketNo = `${yymmdd}${seqStr.slice(0, 5)}${matterCode}-01`;
+
+    const dateStr = `${dateObj.getFullYear()}年${dateObj.getMonth() + 1}月${dateObj.getDate()}日`;
+    const timeStr = `${hourStr}:${minuteStr}:${secondStr}`;
+
+    const sub = pickWeightedSubdistrict();
+    const [title, content] = generateFirstPersonCitizenCase(sub, dateStr, timeStr, rng, c);
+
+    rows.push([globalIdx, ticketNo, title, content]);
+    citizenOnlyRows.push([c, ticketNo, title, content]);
+
+    if (globalIdx % printStep === 0 || c === CITIZEN_SUPPLEMENT) {
+      console.log(`⚡ 已生成至 ${globalIdx.toLocaleString()} / ${TOTAL_RECORDS.toLocaleString()} 条 (${Math.round((globalIdx / TOTAL_RECORDS) * 100)}%)...`);
+    }
+  }
+
+  console.log(`\n📦 数据全部生成完毕，正在写入 Excel 文件...`);
   const outDir = "/Users/FireTable/Downloads";
-  const outPath = path.join(outDir, "guangzhou_tianhe_12345_15w.xlsx");
 
-  XLSX.writeFile(wb, outPath, { compression: true });
+  // 1. 写入 18万条总表
+  const ws18 = XLSX.utils.aoa_to_sheet(rows);
+  const wb18 = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb18, ws18, "天河区12345工单_18万条");
+  const outPath18 = path.join(outDir, "guangzhou_tianhe_12345_18w.xlsx");
+  XLSX.writeFile(wb18, outPath18, { compression: true });
+
+  // 2. 写入 3万条纯市民口吻专表 (供直接核验与快速体验)
+  const ws3 = XLSX.utils.aoa_to_sheet(citizenOnlyRows);
+  const wb3 = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb3, ws3, "天河区12345_市民口吻3万条");
+  const outPath3 = path.join(outDir, "guangzhou_tianhe_12345_3w_市民口吻.xlsx");
+  XLSX.writeFile(wb3, outPath3, { compression: true });
 
   const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
-  const fileSizeMb = (fs.statSync(outPath).size / 1024 / 1024).toFixed(2);
+  const fileSizeMb18 = (fs.statSync(outPath18).size / 1024 / 1024).toFixed(2);
+  const fileSizeMb3 = (fs.statSync(outPath3).size / 1024 / 1024).toFixed(2);
 
-  console.log(`\n🎉 成功输出 15 万条天河区深度异构测试工单!`);
-  console.log(`📁 文件绝对路径: ${outPath}`);
-  console.log(`📊 文件大小: ${fileSizeMb} MB`);
+  console.log(`\n🎉 成功输出 18 万条天河区深度异构测试工单!`);
+  console.log(`📁 18万总表绝对路径: ${outPath18} (${fileSizeMb18} MB)`);
+  console.log(`📁 3万市民口吻专表:   ${outPath3} (${fileSizeMb3} MB)`);
   console.log(`⏱️ 总耗时: ${durationSec} 秒`);
 
-  console.log("\n📋 抽样检验前 6 条 (观察交替穿插效果):");
-  for (let j = 1; j <= 6; j++) {
-    console.log(`\n--- 第 ${j} 条 [${rows[j][2]}] ---`);
-    console.log(`编号: ${rows[j][1]}`);
-    console.log(`内容: ${rows[j][3]}`);
+  console.log("\n📋 抽样检验最新补充的纯市民口吻工单 (前 5 条):");
+  for (let j = 1; j <= 5; j++) {
+    console.log(`\n--- [市民原声第 ${j} 条] [${citizenOnlyRows[j][2]}] ---`);
+    console.log(`编号: ${citizenOnlyRows[j][1]}`);
+    console.log(`内容: ${citizenOnlyRows[j][3]}`);
   }
 }
 
