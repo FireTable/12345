@@ -112,7 +112,10 @@ export class ONNXAdapter implements DecisionAdapter {
       if (!fs.existsSync(this.onnxModelPath) || !fs.existsSync(this.vocabPath)) {
         return false;
       }
-      return true;
+      const importDynamic = new Function("modulePath", "return import(modulePath)");
+      const mod = await importDynamic("onnxruntime-node");
+      const ort = mod.default || mod;
+      return typeof ort.InferenceSession?.create === "function";
     } catch {
       return false;
     }
@@ -132,7 +135,8 @@ export class ONNXAdapter implements DecisionAdapter {
     // Dynamic import onnxruntime-node via runtime evaluation to bypass Webpack static bundling
     try {
       const importDynamic = new Function("modulePath", "return import(modulePath)");
-      this.ort = await importDynamic("onnxruntime-node");
+      const mod = await importDynamic("onnxruntime-node");
+      this.ort = mod.default || mod;
       const sessionOptions = {
         intraOpNumThreads: 4,
         graphOptimizationLevel: "all",

@@ -54,6 +54,9 @@ async function extractUploadedFile(req: NextRequest): Promise<UploadedPayload | 
     const fileName = sanitizeFileName(rawHeader);
 
     const arrayBuffer = await req.arrayBuffer();
+    console.log(
+      `[upload/route] Direct stream: contentType="${contentType}", fileName="${fileName}", byteLength=${arrayBuffer?.byteLength} (${((arrayBuffer?.byteLength || 0) / 1024 / 1024).toFixed(2)} MB)`
+    );
     if (!arrayBuffer || arrayBuffer.byteLength === 0) {
       return null;
     }
@@ -186,7 +189,7 @@ function parseSingleDataBuffer(buffer: Buffer, fileName: string): Record<string,
       }
     }
     throw new Error(
-      `Excel 表格解析失败 (${xlsxErr?.message || "文件损坏或格式不支持"})。请检查文件是否完整（大文件可能因网络或服务器传输限制被截断）。`
+      `Excel 表格解析失败 (${xlsxErr?.message || "文件损坏或格式不支持"})。已接收大小: ${(buffer.length / 1024 / 1024).toFixed(2)} MB (${buffer.length} 字节)。请检查文件是否完整。`
     );
   }
 }
