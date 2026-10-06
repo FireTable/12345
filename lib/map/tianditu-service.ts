@@ -43,7 +43,7 @@ export type ReverseGeocodeResult = {
 /**
  * 正向地理编码：地址解析为经纬度
  */
-export async function geocodeAddress(address: string, regionPrefix = "广东省佛山市顺德区"): Promise<GeocodeResult> {
+export async function geocodeAddress(address: string, regionPrefix = ""): Promise<GeocodeResult> {
   const key = getTiandituKey();
   if (!key) {
     return { success: false, error: "天地图 Key 未配置" };
@@ -54,13 +54,10 @@ export async function geocodeAddress(address: string, regionPrefix = "广东省�
     return { success: false, error: "地址不能为空" };
   }
 
-  // 若地址已包含省市区等关键词则直接查询，否则动态拼接当前辖区前缀以提高本地解析精度
+  // 若地址已包含省市等前缀或者已经以 regionPrefix 开头则直接查询，否则动态拼接当前辖区前缀以提高本地解析精度
   const hasRegionHeader =
-    trimmed.startsWith("广东") ||
-    trimmed.startsWith("广州") ||
-    trimmed.startsWith("佛山") ||
-    trimmed.startsWith("顺德") ||
-    trimmed.startsWith("天河");
+    (regionPrefix && trimmed.startsWith(regionPrefix)) ||
+    /^(?:.+?[省市]|中国)/.test(trimmed);
 
   const queryAddress = hasRegionHeader ? trimmed : `${regionPrefix}${trimmed}`;
 

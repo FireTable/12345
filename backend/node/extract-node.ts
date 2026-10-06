@@ -16,6 +16,11 @@ import { adminFromLocation, explicitAdmin } from "@/lib/admin-area";
 import { getRegionAliasMap, normalizeAliasesInText, resolveEntityAlias } from "@/lib/alias-dict";
 import { canonicalizeCategory, canonicalizeTownship, getRegionVocabulary, legalTownshipName, matchTownshipName, type RegionVocabulary } from "@/lib/vocabulary";
 import { verifyAndCanonicalizeTicketArea } from "./arbitrator-node";
+import {
+  enrichEnterpriseLocation,
+  isPlaceholderLocation,
+  isEnterpriseEntity,
+} from "@/lib/map/enterprise-address-enricher";
 import { updateTaskProgress } from "@/lib/task-progress";
 import { getRegionDb } from "@/db/client";
 import { ticketsTable } from "@/db/schema";
@@ -235,7 +240,7 @@ export async function extractNode(
   // 加载当前运行站点的动态词库与别名映射，以及专属 Schema 数据库客户端
   const regionVocab = await getRegionVocabulary(state.regionId);
   const aliasMap = await getRegionAliasMap(state.regionId);
-  const { db: tenantDb } = await getRegionDb(state.regionId);
+  const { db: tenantDb, region } = await getRegionDb(state.regionId);
 
   if (taskId) {
     updateTaskProgress(taskId, {
@@ -463,6 +468,28 @@ export async function extractNode(
     const calibrated = verifyAndCanonicalizeTicketArea(item, ticket, regionVocab, aliasMap);
     extractionMap.set(idx, calibrated);
   });
+
+  // 2.1 针对发生地点缺失或为占位符（如“无”、“未指定”）的企业主体工单，智能补全属地与经营地址 (纯规则+天地图两级容错，零硬编码)
+  for (const [idx, item] of extractionMap.entries()) {
+    if (isPlaceholderLocation(item.location) && isEnterpriseEntity(item.subject)) {
+      try {
+        const enriched = await enrichEnterpriseLocation(item.subject, region, regionVocab);
+        if (enriched.enriched) {
+          if (enriched.address) item.location = enriched.address;
+          if (enriched.township) item.township = enriched.township as any;
+          const orig = normalizedRawTickets[idx];
+          if (orig && orig.id) {
+            rememberExtraction(tenantDb, orig.id, {
+              address: enriched.address,
+              subdistrict: enriched.township || null,
+            });
+          }
+        }
+      } catch {
+        // 静默捕获，确保绝对不影响流水线主流程
+      }
+    }
+  }
 
   if (taskId) {
     updateTaskProgress(taskId, {
