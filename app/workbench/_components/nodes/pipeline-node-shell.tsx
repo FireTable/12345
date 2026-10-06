@@ -86,21 +86,21 @@ export function PipelineNodeShell({
 
       {/* 节点规范化头部 */}
       <div className="pipeline-node__header">
-        <div className="pipeline-node__title-wrap">
+        <div className="pipeline-node__title-wrap min-w-0 shrink-0">
           <div
-            className="pipeline-node__icon-box"
+            className="pipeline-node__icon-box shrink-0"
             style={{ background: iconGradient }}
           >
             {icon}
           </div>
-          <div>
-            <div className="pipeline-node__step-idx">工序 {stepNumber}</div>
-            <div className="pipeline-node__name">{title}</div>
+          <div className="min-w-0">
+            <div className="pipeline-node__step-idx whitespace-nowrap">工序 {stepNumber}</div>
+            <div className="pipeline-node__name whitespace-nowrap">{title}</div>
           </div>
         </div>
 
         <span
-          className="pipeline-node__tag flex items-center gap-1.5"
+          className="pipeline-node__tag flex items-center gap-1.5 shrink-0 whitespace-nowrap"
           style={{
             background: isActive
               ? `color-mix(in srgb, ${themeColor} 10%, #FFFFFF)`
@@ -113,12 +113,12 @@ export function PipelineNodeShell({
           }}
         >
           {isActive && (
-            <span className="relative flex h-2 w-2">
+            <span className="relative flex h-2 w-2 shrink-0">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: themeColor }}></span>
               <span className="relative inline-flex rounded-full h-2 w-2" style={{ backgroundColor: themeColor }}></span>
             </span>
           )}
-          {tagLabel}
+          <span className="whitespace-nowrap">{tagLabel}</span>
         </span>
       </div>
 

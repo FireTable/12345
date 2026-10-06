@@ -51,21 +51,25 @@ export function ClusterNode({ data }: NodeProps<ClusterNodeType>) {
       {/* 聚类成果指标看板 */}
       <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
         <div>
-          <div className="pipeline-metric-label flex items-center gap-1">
+          <div className="pipeline-metric-label flex items-center gap-1 whitespace-nowrap">
             <FolderKanban size={11} className="text-blue-600 shrink-0" />
             聚合问题专题
           </div>
-          <div className="pipeline-metric-value text-blue-600 mt-1">
-            {data.themeCount.toLocaleString()} <span className="text-xs font-normal text-slate-500">个专题</span>
+          <div className="pipeline-metric-value text-blue-600 mt-1 whitespace-nowrap inline-flex items-baseline">
+            {data.themeCount.toLocaleString()}{" "}
+            <span className="text-xs font-normal text-slate-500 ml-1 whitespace-nowrap">个专题</span>
           </div>
         </div>
         <div>
-          <div className="pipeline-metric-label flex items-center gap-1">
+          <div className="pipeline-metric-label flex items-center gap-1 whitespace-nowrap">
             <TrendingUp size={11} className="text-emerald-600 shrink-0" />
             工单归集率
           </div>
-          <div className="pipeline-metric-value text-emerald-600 mt-1">
-            {compressionRatio}% <span className="text-xs font-normal text-slate-400">({data.totalTickets.toLocaleString()} ➔ {data.themeCount.toLocaleString()} 组)</span>
+          <div className="pipeline-metric-value text-emerald-600 mt-1 whitespace-nowrap inline-flex items-baseline">
+            {compressionRatio}%{" "}
+            <span className="text-[11px] font-normal text-slate-400 font-mono ml-1.5 whitespace-nowrap">
+              ({data.totalTickets.toLocaleString()} ➔ {data.themeCount.toLocaleString()} 组)
+            </span>
           </div>
         </div>
       </div>
@@ -73,11 +77,11 @@ export function ClusterNode({ data }: NodeProps<ClusterNodeType>) {
       {/* 最新生成的多频主题展示 */}
       <div className="pipeline-snippet-box">
         <div className="pipeline-snippet-title">
-          <span className="flex items-center gap-1.5 text-cyan-800">
+          <span className="flex items-center gap-1.5 text-cyan-800 whitespace-nowrap">
             <Compass size={11} className="shrink-0 text-cyan-600" />
             最新聚合问题专题
           </span>
-          <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-100 text-cyan-800 font-bold">
+          <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-100 text-cyan-800 font-bold shrink-0 whitespace-nowrap">
             自动相似归集
           </span>
         </div>
@@ -85,19 +89,19 @@ export function ClusterNode({ data }: NodeProps<ClusterNodeType>) {
         {data.recentClusters && data.recentClusters.length > 0 ? (
           <div className="space-y-1.5 mt-2">
             {data.recentClusters.slice(0, 2).map((c, i) => (
-              <div key={i} className="flex items-center justify-between text-[11px] py-1 border-b border-slate-100 last:border-0">
-                <div className="flex items-center gap-1.5 min-w-0 pr-2">
+              <div key={i} className="flex items-center justify-between text-[11px] py-1 border-b border-slate-100 last:border-0 gap-2">
+                <div className="flex items-center gap-1.5 min-w-0 pr-1">
                   {c.subdistrict && (
-                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 shrink-0 font-medium">
+                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 shrink-0 font-medium whitespace-nowrap">
                       {c.subdistrict}
                     </span>
                   )}
-                  <span className="font-semibold text-slate-800 truncate max-w-[170px]">
+                  <span className="font-semibold text-slate-800 truncate max-w-[210px]">
                     {c.title}
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-bold">
+                <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
+                  <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-bold whitespace-nowrap">
                     包含 {c.ticketCount.toLocaleString()} 条工单
                   </span>
                 </div>

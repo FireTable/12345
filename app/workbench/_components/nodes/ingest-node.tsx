@@ -48,12 +48,14 @@ export function IngestNode({ data }: NodeProps<IngestNodeType>) {
       {/* 指标看板 */}
       <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
         <div>
-          <div className="pipeline-metric-label">工单总数</div>
-          <div className="pipeline-metric-value text-blue-600 mt-1">{data.totalTickets.toLocaleString()}</div>
+          <div className="pipeline-metric-label whitespace-nowrap">工单总数</div>
+          <div className="pipeline-metric-value text-blue-600 mt-1 whitespace-nowrap inline-flex items-baseline">
+            {data.totalTickets.toLocaleString()}
+          </div>
         </div>
         <div>
-          <div className="pipeline-metric-label">待处理工单</div>
-          <div className={`pipeline-metric-value mt-1 ${data.unprocessedTickets > 0 ? "text-amber-600" : "text-emerald-600"}`}>
+          <div className="pipeline-metric-label whitespace-nowrap">待处理工单</div>
+          <div className={`pipeline-metric-value mt-1 whitespace-nowrap inline-flex items-baseline ${data.unprocessedTickets > 0 ? "text-amber-600" : "text-emerald-600"}`}>
             {data.unprocessedTickets.toLocaleString()}
           </div>
         </div>
@@ -75,27 +77,27 @@ export function IngestNode({ data }: NodeProps<IngestNodeType>) {
         onClick={() => openUpload()}
         title="点击打开工单导入与追加"
       >
-        <div className="flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-700">
+        <div className="flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-700 whitespace-nowrap">
           <Upload size={13} className="text-blue-600" />
           <span>点击或拖入文件追加导入工单</span>
         </div>
-        <div className="text-[10px] text-slate-400 mt-0.5">支持 Excel/CSV 批量导入与单条录入</div>
+        <div className="text-[10px] text-slate-400 mt-0.5 whitespace-nowrap">支持 Excel/CSV 批量导入与单条录入</div>
       </div>
 
       {/* 最新导入工单预览 */}
       {data.recentTickets && data.recentTickets.length > 0 && (
         <div className="pipeline-snippet-box">
           <div className="pipeline-snippet-title">
-            <span className="flex items-center gap-1.5 text-slate-700">
+            <span className="flex items-center gap-1.5 text-slate-700 whitespace-nowrap min-w-0">
               <Clock size={11} className="shrink-0 text-blue-500" />
-              最新导入工单
+              <span>最新导入工单</span>
               {data.recentTickets[0]?.subdistrict && (
-                <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-200 text-slate-600 font-medium">
+                <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-200 text-slate-600 font-medium whitespace-nowrap">
                   {data.recentTickets[0].subdistrict}
                 </span>
               )}
             </span>
-            <span className="font-mono text-[10px] text-slate-400">
+            <span className="font-mono text-[10px] text-slate-400 shrink-0 whitespace-nowrap">
               {data.recentTickets[0]?.ticketNo}
             </span>
           </div>

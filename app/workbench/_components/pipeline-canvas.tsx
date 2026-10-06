@@ -27,10 +27,10 @@ import { useRegion } from "@/app/_components/civic/region-context";
 
 const DEFAULT_POSITIONS: Record<string, { x: number; y: number }> = {
   "node-ingest": { x: 80, y: 60 },
-  "node-triage": { x: 600, y: 60 },
-  "node-entity": { x: 1120, y: 60 },
-  "node-cluster": { x: 1120, y: 560 },
-  "node-dossier": { x: 600, y: 560 },
+  "node-triage": { x: 620, y: 60 },
+  "node-entity": { x: 1160, y: 60 },
+  "node-cluster": { x: 1160, y: 560 },
+  "node-dossier": { x: 620, y: 560 },
 };
 
 function getSavedPositions(key: string): Record<string, { x: number; y: number }> | null {
@@ -126,7 +126,7 @@ function InnerPipelineCanvas({
 }) {
   const { fitView } = useReactFlow();
   const { activeRegion } = useRegion();
-  const storageKey = `civic_workbench_pipeline_positions_v5_${activeRegion?.id || "default"}`;
+  const storageKey = `civic_workbench_pipeline_positions_v6_${activeRegion?.id || "default"}`;
 
   const rawStatus = (stateData?.taskProgress?.status || "").toUpperCase();
   const isRunning = rawStatus === "RUNNING";

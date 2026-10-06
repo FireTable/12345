@@ -70,17 +70,17 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
             <ShieldAlert size={12} className="text-red-500 shrink-0" />
             <span>涉稳风险工单</span>
           </div>
-          <div className="mt-1.5 flex items-baseline justify-between">
-            <div className="text-lg font-bold font-mono text-red-900 leading-none">
+          <div className="mt-1.5 flex items-baseline justify-between gap-1">
+            <div className="text-lg font-bold font-mono text-red-900 leading-none whitespace-nowrap inline-flex items-baseline">
               {data.stabilityRiskCount.toLocaleString()}
-              <span className="text-[11px] font-normal text-slate-500 ml-1">件</span>
+              <span className="text-[11px] font-normal text-slate-500 ml-1 whitespace-nowrap">件</span>
             </div>
             {data.stabilityRiskCount > 0 ? (
-              <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-200 text-red-800 font-bold whitespace-nowrap animate-pulse">
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-200 text-red-800 font-bold whitespace-nowrap shrink-0 animate-pulse">
                 重点跟进
               </span>
             ) : (
-              <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-100/80 text-red-600 font-medium whitespace-nowrap">
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-100/80 text-red-600 font-medium whitespace-nowrap shrink-0">
                 平稳正常
               </span>
             )}
@@ -92,12 +92,12 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
             <AlertTriangle size={12} className="text-amber-500 shrink-0" />
             <span>加急催办工单</span>
           </div>
-          <div className="mt-1.5 flex items-baseline justify-between">
-            <div className="text-lg font-bold font-mono text-amber-900 leading-none">
+          <div className="mt-1.5 flex items-baseline justify-between gap-1">
+            <div className="text-lg font-bold font-mono text-amber-900 leading-none whitespace-nowrap inline-flex items-baseline">
               {data.urgentCount.toLocaleString()}
-              <span className="text-[11px] font-normal text-slate-500 ml-1">件</span>
+              <span className="text-[11px] font-normal text-slate-500 ml-1 whitespace-nowrap">件</span>
             </div>
-            <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-200/90 text-amber-900 font-semibold whitespace-nowrap">
+            <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-200/90 text-amber-900 font-semibold whitespace-nowrap shrink-0">
               2小时响应
             </span>
           </div>
@@ -170,7 +170,7 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
                         : "text-slate-600 hover:bg-slate-50/80"
                     }`}
                   >
-                    <span className="flex items-center gap-1.5 truncate max-w-[85px]" title={c.category}>
+                    <span className="flex items-center gap-1.5 truncate max-w-[110px]" title={c.category}>
                       <span
                         className={`w-1.5 h-1.5 rounded-full shrink-0 transition-transform ${
                           isHovered ? "scale-125" : ""
@@ -231,7 +231,7 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
                 return (
                   <span
                     key={i}
-                    className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border font-medium transition-all"
+                    className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border font-medium transition-all whitespace-nowrap"
                     style={{
                       backgroundColor: isUnknown ? "#F8FAFC" : `${color}0D`,
                       borderColor: isUnknown ? "#E2E8F0" : `${color}35`,
@@ -242,11 +242,11 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
                       className="w-1.5 h-1.5 rounded-full shrink-0"
                       style={{ backgroundColor: isUnknown ? "#94A3B8" : color }}
                     />
-                    <span className={isUnknown ? "text-slate-500 font-normal" : "text-slate-700 font-medium"}>
+                    <span className={isUnknown ? "text-slate-500 font-normal whitespace-nowrap" : "text-slate-700 font-medium whitespace-nowrap"}>
                       {ts.township}
                     </span>
                     <span
-                      className="font-mono font-bold"
+                      className="font-mono font-bold whitespace-nowrap"
                       style={{ color: isUnknown ? "#64748B" : color }}
                     >
                       {ts.count.toLocaleString()}

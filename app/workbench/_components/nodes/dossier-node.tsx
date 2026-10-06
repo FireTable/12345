@@ -39,24 +39,24 @@ export function DossierNode({ data }: NodeProps<DossierNodeType>) {
       {/* 核心指标卡片看板 */}
       <div className="grid grid-cols-2 gap-2">
         <div className="bg-emerald-50/80 border border-emerald-100/90 rounded-lg p-2.5">
-          <div className="text-[10px] text-emerald-800 flex items-center gap-1 font-medium">
+          <div className="text-[10px] text-emerald-800 flex items-center gap-1 font-medium whitespace-nowrap">
             <CheckCircle2 size={12} className="text-emerald-600 shrink-0" />
             已生成案卷
           </div>
-          <div className="text-lg font-bold font-mono text-emerald-950 mt-1">
+          <div className="text-lg font-bold font-mono text-emerald-950 mt-1 whitespace-nowrap inline-flex items-baseline">
             {data.dossierCount.toLocaleString()}
-            <span className="text-[11px] font-normal text-emerald-700 ml-1">份</span>
+            <span className="text-[11px] font-normal text-emerald-700 ml-1 whitespace-nowrap">份</span>
           </div>
         </div>
 
         <div className="bg-amber-50/80 border border-amber-100/90 rounded-lg p-2.5">
-          <div className="text-[10px] text-amber-800 flex items-center gap-1 font-medium">
+          <div className="text-[10px] text-amber-800 flex items-center gap-1 font-medium whitespace-nowrap">
             <AlertTriangle size={12} className="text-amber-600 shrink-0" />
             假闭环与推诿风险
           </div>
-          <div className="text-lg font-bold font-mono text-amber-950 mt-1">
+          <div className="text-lg font-bold font-mono text-amber-950 mt-1 whitespace-nowrap inline-flex items-baseline">
             {pseudoLoop.toLocaleString()}
-            <span className="text-[11px] font-normal text-amber-700 ml-1">起</span>
+            <span className="text-[11px] font-normal text-amber-700 ml-1 whitespace-nowrap">起</span>
           </div>
         </div>
       </div>
