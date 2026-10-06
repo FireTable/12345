@@ -25,6 +25,7 @@ export interface StructuredJSONResult<T> {
   reasoning?: string;
   raw: string;
   usage: CivicChatCompletion['usage'];
+  timings?: CivicChatCompletion['timings'];
 }
 
 export type StructuredJsonResult<T> = StructuredJSONResult<T>;
@@ -206,6 +207,7 @@ export class SystemTwoEngine {
       reasoning,
       raw,
       usage: completion.usage,
+      timings: completion.timings,
     };
   }
 

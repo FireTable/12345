@@ -110,6 +110,7 @@ export type PipelineStateResponse = {
     name: string;
     host: string;
     isLocal: boolean;
+    lastDurationMs?: number | null;
   }>;
   recentExtractedTickets?: Array<{
     id: string;
@@ -276,6 +277,7 @@ function InnerPipelineCanvas({
             name: n.name,
             host: n.host,
             isLocal: n.isLocal,
+            lastDurationMs: n.lastDurationMs ?? null,
             recentTickets: myTickets.slice(0, 2).map((t) => ({
               id: t.id,
               ticketNo: t.ticketNo,

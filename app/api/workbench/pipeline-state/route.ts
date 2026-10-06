@@ -8,6 +8,7 @@ import { apiSuccess, apiError, ApiCode } from "@/lib/api-codes";
 import { regionLabel, UNKNOWN_TOWN } from "@/lib/civic-dto";
 import { triggerClusterJobAuto } from "@/lib/cluster-runner";
 import { getSystemTwoEndpoints } from "@/backend/model";
+import { getNodeMetric } from "@/lib/node-metrics";
 
 export const dynamic = "force-dynamic";
 
@@ -118,7 +119,21 @@ export async function GET(req: NextRequest) {
       } catch {}
     }
 
-    // 3.3 解析 SYSTEM_TWO_ENDPOINTS 集群算力节点配置
+    // 3.3 计算最近连续两张工单的实际完成时间差（真实物理客观耗时，用于客观校验与兜底）
+    let dbTicketDurationMs: number | null = null;
+    if (recentExtractedTickets.length >= 2) {
+      const u0 = recentExtractedTickets[0]?.updatedAt ? new Date(recentExtractedTickets[0].updatedAt).getTime() : 0;
+      const u1 = recentExtractedTickets[1]?.updatedAt ? new Date(recentExtractedTickets[1].updatedAt).getTime() : 0;
+      if (u0 > 0 && u1 > 0) {
+        const delta = Math.abs(u0 - u1);
+        // 单条工单合理耗时范围 800ms ~ 60s
+        if (delta >= 800 && delta <= 60000) {
+          dbTicketDurationMs = delta;
+        }
+      }
+    }
+
+    // 3.4 解析 SYSTEM_TWO_ENDPOINTS 集群算力节点配置
     const rawEndpoints = getSystemTwoEndpoints();
     const chineseNumbers = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
     const systemTwoNodes = (rawEndpoints.length > 0 ? rawEndpoints : ["http://127.0.0.1:8132/v1"]).map((ep, idx) => {
@@ -126,11 +141,19 @@ export async function GET(req: NextRequest) {
       const hostMatch = ep.match(/https?:\/\/([^/:]+)(?::(\d+))?/);
       const hostStr = hostMatch ? `${hostMatch[1]}:${hostMatch[2] || "80"}` : ep;
       const chineseNum = chineseNumbers[idx] || String(idx + 1);
+      const metric = getNodeMetric(ep);
+
+      // 完整工单耗时：优先取 System-2 原生 timings 上报的完整处理耗时 (>= 800ms 剔除历史残存的仅首字/微采样值)；否则取数据库连续工单真实物理耗时差
+      const effectiveDuration = (metric?.durationMs && metric.durationMs >= 800)
+        ? metric.durationMs
+        : (dbTicketDurationMs ?? (metric?.durationMs && metric.durationMs > 0 ? metric.durationMs : null));
+
       return {
         id: `node-${idx + 1}`,
         name: `研判节点${chineseNum}`,
         host: hostStr,
         isLocal,
+        lastDurationMs: effectiveDuration,
       };
     });
 

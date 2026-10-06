@@ -53,6 +53,16 @@ export interface CivicUsage {
   total_tokens: number;
 }
 
+export interface CivicTimings {
+  prompt_n?: number;
+  prompt_ms?: number;
+  prompt_per_second?: number;
+  predicted_n?: number;
+  predicted_ms?: number;
+  predicted_per_second?: number;
+  total_ms?: number;
+}
+
 export interface CivicChatCompletion<T = unknown> {
   id: string;
   object: 'chat.completion';
@@ -60,6 +70,7 @@ export interface CivicChatCompletion<T = unknown> {
   model: string;
   choices: CivicChatChoice[];
   usage: CivicUsage;
+  timings?: CivicTimings;
   /**
    * 当使用 response_format 为 json_object 或 json_schema 时，
    * 如果解析成功，则包含解析后的强类型对象

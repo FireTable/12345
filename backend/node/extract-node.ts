@@ -4,7 +4,9 @@ import {
   modelSupportsToolCalling,
   getSystemTwoEngine,
   systemTwoConcurrency,
+  getSystemTwoEndpoints,
 } from "../model";
+import { recordNodeMetric } from "@/lib/node-metrics";
 import { workOrderClockFromTicketNo, workOrderInstantFromTicketNo } from "@/lib/work-order-date";
 import {
   BatchExtractionSchema,
@@ -104,6 +106,15 @@ function hasStoredExtraction(ticket: RawTicket): boolean {
   );
 }
 
+function hasStoredSystemOne(ticket: RawTicket): boolean {
+  return Boolean(
+    hasStoredExtraction(ticket) ||
+      typeof ticket.slaHours === "number" ||
+      typeof ticket.stabilityRisk === "boolean"
+  );
+}
+
+
 /**
  * 批次调用大模型进行严格、精准的结构化 Zod 要素抽取
  */
@@ -156,12 +167,24 @@ async function extractBatchWithLLM(
 
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
+      const startMs = Date.now();
       const systemTwo = await getSystemTwoEngine();
-      const { data } = await systemTwo.createJSON(dynamicSchema, {
+      const { data, timings } = await systemTwo.createJSON(dynamicSchema, {
         messages: [{ role: "user", content: prompt }],
         enableThinking: false,
         maxTokens: LLM_TOKENS.EXTRACTION,
         temperature: 0.1,
+      });
+      // 优先从 System-2 原生返回的 timings 拿到完整推理总时间 (prompt_ms + predicted_ms)
+      const s2PromptMs = Number(timings?.prompt_ms || 0);
+      const s2PredictedMs = Number(timings?.predicted_ms || 0);
+      const s2TotalModelMs = Number(timings?.total_ms || (s2PromptMs + s2PredictedMs));
+      const durationMs = s2TotalModelMs > 0 ? Math.round(s2TotalModelMs) : Math.max(1, Date.now() - startMs);
+      const eps = getSystemTwoEndpoints();
+      recordNodeMetric({
+        endpoint: eps[0] || "http://127.0.0.1:8132/v1",
+        durationMs,
+        updatedAt: Date.now(),
       });
 
       if (data && Array.isArray(data.items)) {
@@ -276,74 +299,7 @@ export async function extractNode(
     };
   });
 
-  // 1.1 启动 System-1 极速决策引擎 (自适应 MPS / ONNX 神经编码器，单件时延 <1ms)
-  let classifiedCount = 0;
-  let stabilityAlertCount = 0;
-  try {
-    const systemOne = await SystemOneEngine.create();
-    if (taskId) {
-      updateTaskProgress(taskId, {
-        stage: "EXTRACTING",
-        stageText: `正在执行 System-1 快思考引擎极速预审 (${normalizedRawTickets.length} 条)...`,
-        total: normalizedRawTickets.length,
-        processed: 0,
-        percent: 5,
-      });
-    }
-
-    for (let i = 0; i < normalizedRawTickets.length; i++) {
-      const ticket = normalizedRawTickets[i];
-      try {
-        const decision = await systemOne.evaluate(
-          {
-            title: ticket.title,
-            content: ticket.content,
-            subdistrict: ticket.subdistrict,
-          },
-          {
-            townships: regionVocab.townships,
-          }
-        );
-
-        ticket.systemOneCategory = decision.categoryName;
-        ticket.systemOneIntent = decision.intent;
-        ticket.systemOneUrgencyTier = decision.urgencyLevel;
-        ticket.systemOneSlaHours = decision.slaHours;
-        ticket.systemOneStabilityRisk = decision.stabilityRisk;
-        ticket.systemOneConfidence = decision.categoryProbability;
-
-        // 统一规范化：System-1 判定镇街与 System-2 严格共享同源 DB 枚举白名单，杜绝任何错漏与幻觉
-        const s1Township =
-          canonicalizeTownship(decision.township, regionVocab) ||
-          canonicalizeTownship(ticket.subdistrict, regionVocab) ||
-          matchTownshipName((ticket.title || "") + " " + (ticket.content || ""), regionVocab.townships) ||
-          null;
-        ticket.systemOneTownship = s1Township || undefined;
-        ticket.subdistrict = s1Township || "";
-
-        ticket.urgency = decision.stabilityRisk || decision.urgencyLevel === 3
-          ? "URGENT"
-          : decision.urgencyLevel === 2
-          ? "MEDIUM"
-          : "NORMAL";
-        const category = canonicalizeCategory(decision.categoryName) || decision.categoryName;
-        if (category) ticket.sourceCategory = category;
-        if (decision.stabilityRisk) stabilityAlertCount++;
-        classifiedCount++;
-        if (ticket.id) rememberExtraction(tenantDb, ticket.id, systemOnePatch(ticket));
-        if ((i + 1) % 50 === 0 || i + 1 === normalizedRawTickets.length) {
-          console.log(`[extract] system-1 ${i + 1}/${normalizedRawTickets.length}`);
-        }
-      } catch (s1Err: any) {
-        console.warn(`[extract-node] System-1 evaluation error for ticket ${ticket.ticketNo}:`, s1Err.message);
-      }
-    }
-    await systemOne.close();
-  } catch (initErr: any) {
-    console.warn("[extract-node] System-1 engine initialization warning, continuing without S1 pre-filter:", initErr.message);
-  }
-
-  // 1.3 检查已抽取过的工单（断点续抽/跳过已处理），直接载入并跳过 LLM
+  // 1.1 先载入已经完成 System-2 完整要素抽取的工单（断点续抽/跳过已处理）
   let preExtractedCount = 0;
   normalizedRawTickets.forEach((ticket, idx) => {
     if (extractionMap.has(idx) || !hasStoredExtraction(ticket)) return;
@@ -353,11 +309,99 @@ export async function extractNode(
       subject: ticket.canonicalSubject || "",
       location: ticket.address || "",
       eventType: ticket.eventType || "",
-      category: (ticket.sourceCategory as any) || "城市管理",
+      category: (ticket.sourceCategory as any) || "综合民生",
       confidence: ticket.confidence || 0,
     });
     preExtractedCount++;
   });
+
+  // 1.2 检查 System-1 状态，仅对真正缺乏快思考决策的工单执行推理
+  let classifiedCount = 0;
+  let stabilityAlertCount = 0;
+  const pendingS1Tickets: Array<{ ticket: RawTicket; index: number }> = [];
+
+  normalizedRawTickets.forEach((ticket, index) => {
+    if (hasStoredSystemOne(ticket)) {
+      // 已经拥有 S1 决策标识，直接载入内存状态，无需重复过神经网络模型
+      ticket.systemOneSlaHours = ticket.slaHours;
+      ticket.systemOneStabilityRisk = ticket.stabilityRisk;
+      ticket.systemOneCategory = ticket.sourceCategory;
+      ticket.systemOneTownship = ticket.subdistrict;
+      if (ticket.stabilityRisk) stabilityAlertCount++;
+      classifiedCount++;
+    } else {
+      pendingS1Tickets.push({ ticket, index });
+    }
+  });
+
+  // 1.3 若存在未被 System-1 分类的工单，仅对增量/未分类工单启动快思考引擎
+  if (pendingS1Tickets.length > 0) {
+    try {
+      const systemOne = await SystemOneEngine.create();
+      if (taskId) {
+        updateTaskProgress(taskId, {
+          stage: "EXTRACTING",
+          stageText: `正在执行 System-1 快思考引擎预审 (${pendingS1Tickets.length} 条待分类工单)...`,
+          total: normalizedRawTickets.length,
+          processed: classifiedCount,
+          percent: 5,
+        });
+      }
+
+      for (let i = 0; i < pendingS1Tickets.length; i++) {
+        const { ticket } = pendingS1Tickets[i];
+        try {
+          const decision = await systemOne.evaluate(
+            {
+              title: ticket.title,
+              content: ticket.content,
+              subdistrict: ticket.subdistrict,
+            },
+            {
+              townships: regionVocab.townships,
+            }
+          );
+
+          ticket.systemOneCategory = decision.categoryName;
+          ticket.systemOneIntent = decision.intent;
+          ticket.systemOneUrgencyTier = decision.urgencyLevel;
+          ticket.systemOneSlaHours = decision.slaHours;
+          ticket.systemOneStabilityRisk = decision.stabilityRisk;
+          ticket.systemOneConfidence = decision.categoryProbability;
+
+          const s1Township =
+            canonicalizeTownship(decision.township, regionVocab) ||
+            canonicalizeTownship(ticket.subdistrict, regionVocab) ||
+            matchTownshipName((ticket.title || "") + " " + (ticket.content || ""), regionVocab.townships) ||
+            null;
+          ticket.systemOneTownship = s1Township || undefined;
+          ticket.subdistrict = s1Township || "";
+
+          ticket.urgency = decision.stabilityRisk || decision.urgencyLevel === 3
+            ? "URGENT"
+            : decision.urgencyLevel === 2
+            ? "MEDIUM"
+            : "NORMAL";
+          const category = canonicalizeCategory(decision.categoryName) || decision.categoryName;
+          if (category) ticket.sourceCategory = category;
+          if (decision.stabilityRisk) stabilityAlertCount++;
+          classifiedCount++;
+          if (ticket.id) rememberExtraction(tenantDb, ticket.id, systemOnePatch(ticket));
+          if ((i + 1) % 50 === 0 || i + 1 === pendingS1Tickets.length) {
+            console.log(`[extract] system-1 ${i + 1}/${pendingS1Tickets.length}`);
+          }
+        } catch (s1Err: any) {
+          console.warn(`[extract-node] System-1 evaluation error for ticket ${ticket.ticketNo}:`, s1Err.message);
+        }
+      }
+      await systemOne.close();
+    } catch (initErr: any) {
+      console.warn("[extract-node] System-1 engine initialization warning, continuing without S1 pre-filter:", initErr.message);
+    }
+  } else {
+    console.log(`[extract] System-1 全部历史工单已拥有分类标识 (${classifiedCount} 条)，直接跳过快思考推理。`);
+  }
+
 
   let processedCount = preExtractedCount;
   const chunkTasks: Array<() => Promise<void>> = [];

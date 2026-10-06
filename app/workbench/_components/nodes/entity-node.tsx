@@ -2,7 +2,7 @@
 
 import React from "react";
 import { type NodeProps, type Node, Position } from "@xyflow/react";
-import { Cpu, MapPin, Building2, Sparkles, CheckCircle2, Tag, Server } from "lucide-react";
+import { Cpu, MapPin, Building2, Sparkles, CheckCircle2, Tag, Server, Clock } from "lucide-react";
 import { PipelineNodeShell } from "./pipeline-node-shell";
 
 export type ProcessedTicketPreview = {
@@ -18,6 +18,7 @@ export type ClusterNodeDisplay = {
   name: string; // e.g. "研判节点一", "研判节点二"
   host?: string; // e.g. "127.0.0.1:8132"
   isLocal?: boolean;
+  lastDurationMs?: number | null;
   recentTickets: ProcessedTicketPreview[];
 };
 
@@ -99,11 +100,19 @@ export function EntityNode({ data }: NodeProps<EntityNodeType>) {
 
           return (
             <div key={node.id} className="pipeline-snippet-box">
-              {/* 卡片头部：研判节点名称 + 实时指示 (不展示 IP 地址) */}
+              {/* 卡片头部：研判节点名称 + 最新工单耗时 + 实时指示 (不展示 IP 地址) */}
               <div className="pipeline-snippet-title">
                 <span className="flex items-center gap-1.5 text-purple-700 font-semibold whitespace-nowrap">
                   <Sparkles size={11} className="shrink-0" />
                   {node.name}
+                  {node.lastDurationMs != null && node.lastDurationMs > 0 && (
+                    <span className="ml-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-purple-50 text-purple-700 border border-purple-200/70 shadow-2xs">
+                      <Clock size={10} className="shrink-0 text-purple-500" />
+                      {node.lastDurationMs >= 1000
+                        ? `${(node.lastDurationMs / 1000).toFixed(1)}s`
+                        : `${node.lastDurationMs}ms`}
+                    </span>
+                  )}
                 </span>
                 <div className="flex items-center gap-2 shrink-0">
                   {isActive && (

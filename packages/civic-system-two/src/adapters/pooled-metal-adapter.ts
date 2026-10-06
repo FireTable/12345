@@ -5,6 +5,7 @@ import {
 } from '../types';
 import { ISystemTwoAdapter } from './types';
 import { LocalMetalAdapter } from './local-metal-adapter';
+import { NodeMetric, getNodeMetric, getAllNodeMetrics } from '../metrics';
 
 interface ClusterNode {
   adapter: LocalMetalAdapter;
@@ -80,6 +81,14 @@ export class PooledMetalAdapter implements ISystemTwoAdapter {
 
   getAllEndpoints(): string[] {
     return this.nodes.map((n) => n.endpoint);
+  }
+
+  getNodeMetric(endpoint: string): NodeMetric | null {
+    return getNodeMetric(endpoint);
+  }
+
+  getAllNodeMetrics(): Record<string, NodeMetric> {
+    return getAllNodeMetrics();
   }
 
   /**

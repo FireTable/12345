@@ -5,6 +5,7 @@ import {
 } from '../types';
 import { extractReasoningAndContent, parseStructuredJson } from '../parser';
 import { ISystemTwoAdapter } from './types';
+import { recordNodeMetric } from '../metrics';
 
 export class LocalMetalAdapter implements ISystemTwoAdapter {
   readonly name = 'LocalMetalAdapter (llama-server / Metal)';
@@ -80,6 +81,7 @@ export class LocalMetalAdapter implements ISystemTwoAdapter {
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    const startMs = Date.now();
 
     try {
       const res = await fetch(url, {
@@ -100,6 +102,38 @@ export class LocalMetalAdapter implements ISystemTwoAdapter {
       }
 
       const raw = (await res.json()) as any;
+      const durationMs = Math.max(1, Date.now() - startMs);
+
+      // 提取 timings 和动态生成速率 tok/s
+      let tokensPerSecond = 0;
+      if (raw.timings && typeof raw.timings.predicted_per_second === 'number' && raw.timings.predicted_per_second > 0) {
+        tokensPerSecond = raw.timings.predicted_per_second;
+      } else if (raw.timings && typeof raw.timings.predicted_ms === 'number' && raw.timings.predicted_ms > 0 && raw.timings.predicted_n) {
+        tokensPerSecond = raw.timings.predicted_n / (raw.timings.predicted_ms / 1000);
+      } else if (raw.usage?.completion_tokens && durationMs > 0) {
+        tokensPerSecond = raw.usage.completion_tokens / (durationMs / 1000);
+      }
+
+      const completionTokens = raw.usage?.completion_tokens ?? raw.timings?.predicted_n ?? 0;
+      const promptTokens = raw.usage?.prompt_tokens ?? raw.timings?.prompt_n ?? 0;
+      const totalTokens = raw.usage?.total_tokens ?? (completionTokens + promptTokens);
+
+      // System-2 原生完整处理耗时: prompt_ms (首字/上下文预填充) + predicted_ms (生成完整工单结构体耗时)
+      const modelPromptMs = Number(raw.timings?.prompt_ms || 0);
+      const modelPredictedMs = Number(raw.timings?.predicted_ms || 0);
+      const modelTotalMs = modelPromptMs + modelPredictedMs;
+      // 优先采用 System-2 原生模型报告的完整处理时间，若无则使用精确往返耗时
+      const finalDurationMs = modelTotalMs > 0 ? Math.round(modelTotalMs) : durationMs;
+
+      recordNodeMetric({
+        endpoint: this.endpoint,
+        tokensPerSecond: tokensPerSecond > 0 ? Math.round(tokensPerSecond * 10) / 10 : undefined,
+        completionTokens,
+        promptTokens,
+        totalTokens,
+        durationMs: finalDurationMs,
+        updatedAt: Date.now(),
+      });
 
       // 提取与分离 choices 中的 reasoning 与 content
       const choices = (raw.choices || []).map((choice: any, idx: number) => {
@@ -138,10 +172,21 @@ export class LocalMetalAdapter implements ISystemTwoAdapter {
         model: raw.model || this.model,
         choices,
         usage: {
-          prompt_tokens: raw.usage?.prompt_tokens ?? 0,
-          completion_tokens: raw.usage?.completion_tokens ?? 0,
-          total_tokens: raw.usage?.total_tokens ?? 0,
+          prompt_tokens: promptTokens,
+          completion_tokens: completionTokens,
+          total_tokens: totalTokens,
         },
+        timings: raw.timings
+          ? {
+              predicted_per_second: raw.timings.predicted_per_second,
+              predicted_n: raw.timings.predicted_n,
+              predicted_ms: raw.timings.predicted_ms,
+              prompt_per_second: raw.timings.prompt_per_second,
+              prompt_n: raw.timings.prompt_n,
+              prompt_ms: raw.timings.prompt_ms,
+              total_ms: modelTotalMs > 0 ? Math.round(modelTotalMs) : undefined,
+            }
+          : undefined,
         parsed,
       };
     } finally {

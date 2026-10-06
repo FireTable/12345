@@ -5,6 +5,7 @@ import {
 } from '../types';
 import { extractReasoningAndContent, parseStructuredJson } from '../parser';
 import { ISystemTwoAdapter } from './types';
+import { recordNodeMetric } from '../metrics';
 
 export class CloudOpenAIAdapter implements ISystemTwoAdapter {
   readonly name = 'CloudOpenAIAdapter (Remote OpenAI-compatible)';
@@ -65,6 +66,7 @@ export class CloudOpenAIAdapter implements ISystemTwoAdapter {
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    const startMs = Date.now();
 
     try {
       const res = await fetch(url, {
@@ -85,6 +87,29 @@ export class CloudOpenAIAdapter implements ISystemTwoAdapter {
       }
 
       const raw = (await res.json()) as any;
+      const durationMs = Math.max(1, Date.now() - startMs);
+      const completionTokens = raw.usage?.completion_tokens ?? 0;
+      const promptTokens = raw.usage?.prompt_tokens ?? 0;
+      const totalTokens = raw.usage?.total_tokens ?? (completionTokens + promptTokens);
+
+      let tokensPerSecond = 0;
+      if (raw.timings && typeof raw.timings.predicted_per_second === 'number' && raw.timings.predicted_per_second > 0) {
+        tokensPerSecond = raw.timings.predicted_per_second;
+      } else if (completionTokens > 0 && durationMs > 0) {
+        tokensPerSecond = completionTokens / (durationMs / 1000);
+      }
+
+      if (tokensPerSecond > 0) {
+        recordNodeMetric({
+          endpoint: this.endpoint,
+          tokensPerSecond: Math.round(tokensPerSecond * 10) / 10,
+          completionTokens,
+          promptTokens,
+          totalTokens,
+          durationMs,
+          updatedAt: Date.now(),
+        });
+      }
 
       const choices = (raw.choices || []).map((choice: any, idx: number) => {
         const rawContent = choice.message?.content || '';
@@ -120,10 +145,20 @@ export class CloudOpenAIAdapter implements ISystemTwoAdapter {
         model: raw.model || this.model,
         choices,
         usage: {
-          prompt_tokens: raw.usage?.prompt_tokens ?? 0,
-          completion_tokens: raw.usage?.completion_tokens ?? 0,
-          total_tokens: raw.usage?.total_tokens ?? 0,
+          prompt_tokens: promptTokens,
+          completion_tokens: completionTokens,
+          total_tokens: totalTokens,
         },
+        timings: raw.timings
+          ? {
+              predicted_per_second: raw.timings.predicted_per_second,
+              predicted_n: raw.timings.predicted_n,
+              predicted_ms: raw.timings.predicted_ms,
+              prompt_per_second: raw.timings.prompt_per_second,
+              prompt_n: raw.timings.prompt_n,
+              prompt_ms: raw.timings.prompt_ms,
+            }
+          : undefined,
         parsed,
       };
     } finally {
