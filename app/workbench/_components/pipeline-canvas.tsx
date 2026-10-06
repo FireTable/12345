@@ -64,6 +64,8 @@ export type PipelineStateResponse = {
     total: number;
     percent?: number;
     currentSubject?: string;
+    currentLocation?: string;
+    currentEventType?: string;
   } | null;
   metrics: {
     totalTickets: number;
@@ -227,12 +229,18 @@ function InnerPipelineCanvas({
           processed: targetProcessed,
           total,
           extractedCount: targetProcessed,
-          currentLocation: stateData?.recentTickets?.[0]?.address || undefined,
+          currentLocation:
+            stateData?.taskProgress?.currentLocation ||
+            stateData?.recentTickets?.[0]?.address ||
+            undefined,
           currentSubject:
             stateData?.taskProgress?.currentSubject ||
             stateData?.recentTickets?.[0]?.canonicalSubject ||
             undefined,
-          currentEventType: stateData?.recentTickets?.[0]?.eventType || undefined,
+          currentEventType:
+            stateData?.taskProgress?.currentEventType ||
+            stateData?.recentTickets?.[0]?.eventType ||
+            undefined,
           status: entityStatus,
           statusText: entityStatusText,
           percent: entityPercent,

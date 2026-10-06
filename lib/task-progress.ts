@@ -40,6 +40,9 @@ export interface TaskProgress {
   activeCategories?: ActiveCategoryStats[];
   recentClusters?: ActiveClusterSpotlight[];
   currentReasoning?: string;
+  currentSubject?: string;
+  currentLocation?: string;
+  currentEventType?: string;
   error?: string;
   updatedAt: number;
 }

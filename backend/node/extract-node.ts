@@ -434,6 +434,7 @@ export async function extractNode(
       if (taskId) {
         const currentProcessed = Math.min(processedCount, normalizedRawTickets.length);
         const percent = Math.round((currentProcessed / Math.max(1, normalizedRawTickets.length)) * 50);
+        const latestItem = Array.from(packed.items.values()).pop();
         updateTaskProgress(taskId, {
           processed: currentProcessed,
           percent,
@@ -441,6 +442,9 @@ export async function extractNode(
           activeCategories: computeActiveCategories(),
           stageText: `AI 正在抽取工单实体与微观地点 (${currentProcessed} / ${normalizedRawTickets.length})...`,
           extractedCount: extractionMap.size,
+          currentLocation: latestItem?.location || undefined,
+          currentSubject: latestItem?.subject || undefined,
+          currentEventType: latestItem?.eventType || undefined,
         });
       }
     });

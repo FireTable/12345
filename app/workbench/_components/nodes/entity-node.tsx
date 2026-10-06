@@ -63,6 +63,12 @@ export function EntityNode({ data }: NodeProps<EntityNodeType>) {
             核心要素提取结果
           </span>
           <div className="flex items-center gap-2 shrink-0">
+            {isActive && (
+              <span className="inline-flex items-center gap-1 text-[10px] text-purple-700 bg-purple-100/80 px-1.5 py-0.5 rounded font-medium border border-purple-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-purple-600 animate-pulse" />
+                实时最新
+              </span>
+            )}
             <span className="text-[10px] text-purple-600 bg-purple-50 px-1.5 py-0.2 rounded font-mono font-medium border border-purple-100 whitespace-nowrap">
               准确率 98%
             </span>
@@ -74,12 +80,12 @@ export function EntityNode({ data }: NodeProps<EntityNodeType>) {
           </div>
         </div>
 
-        <div className="space-y-1.5 text-[11px] mt-2">
+        <div className="space-y-1.5 text-[11px] mt-2 transition-all duration-300">
           {/* 1. 微观空间实体 */}
           <div className="flex items-start gap-1.5 text-slate-600">
             <MapPin size={12} className="text-purple-500 shrink-0 mt-0.5" />
             <span className="text-slate-400 shrink-0">发生地点：</span>
-            <span className="font-medium text-slate-800 truncate">
+            <span className="font-medium text-slate-800 truncate" title={data.currentLocation}>
               {data.currentLocation || (data.total > 0 ? "要素提取中..." : "暂无提取数据")}
             </span>
           </div>
@@ -88,7 +94,7 @@ export function EntityNode({ data }: NodeProps<EntityNodeType>) {
           <div className="flex items-start gap-1.5 text-slate-600">
             <Building2 size={12} className="text-purple-500 shrink-0 mt-0.5" />
             <span className="text-slate-400 shrink-0">责任主体：</span>
-            <span className="font-medium text-slate-800 truncate">
+            <span className="font-medium text-slate-800 truncate" title={data.currentSubject}>
               {data.currentSubject || (data.total > 0 ? "责任主体研判中..." : "暂无数据")}
             </span>
           </div>
@@ -97,7 +103,7 @@ export function EntityNode({ data }: NodeProps<EntityNodeType>) {
           <div className="flex items-start gap-1.5 text-slate-600">
             <Tag size={12} className="text-purple-500 shrink-0 mt-0.5" />
             <span className="text-slate-400 shrink-0">问题类型：</span>
-            <span className="font-medium text-slate-800 truncate">
+            <span className="font-medium text-slate-800 truncate" title={data.currentEventType}>
               {data.currentEventType || (data.total > 0 ? "诉求类型定性中..." : "暂无数据")}
             </span>
           </div>
