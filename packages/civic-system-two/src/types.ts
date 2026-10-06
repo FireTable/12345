@@ -79,6 +79,10 @@ export interface SystemTwoConfig {
    */
   endpoint?: string;
   /**
+   * 多节点算力集群端点列表，支持传入多个局域网/本机端点实现负载均衡加速
+   */
+  endpoints?: string[];
+  /**
    * 模型别名，默认 bonsai-2-27b
    */
   model?: string;

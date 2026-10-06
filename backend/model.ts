@@ -49,16 +49,43 @@ export function llmConcurrency(): number {
   return isLocalLlm() ? 5 : 10;
 }
 
-/** System 2 的地址。默认是本机 llama，和云端对话地址不是同一个。 */
-export function isLocalSystemTwo(): boolean {
-  const endpoint = (process.env.SYSTEM_TWO_ENDPOINT || "http://127.0.0.1:8132/v1").toLowerCase();
-  return /localhost|127\.0\.0\.1|0\.0\.0\.0|::1/.test(endpoint);
+/**
+ * 获取 System 2 算力集群端点列表
+ * 支持逗号分隔的 SYSTEM_TWO_ENDPOINTS (如 "http://127.0.0.1:8132/v1,http://192.168.1.108:8132/v1")
+ * 兼容旧版的单端点 SYSTEM_TWO_ENDPOINT
+ */
+export function getSystemTwoEndpoints(): string[] {
+  const raw =
+    process.env.SYSTEM_TWO_ENDPOINTS ||
+    process.env.SYSTEM_TWO_ENDPOINT ||
+    "http://127.0.0.1:8132/v1";
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
-/** 本机 llama 以 -np 1 启动，抽取和主题建议一次只发一条，避免把请求堆爆。 */
+/** 探测是否包含本地/局域网私有节点 */
+export function isLocalSystemTwo(): boolean {
+  const endpoints = getSystemTwoEndpoints();
+  return endpoints.some((ep) =>
+    /localhost|127\.0\.0\.1|0\.0\.0\.0|::1|192\.168\.|10\.\d+\.|172\.(1[6-9]|2\d|3[01])\./i.test(
+      ep
+    )
+  );
+}
+
+/**
+ * 动态并发度调度：
+ * 1. 若配置了环境变量 SYSTEM_TWO_CONCURRENCY，优先采用
+ * 2. 否则按节点池中的节点数自动并发（如本机+Win双机 = 2并发，3机 = 3并发），充分压榨多机吞吐
+ */
 export function systemTwoConcurrency(): number {
-  if (isLocalSystemTwo()) return 1;
-  return llmConcurrency();
+  const raw = Number(process.env.SYSTEM_TWO_CONCURRENCY);
+  if (Number.isFinite(raw) && raw >= 1) return Math.trunc(raw);
+
+  const endpoints = getSystemTwoEndpoints();
+  return Math.max(1, endpoints.length);
 }
 
 const ToolProbeSchema = z.object({ ping: z.string() });
@@ -295,13 +322,14 @@ export async function getSystemTwoEngine(): Promise<SystemTwoEngine> {
     return systemTwoEnginePromise;
   }
 
-  const endpoint = process.env.SYSTEM_TWO_ENDPOINT || "http://127.0.0.1:8132/v1";
+  const endpoints = getSystemTwoEndpoints();
   const cloudApiKey = process.env.OPENAI_API_KEY;
   const cloudEndpoint = process.env.OPENAI_BASE_URL || "https://api.edgefn.net/v1";
   const cloudModel = process.env.OPENAI_MODEL || "DeepSeek-V4-Flash-0731";
 
   systemTwoEnginePromise = SystemTwoEngine.create({
-    endpoint,
+    endpoints,
+    endpoint: endpoints[0],
     timeoutMs: LLM_TIMEOUTS.DEFAULT,
     cloudFallback: cloudApiKey
       ? {
