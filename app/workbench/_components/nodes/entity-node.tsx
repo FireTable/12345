@@ -2,19 +2,36 @@
 
 import React from "react";
 import { type NodeProps, type Node, Position } from "@xyflow/react";
-import { Cpu, MapPin, Building2, Sparkles, CheckCircle2, Tag } from "lucide-react";
+import { Cpu, MapPin, Building2, Sparkles, CheckCircle2, Tag, Server } from "lucide-react";
 import { PipelineNodeShell } from "./pipeline-node-shell";
+
+export type ProcessedTicketPreview = {
+  id?: string;
+  ticketNo?: string;
+  address?: string;
+  canonicalSubject?: string;
+  eventType?: string;
+};
+
+export type ClusterNodeDisplay = {
+  id: string;
+  name: string; // e.g. "研判节点一", "研判节点二"
+  host?: string; // e.g. "127.0.0.1:8132"
+  isLocal?: boolean;
+  recentTickets: ProcessedTicketPreview[];
+};
 
 export type EntityNodeData = {
   processed: number;
   total: number;
   extractedCount: number;
-  currentLocation?: string;
-  currentSubject?: string;
-  currentEventType?: string;
   status: "idle" | "running" | "completed";
   statusText?: string;
   percent: number;
+  nodes?: ClusterNodeDisplay[];
+  currentLocation?: string;
+  currentSubject?: string;
+  currentEventType?: string;
 };
 
 export type EntityNodeType = Node<EntityNodeData, "entity">;
@@ -22,6 +39,26 @@ export type EntityNodeType = Node<EntityNodeData, "entity">;
 export function EntityNode({ data }: NodeProps<EntityNodeType>) {
   const isActive = data.status === "running";
   const isCompleted = data.status === "completed" || (data.total > 0 && data.processed >= data.total);
+
+  // 若父组件传入了集群节点列表，则按集群节点渲染多卡片；否则兜底单节点卡片
+  const displayNodes: ClusterNodeDisplay[] =
+    data.nodes && data.nodes.length > 0
+      ? data.nodes
+      : [
+          {
+            id: "node-1",
+            name: "研判节点一",
+            host: "127.0.0.1:8132",
+            isLocal: true,
+            recentTickets: [
+              {
+                address: data.currentLocation,
+                canonicalSubject: data.currentSubject,
+                eventType: data.currentEventType,
+              },
+            ].filter((t) => t.address || t.canonicalSubject || t.eventType),
+          },
+        ];
 
   return (
     <PipelineNodeShell
@@ -55,59 +92,98 @@ export function EntityNode({ data }: NodeProps<EntityNodeType>) {
         </div>
       </div>
 
-      {/* 实时抽取结果微型面板 (专注地点空间与责任主体) */}
-      <div className="pipeline-snippet-box">
-        <div className="pipeline-snippet-title">
-          <span className="flex items-center gap-1.5 text-purple-700 font-semibold whitespace-nowrap">
-            <Sparkles size={11} className="shrink-0" />
-            核心要素提取结果
-          </span>
-          <div className="flex items-center gap-2 shrink-0">
-            {isActive && (
-              <span className="inline-flex items-center gap-1 text-[10px] text-purple-700 bg-purple-100/80 px-1.5 py-0.5 rounded font-medium border border-purple-200">
-                <span className="w-1.5 h-1.5 rounded-full bg-purple-600 animate-pulse" />
-                实时最新
-              </span>
-            )}
-            <span className="text-[10px] text-purple-600 bg-purple-50 px-1.5 py-0.2 rounded font-mono font-medium border border-purple-100 whitespace-nowrap">
-              准确率 98%
-            </span>
-            {isCompleted && (
-              <span className="flex items-center gap-0.5 text-[10px] text-emerald-600 font-bold whitespace-nowrap">
-                <CheckCircle2 size={11} className="shrink-0" /> 已匹配标准库
-              </span>
-            )}
-          </div>
-        </div>
+      {/* 集群研判节点列表 (支持多个 SYSTEM_TWO_ENDPOINTS 分别展示独立卡片与各自近两条工单) */}
+      <div className="space-y-2.5">
+        {displayNodes.map((node) => {
+          const tickets = (node.recentTickets || []).slice(0, 2);
 
-        <div className="space-y-1.5 text-[11px] mt-2 transition-all duration-300">
-          {/* 1. 微观空间实体 */}
-          <div className="flex items-start gap-1.5 text-slate-600">
-            <MapPin size={12} className="text-purple-500 shrink-0 mt-0.5" />
-            <span className="text-slate-400 shrink-0">发生地点：</span>
-            <span className="font-medium text-slate-800 truncate" title={data.currentLocation}>
-              {data.currentLocation || (data.total > 0 ? "要素提取中..." : "暂无提取数据")}
-            </span>
-          </div>
+          return (
+            <div key={node.id} className="pipeline-snippet-box">
+              {/* 卡片头部：研判节点名称 + 端口标识 + 实时指示 */}
+              <div className="pipeline-snippet-title">
+                <span className="flex items-center gap-1.5 text-purple-700 font-semibold whitespace-nowrap">
+                  <Sparkles size={11} className="shrink-0" />
+                  {node.name}
+                  {node.host && (
+                    <span className="text-[10px] text-slate-400 font-mono font-normal ml-0.5">
+                      ({node.host})
+                    </span>
+                  )}
+                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  {isActive && (
+                    <span className="inline-flex items-center gap-1 text-[10px] text-purple-700 bg-purple-100/80 px-1.5 py-0.5 rounded font-medium border border-purple-200">
+                      <span className="w-1.5 h-1.5 rounded-full bg-purple-600 animate-pulse" />
+                      实时研判中
+                    </span>
+                  )}
+                  {isCompleted && (
+                    <span className="flex items-center gap-0.5 text-[10px] text-emerald-600 font-bold whitespace-nowrap">
+                      <CheckCircle2 size={11} className="shrink-0" /> 已就绪
+                    </span>
+                  )}
+                </div>
+              </div>
 
-          {/* 2. 涉事责任主体 */}
-          <div className="flex items-start gap-1.5 text-slate-600">
-            <Building2 size={12} className="text-purple-500 shrink-0 mt-0.5" />
-            <span className="text-slate-400 shrink-0">责任主体：</span>
-            <span className="font-medium text-slate-800 truncate" title={data.currentSubject}>
-              {data.currentSubject || (data.total > 0 ? "责任主体研判中..." : "暂无数据")}
-            </span>
-          </div>
+              {/* 实时处理好的近两条工单展示 */}
+              <div className="space-y-2 mt-2">
+                {tickets.length > 0 ? (
+                  tickets.map((t, tIdx) => (
+                    <div
+                      key={t.id || t.ticketNo || `item-${tIdx}`}
+                      className="p-2 rounded bg-slate-50/90 border border-slate-100/80 space-y-1 transition-all duration-300"
+                    >
+                      <div className="flex items-center justify-between text-[10px] font-medium">
+                        <span className="flex items-center gap-1 text-purple-600">
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              tIdx === 0 ? "bg-purple-600 animate-pulse" : "bg-slate-400"
+                            }`}
+                          />
+                          {tIdx === 0 ? "最新研判工单" : "前序研判工单"}
+                        </span>
+                        {t.ticketNo && (
+                          <span className="font-mono text-slate-400 text-[10px]">{t.ticketNo}</span>
+                        )}
+                      </div>
 
-          {/* 3. 诉求事件定性 */}
-          <div className="flex items-start gap-1.5 text-slate-600">
-            <Tag size={12} className="text-purple-500 shrink-0 mt-0.5" />
-            <span className="text-slate-400 shrink-0">问题类型：</span>
-            <span className="font-medium text-slate-800 truncate" title={data.currentEventType}>
-              {data.currentEventType || (data.total > 0 ? "诉求类型定性中..." : "暂无数据")}
-            </span>
-          </div>
-        </div>
+                      {/* 1. 微观空间实体 */}
+                      <div className="flex items-start gap-1.5 text-[11px] text-slate-600">
+                        <MapPin size={11} className="text-purple-500 shrink-0 mt-0.5" />
+                        <span className="text-slate-400 shrink-0">发生地点：</span>
+                        <span className="font-medium text-slate-800 truncate" title={t.address}>
+                          {t.address || "未指定地点"}
+                        </span>
+                      </div>
+
+                      {/* 2. 涉事责任主体 */}
+                      <div className="flex items-start gap-1.5 text-[11px] text-slate-600">
+                        <Building2 size={11} className="text-purple-500 shrink-0 mt-0.5" />
+                        <span className="text-slate-400 shrink-0">责任主体：</span>
+                        <span className="font-medium text-slate-800 truncate" title={t.canonicalSubject}>
+                          {t.canonicalSubject || "正在研判主体..."}
+                        </span>
+                      </div>
+
+                      {/* 3. 诉求事件定性 */}
+                      <div className="flex items-start gap-1.5 text-[11px] text-slate-600">
+                        <Tag size={11} className="text-purple-500 shrink-0 mt-0.5" />
+                        <span className="text-slate-400 shrink-0">问题类型：</span>
+                        <span className="font-medium text-slate-800 truncate" title={t.eventType}>
+                          {t.eventType || "待定性诉求"}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="p-3 text-center text-[11px] text-slate-400 bg-slate-50 rounded border border-dashed border-slate-200">
+                    等待分配工单研判...
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </PipelineNodeShell>
   );

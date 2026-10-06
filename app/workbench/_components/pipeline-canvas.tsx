@@ -105,6 +105,29 @@ export type PipelineStateResponse = {
     recommendedAction?: string;
     handlingStatus?: string;
   }>;
+  systemTwoNodes?: Array<{
+    id: string;
+    name: string;
+    host: string;
+    isLocal: boolean;
+  }>;
+  recentExtractedTickets?: Array<{
+    id: string;
+    ticketNo: string;
+    title: string;
+    content: string;
+    canonicalSubject?: string;
+    address?: string;
+    district?: string;
+    subdistrict?: string;
+    sourceCategory?: string;
+    urgency?: string;
+    stabilityRisk?: boolean;
+    confidence?: number;
+    createTime?: string;
+    eventType?: string;
+    updatedAt?: string;
+  }>;
 };
 
 const nodeTypes = {
@@ -221,31 +244,78 @@ function InnerPipelineCanvas({
           classifiedCount: targetProcessed,
         } as TriageNodeData,
       },
-      {
-        id: "node-entity",
-        type: "entity",
-        position: getPos("node-entity"),
-        data: {
-          processed: targetProcessed,
-          total,
-          extractedCount: targetProcessed,
-          currentLocation:
-            stateData?.taskProgress?.currentLocation ||
-            stateData?.recentTickets?.[0]?.address ||
-            undefined,
-          currentSubject:
-            stateData?.taskProgress?.currentSubject ||
-            stateData?.recentTickets?.[0]?.canonicalSubject ||
-            undefined,
-          currentEventType:
-            stateData?.taskProgress?.currentEventType ||
-            stateData?.recentTickets?.[0]?.eventType ||
-            undefined,
-          status: entityStatus,
-          statusText: entityStatusText,
-          percent: entityPercent,
-        } as EntityNodeData,
-      },
+      (() => {
+        const clusterNodes = stateData?.systemTwoNodes || [
+          { id: "node-1", name: "研判节点一", host: "127.0.0.1:8132", isLocal: true },
+        ];
+        const extractedList = stateData?.recentExtractedTickets || [];
+
+        // 为每个研判节点分配其处理的近两条工单
+        const entityClusterNodes = clusterNodes.map((n, idx) => {
+          const step = clusterNodes.length;
+          const myTickets =
+            step > 1
+              ? extractedList.filter((_, i) => i % step === idx).slice(0, 2)
+              : extractedList.slice(0, 2);
+
+          // 若当前有正在运行的在途抽取，且是主节点，优先注入当前在途要素
+          if (
+            idx === 0 &&
+            (stateData?.taskProgress?.currentLocation || stateData?.taskProgress?.currentSubject)
+          ) {
+            const liveTicket = {
+              address: stateData.taskProgress.currentLocation,
+              canonicalSubject: stateData.taskProgress.currentSubject,
+              eventType: stateData.taskProgress.currentEventType,
+            };
+            myTickets.unshift(liveTicket as any);
+          }
+
+          return {
+            id: n.id,
+            name: n.name,
+            host: n.host,
+            isLocal: n.isLocal,
+            recentTickets: myTickets.slice(0, 2).map((t) => ({
+              id: t.id,
+              ticketNo: t.ticketNo,
+              address: t.address,
+              canonicalSubject: t.canonicalSubject,
+              eventType: t.eventType,
+            })),
+          };
+        });
+
+        return {
+          id: "node-entity",
+          type: "entity",
+          position: getPos("node-entity"),
+          data: {
+            processed: targetProcessed,
+            total,
+            extractedCount: targetProcessed,
+            nodes: entityClusterNodes,
+            currentLocation:
+              stateData?.taskProgress?.currentLocation ||
+              stateData?.recentExtractedTickets?.[0]?.address ||
+              stateData?.recentTickets?.[0]?.address ||
+              undefined,
+            currentSubject:
+              stateData?.taskProgress?.currentSubject ||
+              stateData?.recentExtractedTickets?.[0]?.canonicalSubject ||
+              stateData?.recentTickets?.[0]?.canonicalSubject ||
+              undefined,
+            currentEventType:
+              stateData?.taskProgress?.currentEventType ||
+              stateData?.recentExtractedTickets?.[0]?.eventType ||
+              stateData?.recentTickets?.[0]?.eventType ||
+              undefined,
+            status: entityStatus,
+            statusText: entityStatusText,
+            percent: entityPercent,
+          } as EntityNodeData,
+        };
+      })(),
       {
         id: "node-cluster",
         type: "cluster",

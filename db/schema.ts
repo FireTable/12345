@@ -77,6 +77,7 @@ export const ticketsTable = pgTable(
     closureStatus: varchar("closure_status", { length: 32 }),
     isFakeClosure: boolean("is_fake_closure").default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
   (table) => [
     index("idx_tickets_ticket_no").on(table.ticketNo),

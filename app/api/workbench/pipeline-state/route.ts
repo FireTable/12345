@@ -7,6 +7,7 @@ import { sql, desc, eq, isNull } from "drizzle-orm";
 import { apiSuccess, apiError, ApiCode } from "@/lib/api-codes";
 import { regionLabel, UNKNOWN_TOWN } from "@/lib/civic-dto";
 import { triggerClusterJobAuto } from "@/lib/cluster-runner";
+import { getSystemTwoEndpoints } from "@/backend/model";
 
 export const dynamic = "force-dynamic";
 
@@ -44,7 +45,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // 3. 最新 5 条工单样本 (用于接入台和实体研判展示)
+    // 3.1 接入台样本 (按原始提报时间)
     const recentTickets = await tenantDb
       .select({
         id: ticketsTable.id,
@@ -65,6 +66,46 @@ export async function GET(req: NextRequest) {
       .from(ticketsTable)
       .orderBy(desc(ticketsTable.createTime))
       .limit(6);
+
+    // 3.2 实体研判台最新处理好的工单样本 (按更新研判时间 updatedAt，真实反映最新提取出的要素)
+    const recentExtractedTickets = await tenantDb
+      .select({
+        id: ticketsTable.id,
+        ticketNo: ticketsTable.ticketNo,
+        title: ticketsTable.title,
+        content: ticketsTable.content,
+        canonicalSubject: ticketsTable.canonicalSubject,
+        address: ticketsTable.address,
+        district: ticketsTable.district,
+        subdistrict: ticketsTable.subdistrict,
+        sourceCategory: ticketsTable.sourceCategory,
+        urgency: ticketsTable.urgency,
+        stabilityRisk: ticketsTable.stabilityRisk,
+        confidence: ticketsTable.confidence,
+        createTime: ticketsTable.createTime,
+        eventType: ticketsTable.eventType,
+        updatedAt: ticketsTable.updatedAt,
+      })
+      .from(ticketsTable)
+      .where(sql`${ticketsTable.canonicalSubject} IS NOT NULL AND ${ticketsTable.canonicalSubject} != ''`)
+      .orderBy(desc(ticketsTable.updatedAt), desc(ticketsTable.createdAt))
+      .limit(8);
+
+    // 3.3 解析 SYSTEM_TWO_ENDPOINTS 集群算力节点配置
+    const rawEndpoints = getSystemTwoEndpoints();
+    const chineseNumbers = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
+    const systemTwoNodes = (rawEndpoints.length > 0 ? rawEndpoints : ["http://127.0.0.1:8132/v1"]).map((ep, idx) => {
+      const isLocal = /127\.0\.0\.1|localhost|0\.0\.0\.0/.test(ep);
+      const hostMatch = ep.match(/https?:\/\/([^/:]+)(?::(\d+))?/);
+      const hostStr = hostMatch ? `${hostMatch[1]}:${hostMatch[2] || "80"}` : ep;
+      const chineseNum = chineseNumbers[idx] || String(idx + 1);
+      return {
+        id: `node-${idx + 1}`,
+        name: `研判节点${chineseNum}`,
+        host: hostStr,
+        isLocal,
+      };
+    });
 
     // 4. 最新 5 个多频主题 (用于聚类与案卷展示)
     const recentThemes = await tenantDb
@@ -152,6 +193,12 @@ export async function GET(req: NextRequest) {
       townshipStats: townshipStats.map((ts) => ({
         township: ts.township,
         count: Number(ts.count || 0),
+      })),
+      systemTwoNodes,
+      recentExtractedTickets: recentExtractedTickets.map((t) => ({
+        ...t,
+        createTime: t.createTime ? t.createTime.toISOString() : null,
+        updatedAt: t.updatedAt ? t.updatedAt.toISOString() : null,
       })),
       recentTickets: recentTickets.map((t) => ({
         ...t,

@@ -68,6 +68,7 @@ function rememberExtraction(
   if (address) set.address = address;
   const subdistrict = clipField(patch.subdistrict, 64);
   if (subdistrict) set.subdistrict = subdistrict;
+  set.updatedAt = new Date();
   if (Object.keys(set).length === 0) return;
   tenantDb
     .update(ticketsTable)
