@@ -92,23 +92,18 @@ export function EntityNode({ data }: NodeProps<EntityNodeType>) {
         </div>
       </div>
 
-      {/* 集群研判节点列表 (支持多个 SYSTEM_TWO_ENDPOINTS 分别展示独立卡片与各自近两条工单) */}
+      {/* 集群研判节点列表 (支持多个 SYSTEM_TWO_ENDPOINTS 分别展示独立卡片与最新研判工单) */}
       <div className="space-y-2.5">
         {displayNodes.map((node) => {
-          const tickets = (node.recentTickets || []).slice(0, 2);
+          const ticket = node.recentTickets?.[0];
 
           return (
             <div key={node.id} className="pipeline-snippet-box">
-              {/* 卡片头部：研判节点名称 + 端口标识 + 实时指示 */}
+              {/* 卡片头部：研判节点名称 + 实时指示 (不展示 IP 地址) */}
               <div className="pipeline-snippet-title">
                 <span className="flex items-center gap-1.5 text-purple-700 font-semibold whitespace-nowrap">
                   <Sparkles size={11} className="shrink-0" />
                   {node.name}
-                  {node.host && (
-                    <span className="text-[10px] text-slate-400 font-mono font-normal ml-0.5">
-                      ({node.host})
-                    </span>
-                  )}
                 </span>
                 <div className="flex items-center gap-2 shrink-0">
                   {isActive && (
@@ -125,62 +120,41 @@ export function EntityNode({ data }: NodeProps<EntityNodeType>) {
                 </div>
               </div>
 
-              {/* 实时处理好的近两条工单展示 */}
-              <div className="space-y-2 mt-2">
-                {tickets.length > 0 ? (
-                  tickets.map((t, tIdx) => (
-                    <div
-                      key={t.id || t.ticketNo || `item-${tIdx}`}
-                      className="p-2 rounded bg-slate-50/90 border border-slate-100/80 space-y-1 transition-all duration-300"
-                    >
-                      <div className="flex items-center justify-between text-[10px] font-medium">
-                        <span className="flex items-center gap-1 text-purple-600">
-                          <span
-                            className={`w-1.5 h-1.5 rounded-full ${
-                              tIdx === 0 ? "bg-purple-600 animate-pulse" : "bg-slate-400"
-                            }`}
-                          />
-                          {tIdx === 0 ? "最新研判工单" : "前序研判工单"}
-                        </span>
-                        {t.ticketNo && (
-                          <span className="font-mono text-slate-400 text-[10px]">{t.ticketNo}</span>
-                        )}
-                      </div>
-
-                      {/* 1. 微观空间实体 */}
-                      <div className="flex items-start gap-1.5 text-[11px] text-slate-600">
-                        <MapPin size={11} className="text-purple-500 shrink-0 mt-0.5" />
-                        <span className="text-slate-400 shrink-0">发生地点：</span>
-                        <span className="font-medium text-slate-800 truncate" title={t.address}>
-                          {t.address || "未指定地点"}
-                        </span>
-                      </div>
-
-                      {/* 2. 涉事责任主体 */}
-                      <div className="flex items-start gap-1.5 text-[11px] text-slate-600">
-                        <Building2 size={11} className="text-purple-500 shrink-0 mt-0.5" />
-                        <span className="text-slate-400 shrink-0">责任主体：</span>
-                        <span className="font-medium text-slate-800 truncate" title={t.canonicalSubject}>
-                          {t.canonicalSubject || "正在研判主体..."}
-                        </span>
-                      </div>
-
-                      {/* 3. 诉求事件定性 */}
-                      <div className="flex items-start gap-1.5 text-[11px] text-slate-600">
-                        <Tag size={11} className="text-purple-500 shrink-0 mt-0.5" />
-                        <span className="text-slate-400 shrink-0">问题类型：</span>
-                        <span className="font-medium text-slate-800 truncate" title={t.eventType}>
-                          {t.eventType || "待定性诉求"}
-                        </span>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="p-3 text-center text-[11px] text-slate-400 bg-slate-50 rounded border border-dashed border-slate-200">
-                    等待分配工单研判...
+              {/* 直接展示最新研判工单 (无冗余内层卡片包裹，无前序工单) */}
+              {ticket ? (
+                <div className="space-y-1.5 text-[11px] mt-2 transition-all duration-300">
+                  {/* 1. 微观空间实体 */}
+                  <div className="flex items-start gap-1.5 text-slate-600">
+                    <MapPin size={12} className="text-purple-500 shrink-0 mt-0.5" />
+                    <span className="text-slate-400 shrink-0">发生地点：</span>
+                    <span className="font-medium text-slate-800 truncate" title={ticket.address}>
+                      {ticket.address || "未指定地点"}
+                    </span>
                   </div>
-                )}
-              </div>
+
+                  {/* 2. 涉事责任主体 */}
+                  <div className="flex items-start gap-1.5 text-slate-600">
+                    <Building2 size={12} className="text-purple-500 shrink-0 mt-0.5" />
+                    <span className="text-slate-400 shrink-0">责任主体：</span>
+                    <span className="font-medium text-slate-800 truncate" title={ticket.canonicalSubject}>
+                      {ticket.canonicalSubject || "正在研判主体..."}
+                    </span>
+                  </div>
+
+                  {/* 3. 诉求事件定性 */}
+                  <div className="flex items-start gap-1.5 text-slate-600">
+                    <Tag size={12} className="text-purple-500 shrink-0 mt-0.5" />
+                    <span className="text-slate-400 shrink-0">问题类型：</span>
+                    <span className="font-medium text-slate-800 truncate" title={ticket.eventType}>
+                      {ticket.eventType || "待定性诉求"}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="py-2 text-center text-[11px] text-slate-400">
+                  等待分配工单研判...
+                </div>
+              )}
             </div>
           );
         })}

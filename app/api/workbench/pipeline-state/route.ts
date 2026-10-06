@@ -68,28 +68,55 @@ export async function GET(req: NextRequest) {
       .limit(6);
 
     // 3.2 实体研判台最新处理好的工单样本 (按更新研判时间 updatedAt，真实反映最新提取出的要素)
-    const recentExtractedTickets = await tenantDb
-      .select({
-        id: ticketsTable.id,
-        ticketNo: ticketsTable.ticketNo,
-        title: ticketsTable.title,
-        content: ticketsTable.content,
-        canonicalSubject: ticketsTable.canonicalSubject,
-        address: ticketsTable.address,
-        district: ticketsTable.district,
-        subdistrict: ticketsTable.subdistrict,
-        sourceCategory: ticketsTable.sourceCategory,
-        urgency: ticketsTable.urgency,
-        stabilityRisk: ticketsTable.stabilityRisk,
-        confidence: ticketsTable.confidence,
-        createTime: ticketsTable.createTime,
-        eventType: ticketsTable.eventType,
-        updatedAt: ticketsTable.updatedAt,
-      })
-      .from(ticketsTable)
-      .where(sql`${ticketsTable.canonicalSubject} IS NOT NULL AND ${ticketsTable.canonicalSubject} != ''`)
-      .orderBy(desc(ticketsTable.updatedAt), desc(ticketsTable.createdAt))
-      .limit(8);
+    let recentExtractedTickets: any[] = [];
+    try {
+      recentExtractedTickets = await tenantDb
+        .select({
+          id: ticketsTable.id,
+          ticketNo: ticketsTable.ticketNo,
+          title: ticketsTable.title,
+          content: ticketsTable.content,
+          canonicalSubject: ticketsTable.canonicalSubject,
+          address: ticketsTable.address,
+          district: ticketsTable.district,
+          subdistrict: ticketsTable.subdistrict,
+          sourceCategory: ticketsTable.sourceCategory,
+          urgency: ticketsTable.urgency,
+          stabilityRisk: ticketsTable.stabilityRisk,
+          confidence: ticketsTable.confidence,
+          createTime: ticketsTable.createTime,
+          eventType: ticketsTable.eventType,
+          updatedAt: ticketsTable.updatedAt,
+        })
+        .from(ticketsTable)
+        .where(sql`${ticketsTable.canonicalSubject} IS NOT NULL AND ${ticketsTable.canonicalSubject} != ''`)
+        .orderBy(desc(ticketsTable.updatedAt), desc(ticketsTable.createdAt))
+        .limit(8);
+    } catch {
+      try {
+        recentExtractedTickets = await tenantDb
+          .select({
+            id: ticketsTable.id,
+            ticketNo: ticketsTable.ticketNo,
+            title: ticketsTable.title,
+            content: ticketsTable.content,
+            canonicalSubject: ticketsTable.canonicalSubject,
+            address: ticketsTable.address,
+            district: ticketsTable.district,
+            subdistrict: ticketsTable.subdistrict,
+            sourceCategory: ticketsTable.sourceCategory,
+            urgency: ticketsTable.urgency,
+            stabilityRisk: ticketsTable.stabilityRisk,
+            confidence: ticketsTable.confidence,
+            createTime: ticketsTable.createTime,
+            eventType: ticketsTable.eventType,
+          })
+          .from(ticketsTable)
+          .where(sql`${ticketsTable.canonicalSubject} IS NOT NULL AND ${ticketsTable.canonicalSubject} != ''`)
+          .orderBy(desc(ticketsTable.createTime))
+          .limit(8);
+      } catch {}
+    }
 
     // 3.3 解析 SYSTEM_TWO_ENDPOINTS 集群算力节点配置
     const rawEndpoints = getSystemTwoEndpoints();
