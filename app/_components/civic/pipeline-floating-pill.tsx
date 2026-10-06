@@ -1,14 +1,13 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { Cpu } from "lucide-react";
 import { useRegion } from "./region-context";
+import { useCivicWorkflow } from "./civic-workflow";
 
 export function PipelineFloatingPill() {
-  const pathname = usePathname();
   const { activeRegion } = useRegion();
+  const { setPipelineDrawerOpen, pipelineDrawerOpen } = useCivicWorkflow();
   const [taskState, setTaskState] = useState<{
     status: "idle" | "running" | "completed" | "error";
     processed: number;
@@ -29,9 +28,11 @@ export function PipelineFloatingPill() {
     }
   }, [activeRegion?.id]);
 
+  const rawStatus = (taskState?.status || "").toUpperCase();
+  const isRunning = rawStatus === "RUNNING" || rawStatus === "PENDING";
+
   useEffect(() => {
     fetchStatus();
-    const isRunning = taskState?.status === "running";
     const timer = setInterval(fetchStatus, isRunning ? 3000 : 12000);
     const onRefresh = () => fetchStatus();
     window.addEventListener("civic-data-refresh", onRefresh);
@@ -40,10 +41,10 @@ export function PipelineFloatingPill() {
       clearInterval(timer);
       window.removeEventListener("civic-data-refresh", onRefresh);
     };
-  }, [fetchStatus, taskState?.status]);
+  }, [fetchStatus, isRunning]);
 
-  // 如果当前已经在 workbench 页面，或者没有在运行的任务，则隐藏
-  if (pathname === "/workbench" || !taskState || taskState.status !== "running") {
+  // 抽屉打开时或任务未运行时隐藏浮动胶囊
+  if (pipelineDrawerOpen || !taskState || !isRunning) {
     return null;
   }
 
@@ -51,21 +52,26 @@ export function PipelineFloatingPill() {
   const percent = total > 0 ? Math.round((processed / total) * 100) : 0;
 
   return (
-    <Link href="/workbench" className="pipeline-floating-widget" title="点击进入全工序研判画布工作台">
+    <button
+      type="button"
+      onClick={() => setPipelineDrawerOpen(true)}
+      className="pipeline-floating-widget"
+      title="点击唤醒全工序研判控制台"
+    >
       <div className="pipeline-floating-icon animate-spin" style={{ animationDuration: "3s" }}>
         <Cpu size={14} />
       </div>
-      <div className="flex flex-col">
-        <div className="text-[11px] font-bold tracking-tight text-white flex items-center gap-1.5 leading-none">
-          <span>AI 流水线研判中</span>
-          <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-blue-500/30 text-blue-200 border border-blue-400/30">
+      <div className="flex flex-col min-w-0 flex-1 text-left">
+        <div className="text-[11px] font-bold tracking-tight text-white flex items-center gap-1.5 leading-none min-w-0">
+          <span className="truncate">AI 流水线研判中</span>
+          <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-blue-500/30 text-blue-200 border border-blue-400/30 shrink-0">
             {processed.toLocaleString()}/{total.toLocaleString()} ({percent}%)
           </span>
         </div>
-        <div className="text-[9.5px] text-slate-300 truncate max-w-[140px] leading-tight mt-0.5">
+        <div className="text-[9.5px] text-slate-300 truncate leading-tight mt-0.5">
           {stageText || "时空实体研判中"}
         </div>
       </div>
-    </Link>
+    </button>
   );
 }

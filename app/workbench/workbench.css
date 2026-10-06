@@ -17,7 +17,8 @@
 
 /* 顶部调度工具条 */
 .workbench-header {
-  height: 52px;
+  min-height: 52px;
+  height: auto;
   background: rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -28,18 +29,68 @@
   padding: 0 20px;
   z-index: 20;
   flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (max-width: 640px) {
+  .workbench-header {
+    padding: 8px 12px;
+    gap: 6px;
+  }
 }
 
 .workbench-title-group {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
+  min-width: 0;
+  flex: 1 1 220px;
+}
+
+.workbench-heading {
+  min-width: 0;
+  flex: 1;
+}
+
+.workbench-heading h2,
+.workbench-heading__sub {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.workbench-header__status {
+  min-width: 0;
+  flex: 0 1 auto;
+  max-width: min(420px, 42vw);
+}
+
+.workbench-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.workbench-badge__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .workbench-title-group {
+    gap: 8px;
+  }
 }
 
 .workbench-badge {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  max-width: 100%;
+  min-width: 0;
   padding: 3px 10px;
   border-radius: 6px;
   font-size: 11px;
@@ -70,11 +121,35 @@
   flex: 1;
   width: 100%;
   height: 100%;
+  min-height: 0;
   position: relative;
   background: #F8FAFC;
 }
 
-/* React Flow 节点通用卡片外壳 (统一增宽 15%: 340px -> 391px) */
+.pipeline-drawer__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.pipeline-drawer__handle {
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(241, 245, 249, 0.9);
+  border: 0;
+  border-top: 1px solid #E2E8F0;
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+/* React Flow 节点通用卡片外壳 */
 .pipeline-node {
   width: 391px;
   border-radius: 14px;
@@ -391,3 +466,42 @@
 .pipeline-drawer.is-open {
   transform: translateY(0);
 }
+
+/* 窄屏：标题换行，状态条另起一行，画布仍在 */
+@media (max-width: 768px) {
+  .pipeline-drawer {
+    height: 100dvh;
+    min-height: unset;
+    padding-top: env(safe-area-inset-top);
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+
+  .workbench-header {
+    align-items: flex-start;
+    padding: 8px 12px;
+  }
+
+  .workbench-header__status {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+
+  .workbench-close-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .pipeline-drawer__handle {
+    min-height: 44px;
+    padding-bottom: max(6px, env(safe-area-inset-bottom));
+  }
+
+  .pipeline-floating-widget {
+    left: 12px;
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    max-width: none;
+  }
+}
+

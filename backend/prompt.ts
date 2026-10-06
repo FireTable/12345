@@ -4,6 +4,14 @@ import { desensitizeContent, ticketBodyForAI } from "./anonymizer";
 import { formatNegativeTermsForPrompt } from "./rules";
 import { buildVocabularyPromptConstraint, type RegionVocabulary } from "@/lib/vocabulary";
 
+/** 咨询类工单经常没有可核验的主体或门牌，模型会交 null。收成空字符串，避免整批 Schema 失败。 */
+function blankIfMissing(val: unknown): string {
+  if (val === null || val === undefined) return "";
+  const str = String(val).trim();
+  if (!str || str === "null" || str === "undefined" || str === "无" || str === "未知") return "";
+  return str;
+}
+
 /**
  * 1. 结构化抽取 Zod Schema (Structured Extraction Schemas)
  * 基础静态字段规范：包含序号、标题、主体、微观地点、事件类型、分类与置信度。
@@ -17,16 +25,27 @@ export const ExtractedTicketItemBaseSchema = z.object({
     .string()
     .describe("提炼的一句话标准公文诉求摘要标题（12-25字，如：关于某街道某路某号违停挪车诉求）"),
   subject: z
-    .string()
-    .describe("被诉具体对象/责任主体名称（如具体车牌号'粤A12345车辆'、商铺全称'某某民宿'、物业公司'某某物业管理处'；严禁使用'车主/商家/市民/某单位'等泛化虚词）"),
+    .preprocess(blankIfMissing, z.string())
+    .describe("被诉具体对象/责任主体名称（如具体车牌号'粤A12345车辆'、商铺全称'某某民宿'、物业公司'某某物业管理处'；严禁使用'车主/商家/市民/某单位'等泛化虚词。正文没有可核验对象时输出空字符串，不要输出 null）"),
   location: z
-    .string()
-    .describe("精准事发微观地点（必须包含：法定镇街/街道 + 路段/巷号 + 具体门牌号/小区/地标，如：某街道某路3号门口）"),
+    .preprocess(blankIfMissing, z.string())
+    .describe("精准事发微观地点（法定镇街/街道 + 路段/巷号 + 具体门牌号/小区/地标，如：某街道某路3号门口）。正文没有路段或门牌时输出空字符串，不要输出 null，也不要把镇街名填进本字段"),
   eventType: z
     .string()
     .describe("核心事件类型标准提炼（8-15字，如：机动车违规停放阻碍商铺经营、夜间营业音响喧哗与商业噪音扰民）"),
   category: z
-    .enum([
+    .preprocess((val) => {
+      const str = String(val || "").trim();
+      const valid = ["城市管理", "市场监管", "社会治理", "交通出行", "生态环境", "劳动社保", "公共安全"];
+      if (valid.includes(str)) return str;
+      if (str.includes("市容") || str.includes("城管") || str.includes("违建")) return "城市管理";
+      if (str.includes("交通") || str.includes("停") || str.includes("路")) return "交通出行";
+      if (str.includes("环保") || str.includes("噪") || str.includes("气") || str.includes("水")) return "生态环境";
+      if (str.includes("劳") || str.includes("薪") || str.includes("医保") || str.includes("社保")) return "劳动社保";
+      if (str.includes("市场") || str.includes("价") || str.includes("消") || str.includes("商")) return "市场监管";
+      if (str.includes("警") || str.includes("安") || str.includes("防")) return "公共安全";
+      return "社会治理";
+    }, z.enum([
       "城市管理",
       "市场监管",
       "社会治理",
@@ -34,7 +53,7 @@ export const ExtractedTicketItemBaseSchema = z.object({
       "生态环境",
       "劳动社保",
       "公共安全",
-    ])
+    ]))
     .describe("民生业务归属分类"),
   confidence: z
     .number()
@@ -55,9 +74,18 @@ export function createExtractedTicketItemSchema(townshipNames?: string[]) {
     const [first, ...rest] = validTowns;
     return ExtractedTicketItemBaseSchema.extend({
       township: z
-        .enum([first, ...rest])
-        .nullable()
-        .optional()
+        .preprocess((val) => {
+          if (val === null || val === undefined) return null;
+          const str = String(val).trim();
+          if (!str || str === "null" || str === "undefined" || str === "无" || str === "未知" || str === "全区" || str === "空") {
+            return null;
+          }
+          if (validTowns.includes(str)) return str;
+          // 模糊匹配（例如 "大良街道" 匹配 "大良镇"）
+          const matched = validTowns.find((t) => t.includes(str.slice(0, 2)) || str.includes(t.slice(0, 2)));
+          if (matched) return matched;
+          return null;
+        }, z.enum([first, ...rest]).nullable().optional())
         .describe(
           `事发归属的法定镇街/街道全称（严格选自本辖区数据库法定枚举白名单：${validTowns.join("、")}；若涉及纯网购/全国性电商维权或全区普惠政策咨询无具体辖区，输出 null）`
         ),
@@ -66,9 +94,14 @@ export function createExtractedTicketItemSchema(townshipNames?: string[]) {
 
   return ExtractedTicketItemBaseSchema.extend({
     township: z
-      .string()
-      .nullable()
-      .optional()
+      .preprocess((val) => {
+        if (val === null || val === undefined) return null;
+        const str = String(val).trim();
+        if (!str || str === "null" || str === "undefined" || str === "无" || str === "未知" || str === "空") {
+          return null;
+        }
+        return str;
+      }, z.string().nullable().optional())
       .describe("事发归属的法定镇街/街道全称（严格从当前辖区数据库法定白名单中选择；若无具体辖区输出 null）"),
   });
 }
@@ -142,15 +175,15 @@ export function buildBatchExtractionPrompt(
 ${buildVocabularyPromptConstraint(vocab)}
 
 【抽取规则】：
-1. subject（责任主体）：涉违停提取确切车牌（如"粤A12345车辆"或"粤ESD221车辆"）；涉商家提取具体字号；涉市政设施提取设施名（如"市政排污管网"）；严禁使用"车主/商家/市民/当事人"等泛词。
-2. location（微观地点）：必须包含"法定镇街/街道 + 路段/小区 + 门牌/地标"（如"某街道某路三街2号门口"），严禁虚构或只填宽泛区名。
+1. subject（责任主体）：涉违停提取确切车牌（如"粤A12345车辆"或"粤ESD221车辆"）；涉商家提取具体字号；涉市政设施提取设施名（如"市政排污管网"）；严禁使用"车主/商家/市民/当事人"等泛词。正文没有可核验的具体对象时输出空字符串 ""，不要输出 null，也不要编造主体。
+2. location（微观地点）：必须包含"法定镇街/街道 + 路段/小区 + 门牌/地标"（如"某街道某路三街2号门口"），严禁虚构或只填宽泛区名。正文没有路段或门牌时输出空字符串 ""，不要输出 null；镇街只放在 township。
 3. township（归属法定镇街/街道）：必须根据诉求正文线索（如村居、路名、学校、小区、地标、商圈），严格从上述法定区划白名单中选择标准全称（如"大良镇"、"猎德街道"）。若诉求涉及纯电商网购维权（无本地实体）或全区普惠政策咨询无具体辖区，输出 null。
 4. eventType（核心事件）：8-15字政务标准定性（如"机动车违规停放阻碍商铺经营"）。
 5. summarizeTitle（诉求标题）：12-25字标准公文标题（如"关于某街道某路某号粤A12345违停挪车诉求"）。
 6. category：严格归入法定分类之一。若工单附带【快思考推荐分类】，请优先采纳该推荐，杜绝随意变造分类。
 7. confidence（0-100）：要素明确完整打 85-98 分，主体模糊或诉求歧义打 20-55 分。
 8. 只输出一个 JSON 对象，不要 markdown、不要解释、不要思考过程。格式：
-{"items":[{"index":1,"summarizeTitle":"...","subject":"...","location":"...","township":"大良镇","eventType":"...","category":"城市管理","confidence":90}]}（注：无镇街时 township 字段直接传 null）
+{"items":[{"index":1,"summarizeTitle":"...","subject":"...","location":"...","township":"大良镇","eventType":"...","category":"城市管理","confidence":90}]}（注：无镇街时 township 传 null；没有可核验的主体或门牌时 subject、location 传 ""，不要传 null）
 
 工单列表：
 ${tickets

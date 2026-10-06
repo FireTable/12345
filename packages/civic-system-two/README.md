@@ -24,6 +24,10 @@
    - 实测最佳参数配置：单流高吞吐（`-np 1`，彻底避免多 Batch 导致的 Metal 三值去量化带宽竞争瓶颈）、Flash Attention 开启（`-fa on`）、KV Cache 压缩减半（`-ctk q8_0 -ctv q8_0`），在 M 系列芯片上实现稳定 20+ tokens/s。
 5. **多层平滑灾备降级**：
    - 链路：`本地 Metal (llama-server:8132)` ➔ `远程兼容云端 (DeepSeek / OpenAI)` ➔ `离线安全兜底 (FallbackAdapter)`。
+   - 多个本地地址走 `PooledMetalAdapter`。不健康节点超过 3 秒会再探一次，恢复后重新进池。候选先按轮询游标转动，再按在途请求数和连续失败次数排序，避免请求一直打在同一台、其余节点的耗时不刷新。
+6. **单次耗时**：
+   - 优先记 llama 返回的 `predicted_ms`（纯生成）。没有则用 `prompt_ms + predicted_ms`，再没有用本次请求的墙钟。
+   - `formatDuration` 一律显示成秒，例如 `0.4s`、`1.9s`。调用方不要再按毫秒原样贴到界面上。
 
 ---
 
@@ -106,9 +110,11 @@ packages/civic-system-two/
 │   ├── types.ts                     # OpenAI 兼容入参出参与核心配置类型
 │   ├── engine.ts                    # 引擎主入口、健康路由与 createJson 工具
 │   ├── parser.ts                    # <think> 提取分离与 JSON Markdown 清洗器
+│   ├── metrics.ts                   # 节点最近一次耗时。优先 predicted_ms，展示一律为秒
 │   └── adapters/
 │       ├── types.ts                 # 适配器接口标准 (ISystemTwoAdapter)
 │       ├── local-metal-adapter.ts   # 本地 Metal llama-server 适配器
+│       ├── pooled-metal-adapter.ts  # 多端点池：3 秒探活复位，轮询后按在途数挑选
 │       ├── cloud-openai-adapter.ts   # 远程通用云端 OpenAI 适配器
 │       └── fallback-adapter.ts       # 离线安全兜底适配器
 └── scripts/

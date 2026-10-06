@@ -6,7 +6,6 @@ import {
   systemTwoConcurrency,
   getSystemTwoEndpoints,
 } from "../model";
-import { recordNodeMetric } from "@/lib/node-metrics";
 import { workOrderClockFromTicketNo, workOrderInstantFromTicketNo } from "@/lib/work-order-date";
 import {
   BatchExtractionSchema,
@@ -175,23 +174,17 @@ async function extractBatchWithLLM(
         maxTokens: LLM_TOKENS.EXTRACTION,
         temperature: 0.1,
       });
-      // 优先从 System-2 原生返回的 timings 拿到完整推理总时间 (prompt_ms + predicted_ms)
-      const s2PromptMs = Number(timings?.prompt_ms || 0);
-      const s2PredictedMs = Number(timings?.predicted_ms || 0);
-      const s2TotalModelMs = Number(timings?.total_ms || (s2PromptMs + s2PredictedMs));
-      const durationMs = s2TotalModelMs > 0 ? Math.round(s2TotalModelMs) : Math.max(1, Date.now() - startMs);
-      const eps = getSystemTwoEndpoints();
-      recordNodeMetric({
-        endpoint: eps[0] || "http://127.0.0.1:8132/v1",
-        durationMs,
-        updatedAt: Date.now(),
-      });
 
       if (data && Array.isArray(data.items)) {
         for (const item of data.items) {
           if (!item || typeof item.index !== "number") continue;
           const sanitized = sanitizeItem(item);
-          if (!sanitized.summarizeTitle || !sanitized.subject || !sanitized.location || !sanitized.eventType) continue;
+          // 标题和事件至少要有一个，否则这行没有可用要素。主体或地点为空是合法的：
+          // 政策咨询常常没有可核验的对象和门牌，后面合并时再用工单镇街兜底，不要整批重试。
+          if (!sanitized.summarizeTitle && !sanitized.eventType) continue;
+          if (!sanitized.subject) {
+            sanitized.confidence = Math.min(sanitized.confidence, 55);
+          }
           const key = startIndex + item.index - 1;
           result.set(key, sanitized);
           fromLlm.add(key);
@@ -490,7 +483,7 @@ export async function extractNode(
           percent,
           classifiedCount,
           activeCategories: computeActiveCategories(),
-          stageText: `AI 正在抽取工单实体与微观地点 (${currentProcessed} / ${normalizedRawTickets.length})...`,
+          stageText: `AI 正在抽取工单实体与微观地点...`,
           extractedCount: extractionMap.size,
           currentLocation: latestItem?.location || undefined,
           currentSubject: latestItem?.subject || undefined,

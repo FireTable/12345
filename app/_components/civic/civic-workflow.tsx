@@ -152,9 +152,9 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
       toast.info(`当前 ${ticketStatus.total} 条工单已全部研判完毕，无需重复执行`);
       return;
     }
-    // 直接直达并唤醒 AI 研判全流程流水线工作台
-    router.push("/workbench");
-  }, [isAllAnalyzed, ticketStatus.total, router]);
+    // 唤醒侧拉研判控制台（不再跳转独立页面）
+    setPipelineDrawerOpen(true);
+  }, [isAllAnalyzed, ticketStatus.total]);
 
   const openCopilot = useCallback(async () => {
     try {
@@ -237,12 +237,12 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
         onDatabaseUpdated={refreshPages}
       />
 
-      {/* 后台研判任务浮动胶囊：点击直接唤醒全工序智能研判工作台 */}
+      {/* 后台研判任务浮动胶囊：点击唤醒侧拉控制台 */}
       {taskProgress && (taskProgress.status === "RUNNING" || analyzing) && (
         <FloatingProgressPill
           progress={taskProgress}
           isVisible={true}
-          onClickWorkbench={() => router.push("/workbench")}
+          onClickWorkbench={() => setPipelineDrawerOpen(true)}
         />
       )}
       <LightCopilot

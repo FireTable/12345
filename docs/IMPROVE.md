@@ -4,6 +4,15 @@ Work branch: `feat/civic-ui-landing`
 Reference: `design-assets/frontend/`  
 Rule: pages read persisted or aggregated data. No `Math.random` trends, no `log10(count)` fake confidence, no hardcoded 北滘 +186% insight as live copy.
 
+## 2026-10-07 — 流水线工厂抽屉与抽取空字段
+
+- AI 研判流水线工厂是顶部 `PipelineDrawer`，`/workbench` 页面已删除。窄屏和宽屏用同一块 React Flow 画布，只让抽屉标题换行，不再另做手机步骤列表。
+- 自动刷新保留节点 `measured`、宽高和拖拽位置。丢掉 `measured` 时 React Flow 会把节点藏起来。
+- 抽取 Schema 把主体、地点的 `null` / `无` / `未知` 收成空字符串。标题或事件还在就收下；主体为空时置信度不超过 55。
+- 算力节点耗时优先用 `predicted_ms`，界面一律写成秒。离线节点显示「无法连接」，不显示耗时。不健康节点超过 3 秒再探活，并轮询进调度。
+
+现行规则以 [`docs/WORKFLOW.md`](WORKFLOW.md) 为准。下面 2026-09-26 一节里的咨询直通、72 小时并单、主题建议开思考，都已经不用了。
+
 ## 2026-09-26 — V2 双引擎架构重构、微观时空基底对齐与增量滑动窗口闭环落地
 
 - **System-1 / System-2 双引擎分层协同全面落地**：

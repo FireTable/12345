@@ -48,7 +48,7 @@ function savePositions(key: string, positions: Record<string, { x: number; y: nu
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(key, JSON.stringify(positions));
-  } catch {}
+  } catch { }
 }
 
 export type PipelineStateResponse = {
@@ -110,6 +110,7 @@ export type PipelineStateResponse = {
     name: string;
     host: string;
     isLocal: boolean;
+    isOnline?: boolean;
     lastDurationMs?: number | null;
   }>;
   recentExtractedTickets?: Array<{
@@ -186,10 +187,10 @@ function InnerPipelineCanvas({
     const isEntityCompleted = (total > 0 && analyzed >= total) || stage === "CLUSTERING" || stage === "SUMMARIZING" || stage === "COMPLETED" || isCompleted;
     const entityStatus = isEntityRunning ? "running" : isEntityCompleted ? "completed" : "idle";
     const entityStatusText = isEntityRunning
-      ? `正在抽取研判 (${targetProcessed.toLocaleString()}/${total.toLocaleString()})`
+      ? `提取中 (${targetProcessed.toLocaleString()}/${total.toLocaleString()})`
       : isEntityCompleted
-      ? `提取完成 (${total.toLocaleString()}件)`
-      : "等待处理";
+        ? `提取完成 (${total.toLocaleString()}件)`
+        : "等待处理";
 
     // 04 工序 (同类问题聚合分析)
     const isClusterRunning = isRunning && (stage === "CLUSTERING" || (stage === "EXTRACTING" && targetProcessed >= total && total > 0));
@@ -198,8 +199,8 @@ function InnerPipelineCanvas({
     const clusterStatusText = isClusterRunning
       ? "正在聚合归类"
       : isClusterCompleted
-      ? `聚合完成 (${themeCount.toLocaleString()}组)`
-      : "等待分析";
+        ? `聚合完成 (${themeCount.toLocaleString()}组)`
+        : "等待分析";
 
     // 05 工序 (处置建议与案卷归档)
     const isDossierRunning = isRunning && stage === "SUMMARIZING";
@@ -208,8 +209,8 @@ function InnerPipelineCanvas({
     const dossierStatusText = isDossierRunning
       ? "正在生成案卷"
       : isDossierCompleted
-      ? "案卷已就绪"
-      : "等待生成";
+        ? "案卷已就绪"
+        : "等待生成";
 
     return [
       {
@@ -277,6 +278,7 @@ function InnerPipelineCanvas({
             name: n.name,
             host: n.host,
             isLocal: n.isLocal,
+            isOnline: n.isOnline,
             lastDurationMs: n.lastDurationMs ?? null,
             recentTickets: myTickets.slice(0, 2).map((t) => ({
               id: t.id,
@@ -432,9 +434,13 @@ function InnerPipelineCanvas({
         if (existing) {
           return {
             ...newNode,
-            // 严格保留用户拖动后的真实位置，防止接口刷新导致回滚！
+            // 保留拖拽位置，以及已经量到的宽高。刷新时若丢掉 measured，
+            // React Flow 会把节点设成 visibility:hidden，尺寸没变时观察器不再回调，节点就一直不出现。
             position: existing.position,
             selected: existing.selected,
+            measured: existing.measured,
+            width: existing.width,
+            height: existing.height,
           };
         }
         return newNode;
@@ -470,7 +476,7 @@ function InnerPipelineCanvas({
     if (typeof window !== "undefined") {
       try {
         localStorage.removeItem(storageKey);
-      } catch {}
+      } catch { }
     }
     setNodes((prevNodes) =>
       prevNodes.map((n) => ({

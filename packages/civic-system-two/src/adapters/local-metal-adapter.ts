@@ -118,12 +118,11 @@ export class LocalMetalAdapter implements ISystemTwoAdapter {
       const promptTokens = raw.usage?.prompt_tokens ?? raw.timings?.prompt_n ?? 0;
       const totalTokens = raw.usage?.total_tokens ?? (completionTokens + promptTokens);
 
-      // System-2 原生完整处理耗时: prompt_ms (首字/上下文预填充) + predicted_ms (生成完整工单结构体耗时)
-      const modelPromptMs = Number(raw.timings?.prompt_ms || 0);
+      // System-2 原生核心研判耗时: 优先取模型纯研判生成工单四要素结构体耗时 predicted_ms (即 400~450ms)；若无则降级取总耗时
       const modelPredictedMs = Number(raw.timings?.predicted_ms || 0);
+      const modelPromptMs = Number(raw.timings?.prompt_ms || 0);
       const modelTotalMs = modelPromptMs + modelPredictedMs;
-      // 优先采用 System-2 原生模型报告的完整处理时间，若无则使用精确往返耗时
-      const finalDurationMs = modelTotalMs > 0 ? Math.round(modelTotalMs) : durationMs;
+      const finalDurationMs = modelPredictedMs > 0 ? Math.round(modelPredictedMs) : (modelTotalMs > 0 ? Math.round(modelTotalMs) : durationMs);
 
       recordNodeMetric({
         endpoint: this.endpoint,

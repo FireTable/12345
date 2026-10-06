@@ -91,10 +91,26 @@ export class PooledMetalAdapter implements ISystemTwoAdapter {
     return getAllNodeMetrics();
   }
 
+  private rrCursor = 0;
+
   /**
    * 挑选最佳节点并执行推理，支持透明重试与故障转移
    */
   async chatCompletions(params: CivicChatCompletionParams): Promise<CivicChatCompletion> {
+    // 0. 自动重试探活：对当前被标记为不健康的节点，若距离上次检查超过 3 秒，尝试探活复位
+    for (const node of this.nodes) {
+      if (!node.isHealthy && Date.now() - node.lastChecked > 3000) {
+        node.lastChecked = Date.now();
+        node.adapter.isAvailable().then((ok) => {
+          if (ok) {
+            node.isHealthy = true;
+            node.consecutiveFailures = 0;
+            console.log(`[SystemTwoCluster] 节点 [${node.endpoint}] 已恢复健康，重新加入调度池。`);
+          }
+        }).catch(() => {});
+      }
+    }
+
     // 1. 获取候选节点（优先健康节点，若全不健康则尝试重置探测）
     let candidates = this.nodes.filter((n) => n.isHealthy);
     if (candidates.length === 0) {
@@ -107,8 +123,14 @@ export class PooledMetalAdapter implements ISystemTwoAdapter {
       }
     }
 
-    // 2. 按 Least-Connections（最少活跃请求数）排序，实现异构性能机器的自动负载倾斜
-    const sortedCandidates = [...candidates].sort((a, b) => {
+    // 2. 轮询游标配合 Least-Connections，确保各节点均能获得请求调度并实时刷新耗时
+    const offset = this.rrCursor++ % Math.max(1, candidates.length);
+    const rotatedCandidates = [
+      ...candidates.slice(offset),
+      ...candidates.slice(0, offset),
+    ];
+
+    const sortedCandidates = [...rotatedCandidates].sort((a, b) => {
       if (a.inFlight !== b.inFlight) return a.inFlight - b.inFlight;
       return a.consecutiveFailures - b.consecutiveFailures;
     });

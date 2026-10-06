@@ -1,8 +1,7 @@
 "use client";
 
 import React from "react";
-import { useRouter, usePathname } from "next/navigation";
-import { Loader2, ArrowRight, CheckCircle2, AlertTriangle, Cpu } from "lucide-react";
+import { Loader2, ArrowRight, CheckCircle2, AlertTriangle } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import type { TaskProgress } from "@/lib/task-progress";
 
@@ -19,11 +18,7 @@ export const FloatingProgressPill: React.FC<FloatingProgressPillProps> = ({
   onExpand,
   onClickWorkbench,
 }) => {
-  const router = useRouter();
-  const pathname = usePathname();
-
-  // 如果当前已经在 workbench 页面，避免遮挡
-  if (!isVisible || pathname === "/workbench") return null;
+  if (!isVisible) return null;
 
   const isCompleted = progress.status === "COMPLETED";
   const isFailed = progress.status === "FAILED";
@@ -37,8 +32,6 @@ export const FloatingProgressPill: React.FC<FloatingProgressPillProps> = ({
       onExpand();
       return;
     }
-    // 默认直接唤醒工作台
-    router.push("/workbench");
   };
 
   return (
@@ -48,7 +41,7 @@ export const FloatingProgressPill: React.FC<FloatingProgressPillProps> = ({
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.85, y: 20 }}
         transition={{ duration: 0.22, ease: "easeOut" }}
-        className="fixed bottom-6 right-6 z-[280] select-none"
+        className="fixed bottom-4 right-3 z-[280] select-none max-w-[calc(100vw-24px)] sm:bottom-6 sm:right-6"
       >
         <button
           onClick={handleClick}
@@ -95,9 +88,8 @@ export const FloatingProgressPill: React.FC<FloatingProgressPillProps> = ({
             </p>
           </div>
 
-          {/* 唤醒工作台提示 */}
           <div className="pl-1.5 border-l border-border/50 text-muted-foreground group-hover:text-primary transition-colors flex items-center gap-1 text-[10px] font-medium">
-            <span>工作台</span>
+            <span>控制台</span>
             <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
           </div>
         </button>

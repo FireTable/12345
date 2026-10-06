@@ -62,12 +62,16 @@ flowchart TD
 
 每条工单写下：
 
-- `canonical_subject`：主体
-- `address`：地点
+- `canonical_subject`：主体。正文没有可核验对象时可以为空
+- `address`：地点。没有路段或门牌时可以为空，镇街不填进这个字段
 - `event_type`：事件
 - `summarize_title`：一句话摘要
 
-镇街用当前城市词典里的法定镇名。先看 System 1，它现在总是 `UNKNOWN`，所以接着看 System 2 地点里有没有法定镇或街道。社区和地标不会被当成镇街。
+咨询件经常没有公司和门牌，模型会把主体、地点写成 `null`。[`backend/prompt.ts`](../backend/prompt.ts) 在 Zod 校验前把 `null`、空串、`无`、`未知` 收成空字符串，整批不会因此失败。分类不在七类里时按关键词归入七类，对不上记「社会治理」。镇街写成 `无`、`未知`、`全区`、`空`，或对不上当前城市词典，记 `null`。名称前两字对得上时（如「大良街道」对「大良镇」）改成词典里的法定全称。
+
+[`extract-node.ts`](../backend/node/extract-node.ts) 收下这一行的条件是标题或事件至少有一个。主体为空时把置信度压到不超过 55。地点空着不额外压分。镇街按 System 2 抽出的镇名、地点、已有镇街这个顺序认，认不到就空着。不要因为主体或地点是空就整批重试，也不要丢掉模型已经写出的标题、事件、分类和镇街。
+
+System 1 的镇街恒为 `UNKNOWN`，不会写成街道名。社区和地标不会被当成镇街。
 
 主体、事件、摘要、地点都已经在库里，并且置信度大于 0 时，重跑可以不再请 System 2。缺任何一项都会再抽。本地 llama 以 `-np 1` 启动，所以这些调用一次只发一条。
 
@@ -113,7 +117,7 @@ flowchart TD
 
 ## 四、字段从哪来
 
-抽不出来就空着。不再用「特定涉事方」「关于某地某事的诉求」这类句子填上。
+抽不出来就空着。`null` 先收成空字符串再入库，不再用「特定涉事方」「关于某地某事的诉求」这类句子填上。主体为空时置信度不超过 55。
 
 | 字段 | 含义 | 从哪来 |
 | :--- | :--- | :--- |
@@ -144,3 +148,15 @@ npx tsx tests/test-incident-profile.ts
 ```
 
 `scripts/prove-sample-300.ts` 会读取本机表格并改写 `region_fs_shunde`，只在需要重跑样本时手动执行。
+
+---
+
+## 六、研判流水线工厂
+
+入口是全站顶部抽屉 [`PipelineDrawer`](../app/_components/civic/pipeline-drawer.tsx)，不是 `/workbench` 页面。窄屏和宽屏用同一块 React Flow 画布 [`pipeline-canvas.tsx`](../app/workbench/_components/pipeline-canvas.tsx)。抽屉标题可以换行。宽度不超过 768px 时抽屉铺满屏幕，状态徽章另起一行。
+
+打开时每秒倒数。任务状态是大写 `RUNNING` 时每 3 秒请求 [`/api/workbench/pipeline-state`](../app/api/workbench/pipeline-state/route.ts)，否则每 10 秒。状态要按大写比较，写成小写会让悬浮胶囊不出现，并一直走慢轮询。
+
+自动刷新会换成新的节点对象。同步时必须留下已经量到的 `measured`、宽高，以及用户拖过的位置。丢掉 `measured` 后，React Flow 把节点设成 `visibility: hidden`；尺寸没变时尺寸观察器不再回调，卡片就整批不出现。
+
+接口对每个 System 2 地址做 `GET /v1/models`，超时 1.5 秒，结果缓存 3 秒。离线的卡片写「无法连接」，不显示耗时。在线耗时优先用该节点记下的 `predicted_ms`，界面一律写成秒。

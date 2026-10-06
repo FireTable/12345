@@ -146,12 +146,9 @@ export function getAllNodeMetrics(): Record<string, NodeMetric> {
 }
 
 /**
- * 格式化耗时展示 (例如 1850ms -> 1.9s, 420ms -> 420ms)
+ * 格式化耗时展示，一律写成秒（例如 1850ms -> 1.9s，420ms -> 0.4s）。
  */
 export function formatDuration(durationMs?: number | null): string {
   if (durationMs == null || durationMs <= 0) return '';
-  if (durationMs >= 1000) {
-    return `${(durationMs / 1000).toFixed(1)}s`;
-  }
-  return `${Math.round(durationMs)}ms`;
+  return `${(durationMs / 1000).toFixed(1)}s`;
 }

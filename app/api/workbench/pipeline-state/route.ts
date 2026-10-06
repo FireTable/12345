@@ -12,6 +12,29 @@ import { getNodeMetric } from "@/lib/node-metrics";
 
 export const dynamic = "force-dynamic";
 
+const nodeHealthCache = new Map<string, { isOnline: boolean; lastChecked: number }>();
+
+async function probeEndpointOnline(endpoint: string): Promise<boolean> {
+  const cached = nodeHealthCache.get(endpoint);
+  if (cached && Date.now() - cached.lastChecked < 3000) {
+    return cached.isOnline;
+  }
+  let online = false;
+  try {
+    const base = endpoint.replace(/\/+$/, "");
+    const url = base.endsWith("/v1") ? `${base}/models` : `${base}/v1/models`;
+    const res = await fetch(url, {
+      method: "GET",
+      signal: AbortSignal.timeout(1500),
+    });
+    online = res.status < 500;
+  } catch {
+    online = false;
+  }
+  nodeHealthCache.set(endpoint, { isOnline: online, lastChecked: Date.now() });
+  return online;
+}
+
 export async function GET(req: NextRequest) {
   try {
     const regionId = await resolveRequestRegionId(req);
@@ -133,26 +156,36 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 3.4 解析 SYSTEM_TWO_ENDPOINTS 集群算力节点配置
+    // 3.4 解析 SYSTEM_TWO_ENDPOINTS 集群算力节点配置并并发探测健康状态
     const rawEndpoints = getSystemTwoEndpoints();
+    const endpointsList = rawEndpoints.length > 0 ? rawEndpoints : ["http://127.0.0.1:8132/v1"];
     const chineseNumbers = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
-    const systemTwoNodes = (rawEndpoints.length > 0 ? rawEndpoints : ["http://127.0.0.1:8132/v1"]).map((ep, idx) => {
+
+    const onlineStatuses = await Promise.all(
+      endpointsList.map((ep) => probeEndpointOnline(ep))
+    );
+
+    const systemTwoNodes = endpointsList.map((ep, idx) => {
       const isLocal = /127\.0\.0\.1|localhost|0\.0\.0\.0/.test(ep);
       const hostMatch = ep.match(/https?:\/\/([^/:]+)(?::(\d+))?/);
       const hostStr = hostMatch ? `${hostMatch[1]}:${hostMatch[2] || "80"}` : ep;
       const chineseNum = chineseNumbers[idx] || String(idx + 1);
       const metric = getNodeMetric(ep);
+      const isOnline = onlineStatuses[idx] ?? false;
 
-      // 完整工单耗时：优先取 System-2 原生 timings 上报的完整处理耗时 (>= 800ms 剔除历史残存的仅首字/微采样值)；否则取数据库连续工单真实物理耗时差
-      const effectiveDuration = (metric?.durationMs && metric.durationMs >= 800)
-        ? metric.durationMs
-        : (dbTicketDurationMs ?? (metric?.durationMs && metric.durationMs > 0 ? metric.durationMs : null));
+      // 完整工单耗时：在线时取原生或数据库耗时；离线时不显示耗时
+      const effectiveDuration = isOnline
+        ? (metric?.durationMs && metric.durationMs >= 200)
+          ? metric.durationMs
+          : (dbTicketDurationMs ?? (metric?.durationMs && metric.durationMs > 0 ? metric.durationMs : null))
+        : null;
 
       return {
         id: `node-${idx + 1}`,
         name: `研判节点${chineseNum}`,
         host: hostStr,
         isLocal,
+        isOnline,
         lastDurationMs: effectiveDuration,
       };
     });

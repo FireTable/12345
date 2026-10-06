@@ -234,7 +234,7 @@ PostgreSQL 实例 (ticket_radar)
 | `canonical_subject` | `VARCHAR(255)` | `NULLABLE` | 主体 | System 2。最长 255 字 |
 | `event_type` | `VARCHAR(128)` | `NULLABLE` | 事件 | System 2。最长 128 字 |
 | `address` | `VARCHAR(255)` | `NULLABLE` | 地点 | System 2 抽出的事发地点 |
-| `confidence` | `INTEGER` | `NULLABLE` | 抽取置信度 (0~100) | 低于 60 进入人工复核队列。不再为此再叫一次大模型 |
+| `confidence` | `INTEGER` | `NULLABLE` | 抽取置信度 (0~100) | 低于 60 进入人工复核队列。不再为此再叫一次大模型。主体抽空时上限压到 55。主体、地点的 `null` 在校验前收成空字符串 |
 | `primary_theme_id` | `VARCHAR(64)` | `INDEX, NULLABLE` | 🤖 首要归属主题 ID | 🤖 聚类后关联的核心多频群组 ID |
 | `channel` | `VARCHAR(64)` | `DEFAULT '市民服务热线'` | 诉求来源渠道 | 市民热线 / 微信小程序 / 市长信箱 |
 | `status` | `VARCHAR(32)` | `INDEX, DEFAULT 'PENDING'` | 流转状态 | `PENDING` 待研判 / `PROCESSING` 处置中 / `RESOLVED` 已结案 |

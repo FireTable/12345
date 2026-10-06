@@ -23,6 +23,7 @@
 
 2. **🧠 System 2：每条工单都抽实体，并写一句话摘要**
    - 本地 Bonsai 2 27B，思考关掉，只出 JSON。每条写下主体、地点、事件和一句话摘要。
+   - 咨询件常常没有可核验的公司或门牌。模型交来的 `null`、`无`、`未知` 收成空字符串，不让整批校验失败。标题或事件还在就收下这一行；主体为空时置信度不超过 55，低于 60 进人工复核。
    - 两条及以上的工单收成主题之后，再为这个主题写一条处置建议。单独留下的工单不再写主题建议。主题建议同样关掉思考。
 
 3. **🌐 多城市/多租户 Schema 物理级隔离与 AI 自动拓荒 (`/admin/regions`)**
@@ -98,10 +99,12 @@
 ├── app/                              # Next.js App Router 前端与 API 服务
 │   ├── _components/                  # 业务与 UI 组件 (Civic Light 体系)
 │   ├── api/                          # RESTful API 端点 (双模态: cluster 批研判, tickets 单工单流式接入)
+│   │   └── workbench/pipeline-state/ # 流水线工厂状态。任务状态大写；离线节点不报耗时
 │   ├── dict/                         # 标准字典与别名知识库页面 (/dict)
 │   ├── multifreq/                    # 工单透势全景研判页面 (/multifreq)
 │   ├── themes/                       # 多频工单看板页面 (/themes)
-│   └── tickets/                      # 工单中心下钻核查页面 (/tickets)
+│   ├── tickets/                      # 工单中心下钻核查页面 (/tickets)
+│   └── workbench/                    # 研判画布组件，不是独立路由。入口是顶部抽屉 PipelineDrawer
 ├── backend/                          # 核心业务后端与认知中枢
 │   ├── agent.ts                      # LangGraph 流水线。顺序是抽取、对齐、聚类、主题建议
 │   ├── incremental-cluster.ts        # 新来的单张工单并入已有主题。同一件事才并，不按相隔多久拆开
@@ -127,7 +130,9 @@
 └── docs/                             # 系统权威技术规范与架构文档
 ```
 
-后端其余文件：`prompt.ts` 写抽取和主题建议的提示，`state.ts` 是流水线状态，`theme-metrics.ts` 计算主题节奏。`lib/work-order-date.ts` 从工单编号读登记日。`lib/ticket-ingest.ts` 入库时先用这个日期。数据库字段见 [`docs/DBS.md`](docs/DBS.md)。
+后端其余文件：`prompt.ts` 写抽取和主题建议的提示，主体和地点允许为空字符串；`state.ts` 是流水线状态，`theme-metrics.ts` 计算主题节奏。`lib/work-order-date.ts` 从工单编号读登记日。`lib/ticket-ingest.ts` 入库时先用这个日期。数据库字段见 [`docs/DBS.md`](docs/DBS.md)。
+
+AI 研判流水线工厂是全站顶部抽屉，不是 `/workbench` 页面。窄屏和宽屏用同一块 React Flow 画布，标题可以换行。自动刷新时保留节点已量到的宽高，否则卡片会整批消失。节点耗时优先用模型的 `predicted_ms`，界面一律写成秒。细节见 [`docs/WORKFLOW.md`](docs/WORKFLOW.md) 第六节。
 
 ---
 
