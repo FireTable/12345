@@ -7,6 +7,7 @@ import type {
   CivicEvaluateOptions,
 } from "../types";
 import { CATEGORY_NAME_MAP } from "../presets/categories";
+import { matchTownshipFromOptions } from "./township-matcher";
 
 export class FallbackAdapter implements DecisionAdapter {
   readonly name = "fallback" as const;
@@ -109,6 +110,10 @@ export class FallbackAdapter implements DecisionAdapter {
 
     const latencyMs = Number((performance.now() - t0).toFixed(2));
 
+    const townDecision = matchTownshipFromOptions(ticket, options?.townships);
+    const township = townDecision.township;
+    const townshipProbability = townDecision.probability;
+
     return {
       intent,
       intentProbability: 0.85,
@@ -121,8 +126,8 @@ export class FallbackAdapter implements DecisionAdapter {
       slaHours,
       stabilityRisk,
       stabilityRiskProbability: stabilityRisk ? 0.95 : 0.05,
-      township: "UNKNOWN",
-      townshipProbability: 0,
+      township,
+      townshipProbability,
       titleTokenCount: 0,
       bodyTokenCount: 0,
       isReasonable,

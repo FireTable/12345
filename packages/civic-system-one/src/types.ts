@@ -27,8 +27,16 @@ export interface CivicTicketInput {
   subdistrict?: string;
 }
 
+export interface CivicTownshipOption {
+  name: string;
+  fullName: string;
+  aliases?: string[];
+  communities?: string[];
+  landmarks?: string[];
+}
+
 /**
- * 动态属地评估配置项（实现多城市 Schema 分类动态插拔）
+ * 动态属地评估配置项（实现多城市 Schema 分类与镇街动态插拔）
  */
 export interface CivicEvaluateOptions {
   /** 属地自定义业务大类标准描述字典 (覆盖或扩展默认7大类)，直接读取自 regions.categoryConfigJson */
@@ -39,6 +47,8 @@ export interface CivicEvaluateOptions {
   intentCriteria?: Record<CivicIntent, string>;
   /** 自定义紧迫度评级阶梯描述 (通常使用默认四级) */
   urgencyLevels?: string[];
+  /** 属地法定镇街字典白名单，用于 System-1 快速决策判定归属镇街（必须与 System-2 严格同源） */
+  townships?: CivicTownshipOption[];
 }
 
 export interface CivicSystemOneDecision {

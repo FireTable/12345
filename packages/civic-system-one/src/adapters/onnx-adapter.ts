@@ -7,6 +7,7 @@ import type {
   CivicEvaluateOptions,
 } from "../types";
 import { CATEGORY_NAME_MAP } from "../presets/categories";
+import { matchTownshipFromOptions } from "./township-matcher";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -254,9 +255,10 @@ export class ONNXAdapter implements DecisionAdapter {
     const stabilityRisk = stabProbs[0] > stabProbs[1]; // Index 0 is YES, Index 1 is NO
     const stabilityRiskProbability = stabProbs[0];
 
-    // Town names are not classes in the shared weights. The city dictionary assigns them.
-    const township = "UNKNOWN";
-    const townshipProbability = 0;
+    // 5. 动态属地镇街判定（基于当前辖区标准政务白名单，与 System-2 同源）
+    const townDecision = matchTownshipFromOptions(ticket, options?.townships);
+    const township = townDecision.township;
+    const townshipProbability = townDecision.probability;
 
     // Interlock: escalate to Level 3 if stability risk is triggered
     if (stabilityRisk) {

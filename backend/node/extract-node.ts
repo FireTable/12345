@@ -14,7 +14,7 @@ import {
 } from "../prompt";
 import { adminFromLocation, explicitAdmin } from "@/lib/admin-area";
 import { getRegionAliasMap, normalizeAliasesInText, resolveEntityAlias } from "@/lib/alias-dict";
-import { canonicalizeCategory, canonicalizeTownship, getRegionVocabulary, legalTownshipName, type RegionVocabulary } from "@/lib/vocabulary";
+import { canonicalizeCategory, canonicalizeTownship, getRegionVocabulary, legalTownshipName, matchTownshipName, type RegionVocabulary } from "@/lib/vocabulary";
 import { verifyAndCanonicalizeTicketArea } from "./arbitrator-node";
 import { updateTaskProgress } from "@/lib/task-progress";
 import { getRegionDb } from "@/db/client";
@@ -83,7 +83,7 @@ function systemOnePatch(ticket: RawTicket) {
     urgency: ticket.urgency,
     slaHours: ticket.systemOneSlaHours,
     stabilityRisk: ticket.systemOneStabilityRisk,
-    subdistrict: ticket.subdistrict,
+    subdistrict: ticket.systemOneTownship || null,
   };
 }
 
@@ -288,11 +288,16 @@ export async function extractNode(
     for (let i = 0; i < normalizedRawTickets.length; i++) {
       const ticket = normalizedRawTickets[i];
       try {
-        const decision = await systemOne.evaluate({
-          title: ticket.title,
-          content: ticket.content,
-          subdistrict: ticket.subdistrict,
-        });
+        const decision = await systemOne.evaluate(
+          {
+            title: ticket.title,
+            content: ticket.content,
+            subdistrict: ticket.subdistrict,
+          },
+          {
+            townships: regionVocab.townships,
+          }
+        );
 
         ticket.systemOneCategory = decision.categoryName;
         ticket.systemOneIntent = decision.intent;
@@ -300,7 +305,16 @@ export async function extractNode(
         ticket.systemOneSlaHours = decision.slaHours;
         ticket.systemOneStabilityRisk = decision.stabilityRisk;
         ticket.systemOneConfidence = decision.categoryProbability;
-        ticket.systemOneTownship = decision.township;
+
+        // 统一规范化：System-1 判定镇街与 System-2 严格共享同源 DB 枚举白名单，杜绝任何错漏与幻觉
+        const s1Township =
+          canonicalizeTownship(decision.township, regionVocab) ||
+          canonicalizeTownship(ticket.subdistrict, regionVocab) ||
+          matchTownshipName((ticket.title || "") + " " + (ticket.content || ""), regionVocab.townships) ||
+          null;
+        ticket.systemOneTownship = s1Township || undefined;
+        ticket.subdistrict = s1Township || "";
+
         ticket.urgency = decision.stabilityRisk || decision.urgencyLevel === 3
           ? "URGENT"
           : decision.urgencyLevel === 2
