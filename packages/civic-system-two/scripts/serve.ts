@@ -130,9 +130,6 @@ async function main() {
     '-np', '1',
     '--batch-size', '1024',
     '--ubatch-size', '256',
-    '--reasoning-budget', '0',
-    '--reasoning-format', 'none',
-    '--chat-template-kwargs', '{"enable_thinking": false}'
   ];
 
   const proc = spawn(serverBin, args, {
