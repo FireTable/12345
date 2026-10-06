@@ -6,8 +6,10 @@ import { buildVocabularyPromptConstraint, type RegionVocabulary } from "@/lib/vo
 
 /**
  * 1. 结构化抽取 Zod Schema (Structured Extraction Schemas)
+ * 基础静态字段规范：包含序号、标题、主体、微观地点、事件类型、分类与置信度。
+ * township（镇街/街道）字段由数据库标准政务字典动态注入，严禁硬编码。
  */
-export const ExtractedTicketItemSchema = z.object({
+export const ExtractedTicketItemBaseSchema = z.object({
   index: z
     .number()
     .describe("工单序号（1-indexed，对应输入列表中的序号）"),
@@ -41,14 +43,50 @@ export const ExtractedTicketItemSchema = z.object({
     .describe("工单要素抽取综合置信度得分（0-100整数，评估主体、微观地点、诉求事件的清晰度与完整性）"),
 });
 
+/**
+ * 动态根据当前数据库权威政务词库（从 DB/vocab 中动态读取），将 township 动态插入到抽取 Schema 中
+ */
+export function createExtractedTicketItemSchema(townshipNames?: string[]) {
+  const validTowns = Array.from(
+    new Set((townshipNames || []).map((t) => (t || "").trim()).filter(Boolean))
+  );
+
+  if (validTowns.length >= 2) {
+    const [first, ...rest] = validTowns;
+    return ExtractedTicketItemBaseSchema.extend({
+      township: z
+        .enum([first, ...rest])
+        .nullable()
+        .optional()
+        .describe(
+          `事发归属的法定镇街/街道全称（严格选自本辖区数据库法定枚举白名单：${validTowns.join("、")}；若涉及纯网购/全国性电商维权或全区普惠政策咨询无具体辖区，输出 null）`
+        ),
+    });
+  }
+
+  return ExtractedTicketItemBaseSchema.extend({
+    township: z
+      .string()
+      .nullable()
+      .optional()
+      .describe("事发归属的法定镇街/街道全称（严格从当前辖区数据库法定白名单中选择；若无具体辖区输出 null）"),
+  });
+}
+
+export const ExtractedTicketItemSchema = createExtractedTicketItemSchema();
 export type ExtractedTicketItem = z.infer<typeof ExtractedTicketItemSchema>;
 
-export const BatchExtractionSchema = z.object({
-  items: z
-    .array(ExtractedTicketItemSchema)
-    .describe("工单结构化要素抽取结果列表"),
-});
+/**
+ * 动态根据当前数据库权威政务词库（DB 动态读取），构建带严格动态 Enum 白名单约束的 BatchExtractionSchema
+ */
+export function buildDynamicBatchExtractionSchema(townshipNames?: string[]) {
+  const itemSchema = createExtractedTicketItemSchema(townshipNames);
+  return z.object({
+    items: z.array(itemSchema).describe("工单结构化要素抽取结果列表"),
+  });
+}
 
+export const BatchExtractionSchema = buildDynamicBatchExtractionSchema();
 export type BatchExtractionResult = z.infer<typeof BatchExtractionSchema>;
 
 /**
@@ -105,13 +143,14 @@ ${buildVocabularyPromptConstraint(vocab)}
 
 【抽取规则】：
 1. subject（责任主体）：涉违停提取确切车牌（如"粤A12345车辆"或"粤ESD221车辆"）；涉商家提取具体字号；涉市政设施提取设施名（如"市政排污管网"）；严禁使用"车主/商家/市民/当事人"等泛词。
-2. location（微观地点）：必须包含"法定镇街/街道 + 路段/小区 + 门牌/地标"（如"某街道某路三街2号门口"），镇街/街道必须属于上述法定白名单，严禁虚构或只填宽泛区名。
-3. eventType（核心事件）：8-15字政务标准定性（如"机动车违规停放阻碍商铺经营"）。
-4. summarizeTitle（诉求标题）：12-25字标准公文标题（如"关于某街道某路某号粤A12345违停挪车诉求"）。
-5. category：严格归入法定分类之一。若工单附带【快思考推荐分类】，请优先采纳该推荐，杜绝随意变造分类。
-6. confidence（0-100）：要素明确完整打 85-98 分，主体模糊或诉求歧义打 20-55 分。
-7. 只输出一个 JSON 对象，不要 markdown、不要解释、不要思考过程。格式：
-{"items":[{"index":1,"summarizeTitle":"...","subject":"...","location":"...","eventType":"...","category":"城市管理","confidence":90}]}
+2. location（微观地点）：必须包含"法定镇街/街道 + 路段/小区 + 门牌/地标"（如"某街道某路三街2号门口"），严禁虚构或只填宽泛区名。
+3. township（归属法定镇街/街道）：必须根据诉求正文线索（如村居、路名、学校、小区、地标、商圈），严格从上述法定区划白名单中选择标准全称（如"大良镇"、"猎德街道"）。若诉求涉及纯电商网购维权（无本地实体）或全区普惠政策咨询无具体辖区，输出 null。
+4. eventType（核心事件）：8-15字政务标准定性（如"机动车违规停放阻碍商铺经营"）。
+5. summarizeTitle（诉求标题）：12-25字标准公文标题（如"关于某街道某路某号粤A12345违停挪车诉求"）。
+6. category：严格归入法定分类之一。若工单附带【快思考推荐分类】，请优先采纳该推荐，杜绝随意变造分类。
+7. confidence（0-100）：要素明确完整打 85-98 分，主体模糊或诉求歧义打 20-55 分。
+8. 只输出一个 JSON 对象，不要 markdown、不要解释、不要思考过程。格式：
+{"items":[{"index":1,"summarizeTitle":"...","subject":"...","location":"...","township":"大良镇","eventType":"...","category":"城市管理","confidence":90}]}（注：无镇街时 township 字段直接传 null）
 
 工单列表：
 ${tickets

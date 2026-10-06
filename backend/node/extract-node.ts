@@ -9,11 +9,12 @@ import { workOrderClockFromTicketNo, workOrderInstantFromTicketNo } from "@/lib/
 import {
   BatchExtractionSchema,
   buildBatchExtractionPrompt,
+  buildDynamicBatchExtractionSchema,
   type ExtractedTicketItem,
 } from "../prompt";
 import { adminFromLocation, explicitAdmin } from "@/lib/admin-area";
 import { getRegionAliasMap, normalizeAliasesInText, resolveEntityAlias } from "@/lib/alias-dict";
-import { canonicalizeCategory, getRegionVocabulary, legalTownshipName, type RegionVocabulary } from "@/lib/vocabulary";
+import { canonicalizeCategory, canonicalizeTownship, getRegionVocabulary, legalTownshipName, type RegionVocabulary } from "@/lib/vocabulary";
 import { verifyAndCanonicalizeTicketArea } from "./arbitrator-node";
 import { updateTaskProgress } from "@/lib/task-progress";
 import { getRegionDb } from "@/db/client";
@@ -125,11 +126,18 @@ async function extractBatchWithLLM(
     const km = keymapByIndex.get(idx) || {};
     // 执行深度反向还原：若模型提取的主体/标题带有 {{LICENSE_PLATE_1}} 等占位符，自动还原为真实车牌/人名
     const item = deanonymize(rawItem, km);
+    const rawTown = item.township;
+    const cleanTown =
+      rawTown && rawTown !== "无" && rawTown !== "null" && rawTown !== "未知"
+        ? String(rawTown).trim()
+        : null;
+
     return {
       index: idx,
       summarizeTitle: String(item.summarizeTitle || "").trim(),
       subject: String(item.subject || "").trim(),
       location: String(item.location || "").trim(),
+      township: cleanTown as any,
       eventType: String(item.eventType || "").trim(),
       category: item.category || "城市管理",
       confidence: Number(item.confidence || 85),
@@ -137,11 +145,13 @@ async function extractBatchWithLLM(
   };
 
   const prompt = buildBatchExtractionPrompt(maskedTickets, vocab);
+  const townshipNames = (vocab?.townships || []).map((t) => t.fullName).filter(Boolean);
+  const dynamicSchema = buildDynamicBatchExtractionSchema(townshipNames);
 
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const systemTwo = await getSystemTwoEngine();
-      const { data } = await systemTwo.createJSON(BatchExtractionSchema, {
+      const { data } = await systemTwo.createJSON(dynamicSchema, {
         messages: [{ role: "user", content: prompt }],
         enableThinking: false,
         maxTokens: LLM_TOKENS.EXTRACTION,
@@ -382,11 +392,20 @@ export async function extractNode(
         const key = indexMap[packedIdx];
         if (key === undefined) return;
         extractionMap.set(key, val);
-        // 单条实时持久化至目标 Schema 对应的 PostgreSQL 数据库，保证中途关闭或刷新永不丢失进度
+
         const orig = normalizedRawTickets[key];
+        // 严格白名单校验与规范化：绝不允许跳出目标辖区的法定镇街白名单
+        const validTownship =
+          canonicalizeTownship(val.township, regionVocab) ||
+          canonicalizeTownship(val.location, regionVocab) ||
+          canonicalizeTownship(orig?.subdistrict, regionVocab) ||
+          null;
+
+        // 单条实时持久化至目标 Schema 对应的 PostgreSQL 数据库，保证中途关闭或刷新永不丢失进度
         if (orig && orig.id) {
           rememberExtraction(tenantDb, orig.id, {
             ...systemOnePatch(orig),
+            subdistrict: validTownship || null,
             summarizeTitle: val.summarizeTitle,
             confidence: val.confidence,
             canonicalSubject: val.subject,
@@ -456,12 +475,12 @@ export async function extractNode(
     const canonicalLocation = resolveEntityAlias(rawLocation, aliasMap);
     const area = adminFromLocation(canonicalLocation, ticket);
     const fromLlm = llmTicketIndexes.has(index);
-    const modelTown =
-      legalTownshipName(ticket.systemOneTownship, regionVocab) ||
-      legalTownshipName(fromLlm ? aiExtracted?.location : ticket.address, regionVocab);
-    const subdistrict =
-      modelTown ||
-      (fromLlm ? undefined : legalTownshipName(ticket.subdistrict, regionVocab) || undefined);
+    const validTownship =
+      canonicalizeTownship(aiExtracted?.township, regionVocab) ||
+      canonicalizeTownship(fromLlm ? aiExtracted?.location : ticket.address, regionVocab) ||
+      canonicalizeTownship(ticket.systemOneTownship, regionVocab) ||
+      canonicalizeTownship(ticket.subdistrict, regionVocab);
+    const subdistrict = validTownship || undefined;
 
     return {
       ...ticket,
