@@ -26,6 +26,21 @@ export interface StructuredJSONResult<T> {
   raw: string;
   usage: CivicChatCompletion['usage'];
   timings?: CivicChatCompletion['timings'];
+  /**
+   * 本次请求实际命中的 endpoint URL（仅当 activeAdapter 是 PooledMetalAdapter 时有值）。
+   * 用于在调用方按节点分别统计最近处理过的工单。
+   */
+  endpoint?: string | null;
+}
+
+export interface EndpointTicketPreview {
+  id: string;
+  ticketNo?: string;
+  address?: string | null;
+  canonicalSubject?: string | null;
+  eventType?: string | null;
+  durationMs?: number;
+  processedAt: number;
 }
 
 export type StructuredJsonResult<T> = StructuredJSONResult<T>;
@@ -36,6 +51,12 @@ export class SystemTwoEngine {
   private fallbackAdapter: FallbackAdapter;
   private activeAdapter: ISystemTwoAdapter;
   private config: SystemTwoConfig;
+
+  // Per-endpoint 最近处理过的工单预览（in-memory，进程级单例；不落库）
+  // 用于 workbench 按节点展示"该 endpoint 最新处理了哪些工单"。
+  // 容量上限 8/endpoint，FIFO 滚动。
+  private endpointRecentTickets: Map<string, EndpointTicketPreview[]> = new Map();
+  private static readonly ENDPOINT_TICKETS_MAX = 8;
 
   private constructor(
     config: SystemTwoConfig,
@@ -208,7 +229,39 @@ export class SystemTwoEngine {
       raw,
       usage: completion.usage,
       timings: completion.timings,
+      // 仅 cluster adapter 能告诉你"这次命中了哪个 endpoint"；
+      // cloud/fallback 是单一端点没必要记。
+      endpoint:
+        this.activeAdapter === this.clusterAdapter
+          ? this.clusterAdapter.getLastUsedEndpoint()
+          : null,
     };
+  }
+
+  /**
+   * 把刚处理完的工单按 endpoint 记录到进程内的最近列表头部。
+   * 同 endpoint 超过 ENDPOINT_TICKETS_MAX 条时丢最旧的。
+   */
+  recordProcessedTicket(endpoint: string, ticket: Omit<EndpointTicketPreview, "processedAt">): void {
+    if (!endpoint) return;
+    const list = this.endpointRecentTickets.get(endpoint) || [];
+    list.unshift({ ...ticket, processedAt: Date.now() });
+    if (list.length > SystemTwoEngine.ENDPOINT_TICKETS_MAX) {
+      list.length = SystemTwoEngine.ENDPOINT_TICKETS_MAX;
+    }
+    this.endpointRecentTickets.set(endpoint, list);
+  }
+
+  /**
+   * 拿到当前 in-memory 的全部 endpoint → 最近工单列表映射。
+   * 返回 plain object 方便 JSON 序列化透传到前端。
+   */
+  getEndpointRecentTickets(): Record<string, EndpointTicketPreview[]> {
+    const out: Record<string, EndpointTicketPreview[]> = {};
+    for (const [ep, list] of this.endpointRecentTickets.entries()) {
+      out[ep] = [...list];
+    }
+    return out;
   }
 
   /**

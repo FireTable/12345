@@ -68,6 +68,23 @@ export type PipelineStateResponse = {
     currentSubject?: string;
     currentLocation?: string;
     currentEventType?: string;
+    /**
+     * Per-endpoint 最近处理过的工单预览（in-memory，process-singleton）。
+     * Key: endpoint URL；Value: 倒序的最近工单。
+     * 替换之前的 modulo 切 DB 列表的方案。
+     */
+    endpointRecentTickets?: Record<
+      string,
+      Array<{
+        id: string;
+        ticketNo?: string;
+        address?: string | null;
+        canonicalSubject?: string | null;
+        eventType?: string | null;
+        durationMs?: number;
+        processedAt: number;
+      }>
+    >;
   } | null;
   metrics: {
     totalTickets: number;
@@ -257,28 +274,31 @@ function InnerPipelineCanvas({
         const clusterNodes = stateData?.systemTwoNodes || [
           { id: "node-1", name: "研判节点一", host: "127.0.0.1:8132", isLocal: true },
         ];
-        const extractedList = stateData?.recentExtractedTickets || [];
 
         // 为每个研判节点分配其处理的近两条工单
-        const entityClusterNodes = clusterNodes.map((n, idx) => {
-          const step = clusterNodes.length;
-          const myTickets =
-            step > 1
-              ? extractedList.filter((_, i) => i % step === idx).slice(0, 2)
-              : extractedList.slice(0, 2);
-
-          // 若当前有正在运行的在途抽取，且是主节点，优先注入当前在途要素
-          if (
-            idx === 0 &&
-            (stateData?.taskProgress?.currentLocation || stateData?.taskProgress?.currentSubject)
-          ) {
-            const liveTicket = {
-              address: stateData.taskProgress.currentLocation,
-              canonicalSubject: stateData.taskProgress.currentSubject,
-              eventType: stateData.taskProgress.currentEventType,
-            };
-            myTickets.unshift(liveTicket as any);
-          }
+        // 来源：in-memory 的 endpointRecentTickets（SystemTwoEngine 进程内按 endpoint 维护），
+        //       key 是 endpoint URL，与 clusterNodes[].host 对应。
+        // 这样节点 1 真正显示"它处理的工单"，节点 2 也是，不是 modulo 切 DB 列表。
+        const endpointRecentTickets = stateData?.taskProgress?.endpointRecentTickets || {};
+        const entityClusterNodes = clusterNodes.map((n) => {
+          // 用 n.host 查；endpoint 可能是带 /v1 后缀的完整 URL，构造时统一规范化
+          const matched = n.host
+            ? endpointRecentTickets[n.host] ||
+              // 兼容：若 host 没带 /v1 但 key 带，截 key 末尾 /v1 后的部分再匹配
+              Object.entries(endpointRecentTickets).find(([k]) =>
+                k.replace(/\/v1\/?$/, "") === (n.host || "").replace(/\/v1\/?$/, "")
+              )?.[1] ||
+              []
+            : [];
+          const myTickets: Array<{
+            id: string;
+            ticketNo?: string;
+            address?: string | null;
+            canonicalSubject?: string | null;
+            eventType?: string | null;
+            durationMs?: number;
+            processedAt: number;
+          }> = matched.slice(0, 2);
 
           return {
             id: n.id,
@@ -287,12 +307,12 @@ function InnerPipelineCanvas({
             isLocal: n.isLocal,
             isOnline: n.isOnline,
             lastDurationMs: n.lastDurationMs ?? null,
-            recentTickets: myTickets.slice(0, 2).map((t) => ({
+            recentTickets: myTickets.map((t) => ({
               id: t.id,
               ticketNo: t.ticketNo,
-              address: t.address,
-              canonicalSubject: t.canonicalSubject,
-              eventType: t.eventType,
+              address: t.address ?? null,
+              canonicalSubject: t.canonicalSubject ?? null,
+              eventType: t.eventType ?? null,
             })),
           };
         });

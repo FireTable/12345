@@ -120,10 +120,15 @@ async function extractBatchWithLLM(
   tickets: RawTicket[],
   startIndex: number,
   vocab?: RegionVocabulary
-): Promise<{ items: Map<number, ExtractedTicketItem>; fromLlm: Set<number> }> {
+): Promise<{
+  items: Map<number, ExtractedTicketItem>;
+  fromLlm: Set<number>;
+  endpoint: string | null;
+  durationMs: number | undefined;
+}> {
   const result = new Map<number, ExtractedTicketItem>();
   const fromLlm = new Set<number>();
-  if (tickets.length === 0) return { items: result, fromLlm };
+  if (tickets.length === 0) return { items: result, fromLlm, endpoint: null, durationMs: undefined };
 
   // 1. 建立本批工单的本地脱敏 Keymap 映射，用于大模型抽取结果的确定性实体还原
   const keymapByIndex = new Map<number, Record<string, string>>();
@@ -167,12 +172,36 @@ async function extractBatchWithLLM(
     try {
       const startMs = Date.now();
       const systemTwo = await getSystemTwoEngine();
-      const { data, timings } = await systemTwo.createJSON(dynamicSchema, {
+      const { data, timings, endpoint } = await systemTwo.createJSON(dynamicSchema, {
         messages: [{ role: "user", content: prompt }],
         enableThinking: false,
         maxTokens: LLM_TOKENS.EXTRACTION,
         temperature: 0.1,
       });
+      // 把本批工单按"实际命中的 endpoint"记录到 engine 内存的最近列表，
+      // 让 workbench 按节点显示"该 endpoint 刚处理了哪些工单"，而不是 modulo 切 DB 列表。
+      // 没 endpoint（cloud/fallback）的不记录。
+      if (endpoint) {
+        for (const [, sanitizedAny] of data.items.entries()) {
+          const sanitized = sanitizedAny as {
+            index: number;
+            subject?: string | null;
+            location?: string | null;
+            eventType?: string | null;
+          };
+          if (typeof sanitized.index !== "number") continue;
+          const orig = tickets[sanitized.index - 1];
+          if (!orig) continue;
+          systemTwo.recordProcessedTicket(endpoint, {
+            id: orig.id,
+            ticketNo: orig.ticketNo,
+            address: sanitized.location ?? null,
+            canonicalSubject: sanitized.subject ?? null,
+            eventType: sanitized.eventType ?? null,
+            durationMs: timings?.total_ms,
+          });
+        }
+      }
 
       if (data && Array.isArray(data.items)) {
         for (const item of data.items) {
@@ -188,7 +217,7 @@ async function extractBatchWithLLM(
           result.set(key, sanitized);
           fromLlm.add(key);
         }
-        if (result.size === tickets.length) return { items: result, fromLlm };
+        if (result.size === tickets.length) return { items: result, fromLlm, endpoint: endpoint ?? null, durationMs: timings?.total_ms };
       }
     } catch (err: any) {
       console.warn(`[extract-node] System-2 extraction batch error at index ${startIndex} attempt ${attempt + 1}:`, err.message);
@@ -204,7 +233,7 @@ async function extractBatchWithLLM(
     }
   });
 
-  return { items: result, fromLlm };
+  return { items: result, fromLlm, endpoint: null, durationMs: undefined };
 }
 
 /**
@@ -481,6 +510,9 @@ export async function extractNode(
         const currentProcessed = Math.min(processedCount, normalizedRawTickets.length);
         const percent = stagePercent("S2", currentProcessed, normalizedRawTickets.length);
         const latestItem = Array.from(packed.items.values()).pop();
+        // 抓取 engine 当前 per-endpoint 最近工单列表（in-memory，process-singleton），
+        // 推进 taskProgress 让 workbench 按节点展示。
+        const endpointRecentTickets = (await getSystemTwoEngine()).getEndpointRecentTickets();
         updateTaskProgress(taskId, regionId, {
           processed: currentProcessed,
           percent,
@@ -491,6 +523,7 @@ export async function extractNode(
           currentLocation: latestItem?.location || undefined,
           currentSubject: latestItem?.subject || undefined,
           currentEventType: latestItem?.eventType || undefined,
+          endpointRecentTickets,
         });
       }
     });

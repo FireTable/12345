@@ -92,6 +92,12 @@ export class PooledMetalAdapter implements ISystemTwoAdapter {
   }
 
   private rrCursor = 0;
+  private lastUsedEndpoint: string | null = null;
+
+  /** 最近一次成功完成 chatCompletions 的 endpoint。extract-node 用它来按节点统计最近工单。 */
+  getLastUsedEndpoint(): string | null {
+    return this.lastUsedEndpoint;
+  }
 
   /**
    * 挑选最佳节点并执行推理，支持透明重试与故障转移
@@ -144,6 +150,7 @@ export class PooledMetalAdapter implements ISystemTwoAdapter {
         node.inFlight = Math.max(0, node.inFlight - 1);
         node.isHealthy = true;
         node.consecutiveFailures = 0;
+        this.lastUsedEndpoint = node.endpoint;
         return result;
       } catch (err: any) {
         node.inFlight = Math.max(0, node.inFlight - 1);

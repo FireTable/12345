@@ -45,6 +45,26 @@ export interface TaskProgress {
   currentSubject?: string;
   currentLocation?: string;
   currentEventType?: string;
+  /**
+   * Per-endpoint 最近处理过的工单预览（in-memory，来自 SystemTwoEngine.endpointRecentTickets）。
+   * Key: endpoint URL；Value: 倒序的最近工单预览。
+   * 不入库 —— 这是"工单处理事件"的实时流，next-server 重启即丢失，
+   * 跟 currentLocation/currentSubject 一样是 in-memory UI 状态。
+   * workbench 的"研判节点一/二"用它替代之前的 modulo 分配，
+   * 保证每个节点卡片显示的是该 endpoint 实际处理过的工单。
+   */
+  endpointRecentTickets?: Record<
+    string,
+    Array<{
+      id: string;
+      ticketNo?: string;
+      address?: string | null;
+      canonicalSubject?: string | null;
+      eventType?: string | null;
+      durationMs?: number;
+      processedAt: number;
+    }>
+  >;
   error?: string;
   updatedAt: number;
 }
