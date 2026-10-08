@@ -80,7 +80,8 @@ let shuttingDown = false;
 function cleanUpAndExit(code = 0) {
   if (shuttingDown) return;
   shuttingDown = true;
-  console.log("\n🛑 正在停止全栈服务 (Next.js & System-2)...");
+  console.log("\n🛑 正在停止全栈服务 (Next.js & System-2 & Queue)...");
+  // 1) 先给所有子进程发 SIGTERM，让它们有机会自己清理
   for (const proc of childProcesses) {
     if (proc && !proc.killed && proc.pid) {
       try {
@@ -88,7 +89,24 @@ function cleanUpAndExit(code = 0) {
       } catch {}
     }
   }
-  setTimeout(() => process.exit(code), 200);
+  // 2) 等它们真正退出（最多 3s）；不退的 SIGKILL 兜底，避免孤儿进程逃出 dev 生命周期
+  const deadline = Date.now() + 3000;
+  const tick = setInterval(() => {
+    const allDead = childProcesses.every(
+      (p) => p.exitCode !== null || p.killed || !p.pid
+    );
+    if (allDead || Date.now() > deadline) {
+      clearInterval(tick);
+      for (const proc of childProcesses) {
+        if (proc && proc.pid && proc.exitCode === null && !proc.killed) {
+          try {
+            proc.kill("SIGKILL");
+          } catch {}
+        }
+      }
+      process.exit(code);
+    }
+  }, 100);
 }
 
 process.on("SIGINT", () => cleanUpAndExit(0));

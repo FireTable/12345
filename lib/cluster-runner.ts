@@ -1,5 +1,4 @@
-import { sql as rawSql } from "@/db/client";
-import { getRegionDb } from "@/db/client";
+import { sql as rawSql, getRegionDb } from "@/db/client";
 import { ticketsTable } from "@/db/schema";
 import { sql as drizzleSql } from "drizzle-orm";
 import {
@@ -16,6 +15,7 @@ const activeRegionWorkers = new Set<string>();
 
 /**
  * 自动检测并启动辖区研判任务 (Auto-Trigger In-Process Runner)
+ * Per-region 队列：每个 region 独立的 task 行，独立的 worker。
  * 只要辖区有待处理工单 (unprocessed > 0)，且当前没有活跃任务，自动触发研判流水线。
  */
 export async function triggerClusterJobAuto(regionId: string): Promise<boolean> {

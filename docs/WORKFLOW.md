@@ -113,6 +113,47 @@ System 1 的镇街恒为 `UNKNOWN`，不会写成街道名。社区和地标不�
 
 不要对 `public.tickets` 跑这套批量研判。顺德数据在 `region_fs_shunde`。
 
+### 3.1 研判任务队列（per-region 设计）
+
+批量研判是耗时长（5~30 分钟）的离线作业，UI 不能同步等。所以走 **任务队列** 异步执行。
+
+**表 `public.task_progress`**
+
+每行是一条任务，关键字段：
+
+| 字段 | 含义 |
+| :--- | :--- |
+| `task_id` | 任务唯一 ID。`auto-<regionId>-<timestamp>` 形式 |
+| `region_id` | 绑定的辖区（**per-region 隔离**：每个 region 独立 task 行） |
+| `status` | `PENDING` / `RUNNING` / `COMPLETED` / `FAILED` |
+| `stage` | `EXTRACTING` / `CLUSTERING` / `SYNTHESIZING` |
+| `processed` / `total` | 当前工序进度 |
+| `percent` | 加权总进度（S1=2, S2=88, CLUSTER=5, SUMMARY=5；详见 [`lib/pipeline-progress.ts`](../lib/pipeline-progress.ts)） |
+| `heartbeat_at` | Worker 每 4~5 秒写一次，超过 20s 没更新视为僵尸 |
+
+**入队：按 region 隔离**
+
+[`lib/cluster-runner.ts`](../lib/cluster-runner.ts) 的 `triggerClusterJobAuto(regionId)`：
+1. 查 `region_<id>.tickets` 里 `confidence is null or 0` 的待处理工单数
+2. 查 `task_progress` 是否有 `RUNNING` 且心跳 < 20s 的同 region 任务（防止重复入队）
+3. 没有就 `enqueueClusterJob(regionId, taskId, total)` 插一条
+4. 启动本进程内的 worker 协程消费
+
+**消费：有两条 runner**
+
+| Runner | 文件 | 进程 | 触发 | 适合场景 |
+| :--- | :--- | :--- | :--- | :--- |
+| In-process worker | `lib/cluster-runner.ts` `runWorkerLoopForRegion` | Next.js dev server 同一个 Node 进程 | API 路由里调 `triggerClusterJobAuto(regionId)` 时自动起 per-region 协程 | 本地开发默认路径；停 `pnpm dev` 一起死 |
+| Standalone worker | [`scripts/cluster-worker.ts`](../scripts/cluster-worker.ts) | 独立 `tsx` 子进程，由 [`scripts/dev.ts`](../scripts/dev.ts) 拉起 | 全局轮询 `claimNextClusterJob()`，跨 region 抢活 | 防止 Next dev 热重载时打断长任务；想脱离 Web UI 也能跑 |
+
+两者并存：DB 行锁保证同一条 task 不会被两个 worker 同时跑；活跃 worker 通过 `heartbeat_at` 互相感知。**注意**：in-process 和 standalone **不能**给同一个 region 同时跑，会有心跳互相争抢。设计上**首选 in-process**（按 region 隔离干净），standalone 只是在 Next dev 频繁重启时兜底。
+
+**生命周期与 Kill 行为**
+
+- `pnpm dev` 启三件套：Next dev + System-2 (`llama-server`) + cluster-worker。Ctrl+C 后 [`scripts/dev.ts`](../scripts/dev.ts) 的 `cleanUpAndExit` 给三个子进程发 SIGTERM，**轮询 3s** 等它们真退出，到期未退的 SIGKILL 兜底——避免遗留孤儿进程。
+- cluster-worker 收到 SIGTERM / SIGINT 立即 `process.exit(0)`，**不等当前 in-flight job 跑完**。放弃的 job 在 `task_progress` 里是 `RUNNING` 状态、心跳 20s 后超时，下次访问对应 region 的 workbench 会被 `triggerClusterJobAuto` 重新认领，从上次断点（已抽取的工单 `confidence` 已落库）继续。
+- 手动杀 worker：`pkill -f scripts/cluster-worker.ts`。**不要**用 `kill <pid>` 发 SIGTERM 等它慢慢退——它会立即退，但如果它正在写 task_progress（UPDATE 提交中），可能有几十毫秒的不一致窗口，20s 心跳兜底覆盖。
+
 ---
 
 ## 四、字段从哪来
