@@ -11,7 +11,7 @@ import { CockpitCategoryChart } from "./cockpit-category-chart";
 import { CockpitAlertPanel } from "./cockpit-alert-panel";
 import { CockpitTownshipRank } from "./cockpit-township-rank";
 import { CockpitTrendChart } from "./cockpit-trend-chart";
-import { CockpitInsights } from "./cockpit-insights";
+import { CockpitNodePulse } from "./cockpit-node-pulse";
 
 interface CockpitViewProps {
   onClose: () => void;
@@ -154,7 +154,10 @@ export function CockpitView({ onClose }: CockpitViewProps) {
               />
             </div>
             <div className="flex-1 min-h-[175px]">
-              <CockpitInsights insights={cockpit.insights} />
+              <CockpitNodePulse
+                nodes={cockpit.systemTwoNodes}
+                endpointRecentTickets={cockpit.endpointRecentTickets}
+              />
             </div>
           </section>
         </div>

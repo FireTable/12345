@@ -6,7 +6,6 @@ import type {
   CockpitTicket,
   CockpitTownshipStat,
   CockpitAlertItem,
-  CockpitInsightItem,
   CockpitKpiData,
 } from "./cockpit-types";
 
@@ -25,6 +24,15 @@ export function useCockpitData(regionId: string) {
   const [rawTrend, setRawTrend] = useState<any>(null);
   const [rawClusters, setRawClusters] = useState<any>(null);
   const [recentTickets, setRecentTickets] = useState<CockpitTicket[]>([]);
+  const [systemTwoNodes, setSystemTwoNodes] = useState<Array<{
+    id: string;
+    name: string;
+    host?: string;
+    isLocal?: boolean;
+    isOnline?: boolean;
+    lastDurationMs?: number | null;
+  }>>([]);
+  const [endpointRecentTickets, setEndpointRecentTickets] = useState<Record<string, any[]>>({});
 
   const fetchRef = useRef(0);
 
@@ -36,11 +44,12 @@ export function useCockpitData(regionId: string) {
       const regParam = regionId ? `?region=${encodeURIComponent(regionId)}` : "";
       const regAmp = regionId ? `&region=${encodeURIComponent(regionId)}` : "";
 
-      const [overviewRes, trendRes, clusterRes, ticketRes] = await Promise.all([
+      const [overviewRes, trendRes, clusterRes, ticketRes, pipelineRes] = await Promise.all([
         fetch(`/api/overview${regParam}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
         fetch(`/api/trends?days=30${regAmp}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
         fetch(`/api/clusters${regParam}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
         fetch(`/api/tickets${regParam}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+        fetch(`/api/workbench/pipeline-state${regParam}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
       ]);
 
       if (fetchId !== fetchRef.current) return;
@@ -48,6 +57,22 @@ export function useCockpitData(regionId: string) {
       setRawOverview(overviewRes || null);
       setRawTrend(trendRes || null);
       setRawClusters(clusterRes || null);
+
+      if (pipelineRes?.data) {
+        const nodes = (pipelineRes.data.systemTwoNodes || []).map((n: any) => ({
+          id: n.id,
+          name: n.name,
+          host: n.host,
+          isLocal: n.isLocal,
+          isOnline: n.isOnline,
+          lastDurationMs: n.lastDurationMs ?? null,
+        }));
+        setSystemTwoNodes(nodes);
+        const tp = pipelineRes.data.taskProgress;
+        if (tp?.endpointRecentTickets) {
+          setEndpointRecentTickets(tp.endpointRecentTickets);
+        }
+      }
 
       if (ticketRes?.data && Array.isArray(ticketRes.data) && ticketRes.data.length > 0) {
         const mapped: CockpitTicket[] = ticketRes.data.slice(0, 30).map((t: any) => {
@@ -220,23 +245,6 @@ export function useCockpitData(regionId: string) {
     return list;
   }, [rawClusters, recentTickets]);
 
-  // 7. 真实 AI 慢思考政策研判
-  const insights = useMemo<CockpitInsightItem[]>(() => {
-    if (rawOverview?.insights && Array.isArray(rawOverview.insights) && rawOverview.insights.length > 0) {
-      return rawOverview.insights.slice(0, 5).map((item: any) => ({
-        id: item.id,
-        title: item.title,
-        category: item.category || "综合治理",
-        ticketCount: item.ticketCount || 0,
-        trendPct: item.trendPct,
-        advice: item.advice,
-        canonicalSubject: item.canonicalSubject,
-        canonicalLocation: item.canonicalLocation,
-      }));
-    }
-    return [];
-  }, [rawOverview?.insights]);
-
   return {
     loading,
     isRefreshing,
@@ -254,6 +262,7 @@ export function useCockpitData(regionId: string) {
     trendClusters,
     recentTickets,
     alerts,
-    insights,
+    systemTwoNodes,
+    endpointRecentTickets,
   };
 }
