@@ -6,6 +6,7 @@
 import { db } from "@/db/client";
 import { taskProgressTable } from "@/db/schema";
 import { eq, desc, lt, and } from "drizzle-orm";
+import { getSystemTwoEngine } from "@/backend/model";
 
 export interface ActiveCategoryStats {
   category: string;
@@ -311,6 +312,16 @@ export async function getLatestTaskProgress(regionId?: string): Promise<TaskProg
       if (newestMem && newestMem.updatedAt >= fromDb.updatedAt) return newestMem;
       const live = progressStore.get(fromDb.taskId);
       if (live && live.updatedAt >= fromDb.updatedAt) return live;
+      // fromDb 路径：DB row 没存 in-memory 字段（endpointRecentTickets / currentLocation 等），
+      // 从进程内 SystemTwoEngine 补上，确保 pipeline-state API 返回给前端的 taskProgress
+      // 跟 SSE 推的 taskProgress 字段对齐，避免 fetchState 拿到缺字段的 taskProgress
+      // 导致 PipelineCanvas 节点卡空白。
+      try {
+        const engine = await getSystemTwoEngine();
+        (fromDb as any).endpointRecentTickets = engine.getEndpointRecentTickets();
+      } catch {
+        /* engine 不可用时保留 fromDb 原样 */
+      }
       return fromDb;
     } else {
       // 该辖区（或全局）已无任务记录：清掉对应内存条目，杜绝僵尸状态

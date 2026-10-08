@@ -63,10 +63,14 @@ export function PipelineDrawer() {
     }
   });
 
-  // 抽屉首次打开 / 切区时拉一次 pipeline-state 拿全量快照（含 metrics / theme 等非 taskProgress 字段）
+  // 抽屉首次打开 / 切区时拉一次 pipeline-state 拿全量快照
+  // 不再 setPipelineData(null) —— 之前会丢 SSE 帧（prev=null 时 if (!prev) return prev 直接丢弃）。
+  // 切区时让 useCivicSse 内部自然重建 ES（regionId 切换时 close 旧 + open 新），
+  // 同时 SSE 帧的 taskProgress 来自 updateTaskProgress 实时合并，比 API 第一次响应
+  // 更完整（含 endpointRecentTickets / currentLocation 等内存字段）。
+  // fetchState 用来补 systemTwoNodes 等 SSE 不便携带的重量级字段。
   useEffect(() => {
     if (pipelineDrawerOpen) {
-      setPipelineData(null); // 切区时清掉旧快照
       fetchState();
     }
   }, [pipelineDrawerOpen, activeRegion?.id, fetchState]);
