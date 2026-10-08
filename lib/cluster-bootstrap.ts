@@ -11,7 +11,7 @@
  * 幂等：triggerClusterJobAuto 内部已经有进程内 lock + DB unique partial index，
  *       重复调用也是 no-op。
  */
-import { getAllRegions } from "@/db/client";
+import { getAllRegions, sql as rawSql } from "@/db/client";
 import { triggerClusterJobAuto } from "./cluster-runner";
 
 declare global {
@@ -50,6 +50,38 @@ export async function bootstrapClusterWorkers(): Promise<{
     const triggered: string[] = [];
     let skipped = 0;
     let totalRegions = 0;
+
+    // 启动清理：上一次 dev server 留下的 RUNNING 行——worker 已经随旧进程死了，
+    // 但 DB 行还在 RUNNING 状态。STALE_SECONDS=30 在快速 dev 重启场景下
+    // （Ctrl+C 立刻再启动）不够用，因为旧的最后心跳可能只过了 4-5 秒，看起来
+    // 仍然"fresh"。这里直接 sweep 全部 RUNNING 标 FAILED，让后续 trigger
+    // 走 enqueueClusterJob 决策树的"都无 → created"分支重新建 PENDING。
+    // 生产多实例场景：每个 next-server 启动都会 sweep，sweep 的 UPDATE 是
+    // 原子的；多个实例同时 sweep 也只是把同一行多改一次 status，无副作用。
+    // 真正的进度在 tickets.confidence 里，不在 task_progress.processed 里，
+    // 所以这里粗暴标 FAILED 不会丢工作。
+    try {
+      const swept = await rawSql<{ count: number }[]>`
+        WITH swept AS (
+          UPDATE task_progress
+          SET status = 'FAILED',
+              error = 'orphaned from previous server session; swept at next-server startup',
+              updated_at = now()
+          WHERE status = 'RUNNING'
+          RETURNING task_id
+        )
+        SELECT count(*)::int AS count FROM swept
+      `;
+      if (swept[0]?.count > 0) {
+        console.log(
+          `[cluster-bootstrap] 启动清理：把 ${swept[0].count} 个上一会话残留的 RUNNING 标 FAILED`
+        );
+      }
+    } catch (err: any) {
+      console.warn(
+        `[cluster-bootstrap] 启动 sweep 失败: ${err?.message || err}`
+      );
+    }
 
     let regions: Array<{ id: string }> = [];
     try {
