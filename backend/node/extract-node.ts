@@ -23,6 +23,7 @@ import {
   isEnterpriseEntity,
 } from "@/lib/map/enterprise-address-enricher";
 import { updateTaskProgress } from "@/lib/task-progress";
+import { stagePercent } from "@/lib/pipeline-progress";
 import { getRegionDb } from "@/db/client";
 import { ticketsTable } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -338,7 +339,7 @@ export async function extractNode(
           stageText: `正在执行 System-1 快思考引擎预审 (${pendingS1Tickets.length} 条待分类工单)...`,
           total: normalizedRawTickets.length,
           processed: classifiedCount,
-          percent: 5,
+          percent: stagePercent("S1", classifiedCount, pendingS1Tickets.length + classifiedCount, "live"),
         });
       }
 
@@ -420,7 +421,8 @@ export async function extractNode(
   };
 
   if (taskId) {
-    const percent = Math.round((processedCount / Math.max(1, normalizedRawTickets.length)) * 50);
+    // S2 是 pipeline 耗时大头（每张工单都要跑 LLM），由 completed/total 在 S2 区间内推进
+    const percent = stagePercent("S2", processedCount, normalizedRawTickets.length);
     const alertNotice = stabilityAlertCount > 0 ? `，🔴 发现 ${stabilityAlertCount} 件涉稳红线工单` : "";
     updateTaskProgress(taskId, regionId, {
       processed: processedCount,
@@ -477,7 +479,7 @@ export async function extractNode(
       console.log(`[extract] ${done}/${normalizedRawTickets.length}`);
       if (taskId) {
         const currentProcessed = Math.min(processedCount, normalizedRawTickets.length);
-        const percent = Math.round((currentProcessed / Math.max(1, normalizedRawTickets.length)) * 50);
+        const percent = stagePercent("S2", currentProcessed, normalizedRawTickets.length);
         const latestItem = Array.from(packed.items.values()).pop();
         updateTaskProgress(taskId, regionId, {
           processed: currentProcessed,
@@ -531,7 +533,7 @@ export async function extractNode(
 
   if (taskId) {
     updateTaskProgress(taskId, regionId, {
-      percent: 68,
+      percent: stagePercent("S2", normalizedRawTickets.length, normalizedRawTickets.length, "max"),
       classifiedCount,
       activeCategories: computeActiveCategories(),
       stageText: `抽取完成，准备按同一事件归并`,
@@ -602,7 +604,7 @@ export async function extractNode(
 
   if (taskId) {
     updateTaskProgress(taskId, regionId, {
-      percent: 68,
+      percent: stagePercent("S2", normalizedRawTickets.length, normalizedRawTickets.length, "max"),
       stageText: `要素抽取完成，识别低置信工单 ${lowConfidenceTickets.length} 条，准备执行图谱聚类...`,
       reviewCount: lowConfidenceTickets.length,
     });

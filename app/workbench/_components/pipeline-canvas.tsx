@@ -172,7 +172,12 @@ function InnerPipelineCanvas({
     const stage = (stateData?.taskProgress?.stage || "EXTRACTING").toUpperCase();
 
     const targetProcessed = isRunning ? processed : analyzed;
-    const entityPercent = total > 0 ? Math.round((targetProcessed / total) * 100) : 0;
+    // 用 Math.floor 而不是 round：99.55% 应显示 99%，避免进位到 100% 让用户误以为 S2 已跑完
+    const entityPercent = total > 0
+      ? targetProcessed >= total
+        ? 100
+        : Math.floor((targetProcessed / total) * 100)
+      : 0;
 
     const savedPos = getSavedPositions(storageKey);
     const getPos = (id: string) => savedPos?.[id] || DEFAULT_POSITIONS[id] || { x: 0, y: 0 };

@@ -72,6 +72,7 @@ export async function enrichThemeBatchWithLLM(
 
 import PQueue from "p-queue";
 import { updateTaskProgress } from "@/lib/task-progress";
+import { stagePercent } from "@/lib/pipeline-progress";
 
 /**
  * Summary Node: Performs LLM deep synthesis for ALL themes, calculates metrics, and builds ForceGraph topology
@@ -93,7 +94,7 @@ export async function summaryNode(
       updateTaskProgress(taskId, regionId, {
         stage: "SYNTHESIZING",
         stageText: `正在为 ${enrichedThemes.length} 个主题生成各自的摘要和处置建议...`,
-        percent: 78,
+        percent: stagePercent("SUMMARY", 0, enrichedThemes.length, "min"),
         themeCount: enrichedThemes.length,
       });
     }
@@ -126,7 +127,7 @@ export async function summaryNode(
         synthesizedCount += batch.length;
         console.log(`[summary] ${Math.min(synthesizedCount, enrichedThemes.length)}/${enrichedThemes.length}`);
         if (taskId) {
-          const percent = Math.min(96, 78 + Math.round((synthesizedCount / Math.max(1, enrichedThemes.length)) * 18));
+          const percent = stagePercent("SUMMARY", synthesizedCount, enrichedThemes.length);
           const sampleAdvice = batchResults.find((row) => row.recommendedAction?.trim())?.recommendedAction;
           const spotlightClusters = enrichedThemes.slice(0, 5).map((t) => ({
             id: t.id,
@@ -164,7 +165,7 @@ export async function summaryNode(
     updateTaskProgress(taskId, regionId, {
       stage: "SYNTHESIZING",
       status: "RUNNING",
-      percent: 96,
+      percent: stagePercent("SUMMARY", enrichedThemes.length, enrichedThemes.length, "max"),
       stageText: `主题已生成，正在写入数据库（${enrichedThemes.length} 个）...`,
       themeCount: enrichedThemes.length,
       recentClusters: spotlightClusters,

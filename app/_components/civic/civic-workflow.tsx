@@ -7,6 +7,7 @@ import { UploadDialog } from "@/app/_components/dashboard/upload-dialog";
 import { LightCopilot } from "@/app/_components/copilot/light-copilot";
 import type { MultiFrequencyTheme, OverallStats } from "@/backend/state";
 import type { TaskProgress } from "@/lib/task-progress";
+import { useRegion } from "./region-context";
 
 const emptyStats: OverallStats = {
   totalTickets: 0,
@@ -45,6 +46,7 @@ export function useCivicWorkflow() {
 
 export function CivicWorkflowProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const { activeRegion } = useRegion();
   const [uploadOpen, setUploadOpen] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [pipelineDrawerOpen, setPipelineDrawerOpen] = useState(false);
@@ -109,7 +111,10 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
   }, []);
 
   React.useEffect(() => {
+    // 切区时立刻清掉旧 taskProgress 并拉一次新区的，避免 3s 内 header 还显示旧区数据
+    setTaskProgress(null);
     pollTaskProgress();
+    loadTicketStatus();
     const interval = setInterval(pollTaskProgress, analyzing ? 3000 : 12000);
     const handleRefresh = () => {
       loadTicketStatus();
@@ -120,7 +125,7 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
       clearInterval(interval);
       window.removeEventListener("civic-data-refresh", handleRefresh);
     };
-  }, [analyzing, loadTicketStatus, pollTaskProgress]);
+  }, [analyzing, loadTicketStatus, pollTaskProgress, activeRegion?.id]);
 
   const isAllAnalyzed =
     ticketStatus.loaded &&

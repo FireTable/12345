@@ -12,6 +12,7 @@ import { cadenceLabel, civicModeFromPattern, deriveThemeMetrics, describeCadence
 import { validateAndFilterThemes } from "./cluster-validator";
 import { getRegionVocabulary, legalTownshipName } from "@/lib/vocabulary";
 import { updateTaskProgress } from "@/lib/task-progress";
+import { stagePercent } from "@/lib/pipeline-progress";
 import { HANDLING_STATUS } from "@/lib/civic-dto";
 import { profileTicket } from "../ticket-profile";
 import { chooseThemeAnchor, clusterLinked } from "../same-incident-cluster";
@@ -59,7 +60,7 @@ export async function clusterNode(
     updateTaskProgress(taskId, regionId, {
       stage: "CLUSTERING",
       stageText: `正在按同一事件归并工单 (输入 ${enrichedTickets.length} 条)...`,
-      percent: 72,
+      percent: stagePercent("CLUSTER", 0, Math.max(1, enrichedTickets.length), "min"),
     });
   }
 
