@@ -137,7 +137,7 @@ export function EntityNode({ data }: NodeProps<EntityNodeType>) {
                   {isNodeOnline && node.lastDurationMs != null && node.lastDurationMs > 0 && (
                     <span className="ml-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-purple-50 text-purple-700 border border-purple-200/70 shadow-2xs">
                       <Clock size={10} className="shrink-0 text-purple-500" />
-                      {`${(node.lastDurationMs / 1000).toFixed(1)}s`}
+                      {`${(node.lastDurationMs / 1000).toFixed(2)}s`}
                     </span>
                   )}
                 </span>

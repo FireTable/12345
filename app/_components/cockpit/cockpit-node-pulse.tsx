@@ -23,6 +23,7 @@ export interface CockpitEndpointNode {
   name: string;
   host?: string;
   isOnline?: boolean;
+  lastDurationMs?: number | null;
 }
 
 export interface CockpitEndpointTicket {
@@ -115,6 +116,13 @@ export function CockpitNodePulse({
                   <span className="text-[11px] font-semibold text-purple-300">
                     {node.name}
                   </span>
+                  {isOnline &&
+                    node.lastDurationMs != null &&
+                    node.lastDurationMs > 0 && (
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-purple-900/60 border border-purple-500/30 text-purple-200">
+                        {(node.lastDurationMs / 1000).toFixed(2)}s
+                      </span>
+                    )}
                   {isOnline && (
                     <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
                   )}
