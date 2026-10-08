@@ -316,12 +316,12 @@ export async function POST(req: NextRequest) {
       triggerClusterJobAuto(regionId).catch((err) => {
         console.warn("[upload/route] Auto cluster trigger warning:", err?.message || err);
       });
-      // WS 推送：civic-data-refresh 让大屏 / 工单列表 / 多频列表立即重拉
+      // SSE 推送：civic-data-refresh 让大屏 / 工单列表 / 多频列表立即重拉
       try {
-        const { broadcastDataRefresh } = await import("@/lib/ws-broadcaster");
+        const { broadcastDataRefresh } = await import("@/lib/sse-broadcaster");
         broadcastDataRefresh(regionId);
       } catch {
-        /* ws 不可用忽略 */
+        /* sse 不可用忽略 */
       }
     }
 

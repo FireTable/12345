@@ -11,7 +11,7 @@ import { CockpitView } from "@/app/_components/cockpit/cockpit-view";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { SkDashboard } from "@/app/_components/civic/skeletons";
 import { useRegion } from "@/app/_components/civic/region-context";
-import { useCivicWs } from "@/app/_hooks/use-civic-ws";
+import { useCivicSse } from "@/app/_hooks/use-civic-sse";
 import { PageHeaderActions } from "@/app/_components/civic/page-header-actions";
 import {
   Select,
@@ -70,7 +70,7 @@ export default function DashboardPage() {
 
   // WS 推送：服务端在 upload / 集群终态等数据变更时推 civic-data-refresh，
   // 取代之前的 window event 跨 tab 同步（跨进程 / 跨 tab 现在都走同一路）。
-  useCivicWs(activeRegion?.id, (msg) => {
+  useCivicSse(activeRegion?.id, (msg) => {
     if (msg.type === "civic-data-refresh" || msg.type === "pipeline-state-refresh") {
       load();
     }

@@ -7,7 +7,7 @@ import { UploadDialog } from "@/app/_components/dashboard/upload-dialog";
 import { LightCopilot } from "@/app/_components/copilot/light-copilot";
 import type { MultiFrequencyTheme, OverallStats } from "@/backend/state";
 import type { TaskProgress } from "@/lib/task-progress";
-import { useCivicWs } from "@/app/_hooks/use-civic-ws";
+import { useCivicSse } from "@/app/_hooks/use-civic-sse";
 import { useRegion } from "./region-context";
 
 const emptyStats: OverallStats = {
@@ -97,7 +97,7 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
    * WS 推送：每帧 task-progress 直接驱动 taskProgress / analyzing 状态。
    * 完全替代原先每 3s / 12s 的 HTTP 轮询。
    */
-  useCivicWs(activeRegion?.id, (msg) => {
+  useCivicSse(activeRegion?.id, (msg) => {
     if (msg.type === "task-progress") {
       const data = msg.data as TaskProgress | null;
       if (!data) return;

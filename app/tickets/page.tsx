@@ -34,7 +34,7 @@ import {
 } from "@/app/_components/ui/select";
 import { TablePager } from "@/app/_components/civic/table-pager";
 import { useRegion } from "@/app/_components/civic/region-context";
-import { useCivicWs } from "@/app/_hooks/use-civic-ws";
+import { useCivicSse } from "@/app/_hooks/use-civic-sse";
 
 type Row = {
   id: string;
@@ -141,7 +141,7 @@ export default function TicketsPage() {
   }, [page, size, keyword, tab, region, category, cluster, time, activeRegion?.id, regionLoading]);
 
   // WS 推送：upload 完成 / 簇生成后立即重拉工单列表
-  useCivicWs(activeRegion?.id, (msg) => {
+  useCivicSse(activeRegion?.id, (msg) => {
     if (msg.type === "civic-data-refresh" || msg.type === "pipeline-state-refresh") {
       load();
     }

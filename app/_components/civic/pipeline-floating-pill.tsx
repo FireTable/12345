@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { Cpu } from "lucide-react";
-import { useCivicWs } from "@/app/_hooks/use-civic-ws";
+import { useCivicSse } from "@/app/_hooks/use-civic-sse";
 import type { TaskProgress } from "@/lib/task-progress";
 import { useRegion } from "./region-context";
 import { useCivicWorkflow } from "./civic-workflow";
@@ -13,7 +13,7 @@ export function PipelineFloatingPill() {
   const [taskState, setTaskState] = useState<TaskProgress | null>(null);
 
   // WS 推送：每帧 task-progress 直接驱动底部胶囊
-  useCivicWs(activeRegion?.id, (msg) => {
+  useCivicSse(activeRegion?.id, (msg) => {
     if (msg.type === "task-progress" && msg.data) {
       setTaskState(msg.data as TaskProgress);
     }

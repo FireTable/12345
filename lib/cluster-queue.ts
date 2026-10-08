@@ -305,7 +305,7 @@ export async function failClusterJob(taskId: string, message: string): Promise<v
 }
 
 /**
- * cluster-queue 状态机写完后调一次：从 DB 拉最新行 → 通过 WS 推给 region 订阅者。
+ * cluster-queue 状态机写完后调一次：从 DB 拉最新行 → 通过 SSE 推给 region 订阅者。
  * 不能复用 updateTaskProgress 路径，因为这里直接走 SQL 不走 progressStore 内存，
  * 所以单独读 DB 拉真值再 broadcast。
  *
@@ -324,14 +324,14 @@ async function broadcastFromQueue(taskId: string): Promise<void> {
     const tp = await getLatestTaskProgress(regionId);
     if (!tp) return;
     const { broadcastTaskProgress, broadcastDataRefresh } = await import(
-      "./ws-broadcaster"
+      "./sse-broadcaster"
     );
     broadcastTaskProgress(regionId, tp);
     if (rows[0]?.status === "COMPLETED" || rows[0]?.status === "FAILED") {
       broadcastDataRefresh(regionId);
     }
   } catch {
-    /* ws-broadcaster 不可用时静默忽略，保持原 SQL 语义 */
+    /* sse-broadcaster 不可用时静默忽略，保持原 SQL 语义 */
   }
 }
 

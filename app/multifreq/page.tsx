@@ -13,7 +13,7 @@ import { Clock, TrendingUp, Flame, Layers } from "lucide-react";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { SkMultifreq } from "@/app/_components/civic/skeletons";
 import { useRegion } from "@/app/_components/civic/region-context";
-import { useCivicWs } from "@/app/_hooks/use-civic-ws";
+import { useCivicSse } from "@/app/_hooks/use-civic-sse";
 import {
   Select,
   SelectContent,
@@ -103,7 +103,7 @@ function MultifreqInner() {
   }, [activeRegion?.id, regionLoading]);
 
   // WS 推送：簇生成 / 上传后服务端推 civic-data-refresh，立即重拉聚合数据
-  useCivicWs(activeRegion?.id, (msg) => {
+  useCivicSse(activeRegion?.id, (msg) => {
     if (msg.type === "civic-data-refresh" || msg.type === "pipeline-state-refresh") {
       load();
     }

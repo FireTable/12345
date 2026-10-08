@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback } from "react";
 import { Cpu, RotateCw, X, CheckCircle2, AlertCircle, ChevronUp } from "lucide-react";
-import { useCivicWs } from "@/app/_hooks/use-civic-ws";
+import { useCivicSse } from "@/app/_hooks/use-civic-sse";
 import { useCivicWorkflow } from "./civic-workflow";
 import { useRegion } from "./region-context";
 import { PipelineCanvas, type PipelineStateResponse } from "@/app/workbench/_components/pipeline-canvas";
@@ -31,7 +31,7 @@ export function PipelineDrawer() {
 
   // WS 推送：每帧 task-progress 直接驱动 PipelineCanvas 数据。
   // pipeline-state-refresh 信号（其他来源触发）会拉一次 pipeline-state 拿全量快照。
-  useCivicWs(activeRegion?.id, (msg) => {
+  useCivicSse(activeRegion?.id, (msg) => {
     if (msg.type === "task-progress" && msg.data) {
       setPipelineData((prev) => {
         const tp = msg.data as PipelineStateResponse["taskProgress"];

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { useCivicWs } from "@/app/_hooks/use-civic-ws";
+import { useCivicSse } from "@/app/_hooks/use-civic-sse";
 import type {
   CockpitTicket,
   CockpitTownshipStat,
@@ -96,7 +96,7 @@ export function useCockpitData(regionId: string) {
   // 替换之前 25s 轮询，节省 N 倍请求；只在真有数据变更时才拉。
   // - task-progress 也会触发：研判完成后 dashboard 数据会变化
   // - civic-data-refresh：上传 / 切区 / 其他模块主动通知
-  useCivicWs(regionId, (msg) => {
+  useCivicSse(regionId, (msg) => {
     if (
       msg.type === "civic-data-refresh" ||
       msg.type === "pipeline-state-refresh" ||
