@@ -154,6 +154,57 @@ System 1 的镇街恒为 `UNKNOWN`，不会写成街道名。社区和地标不�
 - cluster-worker 收到 SIGTERM / SIGINT 立即 `process.exit(0)`，**不等当前 in-flight job 跑完**。放弃的 job 在 `task_progress` 里是 `RUNNING` 状态、心跳 20s 后超时，下次访问对应 region 的 workbench 会被 `triggerClusterJobAuto` 重新认领，从上次断点（已抽取的工单 `confidence` 已落库）继续。
 - 手动杀 worker：`pkill -f scripts/cluster-worker.ts`。**不要**用 `kill <pid>` 发 SIGTERM 等它慢慢退——它会立即退，但如果它正在写 task_progress（UPDATE 提交中），可能有几十毫秒的不一致窗口，20s 心跳兜底覆盖。
 
+**切区时的前端契约**
+
+[`app/_components/civic/civic-workflow.tsx`](../app/_components/civic/civic-workflow.tsx) 的 useEffect 依赖 `activeRegion?.id`，并在切区时立刻 `setTaskProgress(null)` 再 `pollTaskProgress()`。原因：3 秒轮询周期里，旧区的 taskProgress 仍留在 React state，会让顶部 nav 进度环和 `task_progress` API 显示成"上一区还在跑"（最严重时连续 3s 显示错误 region 的 RUNNING + percent）。把 `activeRegion?.id` 加进 useEffect 依赖保证依赖变了就立刻 reset + 拉新区数据。
+
+### 3.2 进度计算：stagePercent 加权公式
+
+进度条在两处消费：
+- 顶部 nav 研判图标上的 conic 进度环（[`civic-nav.tsx`](../app/_components/civic/civic-nav.tsx) + Houdini `@property --p`）
+- workbench 节点卡片 `03 地点与主体提取` 上的横向进度条（[`pipeline-canvas.tsx`](../app/workbench/_components/pipeline-canvas.tsx)）
+
+不能直接用 `processed / total` 因为 4 个工序耗时差异巨大：
+- S1（System-1 ONNX 快思考）：极快，每条 30~80ms，128k 工单约 1~3 小时
+- S2（System-2 本地慢思考）：极慢，每条 1.5~6s，128k 工单约 50~200 小时（是绝对瓶颈）
+- CLUSTER：聚类，5~15 分钟
+- SUMMARY：主题级 LLM 写处置建议，10~30 分钟
+
+如果 S1 阶段按 100% 算，研发看一眼就以为"马上跑完了"；如果按完成工序数等权算（25/50/75/100），S2 阶段的进度爬得太慢、几十小时都看不到动静。
+
+**解决：按工序预估耗时加权**
+
+[`lib/pipeline-progress.ts`](../lib/pipeline-progress.ts)：
+```ts
+PIPELINE_STAGE_WEIGHTS = { S1: 2, S2: 88, CLUSTER: 5, SUMMARY: 5 }
+```
+权重之和 = 100%，所以 `percent` 字段始终是 0~100 的整数，可直接交给 CSS 进度环。
+
+`stagePercent(stage, completed, total, phase='live')` 在每段工序的子区间 `[start, end]` 内做线性插值（基于累计权重自动算出）：
+- `S1` 的子区间是 `[0, 2]`
+- `S2` 的子区间是 `[2, 90]`
+- `CLUSTER` 的子区间是 `[90, 95]`
+- `SUMMARY` 的子区间是 `[95, 100]`
+
+`phase` 参数：
+- `'min'`：取 `start`（工序刚开始时立即跳到本段起点，避免"工单一抽完就变 0%"）
+- `'max'`：取 `end`（工序刚结束 / DB 写入前给个封顶值）
+- `'live'`（默认）：按 `completed / total` 线性插值
+
+`percent` 写入 `task_progress` 的位置：
+- `extract-node.ts`：每抽完一批 50 条写一次 `stagePercent('S2', processed, total)`
+- `cluster-node.ts`：开始时 `'min'`，结束时 `themeCount` + 不写 percent
+- `summary-node.ts`：每写完一个 batch (10 个主题) 写 `stagePercent('SUMMARY', synthesized, total)`，全部写完前 `phase='max'`
+
+**前端防进位：`Math.floor`**
+
+[`pipeline-canvas.tsx`](../app/workbench/_components/pipeline-canvas.tsx) 计算 `entityPercent` 用 `Math.floor` 而**不是** `Math.round`。原因：S2 跑到 `127999/128000` 时真实比值 99.999%，`Math.round` 进位成 100%，UI 就以为 S2 已完结、CLUSTER 还没起；`Math.floor` 稳定显示 99%，等 `status === 'COMPLETED'` 才显示 100%。
+
+**权重不是真理，是占位**
+
+`{ S1: 2, S2: 88, CLUSTER: 5, SUMMARY: 5 }` 是**视觉占位权重**，不代表实际耗时占比。等真实运行数据（每工序平均 / p95 / p99 耗时）跑出来后可以替换成数据驱动的权重。改这个文件不需要动其他模块——所有节点都走 `stagePercent()` 单一入口。
+- 手动杀 worker：`pkill -f scripts/cluster-worker.ts`。**不要**用 `kill <pid>` 发 SIGTERM 等它慢慢退——它会立即退，但如果它正在写 task_progress（UPDATE 提交中），可能有几十毫秒的不一致窗口，20s 心跳兜底覆盖。
+
 ---
 
 ## 四、字段从哪来
@@ -201,3 +252,21 @@ npx tsx tests/test-incident-profile.ts
 自动刷新会换成新的节点对象。同步时必须留下已经量到的 `measured`、宽高，以及用户拖过的位置。丢掉 `measured` 后，React Flow 把节点设成 `visibility: hidden`；尺寸没变时尺寸观察器不再回调，卡片就整批不出现。
 
 接口对每个 System 2 地址做 `GET /v1/models`，超时 1.5 秒，结果缓存 3 秒。离线的卡片写「无法连接」，不显示耗时。在线耗时优先用该节点记下的 `predicted_ms`，界面一律写成秒。
+
+**节点之间的边线（[flowing-edge.tsx](../app/workbench/_components/flowing-edge.tsx)）**
+
+每条边带 `data.active` / `data.completed` / `data.label` 三个字段，对应三套样式：
+
+| `data.active` | `data.completed` | 视觉 | 何时 |
+| :--- | :--- | :--- | :--- |
+| `true` | — | 蓝色虚线 (`strokeDasharray: 6,4`) + 流动光点（`<animateMotion>` 1.8s 一圈） | 工序进行中（数据正在流过这段） |
+| `false` | `true` | 绿色实线 (`#22C55E`)，透明度 0.65 | 工序已结束，下游已接收 |
+| `false` | `false` | 灰色实线 (`#CBD5E1`)，透明度 0.65 | 工序还没开始 |
+
+React Flow 自带的 `animated` prop 也跟 `active` 同源，但**只控制 React Flow 内置的虚线动画**；自绘的 `<animateMotion>` 圆点完全靠 `data.active`。两边都要同步设置，否则会出"React Flow 虚线在动、但没有蓝色光点"或者反过来的不一致。
+
+**坑：edge-ingest-triage 别用 `total > 0` 当 `active` 条件**
+
+2026-10-08 的 bug：第一条边 `active: total > 0`，只要辖区有工单就恒真。任务跑完后这条边一直虚线 + 流动光点。修复：跟其他三条边一致，`active: total > 0 && isRunning`，让"在跑"才进 active 态。教训：**所有 `data.active` 条件必须包含 `isRunning`，否则任务 COMPLETED 之后这条边永远不会"安静"**。
+
+颜色：实线绿 `#22C55E`、虚线蓝 `#3B82F6`、未启动灰 `#CBD5E1`，线宽 1.8 / 2.5 / 1.8，过渡 0.4s。改这套配色只动 `flowing-edge.tsx`，调用方不用关心。

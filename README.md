@@ -195,11 +195,16 @@ npx tsx tests/test-same-incident-cluster.ts
 npx tsx tests/test-incident-profile.ts
 ```
 
-### 5. 启动本地全栈开发服务 (Next.js + System-2 本地慢思考引擎)
+### 5. 启动本地全栈开发服务 (Next.js + System-2 本地慢思考引擎 + 研判队列)
 ```bash
 pnpm dev
 ```
-> 💡 **全栈一键拉起**：`pnpm dev` 会自动探测并拉起本地 Apple Silicon Metal 优化的 System-2 慢思考推理服务 (`http://127.0.0.1:8132/v1`) 与 Next.js 开发服务；若仅需启动 Web 前端/API 服务，可执行 `pnpm dev:web`。
+> 💡 **全栈一键拉起**：`pnpm dev` 由 [`scripts/dev.ts`](scripts/dev.ts) 编排三件套：
+> 1. **System-2 慢思考推理**（[llama-server](https://github.com/ggerganov/llama.cpp) Metal 加速，端口 8132）——仅当本地模型物料存在时
+> 2. **研判队列 worker**（[scripts/cluster-worker.ts](scripts/cluster-worker.ts)）——per-region 异步消费 `task_progress` 表，详情见 [docs/WORKFLOW.md §3.1](docs/WORKFLOW.md)
+> 3. **Next.js dev server**（端口 3000）——Web + API
+>
+> Ctrl+C 退出时 SIGTERM 广播给三个子进程，3 秒内未退的 SIGKILL 兜底，不会留孤儿。若只想启动前端/API（不跑大模型、不开 worker），用 `pnpm dev:web`（云端 API 灾备模式）。
 
 在浏览器中访问 [http://localhost:3000](http://localhost:3000) 即可开始使用！
 - **系统登录账号**：`admin`
@@ -211,7 +216,7 @@ pnpm dev
 
 | 命令 | 说明 |
 | :--- | :--- |
-| `pnpm dev` | **全栈启动**：自动并行拉起 System-2 本地大模型推理引擎 (8132) 与 Next.js (3000) |
+| `pnpm dev` | **全栈启动**：自动并行拉起 System-2 本地大模型推理引擎 (8132) + 研判队列 worker + Next.js (3000)；Ctrl+C 3s 内兜底 SIGKILL，不会留孤儿 |
 | `pnpm dev:web` | **轻量启动**：仅启动 Next.js 本地开发服务 (大模型依赖云端 API 灾备模式) |
 | `pnpm dev:llm` | **独立调试**：单独拉起 System-2 本地 Metal 推理服务 (Bonsai 2 27B) |
 | `pnpm build` | 编译 Next.js 生产版本构建 |
