@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "concurrently -k -n web,llm -c blue,magenta \"pnpm dev:web\" \"pnpm dev:llm\"",
     "dev:web": "next dev",
-    "dev:llm": "tsx packages/civic-system-two/scripts/serve.ts",
+    "dev:llm": "tsx --env-file-if-exists=.env.local packages/civic-system-two/scripts/serve.ts",
     "dev:backend": "langgraphjs dev",
     "build": "next build",
     "start": "next start",
