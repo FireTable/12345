@@ -146,6 +146,14 @@ export async function claimNextClusterJob(targetRegionId?: string): Promise<Clus
                 AND COALESCE(heartbeat_at, updated_at) < now() - make_interval(secs => ${STALE_SECONDS})
               )
             )
+            -- 同 region 已有 fresh-RUNNING 任务：说明正在跑，本次 PENDING 排队等它结束。
+            -- unique partial index 只防 PENDING 重复；这里防 RUNNING 并行。
+            AND NOT EXISTS (
+              SELECT 1 FROM task_progress t2
+              WHERE t2.region_id = ${targetRegionId}
+                AND t2.status = 'RUNNING'
+                AND COALESCE(t2.heartbeat_at, t2.updated_at) >= now() - make_interval(secs => ${STALE_SECONDS})
+            )
           ORDER BY created_at
           LIMIT 1
           FOR UPDATE SKIP LOCKED
@@ -175,6 +183,12 @@ export async function claimNextClusterJob(targetRegionId?: string): Promise<Clus
                 status = 'RUNNING'
                 AND COALESCE(heartbeat_at, updated_at) < now() - make_interval(secs => ${STALE_SECONDS})
               )
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM task_progress t2
+              WHERE t2.region_id = task_progress.region_id
+                AND t2.status = 'RUNNING'
+                AND COALESCE(t2.heartbeat_at, t2.updated_at) >= now() - make_interval(secs => ${STALE_SECONDS})
             )
           ORDER BY created_at
           LIMIT 1
