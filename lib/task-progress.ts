@@ -195,7 +195,8 @@ export function updateTaskProgress(
   // regionId 来源优先级：patch > 函数参数 > 内存旧值（切区时保证旧 task 不会跨区泄漏）。
   const broadcastRegionId = updated.regionId;
   if (broadcastRegionId) {
-    // 动态 import 避免循环依赖
+    // 动态 import 避免循环依赖；broadcastTaskProgress 现在是 async（会查 metrics），
+    // 调用方 fire-and-forget 不阻塞主流程
     import("./sse-broadcaster")
       .then((m) => m.broadcastTaskProgress(broadcastRegionId, updated))
       .catch(() => {

@@ -11,8 +11,23 @@
 
 import { useEffect, useRef, useState } from "react";
 
+export type CivicSseMetrics = {
+  totalTickets: number;
+  analyzedTickets: number;
+  unprocessedTickets: number;
+  urgentTickets: number;
+  stabilityRiskTickets: number;
+  totalThemes: number;
+  highRiskThemes: number;
+};
+
 export type CivicSseMessage =
-  | { type: "task-progress"; regionId: string; data: unknown }
+  | {
+      type: "task-progress";
+      regionId: string;
+      taskProgress: unknown;
+      metrics: CivicSseMetrics | null;
+    }
   | { type: "pipeline-state-refresh"; regionId: string }
   | { type: "civic-data-refresh"; regionId: string };
 

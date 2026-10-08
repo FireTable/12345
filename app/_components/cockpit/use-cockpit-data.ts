@@ -101,9 +101,9 @@ export function useCockpitData(regionId: string) {
       msg.type === "civic-data-refresh" ||
       msg.type === "pipeline-state-refresh" ||
       (msg.type === "task-progress" &&
-        (msg.data as { status?: string } | null)?.status &&
-        ((msg.data as { status: string }).status === "COMPLETED" ||
-          (msg.data as { status: string }).status === "FAILED"))
+        (msg.taskProgress as { status?: string } | null)?.status &&
+        ((msg.taskProgress as { status: string }).status === "COMPLETED" ||
+          (msg.taskProgress as { status: string }).status === "FAILED"))
     ) {
       loadData(true);
     }

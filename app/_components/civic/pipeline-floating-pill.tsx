@@ -12,10 +12,10 @@ export function PipelineFloatingPill() {
   const { setPipelineDrawerOpen, pipelineDrawerOpen } = useCivicWorkflow();
   const [taskState, setTaskState] = useState<TaskProgress | null>(null);
 
-  // WS 推送：每帧 task-progress 直接驱动底部胶囊
+  // SSE 推送：每帧 task-progress 直接驱动底部胶囊
   useCivicSse(activeRegion?.id, (msg) => {
-    if (msg.type === "task-progress" && msg.data) {
-      setTaskState(msg.data as TaskProgress);
+    if (msg.type === "task-progress" && msg.taskProgress) {
+      setTaskState(msg.taskProgress as TaskProgress);
     }
     // pipeline-state-refresh 由 pipeline-drawer 处理（需要更全的快照）
   });

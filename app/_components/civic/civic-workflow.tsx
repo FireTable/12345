@@ -94,12 +94,12 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
   const [taskProgress, setTaskProgress] = useState<TaskProgress | null>(null);
 
   /**
-   * WS 推送：每帧 task-progress 直接驱动 taskProgress / analyzing 状态。
+   * SSE 推送：每帧 task-progress 直接驱动 taskProgress / analyzing 状态。
    * 完全替代原先每 3s / 12s 的 HTTP 轮询。
    */
   useCivicSse(activeRegion?.id, (msg) => {
     if (msg.type === "task-progress") {
-      const data = msg.data as TaskProgress | null;
+      const data = msg.taskProgress as TaskProgress | null;
       if (!data) return;
       setTaskProgress(data);
       if (data.status === "RUNNING") {

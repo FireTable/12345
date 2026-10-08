@@ -15,32 +15,105 @@
  *     不直接接触 controller；"读"侧（app/api/sse/route.ts）只调 registerController。
  *   - 客户端断开 → ReadableStream 触发 cancel() → 我们 cleanup 注销 controller + 清心跳。
  *   - 进程崩溃 → 路由 handler 一起死 → 浏览器 EventSource 自动重连。
+ *
+ * task-progress 帧 payload：
+ *   - taskProgress: lib/task-progress.ts 里的 TaskProgress（status/percent/processed 等）
+ *   - metrics: PipelineStateResponse 的 metrics 块（analyzedTickets/totalThemes 等）
+ *     —— 由服务端在推帧前异步查一次 DB 塞进来，让 PipelineCanvas 不必额外 fetchState
+ *     就能实时更新进度条和主题数。如果 metrics 查询失败，payload 里 metrics 字段
+ *     缺省，前端用 prev 值兜底。
  */
 
+import { getRegionDb } from "@/db/client";
+import { ticketsTable, themesTable } from "@/db/schema";
+import { sql as drizzleSql } from "drizzle-orm";
 import { getLatestTaskProgress } from "./task-progress";
 
 type SseController = ReadableStreamDefaultController<Uint8Array>;
 
+type SseMetrics = {
+  totalTickets: number;
+  analyzedTickets: number;
+  unprocessedTickets: number;
+  urgentTickets: number;
+  stabilityRiskTickets: number;
+  totalThemes: number;
+  highRiskThemes: number;
+};
+
 type SseMessage =
-  | { type: "task-progress"; regionId: string; data: unknown }
+  | {
+      type: "task-progress";
+      regionId: string;
+      taskProgress: unknown;
+      metrics: SseMetrics | null;
+    }
   | { type: "pipeline-state-refresh"; regionId: string }
   | { type: "civic-data-refresh"; regionId: string };
 
 declare global {
   // eslint-disable-next-line no-var
   var __sse_subscribers: Map<string, Set<SseController>> | undefined;
+  // eslint-disable-next-line no-var
+  var __sse_metrics_cache: Map<string, { at: number; data: SseMetrics }> | undefined;
 }
 
 const subscribers: Map<string, Set<SseController>> =
   globalThis.__sse_subscribers ?? new Map<string, Set<SseController>>();
 globalThis.__sse_subscribers = subscribers;
 
+// metrics 缓存：同一 region 的高频 chunk 推送（每 0.4~5s 一次）会复用同一份 metrics，
+// 避免每个 chunk 都查 DB。5s 过期足以保证实时性（DB count 变化也是秒级）。
+const METRICS_TTL_MS = 5_000;
+const metricsCache: Map<string, { at: number; data: SseMetrics }> =
+  globalThis.__sse_metrics_cache ?? new Map<string, { at: number; data: SseMetrics }>();
+globalThis.__sse_metrics_cache = metricsCache;
+
 const encoder = new TextEncoder();
+
+async function computeMetrics(regionId: string): Promise<SseMetrics | null> {
+  const cached = metricsCache.get(regionId);
+  if (cached && Date.now() - cached.at < METRICS_TTL_MS) {
+    return cached.data;
+  }
+  try {
+    const { db: tenantDb } = await getRegionDb(regionId);
+    const [ticketCounts] = await tenantDb
+      .select({
+        total: drizzleSql<number>`count(*)`,
+        analyzed: drizzleSql<number>`count(*) filter (where ${ticketsTable.confidence} is not null and ${ticketsTable.confidence} > 0)`,
+        unprocessed: drizzleSql<number>`count(*) filter (where ${ticketsTable.confidence} is null or ${ticketsTable.confidence} = 0)`,
+        urgent: drizzleSql<number>`count(*) filter (where ${ticketsTable.urgency} = 'URGENT')`,
+        stabilityRisk: drizzleSql<number>`count(*) filter (where ${ticketsTable.stabilityRisk} = true)`,
+      })
+      .from(ticketsTable);
+    const [themeCounts] = await tenantDb
+      .select({
+        totalThemes: drizzleSql<number>`count(*)`,
+        highRiskThemes: drizzleSql<number>`count(*) filter (where ${themesTable.riskLevel} = 'HIGH')`,
+      })
+      .from(themesTable);
+    const metrics: SseMetrics = {
+      totalTickets: Number(ticketCounts?.total || 0),
+      analyzedTickets: Number(ticketCounts?.analyzed || 0),
+      unprocessedTickets: Number(ticketCounts?.unprocessed || 0),
+      urgentTickets: Number(ticketCounts?.urgent || 0),
+      stabilityRiskTickets: Number(ticketCounts?.stabilityRisk || 0),
+      totalThemes: Number(themeCounts?.totalThemes || 0),
+      highRiskThemes: Number(themeCounts?.highRiskThemes || 0),
+    };
+    metricsCache.set(regionId, { at: Date.now(), data: metrics });
+    return metrics;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * 注册一个订阅者。返回取消注册的函数（路由 handler 在 cancel() 里调一次）。
  *
- * 注册后自动推一帧 task-progress 快照，避免新连接要先 HTTP 拉一次再接 SSE。
+ * 注册后自动推一帧 task-progress 快照（taskProgress + metrics），
+ * 避免新连接要先 HTTP 拉一次再接 SSE。
  */
 export function registerController(
   regionId: string,
@@ -61,27 +134,25 @@ export function registerController(
   };
 
   // 初始快照（fire-and-forget；DB 走 async 不会阻塞 stream start）
-  try {
-    void getLatestTaskProgress(regionId).then((tp) => {
-      if (tp) {
-        try {
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({
-                type: "task-progress",
-                regionId,
-                data: tp,
-              })}\n\n`
-            )
-          );
-        } catch {
-          /* 控制器已关闭 */
-        }
-      }
-    });
-  } catch {
-    /* ignore */
-  }
+  void (async () => {
+    try {
+      const tp = await getLatestTaskProgress(regionId);
+      if (!tp) return;
+      const metrics = await computeMetrics(regionId);
+      controller.enqueue(
+        encoder.encode(
+          `data: ${JSON.stringify({
+            type: "task-progress",
+            regionId,
+            taskProgress: tp,
+            metrics,
+          })}\n\n`
+        )
+      );
+    } catch {
+      /* ignore */
+    }
+  })();
 
   return cleanup;
 }
@@ -98,12 +169,28 @@ function send(controller: SseController, msg: SseMessage): void {
 
 /**
  * 推一帧 task-progress 给指定 region 的所有订阅者。
- * 由 updateTaskProgress / finishClusterJob / failClusterJob 等"状态写"侧调用。
+ *
+ * 帧里同时塞 taskProgress + metrics：
+ *   - taskProgress: chunk 完成的实时状态（status/percent/processed）
+ *   - metrics: 当前 DB count（analyzedTickets 等）
+ * 这样 PipelineCanvas 不用 fetchState 也能实时更新进度条和主题数。
+ *
+ * 调用方可以 fire-and-forget（async + .catch），不影响主流程：
+ *   broadcastTaskProgress(regionId, tp).catch(() => {});
  */
-export function broadcastTaskProgress(regionId: string, data: unknown): void {
+export async function broadcastTaskProgress(
+  regionId: string,
+  taskProgress: unknown
+): Promise<void> {
   const set = subscribers.get(regionId);
   if (!set || set.size === 0) return;
-  const msg: SseMessage = { type: "task-progress", regionId, data };
+  const metrics = await computeMetrics(regionId);
+  const msg: SseMessage = {
+    type: "task-progress",
+    regionId,
+    taskProgress,
+    metrics,
+  };
   for (const c of set) send(c, msg);
 }
 
@@ -116,17 +203,21 @@ export function broadcastDataRefresh(regionId: string): void {
   if (!set || set.size === 0) return;
   const msg: SseMessage = { type: "civic-data-refresh", regionId };
   for (const c of set) send(c, msg);
+  // metrics 缓存作废：data-refresh 通常意味着新数据写入，缓存里 analyzeCount 过期
+  metricsCache.delete(regionId);
 }
 
 /**
- * 推一个 "pipeline-state 缓存失效" 信号，pipeline-drawer / pipeline-floating-pill
- * 收到后 refetch /api/workbench/pipeline-state（保留那个接口兜底，但默认不再轮询）。
+ * 推一个 "pipeline-state 缓存失效" 信号，pipeline-drawer 收到后
+ * refetch /api/workbench/pipeline-state（含 systemTwoNodes 探活这种
+ * SSE 不便携带的重量级数据）。
  */
 export function broadcastPipelineRefresh(regionId: string): void {
   const set = subscribers.get(regionId);
   if (!set || set.size === 0) return;
   const msg: SseMessage = { type: "pipeline-state-refresh", regionId };
   for (const c of set) send(c, msg);
+  metricsCache.delete(regionId);
 }
 
 /**
@@ -143,4 +234,5 @@ export function _resetSseBroadcasterForTesting(): void {
     }
   }
   subscribers.clear();
+  metricsCache.clear();
 }

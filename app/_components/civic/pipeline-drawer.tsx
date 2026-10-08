@@ -29,15 +29,31 @@ export function PipelineDrawer() {
     }
   }, [activeRegion?.id]);
 
-  // WS 推送：每帧 task-progress 直接驱动 PipelineCanvas 数据。
-  // pipeline-state-refresh 信号（其他来源触发）会拉一次 pipeline-state 拿全量快照。
+  // SSE 推送：每帧 task-progress 携带 taskProgress + metrics，合并进 pipelineData
+  // 让 PipelineCanvas 进度条 / 主题数实时更新，不必额外 fetchState。
+  // pipeline-state-refresh 信号（系统二节点健康等重量级数据）才走完整 fetch。
   useCivicSse(activeRegion?.id, (msg) => {
-    if (msg.type === "task-progress" && msg.data) {
+    if (msg.type === "task-progress") {
       setPipelineData((prev) => {
-        const tp = msg.data as PipelineStateResponse["taskProgress"];
+        const tp = msg.taskProgress as PipelineStateResponse["taskProgress"];
         if (!prev) return prev;
-        // 把新 taskProgress 合并进已有 pipelineData；其余字段（metrics / theme 等）保留
-        return { ...prev, taskProgress: tp };
+        // 合并 taskProgress + metrics（metrics 缺省保留旧值，避免后端报错导致进度条回退）
+        return {
+          ...prev,
+          taskProgress: tp,
+          metrics: msg.metrics
+            ? {
+                ...prev.metrics,
+                totalTickets: msg.metrics.totalTickets,
+                analyzedTickets: msg.metrics.analyzedTickets,
+                unprocessedTickets: msg.metrics.unprocessedTickets,
+                urgentTickets: msg.metrics.urgentTickets,
+                stabilityRiskTickets: msg.metrics.stabilityRiskTickets,
+                totalThemes: msg.metrics.totalThemes,
+                highRiskThemes: msg.metrics.highRiskThemes,
+              }
+            : prev.metrics,
+        };
       });
     } else if (msg.type === "pipeline-state-refresh") {
       // 收到全量刷新信号（来自 cluster-queue 终态 / cockpit 数据变更等）

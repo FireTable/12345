@@ -326,7 +326,8 @@ async function broadcastFromQueue(taskId: string): Promise<void> {
     const { broadcastTaskProgress, broadcastDataRefresh } = await import(
       "./sse-broadcaster"
     );
-    broadcastTaskProgress(regionId, tp);
+    // broadcastTaskProgress 现在是 async（内部查 metrics），await 等它完成
+    await broadcastTaskProgress(regionId, tp);
     if (rows[0]?.status === "COMPLETED" || rows[0]?.status === "FAILED") {
       broadcastDataRefresh(regionId);
     }
