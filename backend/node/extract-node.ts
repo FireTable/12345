@@ -3,8 +3,6 @@ import {
   isLocalSystemTwo,
   modelSupportsToolCalling,
   getSystemTwoEngine,
-  systemTwoConcurrency,
-  getSystemTwoEndpoints,
 } from "../model";
 import { workOrderClockFromTicketNo, workOrderInstantFromTicketNo } from "@/lib/work-order-date";
 import {
@@ -27,7 +25,7 @@ import { stagePercent } from "@/lib/pipeline-progress";
 import { getRegionDb } from "@/db/client";
 import { ticketsTable } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import PQueue from "p-queue";
+import { getLlmPool } from "../llm-pool";
 import { anonymize, deanonymize } from "@civic/anonymizer";
 import { SystemOneEngine } from "@civic/system-one";
 import { LLM_TOKENS } from "@/lib/tokens";
@@ -253,7 +251,9 @@ export async function extractNode(
   const regionId = state.regionId;
   const CHUNK_SIZE = isLocalSystemTwo() ? 1 : 4;
   const extractionMap = new Map<number, ExtractedTicketItem>();
-  const queue = new PQueue({ concurrency: systemTwoConcurrency() });
+  // 共享进程级 LLM 池：所有 region 的 LLM 调用都走这一个 PQueue 排队，
+  // 避免 N region × endpoint 数 远超真实吞吐。
+  const queue = getLlmPool();
 
   // 加载当前运行站点的动态词库与别名映射，以及专属 Schema 数据库客户端
   const regionVocab = await getRegionVocabulary(state.regionId);

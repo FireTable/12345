@@ -33,13 +33,17 @@ export async function enqueueClusterJob(
   regionId: string,
   taskId: string,
   total: number
-): Promise<{ taskId: string; status: string; alreadyRunning: boolean }> {
+): Promise<{ taskId: string; status: string; alreadyQueued: boolean }> {
   await ensureQueueColumns();
+
+  // 队列健壮性：仅在已有 PENDING 时复用；RUNNING 不阻止新建 PENDING 排队
+  // （用户要求"有新的数据自动 add"，不能因为旧 job 还在跑就把新工单晾着）。
+  // 新建的 PENDING 会自然排到 RUNNING 之后被 claimNextClusterJob 认领。
   const existing = await sql<{ task_id: string; status: string }[]>`
     SELECT task_id, status
     FROM task_progress
     WHERE region_id = ${regionId}
-      AND status IN ('PENDING', 'RUNNING')
+      AND status = 'PENDING'
     ORDER BY created_at DESC
     LIMIT 1
   `;
@@ -47,7 +51,7 @@ export async function enqueueClusterJob(
     return {
       taskId: existing[0].task_id,
       status: existing[0].status,
-      alreadyRunning: true,
+      alreadyQueued: true,
     };
   }
 
@@ -72,7 +76,7 @@ export async function enqueueClusterJob(
       heartbeat_at = now(),
       updated_at = now()
   `;
-  return { taskId, status: "PENDING", alreadyRunning: false };
+  return { taskId, status: "PENDING", alreadyQueued: false };
 }
 
 export async function claimNextClusterJob(targetRegionId?: string): Promise<ClusterJob | null> {

@@ -70,7 +70,7 @@ export async function enrichThemeBatchWithLLM(
   return Promise.race([enrichTask(), timeoutPromise]);
 }
 
-import PQueue from "p-queue";
+import { getLlmPool } from "../llm-pool";
 import { updateTaskProgress } from "@/lib/task-progress";
 import { stagePercent } from "@/lib/pipeline-progress";
 
@@ -99,7 +99,9 @@ export async function summaryNode(
       });
     }
 
-    const queue = new PQueue({ concurrency: systemTwoConcurrency() });
+    // 共享进程级 LLM 池（见 backend/llm-pool.ts）：与 extract-node 同一个 PQueue，
+    // 跨 region 共享并发上限 = endpoint 数。
+    const queue = getLlmPool();
     let synthesizedCount = 0;
 
     const chunkTasks: Array<() => Promise<void>> = [];

@@ -1,10 +1,11 @@
-import { desc } from "drizzle-orm";
+import { desc, sql as drizzleSql } from "drizzle-orm";
 import { HANDLING_STATUS, normalizeStatusCode } from "@/lib/civic-dto";
 import { runTicketRadarPipeline } from "@/backend/agent";
 import { getRegionDb } from "@/db/client";
 import { ticketsTable, themesTable } from "@/db/schema";
 import { persistClusterResult } from "@/lib/civic-persist";
 import { seedReviewQueue } from "@/lib/review-queue";
+import { updateTaskProgress } from "@/lib/task-progress";
 import type { RawTicket } from "@/backend/state";
 import type { ClusterJob } from "@/lib/cluster-queue";
 import { workOrderClockFromTicketNo } from "@/lib/work-order-date";
@@ -14,6 +15,30 @@ import { workOrderClockFromTicketNo } from "@/lib/work-order-date";
  */
 export async function executeClusterJob(job: ClusterJob): Promise<number> {
   const { db: tenantDb } = await getRegionDb(job.regionId);
+
+  // 预跑短路（避免空跑）：
+  // 入队时点的 total 可能在入队之后、job 跑起来之前被其他 worker 处理完；
+  // 也可能是上一轮 job 已经把这一批全抽完了、本轮 PENDING 是被新数据带进来
+  // 但那些"新数据"恰好也被别处同步处理过。无论哪种，跑到这里都要先看还有没有
+  // 真的需要研判的工单，0 条就直接返回，让 worker 标 COMPLETED 不再白跑 LLM。
+  const [unprocessedRow] = await tenantDb
+    .select({
+      unprocessed: drizzleSql<number>`count(*) filter (where ${ticketsTable.confidence} is null or ${ticketsTable.confidence} = 0)`,
+    })
+    .from(ticketsTable);
+  const unprocessedCount = Number(unprocessedRow?.unprocessed || 0);
+  if (unprocessedCount === 0) {
+    console.log(
+      `[cluster-job] ${job.taskId} (${job.regionId}) 跳过：当前无未处理工单，避免空跑`
+    );
+    updateTaskProgress(job.taskId, job.regionId, {
+      stage: "COMPLETED",
+      stageText: "当前无未处理工单，任务已自动完成",
+      percent: 100,
+    });
+    return 0;
+  }
+
   const rows = await tenantDb.select().from(ticketsTable).orderBy(desc(ticketsTable.createTime));
   const tickets: RawTicket[] = rows.map((r) => ({
     id: r.id,

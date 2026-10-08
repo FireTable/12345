@@ -1,4 +1,4 @@
-import { sql as rawSql, getRegionDb } from "@/db/client";
+import { getRegionDb } from "@/db/client";
 import { ticketsTable } from "@/db/schema";
 import { sql as drizzleSql } from "drizzle-orm";
 import {
@@ -49,29 +49,14 @@ export async function triggerClusterJobAuto(regionId: string): Promise<boolean> 
       return false;
     }
 
-    // 3. 检查 task_progress 中是否已有正常运行中的任务
-    const activeTasks = await rawSql<{ task_id: string; status: string }[]>`
-      SELECT task_id, status
-      FROM task_progress
-      WHERE region_id = ${regionId}
-        AND (
-          status = 'RUNNING' AND COALESCE(heartbeat_at, updated_at) >= now() - interval '20 seconds'
-        )
-      LIMIT 1
-    `;
-
-    if (activeTasks.length > 0) {
-      // 已有正常心跳的正在跑任务，无需重复入队；释放锁
-      activeRegionWorkers.delete(regionId);
-      return false;
-    }
-
-    // 4. 入队新研判任务
+    // 3. 入队（PENDING 已存在则复用，RUNNING 不阻止新建 PENDING 排队）
     const taskId = `auto-${regionId}-${Date.now()}`;
     await enqueueClusterJob(regionId, taskId, total);
 
-    // 5. 启动当前 Node.js 异步非阻塞协程消费并执行任务
-    //    注意：锁已经在入口处加了，runWorkerLoopForRegion 内部不再二次加锁。
+    // 4. 启动当前 Node.js 异步非阻塞协程消费并执行任务
+    //    锁已经在入口处加了，runWorkerLoopForRegion 内部不再二次加锁。
+    //    若有别人（standalone cluster-worker / 另一个 in-process 进程）已经在跑，
+    //    本协程的 claimNextClusterJob 在 PENDING 被抢走后返回 null，循环自然退出。
     runWorkerLoopForRegion(regionId).catch((err) => {
       console.error(`[cluster-runner] Background job error for region ${regionId}:`, err);
     });
