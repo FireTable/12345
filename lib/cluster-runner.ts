@@ -49,9 +49,18 @@ export async function triggerClusterJobAuto(regionId: string): Promise<boolean> 
       return false;
     }
 
-    // 3. 入队（PENDING 已存在则复用，RUNNING 不阻止新建 PENDING 排队）
+    // 3. 入队（决策树见 enqueueClusterJob 注释：PENDING 复用 / RUNNING-fresh 跳过 / RUNNING-stale re-claim / 都无则新建）
     const taskId = `auto-${regionId}-${Date.now()}`;
-    await enqueueClusterJob(regionId, taskId, total);
+    const enqueueResult = await enqueueClusterJob(regionId, taskId, total);
+
+    // 'running' = 别人正在跑且心跳 fresh，不创建新行也不启新 worker，让当前的继续
+    if (enqueueResult.source === "running") {
+      console.log(
+        `[cluster-runner] ${regionId} 已有 RUNNING worker 在跑，跳过本次 trigger`
+      );
+      activeRegionWorkers.delete(regionId);
+      return false;
+    }
 
     // 4. 启动当前 Node.js 异步非阻塞协程消费并执行任务
     //    锁已经在入口处加了，runWorkerLoopForRegion 内部不再二次加锁。

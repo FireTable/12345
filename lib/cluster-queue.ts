@@ -39,22 +39,102 @@ export function ensureQueueColumns(): Promise<void> {
   return columnsReady;
 }
 
+export type EnqueueResult = {
+  taskId: string;
+  status: "PENDING" | "RUNNING";
+  alreadyQueued: boolean;
+  /**
+   * 决策路径：
+   * - 'created'   — 之前没有 PENDING 也没有 RUNNING，本次新建了 PENDING
+   * - 'pending'   — 已经有 PENDING（任意 heartbeat 状态），复用，不创建新行
+   * - 'running'   — 已经有 RUNNING 且心跳 fresh（< STALE_SECONDS），**不创建新 PENDING**，
+   *                 也**不要启新 worker**——让当前的 worker 跑完
+   * - 'reclaimed' — 已经有 RUNNING 但心跳 stale（> STALE_SECONDS），说明前任 worker 已死，
+   *                 我们直接把这一行 heartbeat 刷新 + stage_text 改为"继续未完成的研判"，
+   *                 接着启新 worker 接续（task_id 不变，processed 等历史进度都在）
+   */
+  source: "created" | "pending" | "running" | "reclaimed";
+};
+
 export async function enqueueClusterJob(
   regionId: string,
   taskId: string,
   total: number
-): Promise<{ taskId: string; status: string; alreadyQueued: boolean }> {
+): Promise<EnqueueResult> {
   await ensureQueueColumns();
 
-  // 队列健壮性：仅在已有 PENDING 时复用；RUNNING 不阻止新建 PENDING 排队
-  // （用户要求"有新的数据自动 add"，不能因为旧 job 还在跑就把新工单晾着）。
-  // 新建的 PENDING 会自然排到 RUNNING 之后被 claimNextClusterJob 认领。
+  // 决策树：
+  //   1. 同 region 已有 PENDING  → 复用（unique partial index 已保证最多一个 PENDING）
+  //   2. 同 region 有 RUNNING：
+  //      a. heartbeat fresh (< STALE_SECONDS) → 有人正在干，**返回 running 不建新行**
+  //      b. heartbeat stale (>= STALE_SECONDS) → 前任 worker 已死，re-claim（UPDATE
+  //         heartbeat=now + stage_text=续跑），不创建新行
+  //   3. 都没有 → 新建 PENDING
   //
-  // 并发安全：依赖 ensureQueueColumns 创建的 partial unique index
-  //   task_progress_pending_per_region (region_id) WHERE status = 'PENDING'
-  // 配合 ON CONFLICT (region_id) WHERE status = 'PENDING' DO NOTHING，
-  // 让"查 PENDING + 插入 PENDING"在 DB 层面唯一约束兜底，
-  // 不依赖 statement-level snapshot（READ COMMITTED 下 WHERE NOT EXISTS 不可靠）。
+  // 这一套替换之前 "只查 PENDING，不看 RUNNING" 的策略——那是 #2a 场景下
+  // 仍然会建新 PENDING 的根本原因（导致同 region 出现 RUNNING + 多个 PENDING 并行）。
+
+  // 第 1 步：查 PENDING
+  const pending = await sql<{ task_id: string }[]>`
+    SELECT task_id FROM task_progress
+    WHERE region_id = ${regionId} AND status = 'PENDING'
+    ORDER BY created_at DESC LIMIT 1
+  `;
+  if (pending.length > 0) {
+    return {
+      taskId: pending[0].task_id,
+      status: "PENDING",
+      alreadyQueued: true,
+      source: "pending",
+    };
+  }
+
+  // 第 2 步：查 RUNNING
+  const running = await sql<
+    { task_id: string; heartbeat_at: Date | null; updated_at: Date | null }[]
+  >`
+    SELECT task_id, heartbeat_at, updated_at FROM task_progress
+    WHERE region_id = ${regionId} AND status = 'RUNNING'
+    ORDER BY created_at DESC LIMIT 1
+  `;
+  if (running.length > 0) {
+    const r = running[0];
+    // postgres-js 返回 timestamp 为 string，统一转毫秒
+    const beatStr = (r.heartbeat_at || r.updated_at) as unknown as string | Date | null;
+    const lastBeat = beatStr ? new Date(beatStr).getTime() : 0;
+    const ageMs = Date.now() - lastBeat;
+    if (lastBeat > 0 && ageMs < STALE_SECONDS * 1000) {
+      // 当前还有人在跑，**不要创建新 PENDING、不要启新 worker**
+      return {
+        taskId: r.task_id,
+        status: "RUNNING",
+        alreadyQueued: true,
+        source: "running",
+      };
+    }
+    // 心跳陈（worker 死了但 DB 行还在）。re-claim：把这一行刷新心跳 + 改 stage_text。
+    // 这样：
+    //   - 不创建新行（DB 还是同一行 task_id，processed 等历史进度保留）
+    //   - 触发方（triggerClusterJobAuto）拿到这个 taskId 启新 worker
+    //   - 新 worker 的 claimNextClusterJob 看到同一行已经 RUNNING + fresh heartbeat → 不再 claim
+    //     （但因为它已经"在跑"，它会直接 run executeClusterJob；这条 task 行已经被 setup 好）
+    await sql`
+      UPDATE task_progress
+      SET heartbeat_at = now(),
+          stage_text = '前任 worker 已退出，本 worker 续跑',
+          updated_at = now()
+      WHERE task_id = ${r.task_id} AND status = 'RUNNING'
+    `;
+    return {
+      taskId: r.task_id,
+      status: "RUNNING",
+      alreadyQueued: true,
+      source: "reclaimed",
+    };
+  }
+
+  // 第 3 步：都没有 → 新建 PENDING。
+  // 用 unique partial index + ON CONFLICT 防 race（同时两个 enqueue 撞同一 region）。
   const inserted = await sql<{ task_id: string; status: string }[]>`
     INSERT INTO task_progress (
       task_id, status, stage, stage_text, percent, total,
@@ -69,63 +149,32 @@ export async function enqueueClusterJob(
     RETURNING task_id, status
   `;
   if (inserted.length > 0) {
-    return { taskId: inserted[0].task_id, status: inserted[0].status, alreadyQueued: false };
-  }
-
-  // 输了 race 或 PENDING 已被 claim（unlikely in tight loop）：拿真实现有的 PENDING。
-  const existing = await sql<{ task_id: string; status: string }[]>`
-    SELECT task_id, status
-    FROM task_progress
-    WHERE region_id = ${regionId}
-      AND status = 'PENDING'
-    ORDER BY created_at DESC
-    LIMIT 1
-  `;
-  if (existing.length > 0) {
     return {
-      taskId: existing[0].task_id,
-      status: existing[0].status,
-      alreadyQueued: true,
+      taskId: inserted[0].task_id,
+      status: "PENDING",
+      alreadyQueued: false,
+      source: "created",
     };
   }
 
-  // 极端：SELECT 时 PENDING 已被 claim（worker 抢走了），re-INSERT 一次。
-  const retried = await sql<{ task_id: string; status: string }[]>`
-    INSERT INTO task_progress (
-      task_id, status, stage, stage_text, percent, total,
-      processed, extracted_count, theme_count, review_count, failed_count,
-      region_id, heartbeat_at, updated_at
-    ) VALUES (
-      ${taskId}, 'PENDING', 'EXTRACTING', '已进入研判队列，等待执行', 0, ${total},
-      0, 0, 0, 0, 0,
-      ${regionId}, now(), now()
-    )
-    ON CONFLICT (region_id) WHERE status = 'PENDING' DO NOTHING
-    RETURNING task_id, status
+  // Race：两个并发 enqueue 都到第 3 步，一个先 INSERT 成功，另一个被 unique index 拒。
+  // 再查一次拿真实现有 PENDING。
+  const racer = await sql<{ task_id: string }[]>`
+    SELECT task_id FROM task_progress
+    WHERE region_id = ${regionId} AND status = 'PENDING'
+    ORDER BY created_at DESC LIMIT 1
   `;
-  if (retried.length > 0) {
-    return { taskId: retried[0].task_id, status: retried[0].status, alreadyQueued: false };
-  }
-
-  // 兜底再查一次。如果还查不到，抛错（绝不应该）。
-  const finalExisting = await sql<{ task_id: string; status: string }[]>`
-    SELECT task_id, status
-    FROM task_progress
-    WHERE region_id = ${regionId}
-      AND status = 'PENDING'
-    ORDER BY created_at DESC
-    LIMIT 1
-  `;
-  if (finalExisting.length > 0) {
+  if (racer.length > 0) {
     return {
-      taskId: finalExisting[0].task_id,
-      status: finalExisting[0].status,
+      taskId: racer[0].task_id,
+      status: "PENDING",
       alreadyQueued: true,
+      source: "pending",
     };
   }
 
   throw new Error(
-    `enqueueClusterJob: failed to enqueue task for region ${regionId} after retries`
+    `enqueueClusterJob: race-unresolved, region ${regionId} has neither PENDING nor RUNNING after INSERT`
   );
 }
 
