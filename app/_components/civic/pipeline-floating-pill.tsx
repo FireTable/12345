@@ -1,47 +1,32 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState } from "react";
 import { Cpu } from "lucide-react";
+import { useCivicWs } from "@/app/_hooks/use-civic-ws";
+import type { TaskProgress } from "@/lib/task-progress";
 import { useRegion } from "./region-context";
 import { useCivicWorkflow } from "./civic-workflow";
 
 export function PipelineFloatingPill() {
   const { activeRegion } = useRegion();
   const { setPipelineDrawerOpen, pipelineDrawerOpen } = useCivicWorkflow();
-  const [taskState, setTaskState] = useState<{
-    status: "idle" | "running" | "completed" | "error";
-    processed: number;
-    total: number;
-    stageText?: string;
-  } | null>(null);
+  const [taskState, setTaskState] = useState<TaskProgress | null>(null);
 
-  const fetchStatus = useCallback(async () => {
-    try {
-      const regParam = activeRegion?.id ? `?region=${encodeURIComponent(activeRegion.id)}` : "";
-      const res = await fetch(`/api/workbench/pipeline-state${regParam}`);
-      const json = await res.json();
-      if (json.success && json.data) {
-        setTaskState(json.data.taskProgress);
-      }
-    } catch {
-      // 容错忽略
+  // WS 推送：每帧 task-progress 直接驱动底部胶囊
+  useCivicWs(activeRegion?.id, (msg) => {
+    if (msg.type === "task-progress" && msg.data) {
+      setTaskState(msg.data as TaskProgress);
     }
+    // pipeline-state-refresh 由 pipeline-drawer 处理（需要更全的快照）
+  });
+
+  // 切区时清掉旧 taskState，等 WS 推新区第一帧
+  useEffect(() => {
+    setTaskState(null);
   }, [activeRegion?.id]);
 
   const rawStatus = (taskState?.status || "").toUpperCase();
   const isRunning = rawStatus === "RUNNING" || rawStatus === "PENDING";
-
-  useEffect(() => {
-    fetchStatus();
-    const timer = setInterval(fetchStatus, 5000);
-    const onRefresh = () => fetchStatus();
-    window.addEventListener("civic-data-refresh", onRefresh);
-
-    return () => {
-      clearInterval(timer);
-      window.removeEventListener("civic-data-refresh", onRefresh);
-    };
-  }, [fetchStatus, isRunning]);
 
   // 抽屉打开时或任务未运行时隐藏浮动胶囊
   if (pipelineDrawerOpen || !taskState || !isRunning) {

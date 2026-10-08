@@ -191,6 +191,18 @@ export function updateTaskProgress(
   // 异步实时同步 DB
   persistTaskToDb(updated);
 
+  // WS 推送：每个 region 的活跃订阅者立刻收到新一帧。
+  // regionId 来源优先级：patch > 函数参数 > 内存旧值（切区时保证旧 task 不会跨区泄漏）。
+  const broadcastRegionId = updated.regionId;
+  if (broadcastRegionId) {
+    // 动态 import 避免循环依赖 + 不在 next-server 启动前就拉起 ws 模块
+    import("./ws-broadcaster")
+      .then((m) => m.broadcastTaskProgress(broadcastRegionId, updated))
+      .catch(() => {
+        /* ws-broadcaster 可能在非自定义 server 模式下不可用，忽略 */
+      });
+  }
+
   return updated;
 }
 

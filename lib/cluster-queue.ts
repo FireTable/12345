@@ -287,6 +287,8 @@ export async function finishClusterJob(taskId: string, themeCount: number): Prom
         error = NULL
     WHERE task_id = ${taskId}
   `;
+  // WS 广播：terminal 状态写库后立刻通知订阅者，无需前端轮询
+  await broadcastFromQueue(taskId);
 }
 
 export async function failClusterJob(taskId: string, message: string): Promise<void> {
@@ -299,4 +301,28 @@ export async function failClusterJob(taskId: string, message: string): Promise<v
         updated_at = now()
     WHERE task_id = ${taskId}
   `;
+  await broadcastFromQueue(taskId);
 }
+
+/**
+ * cluster-queue 状态机写完后调一次：从 DB 拉最新行 → 通过 WS 推给 region 订阅者。
+ * 不能复用 updateTaskProgress 路径，因为这里直接走 SQL 不走 progressStore 内存，
+ * 所以单独读 DB 拉真值再 broadcast。
+ */
+async function broadcastFromQueue(taskId: string): Promise<void> {
+  try {
+    const rows = await sql<{ region_id: string | null }[]>`
+      SELECT region_id FROM task_progress WHERE task_id = ${taskId} LIMIT 1
+    `;
+    const regionId = rows[0]?.region_id;
+    if (!regionId) return;
+    const { getLatestTaskProgress } = await import("./task-progress");
+    const tp = await getLatestTaskProgress(regionId);
+    if (!tp) return;
+    const { broadcastTaskProgress } = await import("./ws-broadcaster");
+    broadcastTaskProgress(regionId, tp);
+  } catch {
+    /* ws-broadcaster 不可用时静默忽略，保持原 SQL 语义 */
+  }
+}
+

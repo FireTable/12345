@@ -7,6 +7,7 @@ import { UploadDialog } from "@/app/_components/dashboard/upload-dialog";
 import { LightCopilot } from "@/app/_components/copilot/light-copilot";
 import type { MultiFrequencyTheme, OverallStats } from "@/backend/state";
 import type { TaskProgress } from "@/lib/task-progress";
+import { useCivicWs } from "@/app/_hooks/use-civic-ws";
 import { useRegion } from "./region-context";
 
 const emptyStats: OverallStats = {
@@ -92,40 +93,42 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
 
   const [taskProgress, setTaskProgress] = useState<TaskProgress | null>(null);
 
-  const pollTaskProgress = useCallback(async () => {
-    try {
-      const res = await fetch("/api/cluster/progress?taskId=latest", { cache: "no-store" });
-      const json = await res.json();
-      if (json.success && json.data) {
-        const data = json.data as TaskProgress;
-        setTaskProgress(data);
-        if (data.status === "RUNNING") {
-          setAnalyzing(true);
-        } else if (data.status === "COMPLETED" || data.status === "FAILED") {
-          setAnalyzing(false);
-        }
+  /**
+   * WS 推送：每帧 task-progress 直接驱动 taskProgress / analyzing 状态。
+   * 完全替代原先每 3s / 12s 的 HTTP 轮询。
+   */
+  useCivicWs(activeRegion?.id, (msg) => {
+    if (msg.type === "task-progress") {
+      const data = msg.data as TaskProgress | null;
+      if (!data) return;
+      setTaskProgress(data);
+      if (data.status === "RUNNING") {
+        setAnalyzing(true);
+      } else if (data.status === "COMPLETED" || data.status === "FAILED") {
+        setAnalyzing(false);
       }
-    } catch {
-      // silent
+      return;
     }
-  }, []);
+    if (msg.type === "civic-data-refresh") {
+      // 兜底：数据大屏写入触发，但 taskProgress 不需要再拉
+      loadTicketStatus();
+      return;
+    }
+    // pipeline-state-refresh 由 pipeline-* 组件自己订阅处理
+  });
 
   React.useEffect(() => {
-    // 切区时立刻清掉旧 taskProgress 并拉一次新区的，避免 3s 内 header 还显示旧区数据
+    // 切区时立刻清掉旧 taskProgress，等 WS 推新区第一帧
     setTaskProgress(null);
-    pollTaskProgress();
     loadTicketStatus();
-    const interval = setInterval(pollTaskProgress, analyzing ? 3000 : 12000);
     const handleRefresh = () => {
       loadTicketStatus();
-      pollTaskProgress();
     };
     window.addEventListener("civic-data-refresh", handleRefresh);
     return () => {
-      clearInterval(interval);
       window.removeEventListener("civic-data-refresh", handleRefresh);
     };
-  }, [analyzing, loadTicketStatus, pollTaskProgress, activeRegion?.id]);
+  }, [activeRegion?.id, loadTicketStatus]);
 
   const isAllAnalyzed =
     ticketStatus.loaded &&
@@ -142,11 +145,12 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
   const refreshPages = useCallback(() => {
     router.refresh();
     loadTicketStatus();
-    pollTaskProgress();
+    // taskProgress 不再需要单独 HTTP 拉，WS 会推；此处保留 router.refresh
+    // 让 server component（如 /themes、/tickets）服务端重渲
     if (typeof window !== "undefined") {
       window.dispatchEvent(new Event("civic-data-refresh"));
     }
-  }, [router, loadTicketStatus, pollTaskProgress]);
+  }, [router, loadTicketStatus]);
 
   const openUpload = useCallback(() => {
     setUploadOpen(true);

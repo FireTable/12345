@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useCallback } from "react";
 import { Cpu, RotateCw, X, CheckCircle2, AlertCircle, ChevronUp } from "lucide-react";
+import { useCivicWs } from "@/app/_hooks/use-civic-ws";
 import { useCivicWorkflow } from "./civic-workflow";
 import { useRegion } from "./region-context";
 import { PipelineCanvas, type PipelineStateResponse } from "@/app/workbench/_components/pipeline-canvas";
@@ -28,15 +29,33 @@ export function PipelineDrawer() {
     }
   }, [activeRegion?.id]);
 
-  useEffect(() => {
-    if (pipelineDrawerOpen) {
+  // WS 推送：每帧 task-progress 直接驱动 PipelineCanvas 数据。
+  // pipeline-state-refresh 信号（其他来源触发）会拉一次 pipeline-state 拿全量快照。
+  useCivicWs(activeRegion?.id, (msg) => {
+    if (msg.type === "task-progress" && msg.data) {
+      setPipelineData((prev) => {
+        const tp = msg.data as PipelineStateResponse["taskProgress"];
+        if (!prev) return prev;
+        // 把新 taskProgress 合并进已有 pipelineData；其余字段（metrics / theme 等）保留
+        return { ...prev, taskProgress: tp };
+      });
+    } else if (msg.type === "pipeline-state-refresh") {
+      // 收到全量刷新信号（来自 cluster-queue 终态 / cockpit 数据变更等）
+      fetchState();
+    } else if (msg.type === "civic-data-refresh") {
       fetchState();
     }
-  }, [pipelineDrawerOpen, fetchState]);
+  });
+
+  // 抽屉首次打开 / 切区时拉一次 pipeline-state 拿全量快照（含 metrics / theme 等非 taskProgress 字段）
+  useEffect(() => {
+    if (pipelineDrawerOpen) {
+      setPipelineData(null); // 切区时清掉旧快照
+      fetchState();
+    }
+  }, [pipelineDrawerOpen, activeRegion?.id, fetchState]);
 
   const isRunning = (pipelineData?.taskProgress?.status || "").toUpperCase() === "RUNNING";
-  const intervalSec = 5;
-  const [countdown, setCountdown] = useState(intervalSec);
 
   // 抽屉打开时锁住背后页面滚动，避免手机上抽屉和页面一起滑
   useEffect(() => {
@@ -51,25 +70,8 @@ export function PipelineDrawer() {
     };
   }, [pipelineDrawerOpen]);
 
-  // 抽屉打开时，1 秒级倒计时心跳驱动自动刷新
-  useEffect(() => {
-    if (!pipelineDrawerOpen) return;
-    let left = intervalSec;
-    setCountdown(intervalSec);
-    const timer = setInterval(() => {
-      left -= 1;
-      if (left <= 0) {
-        left = intervalSec;
-        fetchState();
-      }
-      setCountdown(left);
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [pipelineDrawerOpen, intervalSec, fetchState]);
-
   const handleManualRefresh = () => {
     if (loading) return;
-    setCountdown(intervalSec);
     fetchState();
   };
 
@@ -123,7 +125,6 @@ export function PipelineDrawer() {
           </div>
 
           <div className="workbench-header__status">
-            {/* 研判进行中不再显示文案标签，避免与节点卡片 / 研判节点面板重复。运行中状态由 #3 节点卡里的实时进度承担。 */}
             {isAllAnalyzed ? (
               <div className="workbench-badge workbench-badge--idle">
                 <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
@@ -147,10 +148,10 @@ export function PipelineDrawer() {
               onClick={handleManualRefresh}
               disabled={loading}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors shadow-2xs cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
-              title="刷新流水线状态"
+              title="手动拉取最新流水线快照（默认已 WS 实时推送）"
             >
               <RotateCw size={13} className={loading ? "animate-spin text-blue-600" : "text-slate-500"} />
-              <span>{loading ? "刷新中..." : `刷新 (${countdown}s)`}</span>
+              <span>{loading ? "刷新中..." : "刷新"}</span>
             </button>
 
             <button

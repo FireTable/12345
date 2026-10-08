@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useCivicWs } from "@/app/_hooks/use-civic-ws";
 import type {
   CockpitTicket,
   CockpitTownshipStat,
@@ -91,13 +92,28 @@ export function useCockpitData(regionId: string) {
     loadData(false);
   }, [regionId, loadData]);
 
-  useEffect(() => {
-    if (!isPolling) return;
-    const timer = setInterval(() => {
+  // WS 推送：civic-data-refresh 信号触发 silent refetch（不带 loading 闪烁）。
+  // 替换之前 25s 轮询，节省 N 倍请求；只在真有数据变更时才拉。
+  // - task-progress 也会触发：研判完成后 dashboard 数据会变化
+  // - civic-data-refresh：上传 / 切区 / 其他模块主动通知
+  useCivicWs(regionId, (msg) => {
+    if (
+      msg.type === "civic-data-refresh" ||
+      msg.type === "pipeline-state-refresh" ||
+      (msg.type === "task-progress" &&
+        (msg.data as { status?: string } | null)?.status &&
+        ((msg.data as { status: string }).status === "COMPLETED" ||
+          (msg.data as { status: string }).status === "FAILED"))
+    ) {
       loadData(true);
-    }, 25000);
-    return () => clearInterval(timer);
-  }, [isPolling, loadData]);
+    }
+  });
+
+  // isPolling 现在等价于"是否还接受 WS 触发刷新"。保留 UI 切换让用户能暂停自动刷新，
+  // 但即便暂停，仍支持手动 refresh()。
+  useEffect(() => {
+    /* 旧的 25s setInterval 已删除，WS 信号驱动替换 */
+  }, [isPolling]);
 
   // 1. KPI 真实计算
   const kpi = useMemo<CockpitKpiData>(() => {
