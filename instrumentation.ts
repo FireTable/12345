@@ -17,7 +17,7 @@ export async function register() {
   // 失败也不阻塞 server 启动 —— user 可手动重试或下次 trigger 自然覆盖。
   setTimeout(() => {
     const port = process.env.PORT || "3000";
-    fetch(`http://127.0.0.1:${port}/api/_internal/cluster-bootstrap`, {
+    fetch(`http://127.0.0.1:${port}/api/internal/cluster-bootstrap`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ source: "instrumentation" }),

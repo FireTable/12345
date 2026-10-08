@@ -39,6 +39,17 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // 2.8 Internal server-to-server endpoints (e.g. cluster bootstrap
+  //      triggered by instrumentation.ts on next-server boot). The
+  //      caller is the same Node process via localhost fetch, so
+  //      there's no user identity to authenticate. We rely on the
+  //      /api/internal/ URL convention + the bind to 127.0.0.1 as
+  //      the only access control. NEVER expose anything user-facing
+  //      under /api/internal/.
+  if (pathname.startsWith("/api/internal/")) {
+    return NextResponse.next();
+  }
+
   const sessionToken =
     request.cookies.get("better-auth.session_token")?.value ||
     request.cookies.get("__Secure-better-auth.session_token")?.value;
