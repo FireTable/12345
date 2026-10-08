@@ -5,6 +5,26 @@ import { type NodeProps, type Node, Position } from "@xyflow/react";
 import { Cpu, MapPin, Building2, Sparkles, CheckCircle2, Tag, Server, Clock } from "lucide-react";
 import { PipelineNodeShell } from "./pipeline-node-shell";
 
+/** 兜底展示值：null / undefined / 空串 / 字符串 "null" / "undefined" / "无" / "未知" / "未指定" 一律收敛成 fallback。 */
+function safeDisplay(
+  value: string | number | null | undefined,
+  fallback: string
+): string {
+  if (value === null || value === undefined) return fallback;
+  const text = String(value).trim();
+  if (
+    !text ||
+    text === "null" ||
+    text === "undefined" ||
+    text === "无" ||
+    text === "未知" ||
+    text === "未指定"
+  ) {
+    return fallback;
+  }
+  return text;
+}
+
 export type ProcessedTicketPreview = {
   id?: string;
   ticketNo?: string;
@@ -156,8 +176,8 @@ export function EntityNode({ data }: NodeProps<EntityNodeType>) {
                   <div className="flex items-start gap-1.5 text-slate-600">
                     <MapPin size={12} className="text-purple-500 shrink-0 mt-0.5" />
                     <span className="text-slate-400 shrink-0">发生地点：</span>
-                    <span className="font-medium text-slate-800 truncate" title={ticket.address}>
-                      {ticket.address || "未指定地点"}
+                    <span className="font-medium text-slate-800 truncate" title={ticket.address || undefined}>
+                      {safeDisplay(ticket.address, "未知")}
                     </span>
                   </div>
 
@@ -165,8 +185,8 @@ export function EntityNode({ data }: NodeProps<EntityNodeType>) {
                   <div className="flex items-start gap-1.5 text-slate-600">
                     <Building2 size={12} className="text-purple-500 shrink-0 mt-0.5" />
                     <span className="text-slate-400 shrink-0">责任主体：</span>
-                    <span className="font-medium text-slate-800 truncate" title={ticket.canonicalSubject}>
-                      {ticket.canonicalSubject || "正在研判主体..."}
+                    <span className="font-medium text-slate-800 truncate" title={ticket.canonicalSubject || undefined}>
+                      {safeDisplay(ticket.canonicalSubject, "未知")}
                     </span>
                   </div>
 
@@ -174,8 +194,8 @@ export function EntityNode({ data }: NodeProps<EntityNodeType>) {
                   <div className="flex items-start gap-1.5 text-slate-600">
                     <Tag size={12} className="text-purple-500 shrink-0 mt-0.5" />
                     <span className="text-slate-400 shrink-0">问题类型：</span>
-                    <span className="font-medium text-slate-800 truncate" title={ticket.eventType}>
-                      {ticket.eventType || "待定性诉求"}
+                    <span className="font-medium text-slate-800 truncate" title={ticket.eventType || undefined}>
+                      {safeDisplay(ticket.eventType, "未知")}
                     </span>
                   </div>
                 </div>

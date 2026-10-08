@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 export interface RegionInfo {
@@ -34,6 +34,7 @@ export function RegionProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const pathname = usePathname();
+  const router = useRouter();
 
   const fetchRegions = useCallback(async () => {
     // 登录页不触发，等登录成功后再拉取
@@ -91,10 +92,9 @@ export function RegionProvider({ children }: { children: React.ReactNode }) {
     document.cookie = `active_region=${target.id}; path=/; max-age=31536000; SameSite=Lax`;
     toast.success(`已切换至【${target.city} · ${target.name} 12345 站点】`);
 
-    // 重新刷新页面以让所有 SSR 和组件获取对应 Schema 数据
-    setTimeout(() => {
-      window.location.reload();
-    }, 400);
+    // 用 router.refresh() 重新拉服务端组件（带新 cookie），避免整页 reload
+    // 引起的双 fetch + 闪烁。客户端组件状态（抽屉、画布位置等）会保留。
+    router.refresh();
   };
 
   return (

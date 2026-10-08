@@ -87,22 +87,25 @@ export function ClusterNode({ data }: NodeProps<ClusterNodeType>) {
         </div>
 
         {data.recentClusters && data.recentClusters.length > 0 ? (
-          <div className="space-y-1.5 mt-2">
+          <div className="mt-2 space-y-1.5">
             {data.recentClusters.slice(0, 2).map((c, i) => (
-              <div key={i} className="flex items-center justify-between text-[11px] py-1 border-b border-slate-100 last:border-0 gap-2">
-                <div className="flex items-center gap-1.5 min-w-0 pr-1">
-                  {c.subdistrict && (
-                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 shrink-0 font-medium whitespace-nowrap">
-                      {c.subdistrict}
-                    </span>
-                  )}
-                  <span className="font-semibold text-slate-800 truncate max-w-[210px]">
+              <div
+                key={i}
+                className="py-1 px-1 -mx-1 rounded-md hover:bg-slate-50/70 transition-colors"
+              >
+                {/* 1. subdistrict 角标：单独一行小字 */}
+                {c.subdistrict && (
+                  <div className="text-[10px] text-slate-500 mb-0.5 truncate" title={c.subdistrict}>
+                    📍 {c.subdistrict}
+                  </div>
+                )}
+                {/* 2. 标题 + 工单数：标题占满剩余宽度 */}
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-semibold text-slate-800 text-[11.5px] truncate flex-1 min-w-0" title={c.title}>
                     {c.title}
                   </span>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
-                  <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-bold whitespace-nowrap">
-                    包含 {c.ticketCount.toLocaleString()} 条工单
+                  <span className="font-mono text-[10px] text-blue-600 font-bold shrink-0 whitespace-nowrap">
+                    {c.ticketCount.toLocaleString()} 件
                   </span>
                 </div>
               </div>
