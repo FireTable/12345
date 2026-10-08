@@ -157,6 +157,16 @@ System 1 的镇街恒为 `UNKNOWN`，不会写成街道名。社区和地标不�
 - in-process worker 跟 Next dev 同生死：next-server 一停，worker 立即终止。当前 in-flight job 在 `task_progress` 留 `RUNNING` 状态、心跳 30s 后超时，下次重启 next-server 后用户点"开始研判"会被新 worker 重新认领（已抽取工单的 `confidence` 已落库，从断点继续）。
 - 恢复路径：worker 死了不需要手动起，新一轮 trigger（用户点按钮 / 上传工单）会自动入队 + 启动新 worker。
 
+**启动时自动 bootstrap**
+
+[`instrumentation.ts`](../instrumentation.ts) 是 Next.js 启动钩子，`register()` 在 next-server 每次启动时调用一次（dev 模式包括 hot reload）。它 fire-and-forget 调 [`lib/cluster-bootstrap.ts`](../lib/cluster-bootstrap.ts) 的 `bootstrapClusterWorkers()`：
+
+1. 调 `getAllRegions()` 拿到所有 region
+2. 对每个 region 调 `triggerClusterJobAuto(regionId)` —— 这个函数内部已经有 unprocessed 检查 + 进程内 lock + DB unique index
+3. unprocessed=0 的 region 跳过；其余入队 PENDING + 启 per-region 协程
+
+防重入用 `globalThis.__cluster_bootstrap_done` 标志，dev mode hot reload 多次启动也只跑一次。生产环境用 process manager（systemd / pm2）拉起 next-server 即可，每个实例 bootstrap 一次；多实例下各实例都会去 trigger，但 `triggerClusterJobAuto` 内部的 in-process lock + DB unique index 保证每个 region 只入一个 PENDING + 启一个 worker。
+
 **切区时的前端契约**
 
 [`app/_components/civic/civic-workflow.tsx`](../app/_components/civic/civic-workflow.tsx) 的 useEffect 依赖 `activeRegion?.id`，并在切区时立刻 `setTaskProgress(null)` 再 `pollTaskProgress()`。原因：3 秒轮询周期里，旧区的 taskProgress 仍留在 React state，会让顶部 nav 进度环和 `task_progress` API 显示成"上一区还在跑"（最严重时连续 3s 显示错误 region 的 RUNNING + percent）。把 `activeRegion?.id` 加进 useEffect 依赖保证依赖变了就立刻 reset + 拉新区数据。

@@ -66,7 +66,7 @@ pnpm dev
 > 1. **System-2 慢思考推理**（[llama-server](https://github.com/ggerganov/llama.cpp) Metal 加速,端口 8132）— 仅当本地模型物料存在时
 > 2. **Next.js dev server**（端口 3000）— Web + API + 内嵌 in-process 研判 worker
 >
-> 研判 worker **不再**有独立 tsx 进程（已删除 `scripts/cluster-worker.ts`），直接跑在 next-server 进程内，详见 [docs/WORKFLOW.md §3.1](../docs/WORKFLOW.md)。Ctrl+C 退出时 SIGTERM 广播给两个子进程，3 秒内兜底 SIGKILL，不会留孤儿。若只想启动前端/API（不跑大模型），用 `pnpm dev:web`（云端 API 灾备模式）。
+> 研判 worker **不再**有独立 tsx 进程（已删除 `scripts/cluster-worker.ts`），直接跑在 next-server 进程内，详见 [docs/WORKFLOW.md §3.1](../docs/WORKFLOW.md)。**启动时自动 bootstrap**（[instrumentation.ts](../instrumentation.ts)）：next-server 一启动就会扫描所有 region，对有未处理工单的 region 自动入队 + 启 in-process worker，不需要手动点按钮。Ctrl+C 退出时 SIGTERM 广播给两个子进程，3 秒内兜底 SIGKILL，不会留孤儿。若只想启动前端/API（不跑大模型），用 `pnpm dev:web`（云端 API 灾备模式）。
 
 ---
 
