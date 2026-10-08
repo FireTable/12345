@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
-import { Cpu, RotateCw, X, CheckCircle2, AlertCircle, ChevronUp } from "lucide-react";
+import { Cpu, X, CheckCircle2, AlertCircle, ChevronUp } from "lucide-react";
 import { useCivicSse } from "@/app/_hooks/use-civic-sse";
 import { useCivicWorkflow } from "./civic-workflow";
 import { useRegion } from "./region-context";
@@ -86,11 +86,6 @@ export function PipelineDrawer() {
     };
   }, [pipelineDrawerOpen]);
 
-  const handleManualRefresh = () => {
-    if (loading) return;
-    fetchState();
-  };
-
   // ESC 键关闭抽屉
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -159,17 +154,6 @@ export function PipelineDrawer() {
           </div>
 
           <div className="workbench-header__actions">
-            <button
-              type="button"
-              onClick={handleManualRefresh}
-              disabled={loading}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors shadow-2xs cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
-              title="手动拉取最新流水线快照（默认已 WS 实时推送）"
-            >
-              <RotateCw size={13} className={loading ? "animate-spin text-blue-600" : "text-slate-500"} />
-              <span>{loading ? "刷新中..." : "刷新"}</span>
-            </button>
-
             <button
               type="button"
               onClick={() => setPipelineDrawerOpen(false)}
