@@ -21,10 +21,14 @@ const activeRegionWorkers = new Set<string>();
 export async function triggerClusterJobAuto(regionId: string): Promise<boolean> {
   if (!regionId) return false;
 
-  // 1. 若本进程该辖区已经在跑 worker，直接返回
+  // 1. 进程内单例锁：先同步占坑。并发重入时第二个调用立刻看到 has=true 直接 false，
+  //    不再走到后面的 await 与 runWorkerLoopForRegion 启动逻辑。
+  //    锁的释放由 runWorkerLoopForRegion 的 finally 负责（worker 跑完自然释放）；
+  //    本函数提前 return / throw 的分支都要 delete 释放，避免占着茅坑。
   if (activeRegionWorkers.has(regionId)) {
     return false;
   }
+  activeRegionWorkers.add(regionId);
 
   try {
     const { db: tenantDb } = await getRegionDb(regionId);
@@ -41,7 +45,8 @@ export async function triggerClusterJobAuto(regionId: string): Promise<boolean> 
     const unprocessed = Number(counts?.unprocessed || 0);
 
     if (total === 0 || unprocessed === 0) {
-      return false; // 没有需要研判的工单
+      activeRegionWorkers.delete(regionId); // 没有需要研判的工单，释放锁
+      return false;
     }
 
     // 3. 检查 task_progress 中是否已有正常运行中的任务
@@ -56,7 +61,8 @@ export async function triggerClusterJobAuto(regionId: string): Promise<boolean> 
     `;
 
     if (activeTasks.length > 0) {
-      // 已有正常心跳的正在跑任务，无需重复入队
+      // 已有正常心跳的正在跑任务，无需重复入队；释放锁
+      activeRegionWorkers.delete(regionId);
       return false;
     }
 
@@ -65,12 +71,14 @@ export async function triggerClusterJobAuto(regionId: string): Promise<boolean> 
     await enqueueClusterJob(regionId, taskId, total);
 
     // 5. 启动当前 Node.js 异步非阻塞协程消费并执行任务
+    //    注意：锁已经在入口处加了，runWorkerLoopForRegion 内部不再二次加锁。
     runWorkerLoopForRegion(regionId).catch((err) => {
       console.error(`[cluster-runner] Background job error for region ${regionId}:`, err);
     });
 
     return true;
   } catch (err: any) {
+    activeRegionWorkers.delete(regionId); // 入队或前置检查失败，释放锁
     console.error(`[cluster-runner] Failed to trigger auto cluster for ${regionId}:`, err?.message || err);
     return false;
   }
@@ -78,11 +86,9 @@ export async function triggerClusterJobAuto(regionId: string): Promise<boolean> 
 
 /**
  * 辖区专属后台 Worker 执行循环
+ * 锁由 triggerClusterJobAuto 入口持有，本函数只消费；worker 自然结束时 finally 释放。
  */
 async function runWorkerLoopForRegion(regionId: string): Promise<void> {
-  if (activeRegionWorkers.has(regionId)) return;
-  activeRegionWorkers.add(regionId);
-
   try {
     while (true) {
       // 认领当前辖区下一个待处理任务

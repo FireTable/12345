@@ -6,7 +6,6 @@ import { getLatestTaskProgress } from "@/lib/task-progress";
 import { sql, desc, eq, isNull } from "drizzle-orm";
 import { apiSuccess, apiError, ApiCode } from "@/lib/api-codes";
 import { regionLabel, UNKNOWN_TOWN } from "@/lib/civic-dto";
-import { triggerClusterJobAuto } from "@/lib/cluster-runner";
 import { getSystemTwoEndpoints } from "@/backend/model";
 import { getNodeMetric } from "@/lib/node-metrics";
 
@@ -61,13 +60,7 @@ export async function GET(req: NextRequest) {
       })
       .from(themesTable);
 
-    // 自动自驱动研判：只要辖区存在未研判工单，且当前没有正在执行的任务，系统自动开启研判流水线
-    const unprocessedTickets = Number(ticketCounts?.unprocessed || 0);
-    if (unprocessedTickets > 0 && (!taskProgress || taskProgress.status !== "RUNNING")) {
-      triggerClusterJobAuto(regionId).catch((err) => {
-        console.warn("[workbench/pipeline-state] Auto cluster trigger warning:", err?.message || err);
-      });
-    }
+
 
     // 3.1 接入台样本 (按原始提报时间)
     const recentTickets = await tenantDb

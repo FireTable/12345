@@ -8,7 +8,11 @@ export interface ClusterJob {
   total: number;
 }
 
-const STALE_SECONDS = 15;
+// 跨进程互斥：claimNextClusterJob 看到一个 RUNNING 任务如果心跳陈旧（> 此值），
+// 就视为前任 worker 已死、可以接手。worker 心跳是 4-5s 一次，30s 是心跳间隔的 6-7 倍，
+// 给网络抖动 / DB 短暂卡顿留出充足窗口；再小就容易被健康 worker 误判（pipeline-state
+// 历史上每 3s 调一次 trigger，15s 阈值会被它乘以 4-5 次 claim 频繁误抢）。
+const STALE_SECONDS = 30;
 
 let columnsReady: Promise<void> | null = null;
 
