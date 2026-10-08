@@ -187,7 +187,11 @@ function InnerPipelineCanvas({
     const isCompleted = total > 0 && analyzed >= total && !isRunning;
     const stage = (stateData?.taskProgress?.stage || "EXTRACTING").toUpperCase();
 
-    const targetProcessed = isRunning ? processed : analyzed;
+    // 用全局已抽取数 analyzed 作单一事实来源，session-local 的 processed 不再覆盖 UI 进度，
+    // 避免新 task 启动时 from preExtractedCount 起步导致 "33,377 → 6,356" 的视觉倒退。
+    // analyzed 来自 tickets where confidence > 0 的实时 count，
+    // 每次 rememberExtraction 写完一条都立刻反映在 DB，下一次 pipeline-state 拉取时 +1。
+    const targetProcessed = analyzed;
     // 用 Math.floor 而不是 round：99.55% 应显示 99%，避免进位到 100% 让用户误以为 S2 已跑完
     const entityPercent = total > 0
       ? targetProcessed >= total
@@ -400,7 +404,8 @@ function InnerPipelineCanvas({
     const themeCount = stateData?.metrics.totalThemes ?? 0;
     const isCompleted = total > 0 && analyzed >= total && !isRunning;
     const stage = (stateData?.taskProgress?.stage || "EXTRACTING").toUpperCase();
-    const targetProcessed = isRunning ? processed : analyzed;
+    // 同上，第二个 useMemo 里也改成单一全局 analyzed 作 source of truth
+    const targetProcessed = analyzed;
 
     const isEntityRunning = isRunning && (stage === "EXTRACTING" || targetProcessed < total);
     const isEntityCompleted = (total > 0 && analyzed >= total) || stage === "CLUSTERING" || stage === "SUMMARIZING" || stage === "COMPLETED" || isCompleted;

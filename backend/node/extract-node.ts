@@ -38,7 +38,25 @@ function clipField(value: string | null | undefined, max: number): string | null
   return text.length <= max ? text : text.slice(0, max);
 }
 
-/** 抽到一条就写下主体、地点、事件和摘要，中断后可以接着跑。空字段不覆盖已有值。 */
+/**
+ * 工单是否已经抽过要素（断点续抽判断）。
+ *
+ * 必填：summarizeTitle 或 eventType 至少一个（不然没有可用要素），外加 confidence > 0。
+ * 允许空：canonicalSubject（政策咨询常常没有可核验主体）、address（无门牌类咨询）、
+ *         eventType / summarizeTitle 互相可替。
+ * 这跟同文件 line 211-215 的「主体或地点为空是合法的」策略保持一致。
+ *
+ * 之前错误要求四要素全齐，导致 preExtractedCount 被压到 6k 量级（只数了全要素的工单），
+ * 而真实已抽取 33k+ 都被错误当作"未抽"，新 task 一启动就重复抽 27k 条，
+ * 也让 UI 进度条出现 33,377 → 6,356 的视觉倒退。
+ */
+function hasStoredExtraction(ticket: RawTicket): boolean {
+  return Boolean(
+    typeof ticket.confidence === "number" &&
+      ticket.confidence > 0 &&
+      (ticket.summarizeTitle?.trim() || ticket.eventType?.trim())
+  );
+}
 function rememberExtraction(
   tenantDb: Awaited<ReturnType<typeof getRegionDb>>["db"],
   ticketId: string,
@@ -91,17 +109,6 @@ function systemOnePatch(ticket: RawTicket) {
     stabilityRisk: ticket.systemOneStabilityRisk,
     subdistrict: ticket.systemOneTownship || null,
   };
-}
-
-function hasStoredExtraction(ticket: RawTicket): boolean {
-  return Boolean(
-    ticket.summarizeTitle?.trim() &&
-      ticket.canonicalSubject?.trim() &&
-      ticket.eventType?.trim() &&
-      ticket.address?.trim() &&
-      typeof ticket.confidence === "number" &&
-      ticket.confidence > 0
-  );
 }
 
 function hasStoredSystemOne(ticket: RawTicket): boolean {
