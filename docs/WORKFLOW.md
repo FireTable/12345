@@ -139,20 +139,23 @@ System 1 的镇街恒为 `UNKNOWN`，不会写成街道名。社区和地标不�
 3. 没有就 `enqueueClusterJob(regionId, taskId, total)` 插一条
 4. 启动本进程内的 worker 协程消费
 
-**消费：有两条 runner**
+**消费：唯一 worker（in-process）**
 
 | Runner | 文件 | 进程 | 触发 | 适合场景 |
 | :--- | :--- | :--- | :--- | :--- |
-| In-process worker | `lib/cluster-runner.ts` `runWorkerLoopForRegion` | Next.js dev server 同一个 Node 进程 | API 路由里调 `triggerClusterJobAuto(regionId)` 时自动起 per-region 协程 | 本地开发默认路径；停 `pnpm dev` 一起死 |
-| Standalone worker | [`scripts/cluster-worker.ts`](../scripts/cluster-worker.ts) | 独立 `tsx` 子进程，由 [`scripts/dev.ts`](../scripts/dev.ts) 拉起 | 全局轮询 `claimNextClusterJob()`，跨 region 抢活 | 防止 Next dev 热重载时打断长任务；想脱离 Web UI 也能跑 |
+| In-process worker | `lib/cluster-runner.ts` `runWorkerLoopForRegion` | Next.js dev server 同一个 Node 进程 | API 路由里调 `triggerClusterJobAuto(regionId)` 时自动起 per-region 协程 | 所有场景；停 `pnpm dev` 一起死 |
 
-两者并存：DB 行锁保证同一条 task 不会被两个 worker 同时跑；活跃 worker 通过 `heartbeat_at` 互相感知。**注意**：in-process 和 standalone **不能**给同一个 region 同时跑，会有心跳互相争抢。设计上**首选 in-process**（按 region 隔离干净），standalone 只是在 Next dev 频繁重启时兜底。
+**为什么没有 standalone worker**：之前 `pnpm dev` 还会拉一个独立 tsx 进程 `scripts/cluster-worker.ts`（已删），原意是"Next dev 热重载不打断长任务"。但 standalone 本来就是独立进程，Next dev 重启本来就影响不到它——这层兜底是多余的，反而引入了两个 bug：
+1. in-memory `progressStore` 跨进程不共享，导致 `currentLocation` / `currentSubject` / `currentEventType` 在 UI 上时有时无
+2. 两个 worker 会同时跑同一 task（log 里看到 `[extract] 14208` 和 `14246` 交替打印），互相争抢 LLM 池
+
+现在只剩 in-process 一个 worker，UI 状态一致，无抢活。
 
 **生命周期与 Kill 行为**
 
-- `pnpm dev` 启三件套：Next dev + System-2 (`llama-server`) + cluster-worker。Ctrl+C 后 [`scripts/dev.ts`](../scripts/dev.ts) 的 `cleanUpAndExit` 给三个子进程发 SIGTERM，**轮询 3s** 等它们真退出，到期未退的 SIGKILL 兜底——避免遗留孤儿进程。
-- cluster-worker 收到 SIGTERM / SIGINT 立即 `process.exit(0)`，**不等当前 in-flight job 跑完**。放弃的 job 在 `task_progress` 里是 `RUNNING` 状态、心跳 20s 后超时，下次访问对应 region 的 workbench 会被 `triggerClusterJobAuto` 重新认领，从上次断点（已抽取的工单 `confidence` 已落库）继续。
-- 手动杀 worker：`pkill -f scripts/cluster-worker.ts`。**不要**用 `kill <pid>` 发 SIGTERM 等它慢慢退——它会立即退，但如果它正在写 task_progress（UPDATE 提交中），可能有几十毫秒的不一致窗口，20s 心跳兜底覆盖。
+- `pnpm dev` 启两件套：Next dev + System-2 (`llama-server`)。Ctrl+C 后 [`scripts/dev.ts`](../scripts/dev.ts) 的 `cleanUpAndExit` 给两个子进程发 SIGTERM，**轮询 3s** 等它们真退出，到期未退的 SIGKILL 兜底——避免遗留孤儿进程。
+- in-process worker 跟 Next dev 同生死：next-server 一停，worker 立即终止。当前 in-flight job 在 `task_progress` 留 `RUNNING` 状态、心跳 30s 后超时，下次重启 next-server 后用户点"开始研判"会被新 worker 重新认领（已抽取工单的 `confidence` 已落库，从断点继续）。
+- 恢复路径：worker 死了不需要手动起，新一轮 trigger（用户点按钮 / 上传工单）会自动入队 + 启动新 worker。
 
 **切区时的前端契约**
 
@@ -203,7 +206,6 @@ PIPELINE_STAGE_WEIGHTS = { S1: 2, S2: 88, CLUSTER: 5, SUMMARY: 5 }
 **权重不是真理，是占位**
 
 `{ S1: 2, S2: 88, CLUSTER: 5, SUMMARY: 5 }` 是**视觉占位权重**，不代表实际耗时占比。等真实运行数据（每工序平均 / p95 / p99 耗时）跑出来后可以替换成数据驱动的权重。改这个文件不需要动其他模块——所有节点都走 `stagePercent()` 单一入口。
-- 手动杀 worker：`pkill -f scripts/cluster-worker.ts`。**不要**用 `kill <pid>` 发 SIGTERM 等它慢慢退——它会立即退，但如果它正在写 task_progress（UPDATE 提交中），可能有几十毫秒的不一致窗口，20s 心跳兜底覆盖。
 
 ---
 

@@ -55,8 +55,6 @@ export async function triggerClusterJobAuto(regionId: string): Promise<boolean> 
 
     // 4. 启动当前 Node.js 异步非阻塞协程消费并执行任务
     //    锁已经在入口处加了，runWorkerLoopForRegion 内部不再二次加锁。
-    //    若有别人（standalone cluster-worker / 另一个 in-process 进程）已经在跑，
-    //    本协程的 claimNextClusterJob 在 PENDING 被抢走后返回 null，循环自然退出。
     runWorkerLoopForRegion(regionId).catch((err) => {
       console.error(`[cluster-runner] Background job error for region ${regionId}:`, err);
     });

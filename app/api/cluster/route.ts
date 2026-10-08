@@ -27,9 +27,8 @@ export async function POST(req: NextRequest) {
     const taskId = body.taskId || body.threadId || `cluster-${Date.now()}`;
     const queued = await enqueueClusterJob(regionId, taskId, totalTickets);
     // 启 in-process worker 消费这个 PENDING。
-    // 若已有 RUNNING，enqueueClusterJob 已经创建了 PENDING 排在后面；
-    // runWorkerLoopForRegion 内部的 claimNextClusterJob 会在当前 PENDING/RUNNING 跑完后再认领。
-    // 若 standalone cluster-worker 抢先 claim，本进程的 claim 会拿到 null 自动退出。
+    // 当前 Node.js 进程内只会有一个 worker 跑这个 region（activeRegionWorkers 锁）；
+    // 若已有 RUNNING 任务，runWorkerLoopForRegion 的 claimNextClusterJob 会拿到 null 自动退出。
     triggerClusterJobAuto(regionId).catch((err) => {
       console.warn("[cluster/route] Auto cluster trigger warning:", err?.message || err);
     });

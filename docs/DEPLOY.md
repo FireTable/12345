@@ -62,12 +62,11 @@ pnpm dev
 # 浏览器访问: http://localhost:3000 (使用 admin / admin 登录)
 ```
 
-> 📦 **`pnpm dev` 一键拉起三件套**（[scripts/dev.ts](../scripts/dev.ts) 编排）：
+> 📦 **`pnpm dev` 一键拉起两件套**（[scripts/dev.ts](../scripts/dev.ts) 编排）：
 > 1. **System-2 慢思考推理**（[llama-server](https://github.com/ggerganov/llama.cpp) Metal 加速,端口 8132）— 仅当本地模型物料存在时
-> 2. **Cluster worker 队列**（[scripts/cluster-worker.ts](../scripts/cluster-worker.ts)）— per-region 异步消费 `task_progress` 表
-> 3. **Next.js dev server**（端口 3000）— Web + API 路由
+> 2. **Next.js dev server**（端口 3000）— Web + API + 内嵌 in-process 研判 worker
 >
-> Ctrl+C 退出时 SIGTERM 广播给三个子进程，3 秒内兜底 SIGKILL，不会留孤儿。若只想启动前端/API（不跑大模型、不开 worker），用 `pnpm dev:web`（云端 API 灾备模式）。
+> 研判 worker **不再**有独立 tsx 进程（已删除 `scripts/cluster-worker.ts`），直接跑在 next-server 进程内，详见 [docs/WORKFLOW.md §3.1](../docs/WORKFLOW.md)。Ctrl+C 退出时 SIGTERM 广播给两个子进程，3 秒内兜底 SIGKILL，不会留孤儿。若只想启动前端/API（不跑大模型），用 `pnpm dev:web`（云端 API 灾备模式）。
 
 ---
 
@@ -156,7 +155,7 @@ ssh root@<VPS_IP> 'cd /opt/12345-stack && \
 | **3** | Postgres 容器不断自动重启 | `.env.vps` 中缺少 `POSTGRES_PASSWORD` 导致镜像健康检查失败 | 在 `.env.vps` 显式声明 `POSTGRES_PASSWORD` |
 | **4** | 容器重启后 Caddy 报 502 Bad Gateway | Caddy 容器内部 DNS 缓存未刷新 | 容器更新后执行 `docker restart langgraph-app-caddy-1` |
 | **5** | 数据库迁移 Module not found | Next.js Standalone 打包产物不包含开发态 `tsx` | 生产环境使用 `pnpm db:import` 或 SQL dump 直灌 |
-| **6** | `Ctrl+C` 关 `pnpm dev` 后 `[extract] 1234/96019` 还在终端刷屏 | 老版 `scripts/dev.ts` 200ms 后 `process.exit`，cluster-worker 还在跑 LLM 调用就被孤儿化逃出 dev 生命周期 | `pkill -f scripts/cluster-worker.ts` 立即止血；2026-10-08 之后已修：dev.ts 改为 3s 轮询 + SIGKILL 兜底，cluster-worker 收到 SIGTERM 立即 `process.exit(0)`，放弃的 job 由 task_progress 20s 心跳超时回收 |
+| **6** | `Ctrl+C` 关 `pnpm dev` 后 `[extract] 1234/96019` 还在终端刷屏 | 老版 `scripts/dev.ts` 200ms 后 `process.exit`，worker 进程在跑 LLM 调用就被孤儿化逃出 dev 生命周期 | `pkill -f tsx` 立即止血；2026-10-08 之后已修：dev.ts 改为 3s 轮询 + SIGKILL 兜底，in-process worker 跟随 next-server 同生死，放弃的 job 由 task_progress 30s 心跳超时回收 |
 
 ---
 

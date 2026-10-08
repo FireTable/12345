@@ -12,8 +12,8 @@ import { systemTwoConcurrency } from "./model";
  *   → 总并发上限 = endpoint 数（systemTwoConcurrency 反映真实吞吐）
  *   → 一个 region 占满时其它 region 排队等，不会超载
  *
- * 进程级单例：每个 Node.js 进程一个池。in-process worker 与 standalone cluster-worker
- * 各自一个池（跨进程不共享），但每个池内部所有 region 共享。
+ * 进程级单例：每个 Node.js 进程一个池。in-process worker 独占一个池；
+ * 池内部所有 region 共享同一个并发上限。
  */
 let _llmPool: PQueue | null = null;
 

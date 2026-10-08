@@ -19,26 +19,6 @@ const SERVE_SCRIPT = path.resolve(
   "packages/civic-system-two/scripts/serve.ts"
 );
 
-function startClusterWorker() {
-  console.log("📋 [Queue] 启动研判队列进程（与 Next 分开，刷新页面不会打断任务）...");
-  const workerProc = spawn("npx", ["tsx", "scripts/cluster-worker.ts"], {
-    stdio: "inherit",
-    env: process.env,
-  });
-  childProcesses.push(workerProc);
-  workerProc.on("exit", (code, signal) => {
-    const idx = childProcesses.indexOf(workerProc);
-    if (idx >= 0) childProcesses.splice(idx, 1);
-    if (shuttingDown) return;
-    console.warn(
-      `⚠️ [Queue] 研判队列退出 (${signal || `code ${code}`})，3 秒后重新拉起。未完成的任务会接着做`
-    );
-    setTimeout(() => {
-      if (!shuttingDown) startClusterWorker();
-    }, 3000);
-  });
-}
-
 function checkPortInUse(port: number, host: string): Promise<boolean> {
   return new Promise((resolve) => {
     const socket = new net.Socket();
@@ -190,8 +170,6 @@ async function main() {
       console.log(`⚠️ [System-2] 未找到本地模型 (${MODEL_PATH})，已启用云端 API 灾备直连模式。`);
     }
   }
-
-  startClusterWorker();
 
   // 启动 Next.js 开发服务器
   console.log("🌐 [Next.js] 正在启动前端与 API 开发服务器 (端口 3000)...");
