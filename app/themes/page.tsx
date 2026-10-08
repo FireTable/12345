@@ -17,6 +17,7 @@ import {
 } from "@/app/_components/ui/select";
 import { TablePager } from "@/app/_components/civic/table-pager";
 import { useRegion } from "@/app/_components/civic/region-context";
+import { useCivicWs } from "@/app/_hooks/use-civic-ws";
 import { PageHeaderActions } from "@/app/_components/civic/page-header-actions";
 import { HANDLING_STATUS, normalizeStatusCode } from "@/lib/civic-dto";
 
@@ -77,9 +78,14 @@ export default function ThemesPage() {
   useEffect(() => {
     if (regionLoading) return;
     load();
-    window.addEventListener("civic-data-refresh", load);
-    return () => window.removeEventListener("civic-data-refresh", load);
   }, [activeRegion?.id, regionLoading]);
+
+  // WS 推送：簇生成 / 上传完成后立即重拉聚合列表
+  useCivicWs(activeRegion?.id, (msg) => {
+    if (msg.type === "civic-data-refresh" || msg.type === "pipeline-state-refresh") {
+      load();
+    }
+  });
 
   const counts = {
     all: rows.length,

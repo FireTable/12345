@@ -13,6 +13,7 @@ import { Clock, TrendingUp, Flame, Layers } from "lucide-react";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { SkMultifreq } from "@/app/_components/civic/skeletons";
 import { useRegion } from "@/app/_components/civic/region-context";
+import { useCivicWs } from "@/app/_hooks/use-civic-ws";
 import {
   Select,
   SelectContent,
@@ -99,10 +100,14 @@ function MultifreqInner() {
   useEffect(() => {
     if (regionLoading) return;
     load();
-    const onRefresh = () => load();
-    window.addEventListener("civic-data-refresh", onRefresh);
-    return () => window.removeEventListener("civic-data-refresh", onRefresh);
   }, [activeRegion?.id, regionLoading]);
+
+  // WS 推送：簇生成 / 上传后服务端推 civic-data-refresh，立即重拉聚合数据
+  useCivicWs(activeRegion?.id, (msg) => {
+    if (msg.type === "civic-data-refresh" || msg.type === "pipeline-state-refresh") {
+      load();
+    }
+  });
 
   const filtered = useMemo(() => {
     const latestStr = rows.reduce((acc, r) => {
