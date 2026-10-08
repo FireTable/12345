@@ -30,7 +30,9 @@ const DEFAULT_POSITIONS: Record<string, { x: number; y: number }> = {
   "node-triage": { x: 620, y: 60 },
   "node-entity": { x: 1160, y: 60 },
   "node-cluster": { x: 1160, y: 560 },
-  "node-dossier": { x: 620, y: 560 },
+  // 案卷归档卡片下移：triage 卡片自带饼图 + 22 个镇街，实际渲染高度约 730px，
+  // 旧 y=560 会与 triage 卡片下半段重叠。给到 860，留出 60+px 视觉缓冲。
+  "node-dossier": { x: 620, y: 860 },
 };
 
 function getSavedPositions(key: string): Record<string, { x: number; y: number }> | null {
@@ -153,7 +155,8 @@ function InnerPipelineCanvas({
 }) {
   const { fitView } = useReactFlow();
   const { activeRegion } = useRegion();
-  const storageKey = `civic_workbench_pipeline_positions_v6_${activeRegion?.id || "default"}`;
+  // v7: 案卷归档节点下移到 y=860，避免与超高的分类初筛节点下半段重叠
+  const storageKey = `civic_workbench_pipeline_positions_v7_${activeRegion?.id || "default"}`;
 
   const rawStatus = (stateData?.taskProgress?.status || "").toUpperCase();
   const isRunning = rawStatus === "RUNNING";

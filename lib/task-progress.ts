@@ -23,6 +23,8 @@ export interface ActiveClusterSpotlight {
 
 export interface TaskProgress {
   taskId: string;
+  /** 任务归属辖区。所有按辖区的进度读取（workbench、cluster/progress）都按此字段过滤。 */
+  regionId?: string;
   status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
   stage: "PARSING" | "EXTRACTING" | "CLUSTERING" | "SYNTHESIZING" | "COMPLETED";
   stageText: string;
@@ -77,6 +79,7 @@ async function persistTaskToDb(task: TaskProgress) {
         reviewCount: task.reviewCount,
         failedCount: task.failedCount,
         error: task.error || null,
+        regionId: task.regionId || null,
         updatedAt: new Date(task.updatedAt),
       })
       .onConflictDoUpdate({
@@ -93,6 +96,7 @@ async function persistTaskToDb(task: TaskProgress) {
           reviewCount: task.reviewCount,
           failedCount: task.failedCount,
           error: task.error || null,
+          regionId: task.regionId || null,
           updatedAt: new Date(task.updatedAt),
         },
       });
@@ -101,9 +105,10 @@ async function persistTaskToDb(task: TaskProgress) {
   }
 }
 
-export function initTaskProgress(taskId: string, total: number = 0): TaskProgress {
+export function initTaskProgress(taskId: string, regionId: string, total: number = 0): TaskProgress {
   const initial: TaskProgress = {
     taskId,
+    regionId,
     status: "RUNNING",
     stage: "EXTRACTING",
     stageText: "正在初始化 Agent 研判流水线...",
@@ -124,8 +129,13 @@ export function initTaskProgress(taskId: string, total: number = 0): TaskProgres
   return initial;
 }
 
+/**
+ * 写入一次进度。regionId 为任务归属辖区，必须由调用方传入，避免多辖区共享同一内存条目。
+ * 既有内存条目会继承其 regionId；patch 里若显式给 regionId，以 patch 为准。
+ */
 export function updateTaskProgress(
   taskId: string,
+  regionId: string | undefined,
   patch: Partial<TaskProgress>
 ): TaskProgress {
   const current = progressStore.get(taskId);
@@ -134,6 +144,7 @@ export function updateTaskProgress(
   if (!current) {
     updated = {
       taskId,
+      regionId: patch.regionId ?? regionId,
       status: "RUNNING",
       stage: "EXTRACTING",
       stageText: "处理中...",
@@ -151,6 +162,7 @@ export function updateTaskProgress(
     updated = {
       ...current,
       ...patch,
+      regionId: patch.regionId ?? regionId ?? current.regionId,
       updatedAt: Date.now(),
     };
   }
@@ -225,25 +237,31 @@ export async function getTaskProgress(taskId: string): Promise<TaskProgress | nu
 }
 
 /**
- * 获取系统中最近一条执行的任务（用于页面初始化或断线重连）
+ * 获取系统中最近一条执行的任务。
+ * - 传 regionId 时，只返回该辖区的最新任务；多辖区并发时 UI 不会再跳。
+ * - 不传 regionId 时，保持历史「全局最近」语义（仅作兜底）。
  */
-export async function getLatestTaskProgress(): Promise<TaskProgress | null> {
+export async function getLatestTaskProgress(regionId?: string): Promise<TaskProgress | null> {
   let newestMem: TaskProgress | null = null;
   for (const t of progressStore.values()) {
+    if (regionId && t.regionId !== regionId) continue;
     if (!newestMem || t.updatedAt > newestMem.updatedAt) newestMem = t;
   }
 
   try {
-    const rows = await db
-      .select()
-      .from(taskProgressTable)
-      .orderBy(desc(taskProgressTable.updatedAt))
-      .limit(1);
+    const baseQuery = db.select().from(taskProgressTable);
+    const rows = regionId
+      ? await baseQuery
+          .where(eq(taskProgressTable.regionId, regionId))
+          .orderBy(desc(taskProgressTable.updatedAt))
+          .limit(1)
+      : await baseQuery.orderBy(desc(taskProgressTable.updatedAt)).limit(1);
 
     if (rows && rows.length > 0) {
       const r = rows[0];
       const fromDb: TaskProgress = {
         taskId: r.taskId,
+        regionId: r.regionId || undefined,
         status: (r.status as any) || "PENDING",
         stage: (r.stage as any) || "EXTRACTING",
         stageText: r.stageText || "处理中...",
@@ -262,8 +280,14 @@ export async function getLatestTaskProgress(): Promise<TaskProgress | null> {
       if (live && live.updatedAt >= fromDb.updatedAt) return live;
       return fromDb;
     } else {
-      // 数据库中已无任务记录，说明任务队列已被清空，同步重置内存，杜绝僵尸状态
-      progressStore.clear();
+      // 该辖区（或全局）已无任务记录：清掉对应内存条目，杜绝僵尸状态
+      if (regionId) {
+        for (const [taskId, value] of progressStore.entries()) {
+          if (value.regionId === regionId) progressStore.delete(taskId);
+        }
+      } else {
+        progressStore.clear();
+      }
       return null;
     }
   } catch (err: any) {

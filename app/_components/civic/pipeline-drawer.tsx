@@ -35,7 +35,7 @@ export function PipelineDrawer() {
   }, [pipelineDrawerOpen, fetchState]);
 
   const isRunning = (pipelineData?.taskProgress?.status || "").toUpperCase() === "RUNNING";
-  const intervalSec = isRunning ? 3 : 10;
+  const intervalSec = 5;
   const [countdown, setCountdown] = useState(intervalSec);
 
   // 抽屉打开时锁住背后页面滚动，避免手机上抽屉和页面一起滑
@@ -84,8 +84,6 @@ export function PipelineDrawer() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [pipelineDrawerOpen, setPipelineDrawerOpen]);
 
-  const processed = pipelineData?.taskProgress?.processed ?? 0;
-  const total = pipelineData?.taskProgress?.total ?? (pipelineData?.metrics.totalTickets || 0);
   const unprocessed = pipelineData?.metrics.unprocessedTickets ?? 0;
   const isAllAnalyzed =
     (pipelineData?.metrics.totalTickets || 0) > 0 &&
@@ -125,28 +123,22 @@ export function PipelineDrawer() {
           </div>
 
           <div className="workbench-header__status">
-            {isRunning ? (
-              <div className="workbench-badge workbench-badge--running">
-                <span className="w-2 h-2 rounded-full bg-blue-600 animate-ping shrink-0" />
-                <span className="workbench-badge__text">
-                  研判中：第 {processed.toLocaleString()}/{total.toLocaleString()} 件 · {pipelineData?.taskProgress?.stageText || "要素提取与归类"}
-                </span>
-              </div>
-            ) : isAllAnalyzed ? (
+            {/* 研判进行中不再显示文案标签，避免与节点卡片 / 研判节点面板重复。运行中状态由 #3 节点卡里的实时进度承担。 */}
+            {isAllAnalyzed ? (
               <div className="workbench-badge workbench-badge--idle">
                 <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
                 <span className="workbench-badge__text">全部工单已完成研判 ({pipelineData?.metrics.totalTickets?.toLocaleString()} 件)</span>
               </div>
-            ) : unprocessed > 0 ? (
+            ) : !isRunning && unprocessed > 0 ? (
               <div className="workbench-badge workbench-badge--busy">
                 <AlertCircle size={13} className="text-amber-600 shrink-0" />
                 <span className="workbench-badge__text">待研判积压：{unprocessed.toLocaleString()} 件工单</span>
               </div>
-            ) : (
+            ) : !isRunning ? (
               <div className="workbench-badge workbench-badge--idle">
                 <span className="workbench-badge__text">系统就绪，暂无积压</span>
               </div>
-            )}
+            ) : null}
           </div>
 
           <div className="workbench-header__actions">

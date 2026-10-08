@@ -40,8 +40,8 @@ export async function GET(req: NextRequest) {
     const regionId = await resolveRequestRegionId(req);
     const { db: tenantDb, region } = await getRegionDb(regionId);
 
-    // 1. 获取最新任务进度
-    const taskProgress = await getLatestTaskProgress();
+    // 1. 获取当前辖区最新任务进度（多辖区并发时不再跨区泄漏）
+    const taskProgress = await getLatestTaskProgress(regionId);
 
     // 2. 统计当前辖区工单与主题指标
     const [ticketCounts] = await tenantDb

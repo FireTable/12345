@@ -53,9 +53,10 @@ export async function clusterNode(
 ): Promise<Partial<TicketRadarState>> {
   const enrichedTickets = state.enrichedTickets || [];
   const taskId = state.taskId;
+  const regionId = state.regionId;
 
   if (taskId) {
-    updateTaskProgress(taskId, {
+    updateTaskProgress(taskId, regionId, {
       stage: "CLUSTERING",
       stageText: `正在按同一事件归并工单 (输入 ${enrichedTickets.length} 条)...`,
       percent: 72,
@@ -196,7 +197,7 @@ export async function clusterNode(
 
   if (taskId) {
     const joined = validatedThemes.reduce((sum, theme) => sum + theme.ticketCount, 0);
-    updateTaskProgress(taskId, {
+    updateTaskProgress(taskId, regionId, {
       absorbedCount: joined,
       themeCount: validatedThemes.length,
       stageText: `同一事件归并完成，${validatedThemes.length} 个主题`,

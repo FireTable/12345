@@ -33,7 +33,7 @@ export function PipelineFloatingPill() {
 
   useEffect(() => {
     fetchStatus();
-    const timer = setInterval(fetchStatus, isRunning ? 3000 : 12000);
+    const timer = setInterval(fetchStatus, 5000);
     const onRefresh = () => fetchStatus();
     window.addEventListener("civic-data-refresh", onRefresh);
 

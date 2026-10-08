@@ -249,6 +249,7 @@ export async function extractNode(
 ): Promise<Partial<TicketRadarState>> {
   const rawTickets = state.rawTickets || [];
   const taskId = state.taskId;
+  const regionId = state.regionId;
   const CHUNK_SIZE = isLocalSystemTwo() ? 1 : 4;
   const extractionMap = new Map<number, ExtractedTicketItem>();
   const queue = new PQueue({ concurrency: systemTwoConcurrency() });
@@ -259,7 +260,7 @@ export async function extractNode(
   const { db: tenantDb, region } = await getRegionDb(state.regionId);
 
   if (taskId) {
-    updateTaskProgress(taskId, {
+    updateTaskProgress(taskId, regionId, {
       stage: "EXTRACTING",
       stageText: "正在探测模型是否支持工具调用...",
       total: rawTickets.length,
@@ -269,7 +270,7 @@ export async function extractNode(
   }
   const toolsOk = await modelSupportsToolCalling();
   if (taskId) {
-    updateTaskProgress(taskId, {
+    updateTaskProgress(taskId, regionId, {
       stage: "EXTRACTING",
       stageText: toolsOk
         ? `模型支持工具调用，开始抽取 (共 ${rawTickets.length} 条)...`
@@ -332,7 +333,7 @@ export async function extractNode(
     try {
       const systemOne = await SystemOneEngine.create();
       if (taskId) {
-        updateTaskProgress(taskId, {
+        updateTaskProgress(taskId, regionId, {
           stage: "EXTRACTING",
           stageText: `正在执行 System-1 快思考引擎预审 (${pendingS1Tickets.length} 条待分类工单)...`,
           total: normalizedRawTickets.length,
@@ -421,7 +422,7 @@ export async function extractNode(
   if (taskId) {
     const percent = Math.round((processedCount / Math.max(1, normalizedRawTickets.length)) * 50);
     const alertNotice = stabilityAlertCount > 0 ? `，🔴 发现 ${stabilityAlertCount} 件涉稳红线工单` : "";
-    updateTaskProgress(taskId, {
+    updateTaskProgress(taskId, regionId, {
       processed: processedCount,
       percent,
       classifiedCount,
@@ -478,7 +479,7 @@ export async function extractNode(
         const currentProcessed = Math.min(processedCount, normalizedRawTickets.length);
         const percent = Math.round((currentProcessed / Math.max(1, normalizedRawTickets.length)) * 50);
         const latestItem = Array.from(packed.items.values()).pop();
-        updateTaskProgress(taskId, {
+        updateTaskProgress(taskId, regionId, {
           processed: currentProcessed,
           percent,
           classifiedCount,
@@ -529,7 +530,7 @@ export async function extractNode(
   }
 
   if (taskId) {
-    updateTaskProgress(taskId, {
+    updateTaskProgress(taskId, regionId, {
       percent: 68,
       classifiedCount,
       activeCategories: computeActiveCategories(),
@@ -600,7 +601,7 @@ export async function extractNode(
     }));
 
   if (taskId) {
-    updateTaskProgress(taskId, {
+    updateTaskProgress(taskId, regionId, {
       percent: 68,
       stageText: `要素抽取完成，识别低置信工单 ${lowConfidenceTickets.length} 条，准备执行图谱聚类...`,
       reviewCount: lowConfidenceTickets.length,

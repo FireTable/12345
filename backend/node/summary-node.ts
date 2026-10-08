@@ -83,13 +83,14 @@ export async function summaryNode(
   const initialThemes = state.themes || [];
   const enrichedThemes = [...initialThemes];
   const taskId = state.taskId;
+  const regionId = state.regionId;
 
   const THEME_CHUNK_SIZE = 10;
 
   // 1. LLM deep synthesis for themes with 10-per-batch chunking
   if (enrichedThemes.length > 0) {
     if (taskId) {
-      updateTaskProgress(taskId, {
+      updateTaskProgress(taskId, regionId, {
         stage: "SYNTHESIZING",
         stageText: `正在为 ${enrichedThemes.length} 个主题生成各自的摘要和处置建议...`,
         percent: 78,
@@ -136,7 +137,7 @@ export async function summaryNode(
             type: "NEW_CLUSTER" as const,
           }));
 
-          updateTaskProgress(taskId, {
+          updateTaskProgress(taskId, regionId, {
             percent,
             themeCount: enrichedThemes.length,
             recentClusters: spotlightClusters,
@@ -160,7 +161,7 @@ export async function summaryNode(
       type: "NEW_CLUSTER" as const,
     }));
 
-    updateTaskProgress(taskId, {
+    updateTaskProgress(taskId, regionId, {
       stage: "SYNTHESIZING",
       status: "RUNNING",
       percent: 96,
