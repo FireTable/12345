@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo } from "react";
 import {
   ReactFlow,
   Background,
@@ -161,7 +161,6 @@ function InnerPipelineCanvas({
   const rawStatus = (stateData?.taskProgress?.status || "").toUpperCase();
   const isRunning = rawStatus === "RUNNING";
   const processed = stateData?.taskProgress?.processed ?? 0;
-  const taskTotal = stateData?.taskProgress?.total ?? (stateData?.metrics.totalTickets || 0);
 
   // 1. 各工序节点精细化状态机判定
   const initialNodes: Node[] = useMemo(() => {
@@ -385,7 +384,10 @@ function InnerPipelineCanvas({
         type: "flowing",
         animated: total > 0 && isRunning,
         data: {
-          active: total > 0,
+          // 跟其它三条边一致：active 仅在流水线真正在跑时为 true。
+          // 任务跑完后这一段已经流过去，应该走 completed 实线绿，
+          // 而不是继续以虚线/流动光点形式呈现（"进度条形态"）。
+          active: total > 0 && isRunning,
           completed: total > 0,
           label: "初筛分流",
         },
