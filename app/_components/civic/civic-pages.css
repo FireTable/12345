@@ -1366,6 +1366,48 @@
   box-shadow: none;
 }
 
+/* 注册 --p 和 --angle 为可动画的 CSS 变量 (Houdini @property)
+   不用 ::before、不旋转按钮元素，纯靠 conic-gradient 的 from 角度动画
+   就能让进度弧视觉上绕按钮旋转。 */
+@property --p {
+  syntax: "<percentage>";
+  initial-value: 0%;
+  inherits: false;
+}
+
+@property --angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+/* 研判运行中：按钮主体 #1677FF 纯蓝；
+   conic-gradient 的 from 角度动画 2.4s 一圈，视觉上进度弧在旋转；
+   未走部分 rgba(255,255,255,0.15) 半透白；
+   外圈 1px 品牌蓝 outline 跟邻居对齐；
+   --p 1.2s 缓动到新值。 */
+.pipeline-console-icon-btn.is-processing {
+  background:
+    linear-gradient(#1677FF, #1677FF) padding-box,
+    conic-gradient(
+      from var(--angle, 0deg),
+      #bae0ff 0%,
+      #bae0ff var(--p, 0%),
+      rgba(255, 255, 255, 0.15) var(--p, 0%),
+      rgba(255, 255, 255, 0.15) 100%
+    ) border-box;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  outline: 1px solid #1677FF;
+  outline-offset: 0;
+  transition: --p 1.2s linear;
+  animation: conic-rotate 2.4s linear infinite;
+}
+
+@keyframes conic-rotate {
+  to { --angle: 360deg; }
+}
+
 .navbar .navbar-icon-btn--video {
   color: #1677ff !important;
   background: #f0f7ff;

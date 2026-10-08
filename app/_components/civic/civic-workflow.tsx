@@ -4,7 +4,6 @@ import React, { createContext, useCallback, useContext, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { UploadDialog } from "@/app/_components/dashboard/upload-dialog";
-import { FloatingProgressPill } from "@/app/_components/dashboard/floating-progress-pill";
 import { LightCopilot } from "@/app/_components/copilot/light-copilot";
 import type { MultiFrequencyTheme, OverallStats } from "@/backend/state";
 import type { TaskProgress } from "@/lib/task-progress";
@@ -24,6 +23,7 @@ const emptyStats: OverallStats = {
 
 type CivicWorkflow = {
   analyzing: boolean;
+  taskProgress: TaskProgress | null;
   openUpload: () => void;
   openCopilot: () => void;
   runCluster: () => void;
@@ -218,6 +218,7 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
     <CivicWorkflowContext.Provider
       value={{
         analyzing,
+        taskProgress,
         openUpload,
         openCopilot,
         runCluster,
@@ -237,14 +238,7 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
         onDatabaseUpdated={refreshPages}
       />
 
-      {/* 后台研判任务浮动胶囊：点击唤醒侧拉控制台 */}
-      {taskProgress && (taskProgress.status === "RUNNING" || analyzing) && (
-        <FloatingProgressPill
-          progress={taskProgress}
-          isVisible={true}
-          onClickWorkbench={() => setPipelineDrawerOpen(true)}
-        />
-      )}
+      {/* 进度展示已迁移到 navbar 研判图标上的进度环；底部浮动胶囊下线 */}
       <LightCopilot
         isOpen={copilotOpen}
         onClose={() => setCopilotOpen(false)}

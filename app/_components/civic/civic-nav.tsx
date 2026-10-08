@@ -72,7 +72,7 @@ function useFittingNavCount(itemCount: number) {
 export function CivicNav() {
   const pathname = usePathname();
   const router = useRouter();
-  const { openCopilot, copilotOpen, pipelineDrawerOpen, togglePipelineDrawer, analyzing } = useCivicWorkflow();
+  const { openCopilot, copilotOpen, pipelineDrawerOpen, togglePipelineDrawer, analyzing, taskProgress } = useCivicWorkflow();
   const { activeRegion } = useRegion();
   const [menuOpen, setMenuOpen] = useState(false);
   const [videoModalOpen, setVideoModalOpen] = useState(false);
@@ -273,23 +273,32 @@ export function CivicNav() {
               </div>
 
               <div className="navbar__user">
-                {/* AI 研判流水线控制台入口 (纯图标形态 + 炫酷科技质感) */}
+                {/* AI 研判流水线控制台入口：进度直接画在按钮自身（conic-gradient 边框） */}
                 <button
                   type="button"
-                  className={`pipeline-console-icon-btn${pipelineDrawerOpen ? " is-active" : ""
-                    }`}
+                  className={`pipeline-console-icon-btn ${pipelineDrawerOpen ? " is-active" : ""} ${
+                    analyzing ? " is-processing" : ""
+                  }`}
                   onClick={togglePipelineDrawer}
                   title={
                     pipelineDrawerOpen
                       ? "收起 AI 研判流水线控制台 (再次点击关闭)"
                       : analyzing
-                        ? "AI 研判流水线运转中 · 点击展开控制台 (从顶部下拉)"
+                        ? `AI 研判流水线运转中 (${taskProgress?.percent ?? 0}%) · 点击展开控制台`
                         : "展开 AI 研判流水线控制台 (从顶部下拉)"
                   }
                   aria-label="AI 研判流水线控制台"
                   aria-expanded={pipelineDrawerOpen}
+                  style={
+                    analyzing
+                      ? ({ ["--p" as string]: `${Math.min(100, Math.max(0, taskProgress?.percent ?? 0))}%` } as React.CSSProperties)
+                      : undefined
+                  }
                 >
-                  <Workflow size={16} className="text-white" />
+                  <Workflow
+                    size={16}
+                    className="text-white relative z-10"
+                  />
                 </button>
 
                 {/* 演示视频图标按钮 */}
