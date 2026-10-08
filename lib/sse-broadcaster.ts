@@ -54,28 +54,15 @@ type SseMessage =
 declare global {
   // eslint-disable-next-line no-var
   var __sse_subscribers: Map<string, Set<SseController>> | undefined;
-  // eslint-disable-next-line no-var
-  var __sse_metrics_cache: Map<string, { at: number; data: SseMetrics }> | undefined;
 }
 
 const subscribers: Map<string, Set<SseController>> =
   globalThis.__sse_subscribers ?? new Map<string, Set<SseController>>();
 globalThis.__sse_subscribers = subscribers;
 
-// metrics 缓存：同一 region 的高频 chunk 推送（每 0.4~5s 一次）会复用同一份 metrics，
-// 避免每个 chunk 都查 DB。5s 过期足以保证实时性（DB count 变化也是秒级）。
-const METRICS_TTL_MS = 5_000;
-const metricsCache: Map<string, { at: number; data: SseMetrics }> =
-  globalThis.__sse_metrics_cache ?? new Map<string, { at: number; data: SseMetrics }>();
-globalThis.__sse_metrics_cache = metricsCache;
-
 const encoder = new TextEncoder();
 
 async function computeMetrics(regionId: string): Promise<SseMetrics | null> {
-  const cached = metricsCache.get(regionId);
-  if (cached && Date.now() - cached.at < METRICS_TTL_MS) {
-    return cached.data;
-  }
   try {
     const { db: tenantDb } = await getRegionDb(regionId);
     const [ticketCounts] = await tenantDb
@@ -93,7 +80,7 @@ async function computeMetrics(regionId: string): Promise<SseMetrics | null> {
         highRiskThemes: drizzleSql<number>`count(*) filter (where ${themesTable.riskLevel} = 'HIGH')`,
       })
       .from(themesTable);
-    const metrics: SseMetrics = {
+    return {
       totalTickets: Number(ticketCounts?.total || 0),
       analyzedTickets: Number(ticketCounts?.analyzed || 0),
       unprocessedTickets: Number(ticketCounts?.unprocessed || 0),
@@ -102,8 +89,6 @@ async function computeMetrics(regionId: string): Promise<SseMetrics | null> {
       totalThemes: Number(themeCounts?.totalThemes || 0),
       highRiskThemes: Number(themeCounts?.highRiskThemes || 0),
     };
-    metricsCache.set(regionId, { at: Date.now(), data: metrics });
-    return metrics;
   } catch {
     return null;
   }
@@ -203,8 +188,6 @@ export function broadcastDataRefresh(regionId: string): void {
   if (!set || set.size === 0) return;
   const msg: SseMessage = { type: "civic-data-refresh", regionId };
   for (const c of set) send(c, msg);
-  // metrics 缓存作废：data-refresh 通常意味着新数据写入，缓存里 analyzeCount 过期
-  metricsCache.delete(regionId);
 }
 
 /**
@@ -217,7 +200,6 @@ export function broadcastPipelineRefresh(regionId: string): void {
   if (!set || set.size === 0) return;
   const msg: SseMessage = { type: "pipeline-state-refresh", regionId };
   for (const c of set) send(c, msg);
-  metricsCache.delete(regionId);
 }
 
 /**
@@ -234,5 +216,4 @@ export function _resetSseBroadcasterForTesting(): void {
     }
   }
   subscribers.clear();
-  metricsCache.clear();
 }
