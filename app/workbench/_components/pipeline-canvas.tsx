@@ -277,19 +277,32 @@ function InnerPipelineCanvas({
 
         // 为每个研判节点分配其处理的近两条工单
         // 来源：in-memory 的 endpointRecentTickets（SystemTwoEngine 进程内按 endpoint 维护），
-        //       key 是 endpoint URL，与 clusterNodes[].host 对应。
-        // 这样节点 1 真正显示"它处理的工单"，节点 2 也是，不是 modulo 切 DB 列表。
+        //       key 是完整 URL（含 http:// 前缀和 /v1 后缀）；
+        //       clusterNodes[].host 只是 host:port（如 "127.0.0.1:8132"）。
+        //       做规范化匹配：双方都去协议前缀和 /v1 后缀再比对。
         const endpointRecentTickets = stateData?.taskProgress?.endpointRecentTickets || {};
+        const normalizeEndpoint = (s: string) =>
+          s.replace(/^https?:\/\//i, "").replace(/\/v1\/?$/, "").toLowerCase();
         const entityClusterNodes = clusterNodes.map((n) => {
-          // 用 n.host 查；endpoint 可能是带 /v1 后缀的完整 URL，构造时统一规范化
-          const matched = n.host
-            ? endpointRecentTickets[n.host] ||
-              // 兼容：若 host 没带 /v1 但 key 带，截 key 末尾 /v1 后的部分再匹配
-              Object.entries(endpointRecentTickets).find(([k]) =>
-                k.replace(/\/v1\/?$/, "") === (n.host || "").replace(/\/v1\/?$/, "")
-              )?.[1] ||
-              []
-            : [];
+          if (!n.host) {
+            return {
+              id: n.id,
+              name: n.name,
+              host: n.host,
+              isLocal: n.isLocal,
+              isOnline: n.isOnline,
+              lastDurationMs: n.lastDurationMs ?? null,
+              recentTickets: [],
+            };
+          }
+          const targetNorm = normalizeEndpoint(n.host);
+          // 1) 精确匹配；2) 规范化后匹配（兼容 http:// 前缀和 /v1 后缀）
+          const matched =
+            endpointRecentTickets[n.host] ||
+            Object.entries(endpointRecentTickets).find(
+              ([k]) => normalizeEndpoint(k) === targetNorm
+            )?.[1] ||
+            [];
           const myTickets: Array<{
             id: string;
             ticketNo?: string;
