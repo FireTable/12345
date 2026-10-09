@@ -257,7 +257,7 @@ export async function loadWorkorderStats(regionId?: string) {
   };
 }
 
-function clusterRegionLabel(towns: Set<string> | undefined, canonicalLocation: string | null | undefined): string {
+export function clusterRegionLabel(towns: Set<string> | undefined, canonicalLocation: string | null | undefined): string {
   const names = [...(towns || [])].filter((town) => town && town !== UNKNOWN_TOWN && town !== "未归属");
   names.sort((a, b) => a.localeCompare(b, "zh-CN"));
   if (names.length === 1) return names[0];

@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -61,6 +61,7 @@ type Member = {
   address?: string;
   urgency?: string;
   status?: string;
+  detailLoaded?: boolean;
 };
 
 type ClusterDetail = {
@@ -136,6 +137,17 @@ function ThemeDetailInner() {
   const [load, setLoad] = useState<DetailLoadStatus>("pending");
   const [expandedMap, setExpandedMap] = useState<Record<string, boolean>>({});
   const [extraMember, setExtraMember] = useState<Member | null>(null);
+  const [memberRows, setMemberRows] = useState<Member[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [membersDone, setMembersDone] = useState(false);
+  const [openingId, setOpeningId] = useState<string | null>(null);
+  const memberCursor = useRef<{ time: string | null; id: string } | null>(null);
+  const membersLoadingRef = useRef(false);
+  const membersDoneRef = useRef(false);
+  const membersPaused = useRef(false);
+  const memberGen = useRef(0);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const scrolledTarget = useRef(false);
 
   useEffect(() => {
     const qTarget = (searchParams.get("ticketId") || searchParams.get("highlight") || "").trim();
@@ -146,53 +158,127 @@ function ThemeDetailInner() {
     }
   }, [searchParams]);
 
+  const loadMembers = useCallback(async () => {
+    if (!params.id || isUnknownGroup(params.id)) return;
+    if (membersLoadingRef.current || membersDoneRef.current || membersPaused.current) return;
+    const gen = memberGen.current;
+    membersLoadingRef.current = true;
+    setMembersLoading(true);
+    try {
+      const q = new URLSearchParams({ limit: "30" });
+      const cursor = memberCursor.current;
+      if (cursor?.id) {
+        q.set("beforeId", cursor.id);
+        if (cursor.time) q.set("beforeTime", cursor.time);
+      }
+      const res = await fetch(`/api/clusters/${params.id}/members?${q}`);
+      const data = await res.json();
+      if (memberGen.current !== gen) return;
+      if (!data.success) throw new Error(data.error || "工单加载失败");
+      const incoming = (data.members || []) as Member[];
+      setMemberRows((prev) => {
+        const seen = new Set(prev.map((item) => item.ticketId));
+        const next = incoming.filter((item) => item.ticketId && !seen.has(item.ticketId));
+        return next.length ? [...prev, ...next] : prev;
+      });
+      memberCursor.current = data.next || null;
+      membersDoneRef.current = !data.next;
+      setMembersDone(!data.next);
+    } catch {
+      if (memberGen.current !== gen) return;
+      membersPaused.current = true;
+      toast.error("工单加载失败");
+    } finally {
+      if (memberGen.current === gen) {
+        membersLoadingRef.current = false;
+        setMembersLoading(false);
+      }
+    }
+  }, [params.id]);
+
   useEffect(() => {
     setLoad("pending");
     setRow(null);
     setExtraMember(null);
+    setMemberRows([]);
+    setExpandedMap({});
+    memberGen.current += 1;
+    memberCursor.current = null;
+    membersPaused.current = false;
+    membersLoadingRef.current = false;
+    membersDoneRef.current = isUnknownGroup(params.id);
+    setMembersDone(isUnknownGroup(params.id));
+    setMembersLoading(false);
+    scrolledTarget.current = false;
 
     const isUnknown = isUnknownGroup(params.id);
     const fetchUrl = isUnknown && targetTicketId
       ? `/api/clusters/unknown?ticketId=${encodeURIComponent(targetTicketId)}`
       : `/api/clusters/${params.id}`;
 
+    let cancelled = false;
     fetch(fetchUrl)
       .then((r) => r.json())
-      .then(async (j) => {
+      .then((j) => {
+        if (cancelled) return;
         setRow(j);
         setLoad("done");
-
-        // 若当前群组列表中未包含指定的目标工单，动态补全该工单
-        if (targetTicketId) {
-          const exists = (j.members || []).some((m: Member) => checkIsTarget(m, targetTicketId));
-          if (!exists) {
-            try {
-              const singleRes = await fetch(`/api/workorders/${encodeURIComponent(targetTicketId)}`);
-              const singleData = await singleRes.json();
-              if (singleData.success) {
-                setExtraMember({
-                  id: singleData.id,
-                  ticketId: singleData.ticketId || singleData.id,
-                  title: singleData.title,
-                  category: singleData.category,
-                  region: singleData.region,
-                  createdAt: singleData.createdAt,
-                  content: singleData.content,
-                  confidence: singleData.confidence,
-                  caller_name: singleData.caller_name,
-                  caller_phone: singleData.caller_phone,
-                  address: singleData.address,
-                });
-              }
-            } catch (e) {}
-          }
-        }
       })
       .catch(() => {
+        if (cancelled) return;
         setRow(null);
         setLoad("error");
       });
-  }, [params.id, targetTicketId]);
+    if (!isUnknown) void loadMembers();
+    return () => {
+      cancelled = true;
+    };
+  }, [params.id, targetTicketId, loadMembers]);
+
+  useEffect(() => {
+    if (!targetTicketId || isUnknownGroup(params.id)) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      const exists = memberRows.some((m) => checkIsTarget(m, targetTicketId));
+      if (exists || cancelled) return;
+      fetch(`/api/workorders/${encodeURIComponent(targetTicketId)}`)
+        .then((r) => r.json())
+        .then((singleData) => {
+          if (cancelled || !singleData.success) return;
+          setExtraMember({
+            id: singleData.id,
+            ticketId: singleData.ticketId || singleData.id,
+            title: singleData.title,
+            category: singleData.category,
+            region: singleData.region,
+            createdAt: singleData.createdAt,
+            content: singleData.content,
+            confidence: singleData.confidence,
+            caller_name: singleData.caller_name,
+            address: singleData.address,
+            detailLoaded: true,
+          });
+        })
+        .catch(() => {});
+    }, 400);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [params.id, targetTicketId, memberRows]);
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || membersDone) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) void loadMembers();
+      },
+      { rootMargin: "240px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [loadMembers, membersDone, memberRows.length]);
 
   const view = classifyDetailPayload(load, row);
   const mode = asMode(row?.mode);
@@ -200,12 +286,12 @@ function ThemeDetailInner() {
   
   // 合并群组成员工单（确保目标工单必定存在）
   const members = useMemo(() => {
-    const list = [...(row?.members || [])];
-    if (extraMember && !list.some((m) => checkIsTarget(m, extraMember.id))) {
+    const list = [...memberRows];
+    if (extraMember && !list.some((m) => checkIsTarget(m, extraMember.id) || m.ticketId === extraMember.ticketId)) {
       list.unshift(extraMember);
     }
     return list;
-  }, [row?.members, extraMember]);
+  }, [memberRows, extraMember]);
 
   const [copiedAdvice, setCopiedAdvice] = useState(false);
 
@@ -233,28 +319,49 @@ function ThemeDetailInner() {
 
   // 自动滚动并锚点居中定位到目标工单
   useEffect(() => {
-    if (targetTicketId && members.length > 0) {
-      // 默认展开目标工单
-      setExpandedMap((prev) => ({ ...prev, [targetTicketId]: true }));
-
-      const timer = setTimeout(() => {
-        const cleanId = targetTicketId.replace(/^#/, "").replace(/^ticket-/, "");
-        const el =
-          document.getElementById(`ticket-${cleanId}`) ||
-          document.getElementById(cleanId) ||
-          document.querySelector(`[data-ticket-id="${cleanId}"]`) ||
-          document.querySelector(".is-target-ticket");
-        if (el) {
-          el.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
-      }, 300);
-      return () => clearTimeout(timer);
-    }
+    if (!targetTicketId || members.length === 0 || scrolledTarget.current) return;
+    const hit = members.some((m) => checkIsTarget(m, targetTicketId));
+    if (!hit) return;
+    scrolledTarget.current = true;
+    const target = members.find((m) => checkIsTarget(m, targetTicketId));
+    if (target && !target.detailLoaded) void toggleExpand(target);
+    setExpandedMap((prev) => ({ ...prev, [targetTicketId]: true }));
+    const timer = window.setTimeout(() => {
+      const cleanId = targetTicketId.replace(/^#/, "").replace(/^ticket-/, "");
+      const el =
+        document.getElementById(`ticket-${cleanId}`) ||
+        document.getElementById(cleanId) ||
+        document.querySelector(`[data-ticket-id="${cleanId}"]`) ||
+        document.querySelector(".is-target-ticket");
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 300);
+    return () => window.clearTimeout(timer);
   }, [targetTicketId, members]);
 
-  const toggleExpand = (id: string) => {
-    setExpandedMap((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
+  async function toggleExpand(member: Member) {
+    const key = member.ticketId || member.id;
+    const opening = !(expandedMap[key] || expandedMap[member.id]);
+    setExpandedMap((prev) => ({ ...prev, [key]: opening, [member.id]: opening }));
+    if (!opening || member.detailLoaded) return;
+    setOpeningId(key);
+    try {
+      const res = await fetch(`/api/workorders/${encodeURIComponent(member.ticketId || member.id)}`);
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || "读取工单失败");
+      const patch = {
+        content: typeof data.content === "string" ? data.content : member.content,
+        caller_name: data.caller_name || member.caller_name,
+        address: data.address || member.address,
+        detailLoaded: true,
+      };
+      setMemberRows((prev) => prev.map((item) => (item.ticketId === member.ticketId ? { ...item, ...patch } : item)));
+      setExtraMember((prev) => (prev && prev.ticketId === member.ticketId ? { ...prev, ...patch } : prev));
+    } catch {
+      toast.error("读取工单全文失败");
+    } finally {
+      setOpeningId(null);
+    }
+  }
 
   function stepTime(i: number) {
     const progress = row?.status?.progress || 0;
@@ -279,7 +386,7 @@ function ThemeDetailInner() {
       `牵头承办部门: ${row.status?.owner || `${regionName}热线督办组`}`,
       `协同处置建议:\n${adviceText.join("\n")}`,
       "",
-      `==================== 关联成员工单列表 ====================`,
+      `==================== 已加载工单（${members.length} / ${row.count}） ====================`,
       ...members.map((m, idx) => `[${idx + 1}] #${m.id} | ${m.createdAt} | 诉求人: ${m.caller_name || "市民"} | 涉事地址: ${m.address || m.region || "—"}\n    标题: ${m.title}\n    正文: ${m.content || "—"}\n`),
     ];
     const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/plain;charset=utf-8" });
@@ -441,7 +548,7 @@ function ThemeDetailInner() {
                 <span>📑</span>
                 群组成员工单明细
                 <span className="text-xs text-slate-500 font-normal">
-                  (共 {row.count} 件 · 当前展示 {members.length} 件)
+                  (共 {row.count} 件 · 已加载 {members.length} 件)
                 </span>
               </div>
               <div className="text-[11px] text-slate-400 mt-0.5">
@@ -459,7 +566,26 @@ function ThemeDetailInner() {
           <div className="card__body" style={{ padding: "14px 18px" }}>
             {members.length === 0 && (
               <div className="empty-hint">
-                {cluster.ungrouped ? "请从工单中心选择要查看的工单。" : "暂无关联工单数据"}
+                {membersLoading ? (
+                  "正在加载工单…"
+                ) : cluster.ungrouped ? (
+                  "请从工单中心选择要查看的工单。"
+                ) : (row.count || 0) > 0 ? (
+                  <button
+                    type="button"
+                    className="btn btn--default"
+                    onClick={() => {
+                      membersDoneRef.current = false;
+                      membersPaused.current = false;
+                      setMembersDone(false);
+                      void loadMembers();
+                    }}
+                  >
+                    重新加载工单
+                  </button>
+                ) : (
+                  "暂无关联工单数据"
+                )}
               </div>
             )}
             
@@ -485,7 +611,7 @@ function ThemeDetailInner() {
                         }
                       : {}
                   }
-                  onClick={() => toggleExpand(m.ticketId || m.id)}
+                  onClick={() => void toggleExpand(m)}
                 >
                   {/* 目标工单浮动徽标 */}
                   {isTarget && (
@@ -564,7 +690,9 @@ function ThemeDetailInner() {
                       </span>
                     </div>
                     <div className="flex items-center gap-1 text-blue-600 font-semibold text-[11px]">
-                      {isExpanded ? (
+                      {openingId === (m.ticketId || m.id) ? (
+                        <span>正在读取全文</span>
+                      ) : isExpanded ? (
                         <>
                           收起详情 <ChevronUp className="h-3.5 w-3.5" />
                         </>
@@ -578,6 +706,23 @@ function ThemeDetailInner() {
                 </div>
               );
             })}
+            <div ref={sentinelRef} />
+            {members.length > 0 && !membersDone && (
+              <button
+                type="button"
+                className="btn btn--default w-full"
+                disabled={membersLoading}
+                onClick={() => {
+                  membersPaused.current = false;
+                  void loadMembers();
+                }}
+              >
+                {membersLoading ? "正在加载更多…" : `继续加载（已显示 ${members.length} / ${row.count}）`}
+              </button>
+            )}
+            {membersDone && members.length > 0 && members.length >= (row.count || 0) && (
+              <div className="empty-hint">已加载全部 {members.length} 件</div>
+            )}
           </div>
         </div>
 
