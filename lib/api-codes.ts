@@ -179,6 +179,7 @@ export function resolveApiError(resData: any, fallback = "操作失败，请重�
 export enum PipelineStage {
   PARSING = "PARSING",
   EXTRACTING = "EXTRACTING",
+  EMBEDDING = "EMBEDDING",
   CLUSTERING = "CLUSTERING",
   SYNTHESIZING = "SYNTHESIZING",
   COMPLETED = "COMPLETED",
@@ -188,6 +189,7 @@ export const STAGE_MESSAGES: Record<"zh" | "en", Record<PipelineStage, string>> 
   zh: {
     [PipelineStage.PARSING]: "正在解析待研判工单数据...",
     [PipelineStage.EXTRACTING]: "AI 正在提取工单微观地点、涉事主体与核心诉求要素...",
+    [PipelineStage.EMBEDDING]: "正在把对齐后的工单写入向量库...",
     [PipelineStage.CLUSTERING]: "正在执行多频特征匹配与知识图谱连通子图聚类...",
     [PipelineStage.SYNTHESIZING]: "正在生成公文级处置建议与深层成因分析...",
     [PipelineStage.COMPLETED]: "研判流水线执行完毕",
@@ -195,6 +197,7 @@ export const STAGE_MESSAGES: Record<"zh" | "en", Record<PipelineStage, string>> 
   en: {
     [PipelineStage.PARSING]: "Parsing ticket dataset...",
     [PipelineStage.EXTRACTING]: "Extracting ticket entities, micro-locations and event types...",
+    [PipelineStage.EMBEDDING]: "Writing aligned tickets into the vector store...",
     [PipelineStage.CLUSTERING]: "Building multi-frequency knowledge graph and clustering...",
     [PipelineStage.SYNTHESIZING]: "Generating official action recommendations...",
     [PipelineStage.COMPLETED]: "Analysis pipeline completed",

@@ -18,6 +18,10 @@ export type ClusterNodeData = {
   status: "idle" | "running" | "completed";
   stageText?: string;
   statusText?: string;
+  /** 工序 04 先嵌再聚类。嵌入中时用已完成/应嵌。 */
+  embedding?: boolean;
+  embedCompleted?: number;
+  embedEligible?: number;
 };
 
 export type ClusterNodeType = Node<ClusterNodeData, "cluster">;
@@ -25,6 +29,10 @@ export type ClusterNodeType = Node<ClusterNodeData, "cluster">;
 export function ClusterNode({ data }: NodeProps<ClusterNodeType>) {
   const isActive = data.status === "running";
   const isCompleted = data.status === "completed" || data.themeCount > 0;
+  const embedLabel =
+    data.embedding && typeof data.embedCompleted === "number" && typeof data.embedEligible === "number"
+      ? `嵌入中（${data.embedCompleted}/${data.embedEligible}）`
+      : null;
 
   // 聚类压缩率计算 (如 300 件工单压缩为 9 个群组)
   const compressionRatio =
@@ -40,7 +48,7 @@ export function ClusterNode({ data }: NodeProps<ClusterNodeType>) {
       iconGradient="linear-gradient(135deg, #06B6D4 0%, #0E7490 100%)"
       themeColor="#0E7490"
       status={data.status}
-      statusText={data.statusText || (isActive ? "正在聚合归类" : isCompleted ? "聚合完成" : "等待分析")}
+      statusText={embedLabel || data.statusText || (isActive ? "正在聚合归类" : isCompleted ? "聚合完成" : "等待分析")}
       hasTargetHandle={true}
       targetHandlePosition={Position.Top}
       targetHandleColor="#7C3AED"
@@ -53,7 +61,7 @@ export function ClusterNode({ data }: NodeProps<ClusterNodeType>) {
         <div>
           <div className="pipeline-metric-label flex items-center gap-1 whitespace-nowrap">
             <FolderKanban size={11} className="text-blue-600 shrink-0" />
-            聚合问题专题
+            专题数
           </div>
           <div className="pipeline-metric-value text-blue-600 mt-1 whitespace-nowrap inline-flex items-baseline">
             {data.themeCount.toLocaleString()}{" "}

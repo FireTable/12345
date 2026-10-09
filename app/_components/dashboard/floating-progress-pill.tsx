@@ -75,6 +75,8 @@ export const FloatingProgressPill: React.FC<FloatingProgressPillProps> = ({
                   ? "流水线异常"
                   : progress.stage === "SYNTHESIZING"
                   ? "主题建议生成"
+                  : progress.stage === "EMBEDDING"
+                  ? "嵌入中"
                   : progress.stage === "CLUSTERING"
                   ? "同一事件归并"
                   : "分类初筛与抽取"}

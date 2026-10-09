@@ -7,8 +7,12 @@ import {
   finishClusterJob,
   failClusterJob,
   heartbeatClusterJob,
+  ensureQueueColumns,
 } from "./cluster-queue";
 import { executeClusterJob } from "./cluster-job";
+import { isJobHeartbeatHealthy, shouldStartStage04 } from "@/backend/embed-policy";
+import { loadEmbedSnapshot } from "@/lib/ticket-embeddings";
+import { sql } from "@/db/client";
 
 // 内存互斥锁：防止同一 Next.js 实例中对同一个辖区并发重入触发多个 worker
 const activeRegionWorkers = new Set<string>();
@@ -44,9 +48,36 @@ export async function triggerClusterJobAuto(regionId: string): Promise<boolean> 
     const total = Number(counts?.total || 0);
     const unprocessed = Number(counts?.unprocessed || 0);
 
-    if (total === 0 || unprocessed === 0) {
-      activeRegionWorkers.delete(regionId); // 没有需要研判的工单，释放锁
+    if (total === 0) {
+      activeRegionWorkers.delete(regionId);
       return false;
+    }
+
+    const beat = await readEmbeddingHeartbeat(regionId);
+    if (beat.healthy && beat.stage) {
+      const blocked = shouldStartStage04({
+        tickets: [],
+        stored: [],
+        heartbeatHealthy: true,
+        healthyStage: beat.stage,
+      });
+      if (!blocked.start) {
+        activeRegionWorkers.delete(regionId);
+        return false;
+      }
+    }
+
+    // 置信度都写过时，缺嵌入或哈希过期仍然要跑工序 04。哈希都对齐才停。
+    if (unprocessed === 0) {
+      const snapshot = await loadEmbedSnapshot(regionId);
+      const decision = shouldStartStage04({
+        tickets: snapshot?.tickets ?? [],
+        stored: snapshot?.stored ?? [],
+      });
+      if (!decision.start) {
+        activeRegionWorkers.delete(regionId);
+        return false;
+      }
     }
 
     // 3. 入队（决策树见 enqueueClusterJob 注释：PENDING 复用 / RUNNING-fresh 跳过 / RUNNING-stale re-claim / 都无则新建）
@@ -80,6 +111,33 @@ export async function triggerClusterJobAuto(regionId: string): Promise<boolean> 
  * 辖区专属后台 Worker 执行循环
  * 锁由 triggerClusterJobAuto 入口持有，本函数只消费；worker 自然结束时 finally 释放。
  */
+async function readEmbeddingHeartbeat(regionId: string): Promise<{
+  healthy: boolean;
+  stage: "EMBEDDING" | "CLUSTERING" | null;
+}> {
+  try {
+    await ensureQueueColumns();
+    const rows = await sql<
+      { stage: string | null; heartbeat_at: Date | string | null; updated_at: Date | string | null }[]
+    >`
+      SELECT stage, heartbeat_at, updated_at FROM task_progress
+      WHERE region_id = ${regionId} AND status = 'RUNNING'
+      ORDER BY created_at DESC LIMIT 1
+    `;
+    const row = rows[0];
+    if (!row) return { healthy: false, stage: null };
+    const stage = row.stage === "EMBEDDING" || row.stage === "CLUSTERING" ? row.stage : null;
+    const beat = row.heartbeat_at || row.updated_at;
+    const lastBeatMs = beat ? new Date(beat).getTime() : null;
+    return {
+      stage,
+      healthy: isJobHeartbeatHealthy({ stage: row.stage, lastBeatMs, nowMs: Date.now() }),
+    };
+  } catch {
+    return { healthy: false, stage: null };
+  }
+}
+
 async function runWorkerLoopForRegion(regionId: string): Promise<void> {
   try {
     while (true) {

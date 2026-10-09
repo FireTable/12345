@@ -12,6 +12,7 @@ import { LLM_TOKENS } from "@/lib/tokens";
 import { BatchThemeEnrichmentSchema, buildBatchThemeEnrichmentPrompt } from "./prompt";
 import { familyLabel, profileTicket } from "./ticket-profile";
 import { shouldLinkIncidents } from "./same-incident-cluster";
+import { attachedMemberCount } from "./embed-policy";
 import { CADENCE, cadenceLabel, describeCadence, type ThemeCadence } from "./theme-metrics";
 import { legalTownshipName, loadPresetVocabulary, type RegionVocabulary, type TownshipInfo } from "@/lib/vocabulary";
 import { HANDLING_STATUS, normalizeStatusCode } from "@/lib/civic-dto";
@@ -58,7 +59,11 @@ export function evaluateIncrementalTicket(
     },
     townships
   );
-  if (newTicket.subdistrict) incoming.township = newTicket.subdistrict;
+  const explicitSubdistrict = (newTicket.subdistrict || "").trim();
+  const ticketTownship = explicitSubdistrict
+    ? legalTownshipName(explicitSubdistrict, options?.vocab) || explicitSubdistrict
+    : "";
+  if (ticketTownship) incoming.township = ticketTownship;
 
   for (const theme of activeThemes) {
     if (theme.status === "DISMISSED") continue;
@@ -71,12 +76,13 @@ export function evaluateIncrementalTicket(
       },
       townships
     );
-    const themeTownship = legalTownshipName(theme.canonicalLocation, options?.vocab) || "";
+    const themeTownship =
+      legalTownshipName(theme.canonicalLocation, options?.vocab) || active.township || "";
     const linked = shouldLinkIncidents(
       {
         profile: incoming,
         category: newTicket.sourceCategory || "",
-        township: newTicket.subdistrict || "",
+        township: ticketTownship,
         placeEvidence: [newTicket.canonicalLocation, newTicket.summarizeTitle, newTicket.content]
           .filter(Boolean)
           .join("\n"),
@@ -99,8 +105,10 @@ export function evaluateIncrementalTicket(
     const recurredAfterClose = normalizeStatusCode(theme.handlingStatus) === HANDLING_STATUS.RESOLVED;
 
     newTicket.clusterId = theme.id;
+    const loadedMembers = theme.tickets.length;
+    const previousCount = theme.ticketCount || 0;
     theme.tickets.push(newTicket);
-    theme.ticketCount = theme.tickets.length;
+    theme.ticketCount = attachedMemberCount(previousCount, loadedMembers);
     if (ticketTime > lastThemeEventTime) {
       theme.lastOccurrence = newTicket.createTime;
     }

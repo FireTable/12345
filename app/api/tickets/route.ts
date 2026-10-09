@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getRegionDb } from "@/db/client";
-import { ticketsTable, themesTable } from "@/db/schema";
-import { sql, inArray, eq, desc } from "drizzle-orm";
+import { ticketsTable, themesTable, ticketThemesTable } from "@/db/schema";
+import { inArray, eq, desc } from "drizzle-orm";
 import type { RawTicket } from "@/backend/state";
 import { desensitizeContent } from "@/backend/anonymizer";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
@@ -9,6 +9,8 @@ import { ingestSingleTicketPipeline } from "@/backend/agent";
 import { HANDLING_STATUS, normalizeStatusCode } from "@/lib/civic-dto";
 import { CATEGORY } from "@/lib/vocabulary";
 import { triggerClusterJobAuto } from "@/lib/cluster-runner";
+import { memberLastAt } from "@/backend/embed-policy";
+import { loadThemeMemberVectors } from "@/lib/ticket-embeddings";
 
 export async function GET(req: Request) {
   try {
@@ -151,13 +153,18 @@ export async function POST(req: Request) {
                   relatedLocations: [r.canonicalLocation],
                 }));
 
+                const themeVectors = await loadThemeMemberVectors(
+                  regionId,
+                  activeThemes.map((theme) => theme.id)
+                );
                 const { enrichedTicket, result: incResult } = await ingestSingleTicketPipeline(
                   {
                     ...singleRec,
                     createTime: singleRec.createTime instanceof Date ? singleRec.createTime.toISOString().slice(0, 19).replace("T", " ") : String(singleRec.createTime),
                   },
                   activeThemes,
-                  regionId
+                  regionId,
+                  { themeVectors }
                 );
 
                 // 1. 无条件将抽取提炼出的结构化要素持久化回工单表 (确保单条推送必定完成自动研判)
@@ -181,24 +188,26 @@ export async function POST(req: Request) {
                 // 2. 若成功吸附到已有主题，同步刷新对应专题的工单数与案卷建议
                 if (incResult.action === "ATTACHED" && incResult.matchedThemeId) {
                   await tenantDb
+                    .insert(ticketThemesTable)
+                    .values({
+                      ticketId: singleRec.id,
+                      themeId: incResult.matchedThemeId,
+                    })
+                    .onConflictDoNothing();
+                  await tenantDb
                     .update(themesTable)
                     .set({
-                      ticketCount: incResult.matchedTheme?.ticketCount || sql`${themesTable.ticketCount} + 1`,
-                      lastAt: new Date(),
+                      ticketCount: incResult.matchedTheme?.ticketCount ?? 1,
+                      lastAt: memberLastAt(singleRec.ticketNo, singleRec.createTime ?? null),
                       riskLevel: incResult.matchedTheme?.riskLevel,
                       riskReason: incResult.matchedTheme?.riskReason,
                       aiSummary: incResult.matchedTheme?.aiSummary,
                       recommendedAction: incResult.matchedTheme?.recommendedAction,
                     })
                     .where(eq(themesTable.id, incResult.matchedThemeId));
-                } else {
-                  // 3. 若为新事件未吸附到既有主题，自动唤醒流水线检查是否成团
-                  triggerClusterJobAuto(regionId).catch(() => {});
                 }
               } catch (asyncErr: any) {
                 console.warn("[tickets/route] Incremental ingestion background task warning:", asyncErr.message);
-                // 异常兜底：自动触发全局流水线进行研判
-                triggerClusterJobAuto(regionId).catch(() => {});
               }
             })().catch(() => {});
           } else if (recordsToInsert.length > 1) {

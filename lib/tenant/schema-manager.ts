@@ -53,6 +53,8 @@ export async function ensurePublicRegionsTable(sql: postgres.Sql) {
 export async function createTenantTables(sql: postgres.Sql, schemaName: string) {
   // 1. 创建独立 Schema 命名空间
   await sql.unsafe(`CREATE SCHEMA IF NOT EXISTS "${schemaName}";`);
+  // halfvec 需要数据库级扩展。镜像是带 pgvector 的 Postgres 16。这里不建 HNSW。
+  await sql.unsafe(`CREATE EXTENSION IF NOT EXISTS vector`);
 
   // 2. 在该 Schema 下执行 DDL 建表脚本
   await sql.begin(async (tx) => {
@@ -104,6 +106,17 @@ export async function createTenantTables(sql: postgres.Sql, schemaName: string) 
     await tx`CREATE INDEX IF NOT EXISTS idx_tickets_source_category ON tickets (source_category);`;
     await tx`CREATE INDEX IF NOT EXISTS idx_tickets_primary_theme_id ON tickets (primary_theme_id);`;
     await tx`CREATE INDEX IF NOT EXISTS idx_tickets_status_create_time ON tickets (status, create_time);`;
+
+    // 工单嵌入旁路表。HNSW 在回填写完之后单独建，不放在这张表的创建语句里。
+    await tx`
+      CREATE TABLE IF NOT EXISTS ticket_embeddings (
+        ticket_id VARCHAR(64) PRIMARY KEY REFERENCES tickets(id) ON DELETE CASCADE,
+        embedding halfvec(1024) NOT NULL,
+        product_hash VARCHAR(64) NOT NULL,
+        model VARCHAR(64) NOT NULL DEFAULT 'BAAI/bge-m3',
+        embedded_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
+      );
+    `;
 
     // 2.2 多频主题聚类表 themes
     await tx`

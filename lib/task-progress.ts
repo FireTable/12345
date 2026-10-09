@@ -27,7 +27,7 @@ export interface TaskProgress {
   /** 任务归属辖区。所有按辖区的进度读取（workbench、cluster/progress）都按此字段过滤。 */
   regionId?: string;
   status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
-  stage: "PARSING" | "EXTRACTING" | "CLUSTERING" | "SYNTHESIZING" | "COMPLETED";
+  stage: "PARSING" | "EXTRACTING" | "EMBEDDING" | "CLUSTERING" | "SYNTHESIZING" | "COMPLETED";
   stageText: string;
   percent: number;
   total: number;

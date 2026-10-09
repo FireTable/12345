@@ -68,6 +68,10 @@ export interface EnrichedTicket extends RawTicket {
   eventType: string;
   clusterId?: string;
   similarityScore?: number;
+  /** 对齐之后写入的库存向量。聚类只读它。 */
+  embedding?: number[];
+  /** System 2 没抽出这张工单，退回了本地兜底。 */
+  extractionFailed?: boolean;
 }
 
 export interface LowConfidenceTicketItem {

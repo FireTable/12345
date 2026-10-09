@@ -15,8 +15,9 @@ import { updateTaskProgress } from "@/lib/task-progress";
 import { stagePercent } from "@/lib/pipeline-progress";
 import { HANDLING_STATUS } from "@/lib/civic-dto";
 import { profileTicket } from "../ticket-profile";
-import { chooseThemeAnchor, clusterLinked } from "../same-incident-cluster";
-import { embedTextsWithRetry, extractionProductText } from "../embed-products";
+import { chooseThemeAnchor } from "../same-incident-cluster";
+import { clusterFromStoredNeighbors } from "../embed-neighbors";
+import { loadStoredNeighborPairs } from "@/lib/ticket-embeddings";
 
 function majority(values: Array<string | null | undefined>): string | null {
   const counts = new Map<string, number>();
@@ -73,27 +74,39 @@ export async function clusterNode(
     ticket.clusterId = undefined;
   }
 
-  const productTexts = enrichedTickets.map((ticket) => extractionProductText(ticket));
-  const vectors = await embedTextsWithRetry(productTexts);
-  if (vectors.length !== enrichedTickets.length) {
-    throw new Error(`Embedding rows ${vectors.length} != tickets ${enrichedTickets.length}`);
-  }
-
   const themes: MultiFrequencyTheme[] = [];
-  const groups = clusterLinked(enrichedTickets, (ticket, index) => ({
-    profile: profileTicket(
-      { title: ticket.title, content: ticket.content, subdistrict: ticket.subdistrict },
-      regionVocab.townships
-    ),
-    category: ticket.sourceCategory || "",
-    township:
-      ticket.subdistrict ||
-      legalTownshipName(`${ticket.canonicalLocation || ""}\n${ticket.content || ""}`, regionVocab) ||
-      "",
-    placeEvidence: [ticket.canonicalLocation, ticket.summarizeTitle, ticket.content].filter(Boolean).join("\n"),
-    subject: ticket.canonicalSubject || "",
-    vector: vectors[index] || [],
-  }));
+  let neighborPairs: Array<[number, number]> | undefined;
+  if (regionId) {
+    const storedPairs = await loadStoredNeighborPairs(regionId);
+    if (storedPairs && storedPairs.length > 0) {
+      const indexById = new Map(enrichedTickets.map((ticket, index) => [ticket.id, index]));
+      const mapped = storedPairs.flatMap(([leftId, rightId]) => {
+        const left = indexById.get(leftId);
+        const right = indexById.get(rightId);
+        if (left == null || right == null || left === right) return [];
+        return [[Math.min(left, right), Math.max(left, right)] as [number, number]];
+      });
+      if (mapped.length > 0) neighborPairs = mapped;
+    }
+  }
+  const groups = clusterFromStoredNeighbors(
+    enrichedTickets,
+    (ticket) => ({
+      profile: profileTicket(
+        { title: ticket.title, content: ticket.content, subdistrict: ticket.subdistrict },
+        regionVocab.townships
+      ),
+      category: ticket.sourceCategory || "",
+      township:
+        ticket.subdistrict ||
+        legalTownshipName(`${ticket.canonicalLocation || ""}\n${ticket.content || ""}`, regionVocab) ||
+        "",
+      placeEvidence: [ticket.canonicalLocation, ticket.summarizeTitle, ticket.content].filter(Boolean).join("\n"),
+      subject: ticket.canonicalSubject || "",
+      vector: ticket.embedding || [],
+    }),
+    neighborPairs
+  );
 
   for (const members of groups) {
     const tickets = [...members].sort(

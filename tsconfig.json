@@ -22,7 +22,8 @@
       "@/*": ["./*"],
       "@civic/anonymizer": ["./packages/civic-anonymizer/src/index.ts"],
       "@civic/system-one": ["./packages/civic-system-one/src/index.ts"],
-      "@civic/system-two": ["./packages/civic-system-two/src/index.ts"]
+      "@civic/system-two": ["./packages/civic-system-two/src/index.ts"],
+      "@civic/embed": ["./packages/civic-embed/src/index.ts"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],

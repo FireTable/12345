@@ -2,6 +2,13 @@ import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
+import {
+  EMBED_DEV_HOST,
+  EMBED_DEV_PORT,
+  embedDevAction,
+  embedEndpointsWithLocal,
+  resolveEmbedModelPath,
+} from "../packages/civic-embed/scripts/serve";
 
 const PORT = 8132;
 const HOST = "127.0.0.1";
@@ -17,6 +24,10 @@ const SERVER_BIN =
 const SERVE_SCRIPT = path.resolve(
   process.cwd(),
   "packages/civic-system-two/scripts/serve.ts"
+);
+const EMBED_SERVE_SCRIPT = path.resolve(
+  process.cwd(),
+  "packages/civic-embed/scripts/serve.ts"
 );
 
 function checkPortInUse(port: number, host: string): Promise<boolean> {
@@ -60,7 +71,7 @@ let shuttingDown = false;
 function cleanUpAndExit(code = 0) {
   if (shuttingDown) return;
   shuttingDown = true;
-  console.log("\n🛑 正在停止全栈服务 (Next.js & System-2 & Queue)...");
+  console.log("\n🛑 正在停止全栈服务 (Next.js & System-2 & Embedding)...");
   // 1) 先给所有子进程发 SIGTERM，让它们有机会自己清理
   for (const proc of childProcesses) {
     if (proc && !proc.killed && proc.pid) {
@@ -95,7 +106,7 @@ process.on("exit", () => cleanUpAndExit(0));
 
 async function main() {
   console.log("================================================================================");
-  console.log("🚀 [12345 Dev Runner] 启动全栈开发环境：Next.js + System-2 慢思考引擎");
+  console.log("🚀 [12345 Dev Runner] 启动全栈开发环境：Next.js + System-2 + Embedding");
   console.log("================================================================================\n");
 
   const portInUse = await checkPortInUse(PORT, HOST);
@@ -171,6 +182,67 @@ async function main() {
     }
   }
 
+  const embedModel = resolveEmbedModelPath();
+  const embedAction = embedDevAction({
+    portOpen: await checkPortInUse(EMBED_DEV_PORT, EMBED_DEV_HOST),
+    hasBin: fs.existsSync(SERVER_BIN),
+    hasModel: Boolean(embedModel),
+  });
+  const nextEnv = { ...process.env };
+  if (embedAction === "reuse" || embedAction === "start") {
+    const localEmbed = `http://${EMBED_DEV_HOST}:${EMBED_DEV_PORT}/v1`;
+    nextEnv.EMBEDDING_ENDPOINTS = embedEndpointsWithLocal(
+      localEmbed,
+      process.env.EMBEDDING_ENDPOINTS || process.env.EMBEDDING_BASE_URL
+    );
+  }
+  if (embedAction === "reuse") {
+    console.log(`✅ [Embedding] 检测到本地嵌入已在 ${EMBED_DEV_HOST}:${EMBED_DEV_PORT} 运行，自动复用既有服务！`);
+  } else if (embedAction === "start") {
+    console.log(`🧠 [Embedding] 正在启动 bge-m3 F16 ...`);
+    console.log(`   模型: ${path.basename(embedModel || "")}`);
+    console.log(`   端点: http://${EMBED_DEV_HOST}:${EMBED_DEV_PORT}/v1\n`);
+    const embedProc = spawn("npx", ["tsx", EMBED_SERVE_SCRIPT], {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        EMBED_PORT: String(EMBED_DEV_PORT),
+        EMBED_HOST: EMBED_DEV_HOST,
+        EMBED_MODEL_PATH: embedModel || "",
+        LLAMA_SERVER_BIN: SERVER_BIN,
+      },
+    });
+    childProcesses.push(embedProc);
+    embedProc.stdout?.on("data", (data: Buffer) => {
+      const line = data.toString();
+      if (line.includes("绑定") || line.includes("llama-server") || line.includes("model loaded")) {
+        process.stdout.write(`   [Embedding] ${line.trim()}\n`);
+      }
+    });
+    embedProc.stderr?.on("data", (data: Buffer) => {
+      const line = data.toString();
+      if (line.includes("error") || line.includes("failed")) {
+        process.stderr.write(`   [Embedding] ${line.trim()}\n`);
+      }
+    });
+    embedProc.on("exit", (code) => {
+      if (code !== 0 && code !== null) {
+        console.warn(`⚠️ [Embedding] 进程退出 (code ${code})，嵌入请求改走已配置的备用端点。`);
+      }
+    });
+    waitForPort(EMBED_DEV_PORT, EMBED_DEV_HOST, 10000).then((ready) => {
+      if (ready) {
+        console.log(`\n🎉 [Embedding] 本地嵌入就绪！(http://${EMBED_DEV_HOST}:${EMBED_DEV_PORT}/v1)\n`);
+      } else {
+        console.log(`\n⏳ [Embedding] 权重正在加载，稍后自动接管请求...\n`);
+      }
+    });
+  } else if (!embedModel) {
+    console.log(`⚠️ [Embedding] 未找到 F16 权重，继续用 EMBEDDING_BASE_URL。需要本机模型时先运行 pnpm embed:pull。`);
+  } else {
+    console.log(`⚠️ [Embedding] 未找到 llama-server (${SERVER_BIN})，继续用 EMBEDDING_BASE_URL。`);
+  }
+
   // 启动 Next.js 开发服务器
   console.log("🌐 [Next.js] 正在启动前端与 API 开发服务器 (端口 3000)...");
   const nextArgs = ["next", "dev"];
@@ -186,7 +258,7 @@ async function main() {
 
   const nextProc = spawn("npx", nextArgs, {
     stdio: "inherit",
-    env: process.env,
+    env: nextEnv,
   });
 
   childProcesses.push(nextProc);

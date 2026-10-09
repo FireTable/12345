@@ -309,9 +309,8 @@ export async function failClusterJob(taskId: string, message: string): Promise<v
  * 不能复用 updateTaskProgress 路径，因为这里直接走 SQL 不走 progressStore 内存，
  * 所以单独读 DB 拉真值再 broadcast。
  *
- * 终态（COMPLETED / FAILED）时额外推一帧 civic-data-refresh，让 themes / multifreq /
- * tickets 等派生页面立即重拉聚合数据 —— 之前是靠 window event 跨 tab 同步，
- * 现在由服务端主动推，跨 tab + 跨进程统一。
+ * task-progress 每次都推。civic-data-refresh 只在 COMPLETED 之后推，
+ * 这时主题已经写完。FAILED（含嵌入端点全挂）不刷新主题页。
  */
 async function broadcastFromQueue(taskId: string): Promise<void> {
   try {
@@ -328,7 +327,7 @@ async function broadcastFromQueue(taskId: string): Promise<void> {
     );
     // broadcastTaskProgress 现在是 async（内部查 metrics），await 等它完成
     await broadcastTaskProgress(regionId, tp);
-    if (rows[0]?.status === "COMPLETED" || rows[0]?.status === "FAILED") {
+    if (rows[0]?.status === "COMPLETED") {
       broadcastDataRefresh(regionId);
     }
   } catch {

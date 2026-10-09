@@ -92,7 +92,7 @@ export const PipelineFlowView: React.FC<PipelineFlowViewProps> = ({ progress }) 
       // 抽取阶段前期是 System 1 分类，之后才是实体抽取
       return percent < 12 ? 1 : 2;
     }
-    if (stage === "CLUSTERING") return 3;
+    if (stage === "EMBEDDING" || stage === "CLUSTERING") return 3;
     if (stage === "SYNTHESIZING") return 4;
     return 0;
   }, [stage, percent, isCompleted]);

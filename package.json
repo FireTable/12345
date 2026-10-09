@@ -4,9 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k -n web,llm -c blue,magenta \"pnpm dev:web\" \"pnpm dev:llm\"",
+    "dev": "tsx scripts/dev.ts",
     "dev:web": "next dev",
     "dev:llm": "tsx --env-file-if-exists=.env.local packages/civic-system-two/scripts/serve.ts",
+    "dev:embed": "tsx packages/civic-embed/scripts/serve.ts",
+    "embed:pull": "tsx packages/civic-embed/scripts/pull.ts",
     "dev:backend": "langgraphjs dev",
     "build": "next build",
     "start": "next start",

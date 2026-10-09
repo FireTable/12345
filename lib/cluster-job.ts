@@ -9,6 +9,8 @@ import { updateTaskProgress } from "@/lib/task-progress";
 import type { RawTicket } from "@/backend/state";
 import type { ClusterJob } from "@/lib/cluster-queue";
 import { workOrderClockFromTicketNo } from "@/lib/work-order-date";
+import { shouldStartStage04 } from "@/backend/embed-policy";
+import { loadEmbedSnapshot } from "@/lib/ticket-embeddings";
 
 /**
  * 跑完一条已经入队的研判。抽取中途写入的置信度会让下次拉起跳过已完成的工单。
@@ -27,9 +29,17 @@ export async function executeClusterJob(job: ClusterJob): Promise<number> {
     })
     .from(ticketsTable);
   const unprocessedCount = Number(unprocessedRow?.unprocessed || 0);
+  let staleEmbeddings = false;
   if (unprocessedCount === 0) {
+    const snapshot = await loadEmbedSnapshot(job.regionId);
+    staleEmbeddings = shouldStartStage04({
+      tickets: snapshot?.tickets ?? [],
+      stored: snapshot?.stored ?? [],
+    }).start;
+  }
+  if (unprocessedCount === 0 && !staleEmbeddings) {
     console.log(
-      `[cluster-job] ${job.taskId} (${job.regionId}) 跳过：当前无未处理工单，避免空跑`
+      `[cluster-job] ${job.taskId} (${job.regionId}) 跳过：当前无未处理工单，嵌入也已对齐`
     );
     updateTaskProgress(job.taskId, job.regionId, {
       stage: "COMPLETED",

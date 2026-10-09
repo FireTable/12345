@@ -5,16 +5,19 @@
  * 4 段工序的实际耗时占比（实测 + 体感）：
  *   S1       : SystemOne ONNX 快思考，毫秒级，几乎瞬时
  *   S2       : 逐张工单跑 System-2 LLM 抽取，pipeline 耗时大头
- *   CLUSTER  : 主题级 LLM 聚类，单次 LLM 调用处理全部 enrichedTickets
+ *   EMBED    : 把对齐后的抽取产物写入 pgvector，按批推进
+ *   CLUSTER  : 用库存向量做近邻，再按同一事件规则归并
  *   SUMMARY  : 主题级 LLM 处置建议，按 10 个一批分批
  *
  * 调整任何一段的 weight，下游 start/end 会自动重算。
+ * S2 仍是最大的一段。EMBED 从原来的 CLUSTER 里分出 2 个点，总和仍是 100。
  */
 
 export const PIPELINE_STAGE_WEIGHTS = {
   S1: 2,
   S2: 88,
-  CLUSTER: 5,
+  EMBED: 2,
+  CLUSTER: 3,
   SUMMARY: 5,
 } as const;
 

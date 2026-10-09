@@ -291,12 +291,27 @@ async function main() {
   });
   if (donghuPlain.action !== "STANDALONE") {
     failures.push(`东湖学府没有向量时不应并入，实际 ${donghuPlain.action}`);
+  } else {
+    console.log("PASS standalone without vectors：东湖学府没有向量时保持独立");
   }
   if (donghuEmbedded.action !== "ATTACHED") {
     failures.push(`东湖学府有向量时应并入，实际 ${donghuEmbedded.action}`);
   }
   if (donghuEmbedded.cadence !== CADENCE.SAME_DAY) {
     failures.push(`东湖学府同一天零点应记同日，实际 ${donghuEmbedded.cadence}`);
+  }
+  const donghuNoTown = evaluateIncrementalTicket(
+    { ...donghuTicket, subdistrict: "" },
+    [cloneTheme(donghuTheme)],
+    {
+      ticketVector: [1, 0],
+      themeVectors: new Map([["THEME-DONGHU", [1, 0]]]),
+    }
+  );
+  if (donghuNoTown.action !== "STANDALONE") {
+    failures.push(`东湖学府空镇街即使向量相同也不并入，实际 ${donghuNoTown.action}`);
+  } else {
+    console.log("PASS 空镇街的东湖学府即使向量相同也保持独立");
   }
 
   if (failures.length > 0) {

@@ -21,7 +21,8 @@
 
 services:
   postgres:
-    image: postgres:16-alpine
+    # Postgres 16 + pgvector。沿用名为 pgdata 的卷，不删数据；扩展在现有库里 CREATE EXTENSION。
+    image: pgvector/pgvector:pg16
     container_name: 12345-postgres
     restart: unless-stopped
     environment:

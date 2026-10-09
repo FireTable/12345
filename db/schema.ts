@@ -1,4 +1,5 @@
 import {
+  customType,
   pgTable,
   varchar,
   text,
@@ -8,6 +9,24 @@ import {
   primaryKey,
   boolean,
 } from "drizzle-orm/pg-core";
+
+/** pgvector 半精度列。1024 维是 BAAI/bge-m3 的稠密向量，不在这里截断。 */
+export const halfvec1024 = customType<{ data: number[]; driverData: string }>({
+  dataType() {
+    return "halfvec(1024)";
+  },
+  toDriver(value: number[]): string {
+    return `[${value.join(",")}]`;
+  },
+  fromDriver(value: string): number[] {
+    return String(value)
+      .replace(/^\[/, "")
+      .replace(/\]$/, "")
+      .split(",")
+      .filter((part) => part.length > 0)
+      .map(Number);
+  },
+});
 
 /**
  * 0. 区域/站点注册花名册表 (Regions Registry Table, in public schema)
@@ -91,6 +110,23 @@ export const ticketsTable = pgTable(
     index("idx_tickets_status_create_time").on(table.status, table.createTime),
   ]
 );
+
+/**
+ * 1b. 工单嵌入旁路表。一行对一张工单，不在 tickets 上加向量列。
+ * 缺行就是还没嵌。HNSW 不在建表时创建，回填写完再单独建。
+ */
+export const ticketEmbeddingsTable = pgTable("ticket_embeddings", {
+  ticketId: varchar("ticket_id", { length: 64 })
+    .primaryKey()
+    .references(() => ticketsTable.id, { onDelete: "cascade" }),
+  embedding: halfvec1024("embedding").notNull(),
+  productHash: varchar("product_hash", { length: 64 }).notNull(),
+  model: varchar("model", { length: 64 }).notNull().default("BAAI/bge-m3"),
+  embeddedAt: timestamp("embedded_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type TicketEmbeddingRecord = typeof ticketEmbeddingsTable.$inferSelect;
+export type NewTicketEmbeddingRecord = typeof ticketEmbeddingsTable.$inferInsert;
 
 /**
  * 2. 多频主题聚类表 (Themes Table)

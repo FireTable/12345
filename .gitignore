@@ -32,6 +32,10 @@ ENV/
 
 # Node / JS
 node_modules
+
+# bge-m3 F16 weights from pnpm embed:pull
+packages/civic-embed/models/*.gguf
+packages/civic-embed/models/*.partial
 node_modules/
 npm-debug.log*
 yarn-debug.log*

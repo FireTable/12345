@@ -211,8 +211,8 @@ function InnerPipelineCanvas({
     const triageStatusText = total > 0 ? "初筛分流完成" : "等待处理";
 
     // 03 工序 (地点与主体提取): 正在处理时 active running，完成后 completed
-    const isEntityRunning = isRunning && (stage === "EXTRACTING" || targetProcessed < total);
-    const isEntityCompleted = (total > 0 && analyzed >= total) || stage === "CLUSTERING" || stage === "SUMMARIZING" || stage === "COMPLETED" || isCompleted;
+    const isEntityRunning = isRunning && stage === "EXTRACTING" && targetProcessed < total;
+    const isEntityCompleted = (total > 0 && analyzed >= total) || stage === "EMBEDDING" || stage === "CLUSTERING" || stage === "SUMMARIZING" || stage === "COMPLETED" || isCompleted;
     const entityStatus = isEntityRunning ? "running" : isEntityCompleted ? "completed" : "idle";
     const entityStatusText = isEntityRunning
       ? `提取中 (${targetProcessed.toLocaleString()}/${total.toLocaleString()})`
@@ -220,15 +220,20 @@ function InnerPipelineCanvas({
         ? `提取完成 (${total.toLocaleString()}件)`
         : "等待处理";
 
-    // 04 工序 (同类问题聚合分析)
-    const isClusterRunning = isRunning && (stage === "CLUSTERING" || (stage === "EXTRACTING" && targetProcessed >= total && total > 0));
+    // 04 工序 (同类问题聚合分析)：先嵌入，再聚合。专题数和归集率留在聚类这一步。
+    const isEmbedding = isRunning && stage === "EMBEDDING";
+    const embedCompleted = stateData?.taskProgress?.processed ?? 0;
+    const embedEligible = stateData?.taskProgress?.total ?? 0;
+    const isClusterRunning = isRunning && stage === "CLUSTERING";
     const isClusterCompleted = isCompleted || (themeCount > 0 && (stage === "SUMMARIZING" || stage === "COMPLETED" || !isRunning));
-    const clusterStatus = isClusterRunning ? "running" : isClusterCompleted ? "completed" : "idle";
-    const clusterStatusText = isClusterRunning
-      ? "正在聚合归类"
-      : isClusterCompleted
-        ? `聚合完成 (${themeCount.toLocaleString()}组)`
-        : "等待分析";
+    const clusterStatus = isEmbedding || isClusterRunning ? "running" : isClusterCompleted ? "completed" : "idle";
+    const clusterStatusText = isEmbedding
+      ? `嵌入中（${embedCompleted}/${embedEligible}）`
+      : isClusterRunning
+        ? "正在聚合归类"
+        : isClusterCompleted
+          ? `聚合完成 (${themeCount.toLocaleString()}组)`
+          : "等待分析";
 
     // 05 工序 (处置建议与案卷归档)
     const isDossierRunning = isRunning && stage === "SUMMARIZING";
@@ -380,6 +385,9 @@ function InnerPipelineCanvas({
           })),
           status: clusterStatus,
           statusText: clusterStatusText,
+          embedding: isEmbedding,
+          embedCompleted,
+          embedEligible,
         } as ClusterNodeData,
       },
       {
@@ -407,9 +415,10 @@ function InnerPipelineCanvas({
     // 同上，第二个 useMemo 里也改成单一全局 analyzed 作 source of truth
     const targetProcessed = analyzed;
 
-    const isEntityRunning = isRunning && (stage === "EXTRACTING" || targetProcessed < total);
-    const isEntityCompleted = (total > 0 && analyzed >= total) || stage === "CLUSTERING" || stage === "SUMMARIZING" || stage === "COMPLETED" || isCompleted;
-    const isClusterRunning = isRunning && (stage === "CLUSTERING" || (stage === "EXTRACTING" && targetProcessed >= total && total > 0));
+    const isEntityRunning = isRunning && stage === "EXTRACTING" && targetProcessed < total;
+    const isEntityCompleted = (total > 0 && analyzed >= total) || stage === "EMBEDDING" || stage === "CLUSTERING" || stage === "SUMMARIZING" || stage === "COMPLETED" || isCompleted;
+    const isEmbedding = isRunning && stage === "EMBEDDING";
+    const isClusterRunning = isRunning && (stage === "CLUSTERING" || isEmbedding);
     const isClusterCompleted = isCompleted || (themeCount > 0 && (stage === "SUMMARIZING" || stage === "COMPLETED" || !isRunning));
     const isDossierRunning = isRunning && stage === "SUMMARIZING";
     const isDossierCompleted = isCompleted || (themeCount > 0 && !isRunning);

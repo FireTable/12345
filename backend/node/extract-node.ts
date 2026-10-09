@@ -608,8 +608,10 @@ export async function extractNode(
       canonicalizeTownship(ticket.subdistrict, regionVocab);
     const subdistrict = validTownship || undefined;
 
+    const extractionFailed = !hasStoredExtraction(ticket) && !llmTicketIndexes.has(index);
     return {
       ...ticket,
+      extractionFailed,
       district: area.district || ticket.district || undefined,
       subdistrict,
       sourceCategory: category || undefined,
