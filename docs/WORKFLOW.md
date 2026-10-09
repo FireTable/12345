@@ -251,6 +251,16 @@ npx tsx tests/test-same-incident-cluster.ts
 npx tsx tests/test-incident-profile.ts
 ```
 
+副驾驶协议、MCP 和一次大屏读取：
+
+```bash
+npx tsx tests/test-copilot-protocol.ts
+npx tsx tests/test-mcp.ts
+npx tsx tests/test-cockpit-read.ts
+```
+
+`tests/test-mcp.ts` 会向 `region_fs_shunde` 写入一条工单，跑完不删。
+
 `scripts/prove-sample-300.ts` 会读取本机表格并改写 `region_fs_shunde`，只在需要重跑样本时手动执行。
 
 ---
@@ -282,3 +292,32 @@ React Flow 自带的 `animated` prop 也跟 `active` 同源，但**只控制 Rea
 2026-10-08 的 bug：第一条边 `active: total > 0`，只要辖区有工单就恒真。任务跑完后这条边一直虚线 + 流动光点。修复：跟其他三条边一致，`active: total > 0 && isRunning`，让"在跑"才进 active 态。教训：**所有 `data.active` 条件必须包含 `isRunning`，否则任务 COMPLETED 之后这条边永远不会"安静"**。
 
 颜色：实线绿 `#22C55E`、虚线蓝 `#3B82F6`、未启动灰 `#CBD5E1`，线宽 1.8 / 2.5 / 1.8，过渡 0.4s。改这套配色只动 `flowing-edge.tsx`，调用方不用关心。
+
+---
+
+## 七、副驾驶、大屏和对外 MCP
+
+### 1. 副驾驶
+
+[`backend/agent/copilot-agent.ts`](../backend/agent/copilot-agent.ts) 是另一张 LangGraph：`decide → tools → decide`。不要把这些聊天工具接到研判流水线 `backend/agent.ts` 上。
+
+模型用本地 System 2（默认 `http://127.0.0.1:8132/v1` 的 27B），思考关掉。27B 没有稳定的原生 tool call，所以走 [`lib/copilot-protocol.ts`](../lib/copilot-protocol.ts) 的 JSON 协议。工具在 [`backend/agent/copilot-tools.ts`](../backend/agent/copilot-tools.ts)，全部绑定这次请求的 region：
+
+| 工具 | 做什么 |
+| :--- | :--- |
+| `search_tickets` | 一句查询嵌一次 BAAI/bge-m3，在本区 `ticket_embeddings` 上做余弦。不按镇街或分类先筛掉 |
+| `search_themes` | 按关键词和风险等级查主题 |
+| `get_ticket` | 按工单号读一张 |
+| `get_theme` | 按主题 id 读一个主题和最多 5 张成员工单 |
+| `region_overview` | 本区工单数、主题数、高风险主题数、已嵌入数 |
+| `list_townships` | 本区镇街计数，最多 12 条 |
+
+`/api/copilot` 要登录。开场白写当前城市和站点名，不报工单总数。进入对话时不预读主题列表。
+
+### 2. 大屏
+
+进入大屏是一次 `GET /api/cockpit`，由 [`lib/cockpit-read.ts`](../lib/cockpit-read.ts) 并行读总览、30 天趋势、最近 30 条工单和主题摘要。最近工单只取正文前 80 字，不带电话。时间排序走已有的 `idx_tickets_create_time`。这一读不探活 System 2，也不把主题表整表拉进页面。
+
+### 3. MCP
+
+外部 Agent 的对接步骤在 [`docs/MCP.md`](MCP.md)。`push_ticket` 只入库一条，不调用单条 LLM 接入，也不入队全市重新聚类。总览工具和上面的站点总览用同一套 `loadOverview`。

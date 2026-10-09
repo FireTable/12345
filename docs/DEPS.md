@@ -99,7 +99,7 @@ app/
     │   ├── data-table.tsx                     # TanStack 驱动的高性能虚拟表格
     │   └── ticket-detail-sheet.tsx            # 工单穿透下钻抽屉（展示 AI 要素、置信度与公文建议）
     ├── copilot/                               # AI 研判副驾驶
-    │   └── light-copilot.tsx                  # 浮动式自然语言问数与协同处置 Copilot 抽屉
+    │   └── light-copilot.tsx                  # 浮动抽屉。请求 /api/copilot，工具在 backend/agent/
     └── graph/                                 # 知识图谱网络
         └── graph-visualizer.tsx               # 实体拓扑关系力导向图
 
@@ -108,7 +108,26 @@ app/workbench/                               # 不是独立页面。/workbench �
 └── _components/
     ├── pipeline-canvas.tsx                   # 受控 React Flow。同步时保留 measured 与拖拽位置
     └── nodes/entity-node.tsx                 # 算力节点卡片。离线显示「无法连接」，不显示耗时
+
+backend/agent/
+├── copilot-agent.ts                           # 副驾驶 LangGraph：decide → tools → decide
+└── copilot-tools.ts                           # 绑定当前 region 的六个工具
+
+lib/
+├── copilot-protocol.ts                        # 27B 的 JSON 工具协议
+├── cockpit-read.ts                            # GET /api/cockpit 一次聚合
+└── mcp/                                       # 发现、access key、list_regions / push_ticket / region_overview
+    ├── discovery.ts
+    ├── clients.ts
+    ├── tools.ts
+    └── http.ts
+
+app/api/mcp/                                   # POST /api/mcp、/token、/grant、两份 well-known
+app/mcp/authorize/                             # 已登录的人批准接入
+app/admin/regions/                             # 站点管理中心。列出并吊销 MCP 客户端
 ```
+
+副驾驶、大屏读取和 MCP 的行为见 [`WORKFLOW.md`](WORKFLOW.md) 第七节。Agent 对接见 [`MCP.md`](MCP.md)。
 
 ---
 

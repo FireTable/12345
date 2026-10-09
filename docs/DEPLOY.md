@@ -51,7 +51,8 @@ pnpm install
 
 # 2. 配置本地环境变量
 cp .env.example .env.local
-# 编辑 .env.local 填入本地 DATABASE_URL、API Key 与 BETTER_AUTH_SECRET
+# 编辑 .env.local：DATABASE_URL、BETTER_AUTH_SECRET。
+# 抽取和副驾驶走本地 8132 的 System 2。OPENAI_* 只在本地探活失败时作云端回退，也给 AI 拓荒用。
 
 # 3. 一键初始化数据库结构、多租户站点与系统管理员
 pnpm db:init        # 一键执行表迁移、顺德/天河双站点、高精行政边界、全套数据字典与管理员账号
@@ -67,6 +68,8 @@ pnpm dev
 > 2. **Next.js dev server**（端口 3000）— Web + API + 内嵌 in-process 研判 worker
 >
 > 研判 worker **不再**有独立 tsx 进程（已删除 `scripts/cluster-worker.ts`），直接跑在 next-server 进程内，详见 [docs/WORKFLOW.md §3.1](../docs/WORKFLOW.md)。**启动时自动 bootstrap**（[instrumentation.ts](../instrumentation.ts)）：next-server 一启动就会扫描所有 region，对有未处理工单的 region 自动入队 + 启 in-process worker，不需要手动点按钮。Ctrl+C 退出时 SIGTERM 广播给两个子进程，3 秒内兜底 SIGKILL，不会留孤儿。若只想启动前端/API（不跑大模型），用 `pnpm dev:web`（云端 API 灾备模式）。
+
+MCP 和页面在同一个 origin。未带 key 的 `POST /api/mcp` 返回 401，`WWW-Authenticate` 指向 `/.well-known/oauth-protected-resource`。Agent 的对接步骤见 [docs/MCP.md](MCP.md)。`mcp_clients` 在第一次签发时自动建表，不需要单独跑迁移。
 
 ---
 
@@ -88,10 +91,15 @@ ADMIN_EMAIL=firetable@foxmail.com
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=<生成高强度密码: openssl rand -hex 12>
 
-# ---------- 大模型接口配置 (支持 DeepSeek / 本地 vLLM) ----------
+# ---------- 本地 System 2。不写则默认 http://127.0.0.1:8132/v1 ----------
+# SYSTEM_TWO_ENDPOINTS=http://127.0.0.1:8132/v1
+
+# ---------- 云端回退与 AI 拓荒 ----------
+# 本地节点探活失败且写了 Key 时，getSystemTwoEngine 才用下面三行。
+# 向量没单独写 EMBEDDING_API_KEY 时也会读 OPENAI_API_KEY。
 OPENAI_API_KEY=sk-***
-OPENAI_BASE_URL=https://api.deepseek.com
-OPENAI_MODEL=deepseek-v4-flash
+OPENAI_BASE_URL=https://api.edgefn.net/v1
+OPENAI_MODEL=DeepSeek-V4-Flash-0731
 
 # ---------- 向量 Embedding (BGE-M3) ----------
 EMBEDDING_API_KEY=sk-***
@@ -169,6 +177,10 @@ ssh root@VPS 'docker logs -f 12345-app'
 for p in / /tickets /themes /multifreq /dict; do
   curl -kfsS -o /dev/null -w "%{http_code} $p\n" --max-time 15 "https://<your-domain>$p"
 done
+
+# 2b. MCP 发现文档应是 200 JSON；未带 key 的调用应是 401
+curl -fsS "https://<your-domain>/.well-known/oauth-protected-resource"
+curl -sS -o /dev/null -w "%{http_code}\n" -X POST "https://<your-domain>/api/mcp"
 
 # 3. 检查数据库实时工单及主题行数
 ssh root@VPS 'docker exec 12345-postgres psql -U postgres -d ticket_radar -c "

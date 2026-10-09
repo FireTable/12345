@@ -56,7 +56,13 @@
 
 9. **🎨 统一定制 Civic Light 政务级设计体系**
    - 全站五大核心模块（**数据总览**、**多频工单**、**工单透势**、**工单中心**、**标准字典**）统一遵循 Civic Light 设计语言；
-   - 包含多辖区 SVG 态势地图、紧急×重要四象限透势图，悬浮 **AI 研判副驾驶 (Copilot)** 支持实时问数。
+   - 包含多辖区 SVG 态势地图、紧急×重要四象限透势图。大屏进入时一次读取 `GET /api/cockpit`。
+   - 悬浮 **AI 研判副驾驶 (Copilot)** 绑定当前站点，走本地 27B，用工具检索工单、主题和总览。
+
+10. **🔌 对外 MCP**
+   - Agent 只配置站点 origin。Streamable HTTP 在 `POST /api/mcp`，协议 `2025-03-26`。
+   - 人先登录并在 `/mcp/authorize` 同意，Agent 拿到 `civic_` access key 后才能查地区、写入一条工单、读取该地区数据总览。站点管理中心可以吊销。
+   - 对接步骤见 [`docs/MCP.md`](docs/MCP.md)。
 
 ---
 
@@ -81,10 +87,11 @@
 
 | 文档名称 | 路径 | 核心内容说明 |
 | :--- | :--- | :--- |
-| 📐 **现行工作流** | [`docs/WORKFLOW.md`](docs/WORKFLOW.md) | **现在怎么跑**。每条工单过 System 1 和 System 2，抽取产物做向量，同一件事或同一地点才成主题。 |
+| 📐 **现行工作流** | [`docs/WORKFLOW.md`](docs/WORKFLOW.md) | **现在怎么跑**。每条工单过 System 1 和 System 2，抽取产物做向量，同一件事或同一地点才成主题。副驾驶和 MCP 的入口也在这里。 |
+| 🔌 **MCP 对接** | [`docs/MCP.md`](docs/MCP.md) | **Agent 必读**。只配站点 origin。发现、授权码、三个工具、吊销。 |
 | 📜 **早期设计稿** | [`.gemini/v2-workflow.md`](.gemini/v2-workflow.md) | 重构初期的设计记录。里面的咨询直通、72 小时并单、主题建议开思考，都已经不用了。 |
 | 📜 **V1 历史工作流存档** | [`.gemini/v1-workflow.md`](.gemini/v1-workflow.md) | main 分支最初的 LangGraph 工作流。 |
-| 🗄️ **数据库设计与字典规范** | [`docs/DBS.md`](docs/DBS.md) | **数据必读**。7 大核心数据表 ER 拓扑关系、Drizzle ORM Schema 定义与全量字段字典。 |
+| 🗄️ **数据库设计与字典规范** | [`docs/DBS.md`](docs/DBS.md) | **数据必读**。辖区业务表、Better Auth，以及运行时创建的 `mcp_clients` / `mcp_auth_codes`。 |
 | 🚀 **系统部署与运维手册** | [`docs/DEPLOY.md`](docs/DEPLOY.md) | **运维必读**。本地开发启动、VPS 云端 Docker 部署与信创纯离线 Metal / vLLM 私有化配置。 |
 | 📦 **依赖清单与组件架构** | [`docs/DEPS.md`](docs/DEPS.md) | **全栈依赖**。涵盖 Monorepo Packages 独立包、生产依赖与前端业务组件映射表。 |
 | 📈 **架构演进与优化备忘** | [`docs/IMPROVE.md`](docs/IMPROVE.md) | **迭代日志**。V1 到 V2 双引擎重构、算法演进历史与 Civic UI 落地记录。 |
@@ -98,8 +105,11 @@
 .
 ├── app/                              # Next.js App Router 前端与 API 服务
 │   ├── _components/                  # 业务与 UI 组件 (Civic Light 体系)
-│   ├── api/                          # RESTful API 端点 (双模态: cluster 批研判, tickets 单工单流式接入)
+│   ├── api/                          # RESTful API 端点 (cluster 批研判, tickets 单工单, MCP, 大屏)
+│   │   ├── mcp/                      # Streamable HTTP、令牌交换、OAuth 发现文档
+│   │   ├── cockpit/                  # 大屏一次读取 GET /api/cockpit
 │   │   └── workbench/pipeline-state/ # 流水线工厂状态。任务状态大写；离线节点不报耗时
+│   ├── mcp/                          # 人工授权页 /mcp/authorize
 │   ├── dict/                         # 标准字典与别名知识库页面 (/dict)
 │   ├── multifreq/                    # 工单透势全景研判页面 (/multifreq)
 │   ├── themes/                       # 多频工单看板页面 (/themes)
@@ -107,6 +117,8 @@
 │   └── workbench/                    # 研判画布组件，不是独立路由。入口是顶部抽屉 PipelineDrawer
 ├── backend/                          # 核心业务后端与认知中枢
 │   ├── agent.ts                      # LangGraph 流水线。顺序是抽取、对齐、聚类、主题建议
+│   ├── agent/copilot-agent.ts        # 副驾驶图：decide → tools → decide。模型是本地 27B
+│   ├── agent/copilot-tools.ts        # 绑定当前 region：工单向量、主题、总览、镇街
 │   ├── incremental-cluster.ts        # 新来的单张工单并入已有主题。同一件事才并，不按相隔多久拆开
 │   ├── same-incident-cluster.ts      # 同一件事或同一个具体地点的判定。向量由调用方算好传进来
 │   ├── embed-products.ts             # 把抽取产物做成向量。429 会等待后重试
@@ -122,11 +134,17 @@
 │   ├── civic-system-two/             # System-2 慢思考通用认知引擎 (OpenAI 协议 / Metal 调优 / CoT 剥离)
 │   └── civic-anonymizer/             # 全要素可逆隐私脱敏引擎 (出站加密 / 入库无损还原)
 ├── lib/                              # 公共服务库 (tokens.ts 集中预算管理, vocabulary.ts 动态词典)
+│   ├── mcp/                          # MCP 发现、access key、三个工具
+│   ├── cockpit-read.ts               # 大屏聚合。最近 30 条，正文只取前 80 字
+│   └── copilot-protocol.ts           # 副驾驶 JSON 工具协议
 ├── scripts/                          # 迁移、种子、开发启动、样本重跑
-├── tests/                            # 不改库的规则核对
+├── tests/                            # 规则核对。test-mcp 会向顺德写一条工单，其余这几支不改库
 │   ├── test-work-order-date.ts       # 编号日期：正文里的另一个日期不能替换编号
 │   ├── test-same-incident-cluster.ts # 东湖学府并在一起，不同地点的烟花和欠薪不并
-│   └── test-incident-profile.ts      # 同一条路上的两家欠薪、相邻门牌不并
+│   ├── test-incident-profile.ts      # 同一条路上的两家欠薪、相邻门牌不并
+│   ├── test-mcp.ts                   # MCP 发现、授权和三个工具。会向顺德写入一条工单
+│   ├── test-cockpit-read.ts          # 大屏一次读取比五次来回快，最近工单走时间索引
+│   └── test-copilot-protocol.ts      # 副驾驶工具协议，不改库
 └── docs/                             # 系统权威技术规范与架构文档
 ```
 
@@ -162,10 +180,15 @@ pnpm install
 # PostgreSQL Database Connection URL (Drizzle ORM)
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ticket_radar
 
-# OpenAI-compatible Chat LLM
+# 抽取、主题建议、副驾驶优先走本地 System 2（默认 http://127.0.0.1:8132/v1）。
+# 不写 SYSTEM_TWO_ENDPOINTS 就用这个默认。多节点再用逗号分隔。
+# SYSTEM_TWO_ENDPOINTS=http://127.0.0.1:8132/v1
+
+# 云端回退，以及 AI 拓荒。本地 System 2 探活失败且写了 Key，getSystemTwoEngine 才走这里。
+# 向量客户端没写 EMBEDDING_API_KEY 时也会读 OPENAI_API_KEY。主模型仍是本地 27B 和 BAAI/bge-m3。
 OPENAI_API_KEY=your_api_key_here
-OPENAI_BASE_URL=https://www.78code.cc/v1
-OPENAI_MODEL=gpt-5.6-terra
+OPENAI_BASE_URL=https://api.edgefn.net/v1
+OPENAI_MODEL=DeepSeek-V4-Flash-0731
 
 # Better Auth 生产级认证配置
 BETTER_AUTH_SECRET=your_32_character_random_secret_here
@@ -193,7 +216,12 @@ pnpm db:init-admin
 npx tsx tests/test-work-order-date.ts
 npx tsx tests/test-same-incident-cluster.ts
 npx tsx tests/test-incident-profile.ts
+npx tsx tests/test-copilot-protocol.ts
+npx tsx tests/test-mcp.ts
+npx tsx tests/test-cockpit-read.ts
 ```
+
+`tests/test-mcp.ts` 会向顺德写入一条工单，跑完不删。对接步骤见 [`docs/MCP.md`](docs/MCP.md)。
 
 ### 5. 启动本地全栈开发服务 (Next.js + System-2 本地慢思考引擎 + 研判队列)
 ```bash
@@ -232,7 +260,8 @@ pnpm dev
 ## 📚 核心技术文档体系 (Architecture & Docs)
 
 - **[Spatial & Geo-Location Architecture](docs/SPATIAL.md)**：Fourth-level subdistrict polygon mesh, CGCS2000 zero-drift coordinates, Tianditu WMTS caching, and spatial-semantic clustering.
+- **[MCP for agents](docs/MCP.md)**：站点 origin、发现文档、授权码、`list_regions` / `push_ticket` / `region_overview`。
 - **[AI Workflow & LangGraph Pipeline](docs/WORKFLOW.md)**：System-1 ONNX fast extraction, System-2 Bonsai 27B deep entity resolution, and incident clustering rules.
 - **[Deployment & Ops Guide](docs/DEPLOY.md)**：Local dev, VPS Docker Compose orchestration, and isolated air-gapped government cloud setup.
-- **[Multi-Tenant Database Architecture](docs/DBS.md)**：PostgreSQL schema physical isolation, Better Auth tenant routing, and migrations.
+- **[Multi-Tenant Database Architecture](docs/DBS.md)**：PostgreSQL schema isolation, Better Auth, and the runtime MCP tables.
 

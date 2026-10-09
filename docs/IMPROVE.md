@@ -4,6 +4,13 @@ Work branch: `feat/civic-ui-landing`
 Reference: `design-assets/frontend/`  
 Rule: pages read persisted or aggregated data. No `Math.random` trends, no `log10(count)` fake confidence, no hardcoded 北滘 +186% insight as live copy.
 
+## 2026-10-10 — MCP 接入、大屏一次读取、副驾驶工具图
+
+- 外部 Agent 只配站点 origin。`POST /api/mcp` 是 MCP Streamable HTTP，协议 `2025-03-26`。未授权返回 401，并带 RFC 9728 的 `WWW-Authenticate`。人用 Better Auth 登录后在 `/mcp/authorize` 同意，换到 `civic_` access key。三个工具：`list_regions`、`push_ticket`（一条，只入库）、`region_overview`（与站点总览同一套汇总）。吊销在站点管理中心。步骤见 [`MCP.md`](MCP.md)。`public.mcp_clients` 与 `public.mcp_auth_codes` 在第一次调用时建表。
+- 大屏改为一次 `GET /api/cockpit`。最近 30 条只带正文前 80 字。这一读不探活 System 2。最近工单已走 `idx_tickets_create_time`，没有再加索引。
+- 副驾驶改为 LangGraph `decide → tools → decide`，模型是本地 27B，工具按当前 region 检索。进入对话时不预读主题。
+- `OPENAI_API_KEY` 仍会读：本地 System 2 探活失败时的云端回退、AI 拓荒，以及没写 `EMBEDDING_API_KEY` 时的向量 Key。抽取、主题建议和副驾驶的主路径是 8132 上的 27B，向量是 BAAI/bge-m3。
+
 ## 2026-10-07 — 流水线工厂抽屉与抽取空字段
 
 - AI 研判流水线工厂是顶部 `PipelineDrawer`，`/workbench` 页面已删除。窄屏和宽屏用同一块 React Flow 画布，只让抽屉标题换行，不再另做手机步骤列表。

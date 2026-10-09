@@ -10,7 +10,7 @@
 ## 目录
 1. [数据表关系拓扑 (ER Diagram)](#一数据表关系拓扑-er-diagram)
 2. [多城市独立 Schema 物理隔离体系](#二多城市独立-schema-物理隔离体系)
-3. [8 大核心数据表详细字典](#三8-大核心数据表详细字典)
+3. [核心数据表详细字典](#三核心数据表详细字典)
    - [0. 区域/站点注册花名册表 (regions - public schema)](#0-区域站点注册花名册表-regions---public-schema)
    - [1. 工单主表 (tickets)](#1-工单主表-tickets-ticketstable)
    - [2. 多频主题聚类表 (themes)](#2-多频主题聚类表-themes-themestable)
@@ -19,6 +19,8 @@
    - [5. 官方标准政务词汇表 (vocabularies)](#5-官方标准政务词汇表-vocabularies-vocabulariestable)
    - [6. 别名与实体对齐知识库 (aliases)](#6-别名与实体对齐知识库-aliases-aliasestable)
    - [7. 任务进度持久化表 (task_progress)](#7-任务进度持久化表-task_progress-taskprogresstable)
+   - [8. 用户与认证体系表 (Better Auth)](#8-用户与认证体系表-better-auth-security-schema)
+   - [9. MCP 接入表 (public)](#9-mcp-接入表-mcp_clients--mcp_auth_codes)
 4. [数据库脚本与运维常用命令](#四数据库脚本与运维常用命令)
 
 ---
@@ -173,6 +175,7 @@ PostgreSQL 实例 (ticket_radar)
 ├── public (公共元数据空间)
 │   ├── regions (区域/站点注册花名册表)
 │   ├── user / session / account (Better Auth 全局认证表)
+│   ├── mcp_clients / mcp_auth_codes (MCP 客户端与授权码，首次调用时创建)
 │   └── ...
 ├── region_fs_shunde (佛山市顺德区物理 Schema)
 │   ├── tickets / themes / ticket_themes / review_queue / vocabularies / aliases / task_progress
@@ -187,7 +190,7 @@ PostgreSQL 实例 (ticket_radar)
 
 ---
 
-## 三、8 大核心数据表详细字典
+## 三、核心数据表详细字典
 
 ### 0. 区域/站点注册花名册表：`regions` (`regionsTable` in `public` schema)
 > 存储全局已注册的城市/区县站点信息、独立 Schema 映射名与前端态势地图资源。
@@ -398,6 +401,38 @@ PostgreSQL 实例 (ticket_radar)
 | `issuer` | `TEXT` | `NULLABLE` | 认证颁发者 |
 | `created_at` | `TIMESTAMP` | `NOT NULL, DEFAULT NOW` | 创建时间 |
 | `updated_at` | `TIMESTAMP` | `NOT NULL, DEFAULT NOW` | 更新时间 |
+
+---
+
+### 9. MCP 接入表 (`mcp_clients` / `mcp_auth_codes`)
+
+> 放在 `public`。`lib/mcp/clients.ts` 的 `ensureMcpTables()` 在第一次签发、校验或吊销时执行 `CREATE TABLE IF NOT EXISTS`。没有对应的 Drizzle migration。对接步骤见 [`MCP.md`](MCP.md)。
+
+#### (1) 已接入的 Agent：`mcp_clients`
+
+| 字段名 | 数据库类型 | 约束 | 描述 |
+| :--- | :--- | :--- | :--- |
+| `id` | `TEXT` | `PRIMARY KEY` | 客户端 id，前缀 `mcp_` |
+| `name` | `TEXT` | `NOT NULL` | 授权时的客户端名称 |
+| `user_id` | `TEXT` | `NOT NULL, REFERENCES "user"(id) ON DELETE CASCADE` | 同意授权的登录用户 |
+| `token_hash` | `TEXT` | `NOT NULL, UNIQUE` | access token 的 SHA-256 hex。明文不入库 |
+| `created_at` | `TIMESTAMPTZ` | `NOT NULL, DEFAULT now()` | 签发时间 |
+| `revoked_at` | `TIMESTAMPTZ` | `NULLABLE` | 站点管理中心吊销时间。非空后该 token 不能再调用 |
+| `last_used_at` | `TIMESTAMPTZ` | `NULLABLE` | 最近一次校验通过的时间 |
+
+索引：`idx_mcp_clients_user (user_id)`，`idx_mcp_clients_token_hash (token_hash)`。
+
+#### (2) 授权码：`mcp_auth_codes`
+
+| 字段名 | 数据库类型 | 约束 | 描述 |
+| :--- | :--- | :--- | :--- |
+| `code_hash` | `TEXT` | `PRIMARY KEY` | 授权码的 SHA-256 hex。明文前缀 `civic_code_` |
+| `client_name` | `TEXT` | `NOT NULL` | 换到 token 后写入 `mcp_clients.name` |
+| `user_id` | `TEXT` | `NOT NULL` | 同意授权的用户 |
+| `redirect_uri` | `TEXT` | `NOT NULL` | 换 token 时必须逐字相同 |
+| `code_challenge` | `TEXT` | `NULLABLE` | PKCE S256。有值时必须带对得上的 `code_verifier` |
+| `expires_at` | `TIMESTAMPTZ` | `NOT NULL` | 签发后 10 分钟 |
+| `used_at` | `TIMESTAMPTZ` | `NULLABLE` | 用过一次就写上，不能再用 |
 
 ---
 
