@@ -339,42 +339,6 @@ themeIndex 与 [1]..[${themes.length}] 一一对应。风险等级已经由本�
 }
 
 /**
- * 5. AI Copilot 问答副驾驶 Prompt 生成器
- */
-export function buildCopilotPrompt(params: {
-  query: string;
-  totalCount: number;
-  currentThemes: any[];
-  highRiskCount: number;
-  mediumRiskCount: number;
-}): string {
-  const { query, totalCount, currentThemes, highRiskCount, mediumRiskCount } = params;
-  return `你是 12345 政务热线智能研判副驾驶（Copilot）。
-当前运行数据底座：
-- 工单总接入量：${totalCount} 件 | 多频主题总数：${currentThemes.length} 个
-- 高危紧急事件：${highRiskCount} 项 | 重点跟进事件：${mediumRiskCount} 项
-- 重点主题摘要：
-${currentThemes
-  .slice(0, 8)
-  .map(
-    (t, idx) =>
-      `${idx + 1}. 【${t.riskLevel}】${t.title}（${t.ticketCount}单，${t.canonicalLocation}，建议：${t.recommendedAction}）`
-  )
-  .join("\n")}
-
-【待处理用户提问如下】：
-<user_query>
-${desensitizeContent(query)}
-</user_query>
-
-请给出专业严谨、有公文逻辑的回答：
-1. 观点明确，条理清晰，善用 Markdown 加粗和列表；
-2. 涉及具体主题或风险时引用真实数据与建议；
-3. 若用户要求生成交办单或督办公文，请提供标准政务公文格式（单号、发文单位、主送单位、案情摘要、处置时限与督办要求）；
-4. 语言精炼有力，体现高效政务治理水准。`;
-}
-
-/**
  * 6. AI 政务区划与权责清单智能生成 Prompt (AI Scout Prompt)
  */
 export function buildAiScoutPrompt(params: {

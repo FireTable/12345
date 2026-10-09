@@ -5,23 +5,9 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { UploadDialog } from "@/app/_components/dashboard/upload-dialog";
 import { LightCopilot } from "@/app/_components/copilot/light-copilot";
-import type { MultiFrequencyTheme, OverallStats } from "@/backend/state";
 import type { TaskProgress } from "@/lib/task-progress";
 import { useCivicSse } from "@/app/_hooks/use-civic-sse";
 import { useRegion } from "./region-context";
-
-const emptyStats: OverallStats = {
-  totalTickets: 0,
-  multiFrequencyTickets: 0,
-  multiFrequencyRate: 0,
-  themeCount: 0,
-  highRiskCount: 0,
-  mediumRiskCount: 0,
-  lowRiskCount: 0,
-  compressionRatio: 0,
-  topSubject: "",
-  avgResponseTimeSavedHours: 0,
-};
 
 type CivicWorkflow = {
   analyzing: boolean;
@@ -55,8 +41,6 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
     setPipelineDrawerOpen((prev) => !prev);
   }, []);
   const [analyzing, setAnalyzing] = useState(false);
-  const [themes, setThemes] = useState<MultiFrequencyTheme[]>([]);
-  const [stats, setStats] = useState<OverallStats>(emptyStats);
   const [ticketStatus, setTicketStatus] = useState<{
     total: number;
     analyzed: number;
@@ -165,63 +149,9 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
     setPipelineDrawerOpen(true);
   }, [isAllAnalyzed, ticketStatus.total]);
 
-  const openCopilot = useCallback(async () => {
-    try {
-      // ponytail: 未登录态 overview/clusters 返 401,优先打 /api/public/* 拿公开数据;
-      // 公开端点也挂了再退到 ticketStatus(本地已加载的态),最后兜底 0。
-      const [ov, cl] = await Promise.all([
-        fetch("/api/public/overview")
-          .then((r) => (r.ok ? r.json() : null))
-          .catch(() => null),
-        fetch("/api/clusters").then((r) => (r.ok ? r.json() : null)).catch(() => null),
-      ]);
-      const fallbackOv = ov || { totalWorkorders: ticketStatus.total, multiFreqCount: 0, multiFreqClusters: 0 };
-      const list = cl?.topClusters || [];
-      const totalTickets = fallbackOv.totalWorkorders || 0;
-      const themeCount = fallbackOv.multiFreqClusters || list.length || 0;
-      setStats({
-        ...emptyStats,
-        totalTickets,
-        multiFrequencyTickets: fallbackOv.multiFreqCount || 0,
-        themeCount,
-        highRiskCount: list.filter((c: { urgency?: string }) => c.urgency === "urgent").length,
-      });
-      setThemes(
-        list.map(
-          (c: {
-            id: string;
-            title?: string;
-            region?: string;
-            type?: string;
-            count?: number;
-            urgency?: string;
-          }) => ({
-            id: c.id,
-            title: c.title || `${c.region || ""} · ${c.type || ""}`,
-            canonicalSubject: c.title || "",
-            canonicalLocation: c.region || "",
-            eventType: c.type || "",
-            category: c.type || "",
-            riskLevel: c.urgency === "urgent" ? "HIGH" : "LOW",
-            riskReason: "",
-            ticketCount: c.count || 0,
-            timeSpanHours: 0,
-            firstOccurrence: "",
-            lastOccurrence: "",
-            aiSummary: "",
-            recommendedAction: "",
-            tickets: [],
-            relatedSubjects: [],
-            relatedLocations: [],
-            status: "UNCHECKED" as const,
-          })
-        )
-      );
-    } catch {
-      /* 打开助手仍可用，只是开场统计可能为空 */
-    }
+  const openCopilot = useCallback(() => {
     setCopilotOpen(true);
-  }, [ticketStatus.total]);
+  }, []);
 
   return (
     <CivicWorkflowContext.Provider
@@ -251,12 +181,6 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
       <LightCopilot
         isOpen={copilotOpen}
         onClose={() => setCopilotOpen(false)}
-        themes={themes}
-        stats={stats}
-        onSelectTheme={(t) => {
-          setCopilotOpen(false);
-          router.push(`/themes/${t.id}`);
-        }}
       />
     </CivicWorkflowContext.Provider>
   );

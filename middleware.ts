@@ -24,12 +24,6 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // 2.6 Copilot endpoint: anon users can chat with the LLM using public stats.
-  // Doesn't expose ticket content / PII — only KPI numbers and LLM streaming.
-  if (pathname === "/api/copilot") {
-    return NextResponse.next();
-  }
-
   // 2.7 Map tile proxy & Region boundary public APIs
   if (
     pathname.startsWith("/api/map/tile") ||

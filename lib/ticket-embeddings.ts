@@ -208,6 +208,77 @@ export async function loadStoredNeighborPairs(regionId: string): Promise<Array<[
   }
 }
 
+export interface TicketVectorHit {
+  ticketNo: string;
+  title: string;
+  township: string;
+  category: string;
+  subject: string;
+  eventType: string;
+  address: string;
+  urgency: string;
+  themeId: string;
+  similarity: number;
+}
+
+/**
+ * 副驾驶语义检索。不按分类或镇街收窄，否则跨镇的同类事会查不到。
+ * 聚类近邻仍走 loadStoredNeighborPairs。
+ */
+export async function searchTicketsByVector(
+  regionId: string,
+  vector: number[],
+  limit: number
+): Promise<TicketVectorHit[]> {
+  const literal = halfvecLiteral(vector);
+  const safeLimit = Math.min(8, Math.max(1, Math.trunc(limit) || 8));
+  try {
+    const { db } = await getRegionDb(regionId);
+    const result = await db.transaction(async (tx) => {
+      await tx.execute(drizzleSql.raw(`SET LOCAL hnsw.ef_search = ${HNSW_EF_SEARCH}`));
+      return tx.execute(drizzleSql`
+        SELECT
+          t.ticket_no,
+          COALESCE(NULLIF(t.summarize_title, ''), NULLIF(t.title, ''), '') AS title,
+          COALESCE(NULLIF(t.subdistrict, ''), '未知') AS township,
+          COALESCE(t.source_category, '') AS category,
+          COALESCE(t.canonical_subject, '') AS subject,
+          COALESCE(t.event_type, '') AS event_type,
+          COALESCE(t.address, '') AS address,
+          COALESCE(t.urgency, '') AS urgency,
+          COALESCE(t.primary_theme_id, '') AS theme_id,
+          (e.embedding <=> ${literal}::halfvec(1024)) AS distance
+        FROM ticket_embeddings e
+        JOIN tickets t ON t.id = e.ticket_id
+        WHERE e.model = ${EMBEDDING_MODEL_LITERAL}
+        ORDER BY e.embedding <=> ${literal}::halfvec(1024)
+        LIMIT ${drizzleSql.raw(String(safeLimit))}
+      `);
+    });
+    return rowsOf(result).map((row) => {
+      const distance = Number(cell(row, "distance"));
+      const similarity = Number.isFinite(distance) ? Math.max(0, Math.min(1, 1 - distance)) : 0;
+      return {
+        ticketNo: cell(row, "ticket_no"),
+        title: cell(row, "title"),
+        township: cell(row, "township") || "未知",
+        category: cell(row, "category"),
+        subject: cell(row, "subject"),
+        eventType: cell(row, "event_type"),
+        address: cell(row, "address"),
+        urgency: cell(row, "urgency"),
+        themeId: cell(row, "theme_id"),
+        similarity: Number(similarity.toFixed(3)),
+      };
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const code = error && typeof error === "object" && "code" in error ? String((error as { code?: string }).code) : "";
+    if (code === "42P01" || /does not exist/i.test(message)) return [];
+    throw error;
+  }
+}
+
 /** 主题不单独存向量。增量挂接用成员工单里已经写下的一条。 */
 export async function loadThemeMemberVectors(regionId: string, themeIds: string[]): Promise<Map<string, number[]>> {
   const vectors = new Map<string, number[]>();
