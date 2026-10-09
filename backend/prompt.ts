@@ -303,7 +303,8 @@ export const BatchThemeEnrichmentSchema = z.object({
   results: z.array(
     z.object({
       themeIndex: z.number().describe("主题序号（从 1 开始，对应待研判列表 [1], [2], ...）"),
-      riskLevel: z.enum(["HIGH", "MEDIUM", "LOW"]).describe("多频风险等级评定"),
+      // 红黄蓝由聚类规则写入。模型漏写这一项时，不能让同批其余建议一起作废。
+      riskLevel: z.enum(["HIGH", "MEDIUM", "LOW"]).optional().describe("多频风险等级评定，可省略"),
       riskReason: z.string().describe("简明扼要的风险诱因与态势研判（25-45字）"),
       aiSummary: z.string().describe("深度公文级全貌研判综述（60-100字）"),
       recommendedAction: z.string().describe("针对性协同处置建议（明确牵头部门、响应时限及具体路径）（50-80字）"),
@@ -333,8 +334,8 @@ ${themes
   .join("\n\n")}
 
 请只输出一个 JSON 对象，不要 markdown。格式：
-{"results":[{"themeIndex":1,"riskLevel":"MEDIUM","riskReason":"...","aiSummary":"...","recommendedAction":"..."}]}
-themeIndex 与 [1]..[${themes.length}] 一一对应。`;
+{"results":[{"themeIndex":1,"riskReason":"...","aiSummary":"...","recommendedAction":"..."}]}
+themeIndex 与 [1]..[${themes.length}] 一一对应。风险等级已经由本地规则写好，不要输出 riskLevel。`;
 }
 
 /**
