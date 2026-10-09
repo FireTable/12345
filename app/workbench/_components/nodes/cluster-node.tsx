@@ -119,6 +119,10 @@ export function ClusterNode({ data }: NodeProps<ClusterNodeType>) {
               </div>
             ))}
           </div>
+        ) : data.themeCount > 0 ? (
+          <div className="text-[11px] text-slate-400 mt-2">
+            已归并 {data.themeCount.toLocaleString()} 个专题，处置建议写入后才会出现在这里。
+          </div>
         ) : (
           <div className="text-[11px] text-slate-400 mt-2">
             暂无聚合专题，工单要素提取完成后将自动合并归类。

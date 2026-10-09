@@ -23,6 +23,7 @@ import { TriageNode, type TriageNodeData } from "./nodes/triage-node";
 import { EntityNode, type EntityNodeData } from "./nodes/entity-node";
 import { ClusterNode, type ClusterNodeData } from "./nodes/cluster-node";
 import { DossierNode, type DossierNodeData } from "./nodes/dossier-node";
+import { resolvePipelineFactoryStage } from "./pipeline-factory-stage";
 import { useRegion } from "@/app/_components/civic/region-context";
 
 const DEFAULT_POSITIONS: Record<string, { x: number; y: number }> = {
@@ -62,6 +63,8 @@ export type PipelineStateResponse = {
     status: string;
     stage?: string;
     stageText?: string;
+    /** 建议生成过程中的主题数。themes 表要等写完才有数。 */
+    themeCount?: number;
     processed: number;
     total: number;
     percent?: number;
@@ -179,13 +182,24 @@ function InnerPipelineCanvas({
   const isRunning = rawStatus === "RUNNING";
   const processed = stateData?.taskProgress?.processed ?? 0;
 
+  const factory = useMemo(
+    () =>
+      resolvePipelineFactoryStage({
+        isRunning,
+        stage: stateData?.taskProgress?.stage,
+        stageText: stateData?.taskProgress?.stageText,
+        totalTickets: stateData?.metrics.totalTickets ?? 0,
+        analyzedTickets: stateData?.metrics.analyzedTickets ?? 0,
+        persistedThemes: stateData?.metrics.totalThemes ?? 0,
+        progressThemeCount: stateData?.taskProgress?.themeCount ?? 0,
+      }),
+    [stateData, isRunning],
+  );
+
   // 1. 各工序节点精细化状态机判定
   const initialNodes: Node[] = useMemo(() => {
     const total = stateData?.metrics.totalTickets ?? 0;
     const analyzed = stateData?.metrics.analyzedTickets ?? 0;
-    const themeCount = stateData?.metrics.totalThemes ?? 0;
-    const isCompleted = total > 0 && analyzed >= total && !isRunning;
-    const stage = (stateData?.taskProgress?.stage || "EXTRACTING").toUpperCase();
 
     // 用全局已抽取数 analyzed 作单一事实来源，session-local 的 processed 不再覆盖 UI 进度，
     // 避免新 task 启动时 from preExtractedCount 起步导致 "33,377 → 6,356" 的视觉倒退。
@@ -211,39 +225,20 @@ function InnerPipelineCanvas({
     const triageStatusText = total > 0 ? "初筛分流完成" : "等待处理";
 
     // 03 工序 (地点与主体提取): 正在处理时 active running，完成后 completed
-    const isEntityRunning = isRunning && stage === "EXTRACTING" && targetProcessed < total;
-    const isEntityCompleted = (total > 0 && analyzed >= total) || stage === "EMBEDDING" || stage === "CLUSTERING" || stage === "SUMMARIZING" || stage === "COMPLETED" || isCompleted;
-    const entityStatus = isEntityRunning ? "running" : isEntityCompleted ? "completed" : "idle";
-    const entityStatusText = isEntityRunning
+    const entityStatus = factory.entityRunning ? "running" : factory.entityCompleted ? "completed" : "idle";
+    const entityStatusText = factory.entityRunning
       ? `提取中 (${targetProcessed.toLocaleString()}/${total.toLocaleString()})`
-      : isEntityCompleted
+      : factory.entityCompleted
         ? `提取完成 (${total.toLocaleString()}件)`
         : "等待处理";
 
     // 04 工序 (同类问题聚合分析)：先嵌入，再聚合。专题数和归集率留在聚类这一步。
-    const isEmbedding = isRunning && stage === "EMBEDDING";
+    // 建议生成时库里还没有主题，专题数用任务上报的 themeCount。
     const embedCompleted = stateData?.taskProgress?.processed ?? 0;
     const embedEligible = stateData?.taskProgress?.total ?? 0;
-    const isClusterRunning = isRunning && stage === "CLUSTERING";
-    const isClusterCompleted = isCompleted || (themeCount > 0 && (stage === "SUMMARIZING" || stage === "COMPLETED" || !isRunning));
-    const clusterStatus = isEmbedding || isClusterRunning ? "running" : isClusterCompleted ? "completed" : "idle";
-    const clusterStatusText = isEmbedding
+    const clusterStatusText = factory.embedding
       ? `嵌入中（${embedCompleted}/${embedEligible}）`
-      : isClusterRunning
-        ? "正在聚合归类"
-        : isClusterCompleted
-          ? `聚合完成 (${themeCount.toLocaleString()}组)`
-          : "等待分析";
-
-    // 05 工序 (处置建议与案卷归档)
-    const isDossierRunning = isRunning && stage === "SUMMARIZING";
-    const isDossierCompleted = isCompleted || (themeCount > 0 && !isRunning);
-    const dossierStatus = isDossierRunning ? "running" : isDossierCompleted ? "completed" : "idle";
-    const dossierStatusText = isDossierRunning
-      ? "正在生成案卷"
-      : isDossierCompleted
-        ? "案卷已就绪"
-        : "等待生成";
+      : factory.clusterStatusText;
 
     return [
       {
@@ -374,7 +369,7 @@ function InnerPipelineCanvas({
         type: "cluster",
         position: getPos("node-cluster"),
         data: {
-          themeCount: themeCount,
+          themeCount: factory.clusterThemeCount,
           totalTickets: total,
           recentClusters: (stateData?.recentThemes || []).map((th) => ({
             id: th.id,
@@ -383,9 +378,9 @@ function InnerPipelineCanvas({
             category: th.category,
             subdistrict: th.canonicalLocation,
           })),
-          status: clusterStatus,
+          status: factory.clusterStatus,
           statusText: clusterStatusText,
-          embedding: isEmbedding,
+          embedding: factory.embedding,
           embedCompleted,
           embedEligible,
         } as ClusterNodeData,
@@ -395,33 +390,19 @@ function InnerPipelineCanvas({
         type: "dossier",
         position: getPos("node-dossier"),
         data: {
-          dossierCount: themeCount,
+          dossierCount: factory.dossierCount,
           totalTickets: total,
           pseudoLoopCount: stateData?.metrics.highRiskThemes ?? 0,
-          status: dossierStatus,
-          statusText: dossierStatusText,
+          status: factory.dossierStatus,
+          statusText: factory.dossierStatusText,
         } as DossierNodeData,
       },
     ];
-  }, [stateData, isRunning, processed, onRefresh, storageKey]);
+  }, [stateData, isRunning, processed, onRefresh, storageKey, factory]);
 
   // 2. 连接边配置 (根据活跃阶段动态激活流动粒子导轨)
   const initialEdges: Edge[] = useMemo(() => {
     const total = stateData?.metrics.totalTickets ?? 0;
-    const analyzed = stateData?.metrics.analyzedTickets ?? 0;
-    const themeCount = stateData?.metrics.totalThemes ?? 0;
-    const isCompleted = total > 0 && analyzed >= total && !isRunning;
-    const stage = (stateData?.taskProgress?.stage || "EXTRACTING").toUpperCase();
-    // 同上，第二个 useMemo 里也改成单一全局 analyzed 作 source of truth
-    const targetProcessed = analyzed;
-
-    const isEntityRunning = isRunning && stage === "EXTRACTING" && targetProcessed < total;
-    const isEntityCompleted = (total > 0 && analyzed >= total) || stage === "EMBEDDING" || stage === "CLUSTERING" || stage === "SUMMARIZING" || stage === "COMPLETED" || isCompleted;
-    const isEmbedding = isRunning && stage === "EMBEDDING";
-    const isClusterRunning = isRunning && (stage === "CLUSTERING" || isEmbedding);
-    const isClusterCompleted = isCompleted || (themeCount > 0 && (stage === "SUMMARIZING" || stage === "COMPLETED" || !isRunning));
-    const isDossierRunning = isRunning && stage === "SUMMARIZING";
-    const isDossierCompleted = isCompleted || (themeCount > 0 && !isRunning);
 
     return [
       {
@@ -444,10 +425,10 @@ function InnerPipelineCanvas({
         source: "node-triage",
         target: "node-entity",
         type: "flowing",
-        animated: isEntityRunning,
+        animated: factory.entityRunning,
         data: {
-          active: isEntityRunning,
-          completed: isEntityCompleted,
+          active: factory.entityRunning,
+          completed: factory.entityCompleted,
           label: "要素提取",
         },
       },
@@ -456,10 +437,10 @@ function InnerPipelineCanvas({
         source: "node-entity",
         target: "node-cluster",
         type: "flowing",
-        animated: isClusterRunning,
+        animated: factory.clusterEdgeActive,
         data: {
-          active: isClusterRunning,
-          completed: isClusterCompleted,
+          active: factory.clusterEdgeActive,
+          completed: factory.clusterCompleted,
           label: "同类归并",
         },
       },
@@ -468,15 +449,15 @@ function InnerPipelineCanvas({
         source: "node-cluster",
         target: "node-dossier",
         type: "flowing",
-        animated: isDossierRunning,
+        animated: factory.dossierRunning,
         data: {
-          active: isDossierRunning,
-          completed: isDossierCompleted,
+          active: factory.dossierRunning,
+          completed: factory.dossierCompleted,
           label: "生成案卷",
         },
       },
     ];
-  }, [isRunning, stateData, processed]);
+  }, [isRunning, stateData, processed, factory]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
