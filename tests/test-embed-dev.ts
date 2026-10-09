@@ -26,7 +26,8 @@ const args = embedServerArgs("/models/bge-m3-F16.gguf");
 assert(args.includes("--embedding"), "服务只做嵌入");
 assert(args.includes("BAAI/bge-m3"), "对外模型名是 BAAI/bge-m3");
 assert(args.includes(String(EMBED_DEV_PORT)), "开发端口是 8133");
-assert(args.includes("-b") && args[args.indexOf("-b") + 1] === "32", "Mac 批量是 32");
+assert(args.includes("-ub") && args[args.indexOf("-ub") + 1] === "512", "物理批能装下一条超过 32 token 的文本");
+assert(args.includes("-b") && args[args.indexOf("-b") + 1] === "512", "逻辑批和物理批一样大");
 assert(args.includes("-np") && args[args.indexOf("-np") + 1] === "1", "同时只跑一个批次");
 assert(!args.some((arg) => /q4|q8/i.test(arg)), "启动参数里没有低精度");
 

@@ -43,8 +43,9 @@ export function embedServerArgs(modelPath: string, port = EMBED_DEV_PORT, host =
     "--port", String(port),
     "-ngl", "99",
     "-c", "512",
-    "-b", "32",
-    "-ub", "32",
+    // -b/-ub 按 token 计。HTTP 一批 32 条；一条产物大约 50 token，ubatch 32 会被 llama 整批拒绝。
+    "-b", "512",
+    "-ub", "512",
     "-np", "1",
   ];
 }
