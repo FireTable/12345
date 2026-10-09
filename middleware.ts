@@ -44,6 +44,18 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // MCP 发现与令牌交换不能走登录 cookie。
+  // 未带 access key 的调用要在路由里返回 401，并带上 WWW-Authenticate。
+  // /api/mcp/grant 仍要登录，已登录的人在授权页签发 access key。
+  if (
+    pathname === "/api/mcp" ||
+    pathname === "/api/mcp/token" ||
+    pathname === "/api/mcp/oauth-protected-resource" ||
+    pathname === "/api/mcp/oauth-authorization-server"
+  ) {
+    return NextResponse.next();
+  }
+
   const sessionToken =
     request.cookies.get("better-auth.session_token")?.value ||
     request.cookies.get("__Secure-better-auth.session_token")?.value;

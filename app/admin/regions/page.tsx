@@ -22,6 +22,7 @@ import {
   Loader2,
   Star,
   Compass,
+  KeyRound,
 } from "lucide-react";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { useRegion, RegionInfo } from "@/app/_components/civic/region-context";
@@ -36,6 +37,17 @@ interface RegionWithStats extends RegionInfo {
   vocabCount: number;
   status?: string;
   createdAt?: string;
+}
+
+interface McpClientRow {
+  id: string;
+  name: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  username: string;
+  createdAt: string;
+  lastUsedAt: string | null;
 }
 
 interface AiScoutResult {
@@ -63,6 +75,8 @@ export default function AdminRegionsPage() {
   const { activeRegion, switchRegion } = useRegion();
   const [regions, setRegions] = useState<RegionWithStats[]>([]);
   const [loading, setLoading] = useState(true);
+  const [mcpClients, setMcpClients] = useState<McpClientRow[]>([]);
+  const [revokingClientId, setRevokingClientId] = useState<string | null>(null);
 
   // AI Scout 向导状态
   const [showScoutModal, setShowScoutModal] = useState(false);
@@ -105,8 +119,42 @@ export default function AdminRegionsPage() {
     }
   };
 
+  const fetchMcpClients = async () => {
+    try {
+      const res = await fetch("/api/admin/mcp-clients");
+      const raw = await res.json();
+      const list = raw.data?.clients;
+      setMcpClients(Array.isArray(list) ? list : []);
+    } catch {
+      toast.error("获取已接入的 Agent 失败");
+    }
+  };
+
+  const revokeClient = async (id: string) => {
+    try {
+      setRevokingClientId(id);
+      const res = await fetch("/api/admin/mcp-clients", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const raw = await res.json();
+      if (!res.ok || !raw.success) {
+        toast.error(resolveApiError(raw, "吊销失败"));
+        return;
+      }
+      toast.success("已吊销，这把 access key 不能再调用");
+      await fetchMcpClients();
+    } catch {
+      toast.error("吊销请求失败");
+    } finally {
+      setRevokingClientId(null);
+    }
+  };
+
   useEffect(() => {
     fetchRegions();
+    fetchMcpClients();
   }, []);
 
   // 监听城市区县变化自动推荐英文 ID（全动态生成，无任何城市区县死逻辑写死）
@@ -402,6 +450,44 @@ export default function AdminRegionsPage() {
           sub={`${totalThemes} 个治理主题 / ${totalVocab} 条词典`}
         />
       </StatCardGrid>
+
+      <div className="mt-6 mb-8">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <KeyRound className="h-4 w-4 text-slate-500" />
+            <h2 className="text-sm font-bold text-slate-900">已接入的 Agent</h2>
+            <span className="text-xs text-slate-500 font-mono">({mcpClients.length})</span>
+          </div>
+          <span className="text-xs text-slate-400">
+            MCP 地址 /api/mcp · 已登录后打开 /mcp/authorize 签发 access key
+          </span>
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200/90 divide-y divide-slate-100">
+          {mcpClients.length === 0 ? (
+            <div className="px-5 py-6 text-sm text-slate-500">还没有接入的 Agent。</div>
+          ) : (
+            mcpClients.map((client) => (
+              <div key={client.id} className="flex items-center justify-between gap-4 px-5 py-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-slate-900 truncate">{client.name}</div>
+                  <div className="text-xs text-slate-500 truncate">
+                    {client.userName || client.username || client.userId}
+                    {client.userEmail ? ` · ${client.userEmail}` : ""}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn h-[30px] px-3 text-xs font-medium text-rose-700 border border-rose-200 bg-rose-50"
+                  onClick={() => revokeClient(client.id)}
+                  disabled={revokingClientId === client.id}
+                >
+                  {revokingClientId === client.id ? "正在吊销" : "吊销"}
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
 
       {/* 站点卡片矩阵 */}
       <div className="mt-6 mb-8">
