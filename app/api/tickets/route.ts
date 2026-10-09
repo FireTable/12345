@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getRegionDb } from "@/db/client";
 import { ticketsTable, themesTable, ticketThemesTable } from "@/db/schema";
-import { inArray, eq, desc } from "drizzle-orm";
+import { inArray, eq, desc, sql } from "drizzle-orm";
 import type { RawTicket } from "@/backend/state";
 import { desensitizeContent } from "@/backend/anonymizer";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
@@ -16,8 +16,20 @@ export async function GET(req: Request) {
   try {
     const regionId = await resolveRequestRegionId(req);
     const { db: tenantDb } = await getRegionDb(regionId);
+    // 没有页面调用。工单中心用的是 /api/workorders。这里只留 80 字摘录，不带电话。
     const dbRows = await tenantDb
-      .select()
+      .select({
+        id: ticketsTable.id,
+        ticketNo: ticketsTable.ticketNo,
+        title: ticketsTable.title,
+        summarizeTitle: ticketsTable.summarizeTitle,
+        content: sql<string>`left(${ticketsTable.content}, 80)`,
+        district: ticketsTable.district,
+        subdistrict: ticketsTable.subdistrict,
+        channel: ticketsTable.channel,
+        status: ticketsTable.status,
+        createTime: ticketsTable.createTime,
+      })
       .from(ticketsTable)
       .orderBy(desc(ticketsTable.createTime))
       .limit(500);
@@ -28,9 +40,9 @@ export async function GET(req: Request) {
         title: r.title || undefined,
         summarizeTitle: r.summarizeTitle || undefined,
         createTime: r.createTime ? r.createTime.toISOString().slice(0, 19).replace("T", " ") : "2025-01-01 00:00:00",
-        citizenPhone: r.citizenPhone || "",
+        citizenPhone: "",
         content: r.content,
-        citizenName: r.citizenName || "市民*",
+        citizenName: "",
         district: r.district || undefined,
         subdistrict: r.subdistrict || undefined,
         channel: r.channel || "市民服务热线",
@@ -127,9 +139,27 @@ export async function POST(req: Request) {
             const singleRec = recordsToInsert[0];
             (async () => {
               try {
-                const activeRows = (await tenantDb.select().from(themesTable)).filter(
-                  (row) => normalizeStatusCode(row.handlingStatus) !== HANDLING_STATUS.RESOLVED
-                );
+                const activeRows = (
+                  await tenantDb
+                    .select({
+                      id: themesTable.id,
+                      title: themesTable.title,
+                      canonicalSubject: themesTable.canonicalSubject,
+                      canonicalLocation: themesTable.canonicalLocation,
+                      eventType: themesTable.eventType,
+                      category: themesTable.category,
+                      riskLevel: themesTable.riskLevel,
+                      riskReason: themesTable.riskReason,
+                      ticketCount: themesTable.ticketCount,
+                      timeSpanHours: themesTable.timeSpanHours,
+                      firstAt: themesTable.firstAt,
+                      lastAt: themesTable.lastAt,
+                      aiSummary: themesTable.aiSummary,
+                      recommendedAction: themesTable.recommendedAction,
+                      handlingStatus: themesTable.handlingStatus,
+                    })
+                    .from(themesTable)
+                ).filter((row) => normalizeStatusCode(row.handlingStatus) !== HANDLING_STATUS.RESOLVED);
 
                 const activeThemes: any[] = activeRows.map((r: any) => ({
                   id: r.id,

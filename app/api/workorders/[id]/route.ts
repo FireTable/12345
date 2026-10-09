@@ -23,7 +23,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     let cluster_info = null;
     if (row.primaryThemeId) {
-      const themes = await tenantDb.select().from(themesTable).where(eq(themesTable.id, row.primaryThemeId)).limit(1);
+      const themes = await tenantDb
+        .select({
+          id: themesTable.id,
+          title: themesTable.title,
+          civicMode: themesTable.civicMode,
+          patternType: themesTable.patternType,
+          aiConfidence: themesTable.aiConfidence,
+        })
+        .from(themesTable)
+        .where(eq(themesTable.id, row.primaryThemeId))
+        .limit(1);
       const th = themes[0];
       if (th) {
         const mode = (th.civicMode as CivicMode) || civicModeFromPattern(th.patternType as PatternType);

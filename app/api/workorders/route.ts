@@ -99,14 +99,35 @@ export async function GET(req: NextRequest) {
 
     const where = filters.length ? and(...filters) : undefined;
     const countQ = tenantDb.select({ count: sql<number>`count(*)` }).from(ticketsTable);
+    // 表格和导出只用这些列。正文、电话在打开抽屉时走 GET /api/workorders/[id]。
     const listQ = tenantDb
-      .select()
+      .select({
+        id: ticketsTable.id,
+        ticketNo: ticketsTable.ticketNo,
+        title: ticketsTable.title,
+        summarizeTitle: ticketsTable.summarizeTitle,
+        sourceCategory: ticketsTable.sourceCategory,
+        subdistrict: ticketsTable.subdistrict,
+        district: ticketsTable.district,
+        urgency: ticketsTable.urgency,
+        status: ticketsTable.status,
+        createTime: ticketsTable.createTime,
+        address: ticketsTable.address,
+        primaryThemeId: ticketsTable.primaryThemeId,
+        confidence: ticketsTable.confidence,
+        channel: ticketsTable.channel,
+        slaHours: ticketsTable.slaHours,
+        stabilityRisk: ticketsTable.stabilityRisk,
+        canonicalSubject: ticketsTable.canonicalSubject,
+        eventType: ticketsTable.eventType,
+        isFakeClosure: ticketsTable.isFakeClosure,
+      })
       .from(ticketsTable)
       .orderBy(desc(ticketsTable.createTime))
       .limit(size)
       .offset((page - 1) * size);
     const [countRes, rows] = await Promise.all([
-      where ? countQ.where(where) : countQ,
+      where ? countQ.where(where) : Promise.resolve([{ count: snap.stats.total }]),
       where ? listQ.where(where) : listQ,
     ]);
 

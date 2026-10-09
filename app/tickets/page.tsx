@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -62,6 +62,9 @@ type Row = {
   canonicalSubject?: string;
   eventType?: string;
   isFakeClosure?: boolean;
+  detailLoaded?: boolean;
+  detailError?: boolean;
+  cluster_info?: { id: string; title: string; mode_name?: string } | null;
 };
 
 type Stats = {
@@ -96,6 +99,7 @@ export default function TicketsPage() {
   const [cluster, setCluster] = useState("");
   const [time, setTime] = useState("");
   const [drawer, setDrawer] = useState<Row | null>(null);
+  const drawerSeq = useRef(0);
   const [data, setData] = useState<{
     total: number;
     data: Row[];
@@ -151,6 +155,73 @@ export default function TicketsPage() {
   const pages = Math.max(1, Math.ceil(data.total / size));
   const pendingShare = s.total ? (((s.pending + s.progress) / s.total) * 100).toFixed(1) : "0";
   const finishShare = s.total ? ((s.finished / s.total) * 100).toFixed(0) : "0";
+
+  function closeDrawer() {
+    drawerSeq.current += 1;
+    setDrawer(null);
+  }
+
+  function openDrawer(row: Row) {
+    const seq = ++drawerSeq.current;
+    const key = row.ticketId || row.id;
+    setDrawer({
+      ...row,
+      content: undefined,
+      rawContent: undefined,
+      caller_name: undefined,
+      caller_phone: undefined,
+      detailLoaded: false,
+      detailError: false,
+    });
+    fetch(`/api/workorders/${encodeURIComponent(key)}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (drawerSeq.current !== seq) return;
+        if (!j?.success) {
+          setDrawer((current) =>
+            current && (current.ticketId || current.id) === key ? { ...current, detailError: true } : current
+          );
+          toast.error("工单详情加载失败");
+          return;
+        }
+        setDrawer((current) => {
+          if (!current || (current.ticketId || current.id) !== key) return current;
+          return {
+            ...current,
+            title: j.title || current.title,
+            rawTitle: j.rawTitle ?? current.rawTitle,
+            summarizeTitle: j.summarizeTitle,
+            category: j.category || current.category,
+            region: j.region || current.region,
+            urgency: j.urgency || current.urgency,
+            status: j.status || current.status,
+            createdAt: j.createdAt || current.createdAt,
+            content: j.content || "",
+            rawContent: j.rawContent || "",
+            channel: j.channel,
+            caller_name: j.caller_name || "",
+            caller_phone: j.caller_phone || "",
+            address: j.address || current.address,
+            cluster_id: j.cluster_id || current.cluster_id,
+            cluster_info: j.cluster_info ?? null,
+            confidence: j.confidence,
+            slaHours: j.slaHours,
+            stabilityRisk: j.stabilityRisk,
+            canonicalSubject: j.canonicalSubject,
+            eventType: j.eventType,
+            isFakeClosure: j.isFakeClosure,
+            detailLoaded: true,
+          };
+        });
+      })
+      .catch(() => {
+        if (drawerSeq.current !== seq) return;
+        setDrawer((current) =>
+          current && (current.ticketId || current.id) === key ? { ...current, detailError: true } : current
+        );
+        toast.error("工单详情加载失败");
+      });
+  }
 
   function exportCsv() {
     const header = ["单号", "标题", "类型", "镇街", "紧急", "状态", "日期"];
@@ -379,7 +450,7 @@ export default function TicketsPage() {
                 </thead>
                 <tbody>
                   {data.data.map((r) => (
-                    <tr key={r.ticketId} onClick={() => setDrawer(r)}>
+                    <tr key={r.ticketId} onClick={() => openDrawer(r)}>
                       <td className="col-id">{r.id}</td>
                       <td className="col-title">
                         <div className="col-title__text flex items-center gap-1.5" title={r.title}>
@@ -447,7 +518,7 @@ export default function TicketsPage() {
         </>
       )}
 
-      <div className={`drawer-mask${drawer ? " is-open" : ""}`} onClick={() => setDrawer(null)} />
+      <div className={`drawer-mask${drawer ? " is-open" : ""}`} onClick={closeDrawer} />
       <div className={`drawer${drawer ? " is-open" : ""}`}>
         {drawer && (
           <>
@@ -487,8 +558,13 @@ export default function TicketsPage() {
               {/* 1. AI 智能研判解析 */}
               <AiVerdictCard data={drawer} />
 
-              {/* 2. 市民原始诉求 */}
-              <CitizenVoiceCard data={drawer} />
+              {drawer.detailLoaded ? (
+                <CitizenVoiceCard data={drawer} />
+              ) : (
+                <div className="text-xs text-slate-400 px-1">
+                  {drawer.detailError ? "原文加载失败" : "正在读取诉求原文…"}
+                </div>
+              )}
 
               {/* 3. 空间地理高精打点 (天地图) */}
               <TicketGeoMapCard data={drawer} />
@@ -505,8 +581,10 @@ export default function TicketsPage() {
                     type="button"
                     className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 cursor-pointer transition-colors"
                     onClick={() => {
-                      setDrawer(null);
-                      router.push(`/themes/${drawer.cluster_id}?ticketId=${encodeURIComponent(drawer.id)}&highlight=${encodeURIComponent(drawer.id)}#ticket-${encodeURIComponent(drawer.id)}`);
+                      const clusterId = drawer.cluster_id;
+                      const ticketKey = drawer.id;
+                      closeDrawer();
+                      router.push(`/themes/${clusterId}?ticketId=${encodeURIComponent(ticketKey)}&highlight=${encodeURIComponent(ticketKey)}#ticket-${encodeURIComponent(ticketKey)}`);
                     }}
                   >
                     <Layers className="h-3.5 w-3.5 text-blue-600" />
@@ -520,7 +598,7 @@ export default function TicketsPage() {
                 <button
                   type="button"
                   className="btn btn--default text-xs"
-                  onClick={() => setDrawer(null)}
+                  onClick={closeDrawer}
                 >
                   关闭
                 </button>
@@ -528,8 +606,9 @@ export default function TicketsPage() {
                   type="button"
                   className="btn btn--primary flex items-center gap-1.5 text-xs shadow-xs"
                   onClick={() => {
-                    setDrawer(null);
-                    router.push(`/tickets/${drawer.ticketId}`);
+                    const ticketId = drawer.ticketId;
+                    closeDrawer();
+                    router.push(`/tickets/${ticketId}`);
                   }}
                 >
                   <span>打开完整详情</span>
