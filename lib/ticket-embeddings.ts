@@ -12,6 +12,7 @@ import {
   type StoredEmbedding,
 } from "@/backend/embed-policy";
 import { HNSW_EF_SEARCH, NEIGHBOR_K, hnswCreateIndexSql } from "@/backend/embed-neighbors";
+import { yieldToEventLoop } from "@/lib/yield-loop";
 
 function rowsOf(result: unknown): Array<Record<string, unknown>> {
   if (Array.isArray(result)) return result as Array<Record<string, unknown>>;
@@ -85,15 +86,19 @@ export async function loadEmbedSnapshot(
       SELECT ticket_id, product_hash, model, embedding::text AS embedding
       FROM ticket_embeddings
     `);
-    const stored = rowsOf(storedResult).map((row) => {
+    const rawStored = rowsOf(storedResult);
+    const stored: StoredEmbedding[] = [];
+    for (let index = 0; index < rawStored.length; index++) {
+      const row = rawStored[index];
       const vector = parseHalfvec(cell(row, "embedding"));
-      return {
+      stored.push({
         ticketId: cell(row, "ticket_id"),
         productHash: cell(row, "product_hash"),
         model: cell(row, "model"),
         vector: vector.length === 1024 ? vector : undefined,
-      };
-    });
+      });
+      if ((index + 1) % 40 === 0) await yieldToEventLoop();
+    }
     return {
       tickets: tickets.map((row) => ({
         id: row.id,
@@ -184,7 +189,9 @@ export async function loadStoredNeighborPairs(regionId: string): Promise<Array<[
     });
     const pairs: Array<[string, string]> = [];
     const seen = new Set<string>();
-    for (const row of rowsOf(result)) {
+    const neighborRows = rowsOf(result);
+    for (let index = 0; index < neighborRows.length; index++) {
+      const row = neighborRows[index];
       const left = cell(row, "ticket_id");
       const right = cell(row, "neighbor_id");
       if (!left || !right) continue;
@@ -192,6 +199,7 @@ export async function loadStoredNeighborPairs(regionId: string): Promise<Array<[
       if (seen.has(key)) continue;
       seen.add(key);
       pairs.push([left, right]);
+      if ((index + 1) % 5000 === 0) await yieldToEventLoop();
     }
     return pairs;
   } catch (error) {

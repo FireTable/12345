@@ -100,15 +100,24 @@ export function resolveEntityAlias(rawName?: string | null, customMap?: Map<stri
 /**
  * 全文别名替换预处理：在文本入模或抽取前，对文本内包含的已知别名进行自动规范化替换
  */
+const sortedAliasCache = new WeakMap<Map<string, string>, { size: number; aliases: string[] }>();
+
+function sortedAliasKeys(activeMap: Map<string, string>): string[] {
+  const cached = sortedAliasCache.get(activeMap);
+  // registerAlias 只增不删。键集合没变时，长度相同，排序结果可以复用。
+  if (cached && cached.size === activeMap.size) return cached.aliases;
+  const aliases = Array.from(activeMap.keys()).sort((a, b) => b.length - a.length);
+  sortedAliasCache.set(activeMap, { size: activeMap.size, aliases });
+  return aliases;
+}
+
 export function normalizeAliasesInText(text?: string | null, customMap?: Map<string, string>): string {
   if (!text) return "";
   let result = text;
   const activeMap = customMap || runtimeAliasMap;
 
   // 按别名长度从长到短排序，优先匹配最长/最具体别名
-  const sortedAliases = Array.from(activeMap.keys()).sort(
-    (a, b) => b.length - a.length
-  );
+  const sortedAliases = sortedAliasKeys(activeMap);
 
   for (const alias of sortedAliases) {
     if (alias.length >= 2 && result.includes(alias)) {

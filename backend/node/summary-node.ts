@@ -73,6 +73,7 @@ export async function enrichThemeBatchWithLLM(
 import { getLlmPool } from "../llm-pool";
 import { updateTaskProgress } from "@/lib/task-progress";
 import { stagePercent } from "@/lib/pipeline-progress";
+import { yieldToEventLoop } from "@/lib/yield-loop";
 
 /**
  * Summary Node: Performs LLM deep synthesis for ALL themes, calculates metrics, and builds ForceGraph topology
@@ -213,7 +214,7 @@ export async function summaryNode(
   const nodesMap = new Map<string, GraphNode>();
   const links: GraphLink[] = [];
 
-  enrichedThemes.forEach((theme) => {
+  for (const theme of enrichedThemes) {
     const themeColor =
       theme.riskLevel === "HIGH" ? "#f43f5e" : theme.riskLevel === "MEDIUM" ? "#f59e0b" : "#10b981";
 
@@ -260,7 +261,9 @@ export async function summaryNode(
       relation: "所属区域",
     });
 
-    theme.tickets.forEach((ticket) => {
+    for (let ticketIndex = 0; ticketIndex < theme.tickets.length; ticketIndex++) {
+      if (ticketIndex > 0 && ticketIndex % 200 === 0) await yieldToEventLoop();
+      const ticket = theme.tickets[ticketIndex];
       const ticketNodeId = `TK-${ticket.id}`;
       nodesMap.set(ticketNodeId, {
         id: ticketNodeId,
@@ -276,8 +279,8 @@ export async function summaryNode(
         target: theme.id,
         relation: "归属多频主题",
       });
-    });
-  });
+    }
+  }
 
   const graphData: GraphData = {
     nodes: Array.from(nodesMap.values()),

@@ -22,6 +22,8 @@ import {
 } from "@/lib/map/enterprise-address-enricher";
 import { updateTaskProgress } from "@/lib/task-progress";
 import { stagePercent } from "@/lib/pipeline-progress";
+import { mapInChunks, yieldToEventLoop } from "@/lib/yield-loop";
+import { everyTicketStored, storedTicketToEnriched, ticketExtractionStored } from "./stored-ticket";
 import { getRegionDb } from "@/db/client";
 import { ticketsTable } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -51,11 +53,7 @@ function clipField(value: string | null | undefined, max: number): string | null
  * 也让 UI 进度条出现 33,377 → 6,356 的视觉倒退。
  */
 function hasStoredExtraction(ticket: RawTicket): boolean {
-  return Boolean(
-    typeof ticket.confidence === "number" &&
-      ticket.confidence > 0 &&
-      (ticket.summarizeTitle?.trim() || ticket.eventType?.trim())
-  );
+  return ticketExtractionStored(ticket);
 }
 function rememberExtraction(
   tenantDb: Awaited<ReturnType<typeof getRegionDb>>["db"],
@@ -277,6 +275,62 @@ function fallbackDynamicExtraction(ticket: RawTicket, defaultCategory = "综合�
 }
 
 /**
+ * 置信度、摘要、事件类型都在库里。不再探测模型，也不再对全文做别名和镇街正则。
+ */
+async function resumeStoredTickets(
+  rawTickets: RawTicket[],
+  taskId: string | undefined,
+  regionId: string | undefined
+): Promise<Partial<TicketRadarState>> {
+  console.log(`[extract] ${rawTickets.length} 条抽取已落库，跳过别名和镇街整理`);
+  if (taskId) {
+    updateTaskProgress(taskId, regionId, {
+      stage: "EXTRACTING",
+      stageText: `抽取已落库 ${rawTickets.length} 条，跳过整理`,
+      total: rawTickets.length,
+      processed: rawTickets.length,
+      extractedCount: rawTickets.length,
+      classifiedCount: rawTickets.length,
+      percent: stagePercent("S2", rawTickets.length, rawTickets.length, "max"),
+    });
+    await yieldToEventLoop();
+  }
+
+  const lowConfidenceTickets: Array<{ ticketId: string; confidence: number; reason: string }> = [];
+  const enrichedTickets = await mapInChunks(
+    rawTickets,
+    (ticket) => {
+      const enriched = storedTicketToEnriched(ticket);
+      if ((enriched.confidence ?? 0) < LOW_CONFIDENCE_THRESHOLD) {
+        lowConfidenceTickets.push({
+          ticketId: enriched.id,
+          confidence: enriched.confidence ?? 0,
+          reason: (enriched.confidence ?? 0) === 0 ? "EXTRACTION_FAILED" : "LOW_CONFIDENCE",
+        });
+      }
+      return enriched;
+    },
+    1000
+  );
+
+  if (taskId) {
+    updateTaskProgress(taskId, regionId, {
+      percent: stagePercent("S2", rawTickets.length, rawTickets.length, "max"),
+      stageText: `要素抽取完成，识别低置信工单 ${lowConfidenceTickets.length} 条，准备执行图谱聚类...`,
+      reviewCount: lowConfidenceTickets.length,
+    });
+    await yieldToEventLoop();
+  }
+
+  return {
+    enrichedTickets,
+    lowConfidenceTickets,
+    extractionFresh: false,
+    status: "extracting",
+  };
+}
+
+/**
  * Extract Node: 全量采用 AI Agent 大模型语义抽取四要素与摘要标题（P-Queue 受控并发与真实进度回报）
  */
 export async function extractNode(
@@ -285,6 +339,9 @@ export async function extractNode(
   const rawTickets = state.rawTickets || [];
   const taskId = state.taskId;
   const regionId = state.regionId;
+  if (everyTicketStored(rawTickets)) {
+    return resumeStoredTickets(rawTickets, taskId, regionId);
+  }
   const CHUNK_SIZE = isLocalSystemTwo() ? 1 : 4;
   const extractionMap = new Map<number, ExtractedTicketItem>();
   // 共享进程级 LLM 池：所有 region 的 LLM 调用都走这一个 PQueue 排队，
@@ -318,9 +375,12 @@ export async function extractNode(
     });
   }
 
-  // 1. 全文别名标准化预处理
-  const normalizedRawTickets = rawTickets.map((t) => {
+  // 1. 只对还没落库的工单做全文别名替换，并按批让出事件循环。
+  const normalizedRawTickets = await mapInChunks(rawTickets, (t) => {
     const clock = workOrderClockFromTicketNo(t.ticketNo);
+    if (hasStoredExtraction(t)) {
+      return { ...t, createTime: clock || t.createTime };
+    }
     return {
       ...t,
       title: normalizeAliasesInText(t.title, aliasMap),
@@ -328,7 +388,7 @@ export async function extractNode(
       subdistrict: normalizeAliasesInText(t.subdistrict, aliasMap),
       createTime: clock || t.createTime,
     };
-  });
+  }, 32);
 
   // 1.1 先载入已经完成 System-2 完整要素抽取的工单（断点续抽/跳过已处理）
   let preExtractedCount = 0;
@@ -540,25 +600,31 @@ export async function extractNode(
     await queue.addAll(chunkTasks);
   }
 
-  // 2. 客观物理区划校准与别名规范化（彻底废除置信度二次套娃仲裁，仅对不在白名单的镇街执行纯代码别名修正）
-  normalizedRawTickets.forEach((ticket, idx) => {
+  // 2. 只校准这一轮新抽出的工单。已经落库的主体和地点保持原样。
+  await mapInChunks(normalizedRawTickets, (ticket, idx) => {
+    if (hasStoredExtraction(ticket)) return;
     const item = extractionMap.get(idx);
     if (!item) return;
+    extractionMap.set(idx, verifyAndCanonicalizeTicketArea(item, ticket, regionVocab, aliasMap));
+  }, 64);
 
-    const calibrated = verifyAndCanonicalizeTicketArea(item, ticket, regionVocab, aliasMap);
-    extractionMap.set(idx, calibrated);
-  });
-
-  // 2.1 针对发生地点缺失或为占位符（如“无”、“未指定”）的企业主体工单，智能补全属地与经营地址 (纯规则+天地图两级容错，零硬编码)
-  for (const [idx, item] of extractionMap.entries()) {
+  // 2.1 只给这一轮新抽出、地点仍是占位符的企业主体补地址。已落库的不再查天地图。
+  const extractedIndexes = [...extractionMap.keys()];
+  for (let cursor = 0; cursor < extractedIndexes.length; cursor++) {
+    const idx = extractedIndexes[cursor];
+    const item = extractionMap.get(idx);
+    const orig = normalizedRawTickets[idx];
+    if (!item || !orig || hasStoredExtraction(orig)) {
+      if ((cursor + 1) % 256 === 0) await yieldToEventLoop();
+      continue;
+    }
     if (isPlaceholderLocation(item.location) && isEnterpriseEntity(item.subject)) {
       try {
         const enriched = await enrichEnterpriseLocation(item.subject, region, regionVocab);
         if (enriched.enriched) {
           if (enriched.address) item.location = enriched.address;
           if (enriched.township) item.township = enriched.township as any;
-          const orig = normalizedRawTickets[idx];
-          if (orig && orig.id) {
+          if (orig.id) {
             rememberExtraction(tenantDb, orig.id, {
               address: enriched.address,
               subdistrict: enriched.township || null,
@@ -569,6 +635,7 @@ export async function extractNode(
         // 静默捕获，确保绝对不影响流水线主流程
       }
     }
+    if ((cursor + 1) % 256 === 0) await yieldToEventLoop();
   }
 
   if (taskId) {
@@ -578,10 +645,12 @@ export async function extractNode(
       activeCategories: computeActiveCategories(),
       stageText: `抽取完成，准备按同一事件归并`,
     });
+    await yieldToEventLoop();
   }
 
-  // 3. 构建富化工单并执行最终标准词汇表与别名规范化映射
-  const enrichedTickets: EnrichedTicket[] = normalizedRawTickets.map((ticket, index) => {
+  // 3. 已落库的工单用库存字段。新抽出的才做镇街正则，并按批让出事件循环。
+  const enrichedTickets: EnrichedTicket[] = await mapInChunks(normalizedRawTickets, (ticket, index) => {
+    if (hasStoredExtraction(ticket)) return storedTicketToEnriched(ticket);
     const fallback = fallbackDynamicExtraction(ticket);
     const aiExtracted = extractionMap.get(index);
     const summarizeTitle = aiExtracted?.summarizeTitle || ticket.summarizeTitle || fallback.summarizeTitle;
@@ -634,7 +703,7 @@ export async function extractNode(
         { source: canonicalSubject, target: eventType, relation: "涉及事件" },
       ],
     };
-  });
+  }, 32);
 
   const lowConfidenceTickets = enrichedTickets
     .filter((t) => (t.confidence ?? 0) < LOW_CONFIDENCE_THRESHOLD)
@@ -650,11 +719,13 @@ export async function extractNode(
       stageText: `要素抽取完成，识别低置信工单 ${lowConfidenceTickets.length} 条，准备执行图谱聚类...`,
       reviewCount: lowConfidenceTickets.length,
     });
+    await yieldToEventLoop();
   }
 
   return {
     enrichedTickets,
     lowConfidenceTickets,
+    extractionFresh: true,
     status: "extracting",
   };
 }

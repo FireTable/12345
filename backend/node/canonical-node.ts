@@ -1,5 +1,6 @@
 import type { TicketRadarState, EnrichedTicket } from "../state";
 import { registerAlias, resolveEntityAlias } from "@/lib/alias-dict";
+import { yieldToEventLoop } from "@/lib/yield-loop";
 
 /**
  * 车牌号提取与唯一标识符判断
@@ -106,21 +107,34 @@ function isSamePhysicalEntity(a: string, b: string): boolean {
 
 /**
  * Canonical Alignment Node: 实体对齐与规范化（严格实体隔离，杜绝跨主体串扰并沉淀别名字典）
+ * 抽取已经全部落库时跳过。否则每比较一批就让出事件循环。
  */
 export async function canonicalNode(
   state: TicketRadarState
 ): Promise<Partial<TicketRadarState>> {
   const enrichedTickets = state.enrichedTickets || [];
+  if (state.extractionFresh === false) {
+    console.log(`[canonical] ${enrichedTickets.length} 条抽取已落库，跳过全表实体对齐`);
+    return { enrichedTickets, status: "extracting" };
+  }
+
+  let steps = 0;
+  const due = () => {
+    steps += 1;
+    return steps % 512 === 0;
+  };
 
   // 1. 统计当前批次中独立实体与其最具代表性的规范全称
   const canonicalEntityGroups: Array<{ representative: string; members: Set<string> }> = [];
 
   for (const t of enrichedTickets) {
+    if (due()) await yieldToEventLoop();
     const rawSubject = resolveEntityAlias((t.canonicalSubject || "").trim());
     if (!rawSubject) continue;
 
     let foundGroup = false;
     for (const group of canonicalEntityGroups) {
+      if (due()) await yieldToEventLoop();
       if (isSamePhysicalEntity(group.representative, rawSubject)) {
         group.members.add(rawSubject);
         if (rawSubject.length > group.representative.length) {
@@ -142,6 +156,7 @@ export async function canonicalNode(
   // 沉淀新发现的实体别名映射，实现一次学习、全局沉淀
   for (const group of canonicalEntityGroups) {
     for (const member of group.members) {
+      if (due()) await yieldToEventLoop();
       if (member !== group.representative && member.length >= 2) {
         registerAlias(member, group.representative);
       }
@@ -151,11 +166,13 @@ export async function canonicalNode(
   // 2. 统计当前批次中的微观地理基底核心（Spatial Cores），实现同片区地点规范化
   const canonicalLocationGroups: Array<{ representative: string; members: Set<string> }> = [];
   for (const t of enrichedTickets) {
+    if (due()) await yieldToEventLoop();
     const rawLoc = (t.canonicalLocation || "").trim();
     if (!rawLoc) continue;
 
     let foundLocGroup = false;
     for (const group of canonicalLocationGroups) {
+      if (due()) await yieldToEventLoop();
       if (isSameSpatialEntity(group.representative, rawLoc)) {
         group.members.add(rawLoc);
         foundLocGroup = true;
@@ -173,11 +190,15 @@ export async function canonicalNode(
   }
 
   // 3. 映射对齐实体与空间核心，并保持地点与事件独立精准
-  const enriched: EnrichedTicket[] = enrichedTickets.map((t) => {
+  const enriched: EnrichedTicket[] = new Array(enrichedTickets.length);
+  for (let index = 0; index < enrichedTickets.length; index++) {
+    if (due()) await yieldToEventLoop();
+    const t = enrichedTickets[index];
     const rawSubject = (t.canonicalSubject || "").trim();
     let canonicalSubject = rawSubject;
 
     for (const group of canonicalEntityGroups) {
+      if (due()) await yieldToEventLoop();
       if (isSamePhysicalEntity(group.representative, rawSubject)) {
         canonicalSubject = group.representative;
         break;
@@ -187,6 +208,7 @@ export async function canonicalNode(
     const rawLocation = (t.canonicalLocation || "").trim() || (t.subdistrict || t.district || "");
     let canonicalLocation = rawLocation;
     for (const group of canonicalLocationGroups) {
+      if (due()) await yieldToEventLoop();
       if (isSameSpatialEntity(group.representative, rawLocation)) {
         canonicalLocation = group.representative;
         break;
@@ -195,7 +217,7 @@ export async function canonicalNode(
 
     const eventType = (t.eventType || "").trim();
 
-    return {
+    enriched[index] = {
       ...t,
       canonicalSubject,
       canonicalLocation,
@@ -211,7 +233,7 @@ export async function canonicalNode(
         { source: canonicalSubject, target: eventType, relation: "涉及事件" },
       ],
     };
-  });
+  }
 
   return {
     enrichedTickets: enriched,

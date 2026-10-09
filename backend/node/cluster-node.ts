@@ -16,8 +16,9 @@ import { stagePercent } from "@/lib/pipeline-progress";
 import { HANDLING_STATUS } from "@/lib/civic-dto";
 import { profileTicket } from "../ticket-profile";
 import { chooseThemeAnchor } from "../same-incident-cluster";
-import { clusterFromStoredNeighbors } from "../embed-neighbors";
+import { clusterFromStoredNeighborsYielding } from "../embed-neighbors";
 import { loadStoredNeighborPairs } from "@/lib/ticket-embeddings";
+import { mapInChunks, yieldToEventLoop } from "@/lib/yield-loop";
 
 function majority(values: Array<string | null | undefined>): string | null {
   const counts = new Map<string, number>();
@@ -70,8 +71,9 @@ export async function clusterNode(
   }
 
   const regionVocab = await getRegionVocabulary(state.regionId);
-  for (const ticket of enrichedTickets) {
-    ticket.clusterId = undefined;
+  for (let index = 0; index < enrichedTickets.length; index++) {
+    enrichedTickets[index].clusterId = undefined;
+    if ((index + 1) % 2000 === 0) await yieldToEventLoop();
   }
 
   const themes: MultiFrequencyTheme[] = [];
@@ -89,27 +91,45 @@ export async function clusterNode(
       if (mapped.length > 0) neighborPairs = mapped;
     }
   }
-  const groups = clusterFromStoredNeighbors(
+  const prepared = await mapInChunks(
     enrichedTickets,
     (ticket) => ({
-      profile: profileTicket(
-        { title: ticket.title, content: ticket.content, subdistrict: ticket.subdistrict },
-        regionVocab.townships
-      ),
-      category: ticket.sourceCategory || "",
-      township:
-        ticket.subdistrict ||
-        legalTownshipName(`${ticket.canonicalLocation || ""}\n${ticket.content || ""}`, regionVocab) ||
-        "",
-      placeEvidence: [ticket.canonicalLocation, ticket.summarizeTitle, ticket.content].filter(Boolean).join("\n"),
-      subject: ticket.canonicalSubject || "",
-      vector: ticket.embedding || [],
+      ticket,
+      candidate: {
+        profile: profileTicket(
+          { title: ticket.title, content: ticket.content, subdistrict: ticket.subdistrict },
+          regionVocab.townships
+        ),
+        category: ticket.sourceCategory || "",
+        township:
+          ticket.subdistrict ||
+          legalTownshipName(`${ticket.canonicalLocation || ""}\n${ticket.content || ""}`, regionVocab) ||
+          "",
+        placeEvidence: [ticket.canonicalLocation, ticket.summarizeTitle, ticket.content].filter(Boolean).join("\n"),
+        subject: ticket.canonicalSubject || "",
+        vector: ticket.embedding || [],
+      },
     }),
+    32
+  );
+  const groups = await clusterFromStoredNeighborsYielding(
+    prepared,
+    (row) => row.candidate,
     neighborPairs
   );
 
-  for (const members of groups) {
-    const tickets = [...members].sort(
+  for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
+    if (groupIndex > 0 && groupIndex % 20 === 0) {
+      await yieldToEventLoop();
+      if (taskId) {
+        updateTaskProgress(taskId, regionId, {
+          stageText: `正在按同一事件归并工单 (${groupIndex}/${groups.length} 组)...`,
+          percent: stagePercent("CLUSTER", groupIndex, Math.max(1, groups.length)),
+        });
+      }
+    }
+    const members = groups[groupIndex].map((row) => row.ticket);
+    const tickets = members.sort(
       (a, b) => safeParseDate(a.createTime).getTime() - safeParseDate(b.createTime).getTime()
     );
     const firstTime = tickets[0].createTime;

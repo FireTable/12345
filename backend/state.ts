@@ -206,6 +206,13 @@ export const TicketRadarStateAnnotation = Annotation.Root({
     reducer: (prev, next) => next || prev,
     default: () => undefined,
   }),
+  /**
+   * false：这批工单的抽取已经落库，本轮没有新抽取。对齐节点不再做全表实体归并。
+   */
+  extractionFresh: Annotation<boolean>({
+    reducer: (prev, next) => (typeof next === "boolean" ? next : prev),
+    default: () => true,
+  }),
 });
 
 export type TicketRadarState = typeof TicketRadarStateAnnotation.State;

@@ -11,6 +11,7 @@ import type { ClusterJob } from "@/lib/cluster-queue";
 import { workOrderClockFromTicketNo } from "@/lib/work-order-date";
 import { shouldStartStage04 } from "@/backend/embed-policy";
 import { loadEmbedSnapshot } from "@/lib/ticket-embeddings";
+import { yieldToEventLoop } from "@/lib/yield-loop";
 
 /**
  * 跑完一条已经入队的研判。抽取中途写入的置信度会让下次拉起跳过已完成的工单。
@@ -50,34 +51,39 @@ export async function executeClusterJob(job: ClusterJob): Promise<number> {
   }
 
   const rows = await tenantDb.select().from(ticketsTable).orderBy(desc(ticketsTable.createTime));
-  const tickets: RawTicket[] = rows.map((r) => ({
-    id: r.id,
-    ticketNo: r.ticketNo,
-    title: r.title || undefined,
-    summarizeTitle: r.summarizeTitle || undefined,
-    address: r.address || undefined,
-    confidence: typeof r.confidence === "number" ? r.confidence : undefined,
-    sourceCategory: r.sourceCategory || undefined,
-    primaryThemeId: r.primaryThemeId || undefined,
-    canonicalSubject: r.canonicalSubject || undefined,
-    eventType: r.eventType || undefined,
-    slaHours: typeof r.slaHours === "number" ? r.slaHours : undefined,
-    stabilityRisk: typeof r.stabilityRisk === "boolean" ? r.stabilityRisk : undefined,
-    createTime:
-      workOrderClockFromTicketNo(r.ticketNo) ||
-      (r.createTime ? r.createTime.toISOString().slice(0, 19).replace("T", " ") : "2025-01-01 00:00:00"),
-    content: r.content,
-    maskedContent: r.maskedContent || undefined,
-    closedAt: r.closedAt ? r.closedAt.toISOString().slice(0, 19).replace("T", " ") : undefined,
-    closureStatus: (r.closureStatus as "RESOLVED" | "REOPENED" | null) || undefined,
-    isFakeClosure: r.isFakeClosure || false,
-    citizenName: r.citizenName || "热线市民",
-    citizenPhone: r.citizenPhone || "",
-    district: r.district || undefined,
-    subdistrict: r.subdistrict || undefined,
-    channel: r.channel || "市民服务热线",
-    status: (r.status as RawTicket["status"]) || "PENDING",
-  }));
+  const tickets: RawTicket[] = [];
+  for (let index = 0; index < rows.length; index++) {
+    const r = rows[index];
+    tickets.push({
+      id: r.id,
+      ticketNo: r.ticketNo,
+      title: r.title || undefined,
+      summarizeTitle: r.summarizeTitle || undefined,
+      address: r.address || undefined,
+      confidence: typeof r.confidence === "number" ? r.confidence : undefined,
+      sourceCategory: r.sourceCategory || undefined,
+      primaryThemeId: r.primaryThemeId || undefined,
+      canonicalSubject: r.canonicalSubject || undefined,
+      eventType: r.eventType || undefined,
+      slaHours: typeof r.slaHours === "number" ? r.slaHours : undefined,
+      stabilityRisk: typeof r.stabilityRisk === "boolean" ? r.stabilityRisk : undefined,
+      createTime:
+        workOrderClockFromTicketNo(r.ticketNo) ||
+        (r.createTime ? r.createTime.toISOString().slice(0, 19).replace("T", " ") : "2025-01-01 00:00:00"),
+      content: r.content,
+      maskedContent: r.maskedContent || undefined,
+      closedAt: r.closedAt ? r.closedAt.toISOString().slice(0, 19).replace("T", " ") : undefined,
+      closureStatus: (r.closureStatus as "RESOLVED" | "REOPENED" | null) || undefined,
+      isFakeClosure: r.isFakeClosure || false,
+      citizenName: r.citizenName || "热线市民",
+      citizenPhone: r.citizenPhone || "",
+      district: r.district || undefined,
+      subdistrict: r.subdistrict || undefined,
+      channel: r.channel || "市民服务热线",
+      status: (r.status as RawTicket["status"]) || "PENDING",
+    });
+    if ((index + 1) % 2000 === 0) await yieldToEventLoop();
+  }
 
   let existingActiveThemes: any[] = [];
   try {
