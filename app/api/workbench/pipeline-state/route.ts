@@ -12,11 +12,15 @@ import { getNodeMetric } from "@/lib/node-metrics";
 export const dynamic = "force-dynamic";
 
 const nodeHealthCache = new Map<string, { isOnline: boolean; lastChecked: number }>();
+const PROBE_TIMEOUT_MS = 400;
+const ONLINE_TTL_MS = 3000;
+const OFFLINE_TTL_MS = 30_000;
 
 async function probeEndpointOnline(endpoint: string): Promise<boolean> {
   const cached = nodeHealthCache.get(endpoint);
-  if (cached && Date.now() - cached.lastChecked < 3000) {
-    return cached.isOnline;
+  if (cached) {
+    const ttl = cached.isOnline ? ONLINE_TTL_MS : OFFLINE_TTL_MS;
+    if (Date.now() - cached.lastChecked < ttl) return cached.isOnline;
   }
   let online = false;
   try {
@@ -24,7 +28,7 @@ async function probeEndpointOnline(endpoint: string): Promise<boolean> {
     const url = base.endsWith("/v1") ? `${base}/models` : `${base}/v1/models`;
     const res = await fetch(url, {
       method: "GET",
-      signal: AbortSignal.timeout(1500),
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     });
     online = res.status < 500;
   } catch {
@@ -68,7 +72,7 @@ export async function GET(req: NextRequest) {
         id: ticketsTable.id,
         ticketNo: ticketsTable.ticketNo,
         title: ticketsTable.title,
-        content: ticketsTable.content,
+        content: sql<string | null>`left(${ticketsTable.content}, 80)`,
         canonicalSubject: ticketsTable.canonicalSubject,
         address: ticketsTable.address,
         district: ticketsTable.district,
@@ -92,7 +96,7 @@ export async function GET(req: NextRequest) {
           id: ticketsTable.id,
           ticketNo: ticketsTable.ticketNo,
           title: ticketsTable.title,
-          content: ticketsTable.content,
+          content: sql<string | null>`left(${ticketsTable.content}, 80)`,
           canonicalSubject: ticketsTable.canonicalSubject,
           address: ticketsTable.address,
           district: ticketsTable.district,
@@ -116,7 +120,7 @@ export async function GET(req: NextRequest) {
             id: ticketsTable.id,
             ticketNo: ticketsTable.ticketNo,
             title: ticketsTable.title,
-            content: ticketsTable.content,
+            content: sql<string | null>`left(${ticketsTable.content}, 80)`,
             canonicalSubject: ticketsTable.canonicalSubject,
             address: ticketsTable.address,
             district: ticketsTable.district,
