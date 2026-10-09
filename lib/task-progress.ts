@@ -78,6 +78,19 @@ declare global {
 const progressStore: Map<string, TaskProgress> =
   globalThis.__ticket_radar_task_progress_store ?? new Map<string, TaskProgress>();
 
+/**
+ * 只读本进程里已经记下的最新任务。不查库，也不连接 System 2。
+ * 大屏入口用它拿节点上最近的工单预览，避免为了这一屏去探测算力节点。
+ */
+export function peekLatestTaskProgress(regionId?: string): TaskProgress | null {
+  let newest: TaskProgress | null = null;
+  for (const task of progressStore.values()) {
+    if (regionId && task.regionId !== regionId) continue;
+    if (!newest || task.updatedAt > newest.updatedAt) newest = task;
+  }
+  return newest;
+}
+
 globalThis.__ticket_radar_task_progress_store = progressStore;
 
 /**

@@ -42,63 +42,35 @@ export function useCockpitData(regionId: string) {
 
     try {
       const regParam = regionId ? `?region=${encodeURIComponent(regionId)}` : "";
-      const regAmp = regionId ? `&region=${encodeURIComponent(regionId)}` : "";
-
-      const [overviewRes, trendRes, clusterRes, ticketRes, pipelineRes] = await Promise.all([
-        fetch(`/api/overview${regParam}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-        fetch(`/api/trends?days=30${regAmp}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-        fetch(`/api/clusters${regParam}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-        fetch(`/api/tickets${regParam}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-        fetch(`/api/workbench/pipeline-state${regParam}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-      ]);
+      const payload = await fetch(`/api/cockpit${regParam}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null);
 
       if (fetchId !== fetchRef.current) return;
 
-      setRawOverview(overviewRes || null);
-      setRawTrend(trendRes || null);
-      setRawClusters(clusterRes || null);
-
-      if (pipelineRes?.data) {
-        const nodes = (pipelineRes.data.systemTwoNodes || []).map((n: any) => ({
-          id: n.id,
-          name: n.name,
-          host: n.host,
-          isLocal: n.isLocal,
-          isOnline: n.isOnline,
-          lastDurationMs: n.lastDurationMs ?? null,
-        }));
-        setSystemTwoNodes(nodes);
-        const tp = pipelineRes.data.taskProgress;
-        if (tp?.endpointRecentTickets) {
-          setEndpointRecentTickets(tp.endpointRecentTickets);
-        }
-      }
-
-      if (ticketRes?.data && Array.isArray(ticketRes.data) && ticketRes.data.length > 0) {
-        const mapped: CockpitTicket[] = ticketRes.data.slice(0, 30).map((t: any) => {
-          const content = t.content || "";
-          const isUrgent =
-            /积水|排涝|坍塌|燃气|泄露|停电|停水|火灾|暴雨|险情|抢修|急救/.test(content) ||
-            /积水|坍塌|燃气|火灾/.test(t.title || "");
-          return {
-            id: t.id,
-            ticketNo: t.ticketNo || `TK-${t.id.slice(0, 6)}`,
-            title: t.title || t.summarizeTitle || content.slice(0, 24),
-            summarizeTitle: t.summarizeTitle,
-            createTime: t.createTime || "",
-            citizenName: t.citizenName || "市民",
-            district: t.district,
-            subdistrict: t.subdistrict,
-            channel: t.channel || "12345热线",
-            status: t.status || "PENDING",
-            content,
-            isUrgent,
-          };
-        });
-        setRecentTickets(mapped);
-      } else {
-        setRecentTickets([]);
-      }
+      setRawOverview(payload?.overview || null);
+      setRawTrend(payload?.trends || null);
+      setRawClusters(
+        payload?.themes
+          ? {
+              totalClusters: payload.themes.themeCount || 0,
+              totalMultiFreq: payload.overview?.multiFreqCount || 0,
+              topClusters: (payload.themes.top || []).map((theme: any) => ({
+                id: theme.id,
+                title: theme.title,
+                category: theme.category,
+                urgency: theme.riskLevel,
+                region: theme.location || "",
+                last_date: "",
+                advice: theme.advice,
+                count: theme.ticketCount,
+              })),
+            }
+          : null
+      );
+      setSystemTwoNodes(payload?.systemTwoNodes || []);
+      setEndpointRecentTickets(payload?.endpointRecentTickets || {});
+      setRecentTickets(Array.isArray(payload?.recentTickets) ? payload.recentTickets : []);
 
       setLastUpdated(new Date());
     } catch (e) {
