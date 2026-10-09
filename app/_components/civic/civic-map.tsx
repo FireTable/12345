@@ -332,6 +332,7 @@ export function CivicMap({
       style={{
         position: "relative",
         width: "100%",
+        flex: 1,
         height: "100%",
         minHeight: 460,
         borderRadius: "var(--r-md, 12px)",
