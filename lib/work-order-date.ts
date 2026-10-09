@@ -45,13 +45,15 @@ export function workOrderClockFromTicketNo(ticketNo: string | null | undefined):
   return /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(clock) ? clock : null;
 }
 
+const shanghaiDateFormat = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Shanghai",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
 export function shanghaiCalendarDate(date: Date): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(date);
+  return shanghaiDateFormat.format(date);
 }
 
 /** 列表和总览上的日历日。编号零点的 UTC 瞬间会落在前一天，不能直接切 ISO 字符串。 */

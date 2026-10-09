@@ -3,7 +3,6 @@ import { isTownLabel } from "@/lib/admin-area";
 import { cacheGetOrLoad } from "@/lib/civic-cache";
 import { filterClusterDtos, loadClusterBundle } from "@/lib/civic-queries";
 import { clampTimeRef, formatYmd } from "@/lib/civic-time";
-import { toClusterDto } from "@/lib/civic-dto";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 
 export async function GET(req: Request) {
@@ -22,24 +21,35 @@ export async function GET(req: Request) {
     const urgency = searchParams.get("urgency") || "";
     const tab = searchParams.get("tab") || "";
 
-    const { value: bundle } = await cacheGetOrLoad(`clusters:bundle:${regionId}`, () => loadClusterBundle(regionId));
-    const { themeRows, dtos, samplesByTheme } = bundle;
-    const filtered = filterClusterDtos(dtos, { mode, region, keyword, status, urgency, tab });
-
-    const allForFacets = themeRows.map((t) => {
-      const base = toClusterDto({
-        ...t,
-        firstAt: t.firstAt,
-        lastAt: t.lastAt,
-        tickets: (samplesByTheme.get(t.id) || []).slice(0, 1),
-      });
-      return base.region;
-    });
+    // v2：列表包不再带正文。热更新前的旧缓存形状对不上。
+    const { value: bundle } = await cacheGetOrLoad(`clusters:bundle:v2:${regionId}`, () => loadClusterBundle(regionId));
+    const filtered = filterClusterDtos(bundle.dtos, { mode, region, keyword, status, urgency, tab });
 
     const totalMultiFreq = filtered.reduce((a, c) => a + c.count, 0);
     const latestDay = filtered.reduce((acc, c) => (c.last_date > acc ? c.last_date : acc), "");
     const todayKey = formatYmd(clampTimeRef(latestDay ? new Date(latestDay.replace(" ", "T")) : null));
     const todayNew = filtered.filter((c) => c.last_date === todayKey || c.first_date === todayKey).length;
+    const list = filtered.map((c) => ({
+      id: c.id,
+      code: c.code,
+      type: c.type,
+      region: c.region,
+      count: c.count,
+      mode: c.mode,
+      mode_name: c.mode_name,
+      mode_icon: c.mode_icon,
+      ai_confidence: c.ai_confidence,
+      status: c.status,
+      trend: c.trend,
+      title: c.title,
+      sample_titles: c.sample_titles.slice(0, 1),
+      first_date: c.first_date,
+      last_date: c.last_date,
+      unprocessed: c.unprocessed,
+      urgency: c.urgency,
+      days: c.days,
+      communities: c.communities,
+    }));
 
     return NextResponse.json({
       success: true,
@@ -47,14 +57,14 @@ export async function GET(req: Request) {
       totalMultiFreq,
       todayNew,
       latestDay,
-      topClusters: filtered,
+      topClusters: list,
       allClusters: filtered.map((c) => ({
         id: c.id,
         type: c.type,
         region: c.region,
         count: c.count,
-        sample_ids: c.sample_ids,
-        sample_titles: c.sample_titles,
+        sample_ids: c.sample_ids.slice(0, 1),
+        sample_titles: c.sample_titles.slice(0, 1),
         first_date: c.first_date,
         last_date: c.last_date,
         mode: c.mode,
@@ -63,12 +73,7 @@ export async function GET(req: Request) {
         status: c.status.label,
       })),
       facets: {
-        regions: (() => {
-          const set = new Set(allForFacets.filter((r) => isTownLabel(r) || r === "未知"));
-          const list = Array.from(set).filter((r) => r !== "未知").sort((a, b) => a.localeCompare(b, "zh-CN"));
-          if (set.has("未知")) list.push("未知");
-          return list;
-        })(),
+        regions: bundle.facetTowns,
       },
     });
   } catch (err: any) {

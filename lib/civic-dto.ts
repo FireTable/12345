@@ -149,7 +149,8 @@ export function toClusterDto(theme: {
     subdistrict?: string | null;
     district?: string | null;
   }>;
-}) {
+}, options?: { brief?: boolean }) {
+  const brief = options?.brief === true;
   const mode: CivicMode =
     theme.civicMode === "aggregate" || theme.civicMode === "repeat" || theme.civicMode === "diverge"
       ? theme.civicMode
@@ -160,52 +161,58 @@ export function toClusterDto(theme: {
   const last = calendarDay(theme.lastOccurrence || theme.lastAt);
 
   let features = theme.features || null;
-  if (!features && theme.featuresJson) {
-    try {
-      features = JSON.parse(theme.featuresJson);
-    } catch {
-      features = null;
-    }
-  }
-  if (!features || features.length === 0) {
-    features = [
-      { name: "语义相关度", pct: 93, desc: "工单核心诉求高度同源" },
-      { name: "空间聚集度", pct: theme.patternType === "DIVERGE" ? 84 : 95, desc: `同属${theme.canonicalLocation || "辖区"}物理半径` },
-      { name: "时序密度", pct: 86, desc: "相近时段内呈多频突发态势" },
-      { name: "情绪敏感度", pct: theme.riskLevel === "HIGH" ? 90 : 75, desc: "群众切身民生利益诉求" },
-      { name: "主体一致性", pct: theme.patternType === "DIVERGE" ? 98 : 92, desc: "指向相同涉事主体或处置单位" },
-    ];
-  }
-
   let radar = theme.radar || null;
-  if (!radar && theme.radarJson) {
-    try {
-      radar = JSON.parse(theme.radarJson);
-    } catch {
-      radar = null;
+  if (!brief) {
+    if (!features && theme.featuresJson) {
+      try {
+        features = JSON.parse(theme.featuresJson);
+      } catch {
+        features = null;
+      }
+    }
+    if (!features || features.length === 0) {
+      features = [
+        { name: "语义相关度", pct: 93, desc: "工单核心诉求高度同源" },
+        { name: "空间聚集度", pct: theme.patternType === "DIVERGE" ? 84 : 95, desc: `同属${theme.canonicalLocation || "辖区"}物理半径` },
+        { name: "时序密度", pct: 86, desc: "相近时段内呈多频突发态势" },
+        { name: "情绪敏感度", pct: theme.riskLevel === "HIGH" ? 90 : 75, desc: "群众切身民生利益诉求" },
+        { name: "主体一致性", pct: theme.patternType === "DIVERGE" ? 98 : 92, desc: "指向相同涉事主体或处置单位" },
+      ];
+    }
+
+    if (!radar && theme.radarJson) {
+      try {
+        radar = JSON.parse(theme.radarJson);
+      } catch {
+        radar = null;
+      }
+    }
+    if (!radar || radar.length === 0) {
+      radar = theme.riskLevel === "HIGH" ? [95, 92, 88, 90, 96] : [93, 90, 86, 75, 92];
     }
   }
-  if (!radar || radar.length === 0) {
-    radar = theme.riskLevel === "HIGH" ? [95, 92, 88, 90, 96] : [93, 90, 86, 75, 92];
-  }
 
-  const parsed = parseAdminArea(theme.canonicalLocation);
-  // ponytail: 用所有成员工单的去重镇街代替「第一条 member 的地区」，
-  // 跨镇街主题不再被首条 sample 掩盖。2 个以内全部展示，更多则展示前 2 + 总数。
-  const sampleTowns = Array.from(
-    new Set(
-      samples
-        .map((t) => regionLabel(t.subdistrict, t.district))
-        .filter((r) => r && r !== "未归属" && r !== UNKNOWN_TOWN)
-    )
-  );
-  const region = sampleTowns.length > 0
-    ? sampleTowns.length <= 2
-      ? sampleTowns.join(" · ")
-      : `${sampleTowns.slice(0, 2).join(" · ")} 等 ${sampleTowns.length} 镇街`
-    : parsed.subdistrict
-      ? regionLabel(parsed.subdistrict)
-      : regionLabel(theme.canonicalLocation);
+  // 列表会用全部成员镇街覆盖 region，这里不必再解析地点。
+  let region = "";
+  if (!brief) {
+    const parsed = parseAdminArea(theme.canonicalLocation);
+    // ponytail: 用所有成员工单的去重镇街代替「第一条 member 的地区」，
+    // 跨镇街主题不再被首条 sample 掩盖。2 个以内全部展示，更多则展示前 2 + 总数。
+    const sampleTowns = Array.from(
+      new Set(
+        samples
+          .map((t) => regionLabel(t.subdistrict, t.district))
+          .filter((r) => r && r !== "未归属" && r !== UNKNOWN_TOWN)
+      )
+    );
+    region = sampleTowns.length > 0
+      ? sampleTowns.length <= 2
+        ? sampleTowns.join(" · ")
+        : `${sampleTowns.slice(0, 2).join(" · ")} 等 ${sampleTowns.length} 镇街`
+      : parsed.subdistrict
+        ? regionLabel(parsed.subdistrict)
+        : regionLabel(theme.canonicalLocation);
+  }
   const type = theme.category || theme.eventType || "综合民生";
 
   return {
@@ -214,16 +221,16 @@ export function toClusterDto(theme: {
     region,
     count: theme.ticketCount || 0,
     sample_ids: samples.slice(0, 5).map((t) => t.ticketNo || t.id),
-    sample_titles: samples.slice(0, 5).map((t) => t.summarizeTitle || t.title || theme.title || type),
-    sample_contents: samples.slice(0, 5).map((t) => t.maskedContent || t.content || ""),
+    sample_titles: samples.slice(0, brief ? 1 : 5).map((t) => t.summarizeTitle || t.title || theme.title || type),
+    sample_contents: brief ? [] : samples.slice(0, 5).map((t) => t.maskedContent || t.content || ""),
     first_date: typeof first === "string" ? first.slice(0, 10) : "",
     last_date: typeof last === "string" ? last.slice(0, 10) : "",
     mode,
     mode_name: meta.name,
     mode_tagline: meta.tagline,
-    mode_risk: theme.riskReason || meta.risk,
-    mode_advice: theme.recommendedAction || "",
-    summary: theme.aiSummary || "",
+    mode_risk: brief ? meta.risk : theme.riskReason || meta.risk,
+    mode_advice: brief ? "" : theme.recommendedAction || "",
+    summary: brief ? "" : theme.aiSummary || "",
     mode_color: meta.color,
     mode_icon: meta.icon,
     ai_confidence: theme.aiConfidence ?? null,

@@ -1,7 +1,7 @@
 import { getRegionDb, type DB } from "@/db/client";
 import { ticketsTable, themesTable, ticketThemesTable } from "@/db/schema";
 import { and, desc, eq, gte, isNotNull, lt, sql, type SQL } from "drizzle-orm";
-import { explicitAdmin, isTownLabel } from "@/lib/admin-area";
+import { isTownLabel, parseAdminArea } from "@/lib/admin-area";
 import { regionLabel, toClusterDto, normalizeStatusCode, UNKNOWN_TOWN } from "@/lib/civic-dto";
 import { CIVIC_CATEGORIES, deriveClusterUrgency, spanDays, urgentCutFromUnprocessed } from "@/lib/civic-cluster";
 import {
@@ -257,11 +257,56 @@ export async function loadWorkorderStats(regionId?: string) {
   };
 }
 
+function clusterRegionLabel(towns: Set<string> | undefined, canonicalLocation: string | null | undefined): string {
+  const names = [...(towns || [])].filter((town) => town && town !== UNKNOWN_TOWN && town !== "未归属");
+  names.sort((a, b) => a.localeCompare(b, "zh-CN"));
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return names.join(" · ");
+  if (names.length > 2) return `${names.slice(0, 2).join(" · ")} 等 ${names.length} 镇街`;
+  const parsed = parseAdminArea(canonicalLocation);
+  if (parsed.subdistrict) return regionLabel(parsed.subdistrict);
+  return regionLabel(canonicalLocation);
+}
+
+function facetTownsFrom(townsByTheme: Map<string, Set<string>>): string[] {
+  const set = new Set<string>();
+  for (const towns of townsByTheme.values()) {
+    for (const town of towns) {
+      if (isTownLabel(town) || town === UNKNOWN_TOWN) set.add(town);
+    }
+  }
+  const list = [...set].filter((town) => town !== UNKNOWN_TOWN).sort((a, b) => a.localeCompare(b, "zh-CN"));
+  if (set.has(UNKNOWN_TOWN)) list.push(UNKNOWN_TOWN);
+  return list;
+}
+
 export async function loadClusterBundle(regionId?: string) {
   const { db: tenantDb } = await getRegionDb(regionId);
-  const themeRows = await tenantDb.select().from(themesTable).orderBy(desc(themesTable.ticketCount));
+  const themeRows = await tenantDb
+    .select({
+      id: themesTable.id,
+      title: themesTable.title,
+      canonicalSubject: themesTable.canonicalSubject,
+      canonicalLocation: themesTable.canonicalLocation,
+      eventType: themesTable.eventType,
+      category: themesTable.category,
+      riskLevel: themesTable.riskLevel,
+      ticketCount: themesTable.ticketCount,
+      patternType: themesTable.patternType,
+      civicMode: themesTable.civicMode,
+      aiConfidence: themesTable.aiConfidence,
+      firstAt: themesTable.firstAt,
+      lastAt: themesTable.lastAt,
+      handlingStatus: themesTable.handlingStatus,
+      handlingProgress: themesTable.handlingProgress,
+      handlingOwner: themesTable.handlingOwner,
+      handlingEta: themesTable.handlingEta,
+      trendPct: themesTable.trendPct,
+    })
+    .from(themesTable)
+    .orderBy(desc(themesTable.ticketCount));
 
-  const [pendingRows, townRows, sampleRows] = await Promise.all([
+  const [pendingRows, townRows] = await Promise.all([
     tenantDb
       .select({
         themeId: ticketThemesTable.themeId,
@@ -278,29 +323,6 @@ export async function loadClusterBundle(regionId?: string) {
       .from(ticketThemesTable)
       .innerJoin(ticketsTable, eq(ticketsTable.id, ticketThemesTable.ticketId))
       .groupBy(ticketThemesTable.themeId, ticketsTable.subdistrict),
-    tenantDb.execute<{
-      id: string;
-      ticket_no: string | null;
-      title: string | null;
-      summarize_title: string | null;
-      content: string | null;
-      masked_content: string | null;
-      subdistrict: string | null;
-      district: string | null;
-      status: string | null;
-      theme_id: string;
-    }>(sql`
-      SELECT id, ticket_no, title, summarize_title, content, masked_content,
-             subdistrict, district, status, theme_id
-      FROM (
-        SELECT t.id, t.ticket_no, t.title, t.summarize_title, t.content, t.masked_content,
-               t.subdistrict, t.district, t.status, tt.theme_id,
-               row_number() OVER (PARTITION BY tt.theme_id ORDER BY t.create_time DESC NULLS LAST) AS rn
-        FROM ticket_themes tt
-        INNER JOIN tickets t ON t.id = tt.ticket_id
-      ) s
-      WHERE rn <= 5
-    `),
   ]);
 
   const pendingByTheme = new Map<string, number>();
@@ -315,50 +337,6 @@ export async function loadClusterBundle(regionId?: string) {
     townsByTheme.set(r.themeId, set);
   }
 
-  const samplesByTheme = new Map<
-    string,
-    Array<{
-      id: string;
-      ticketNo?: string;
-      title?: string | null;
-      summarizeTitle?: string | null;
-      content?: string | null;
-      maskedContent?: string | null;
-      subdistrict?: string | null;
-      district?: string | null;
-      status?: string | null;
-    }>
-  >();
-  const sampleList = Array.isArray(sampleRows)
-    ? sampleRows
-    : ((sampleRows as { rows?: typeof sampleRows }).rows as typeof sampleRows) || [];
-  for (const r of sampleList as Array<{
-    id: string;
-    ticket_no: string | null;
-    title: string | null;
-    summarize_title: string | null;
-    content: string | null;
-    masked_content: string | null;
-    subdistrict: string | null;
-    district: string | null;
-    status: string | null;
-    theme_id: string;
-  }>) {
-    const list = samplesByTheme.get(r.theme_id) || [];
-    list.push({
-      id: r.id,
-      ticketNo: r.ticket_no || undefined,
-      title: r.title,
-      summarizeTitle: r.summarize_title,
-      content: r.content,
-      maskedContent: r.masked_content,
-      subdistrict: r.subdistrict,
-      district: r.district,
-      status: r.status,
-    });
-    samplesByTheme.set(r.theme_id, list);
-  }
-
   const pendingValues = themeRows.map((t) => {
     const code = normalizeStatusCode(t.handlingStatus);
     if (code === "RESOLVED") return 0;
@@ -367,12 +345,15 @@ export async function loadClusterBundle(regionId?: string) {
   const cut = urgentCutFromUnprocessed(pendingValues);
 
   const dtos = themeRows.map((t, idx) => {
-    const base = toClusterDto({
-      ...t,
-      firstAt: t.firstAt,
-      lastAt: t.lastAt,
-      tickets: samplesByTheme.get(t.id) || [],
-    });
+    const base = toClusterDto(
+      {
+        ...t,
+        firstAt: t.firstAt,
+        lastAt: t.lastAt,
+        tickets: [],
+      },
+      { brief: true }
+    );
     const code = base.status.code || normalizeStatusCode(base.status.label);
     const unprocessed =
       code === "RESOLVED"
@@ -380,6 +361,7 @@ export async function loadClusterBundle(regionId?: string) {
         : pendingByTheme.get(t.id) ?? Math.round(base.count * (code === "IN_PROGRESS" ? 0.4 : 0.7));
     return {
       ...base,
+      region: clusterRegionLabel(townsByTheme.get(t.id), t.canonicalLocation),
       unprocessed,
       urgency: deriveClusterUrgency(unprocessed, base.type, cut),
       days: spanDays(base.first_date, base.last_date),
@@ -388,7 +370,7 @@ export async function loadClusterBundle(regionId?: string) {
     };
   });
 
-  return { themeRows, dtos, samplesByTheme };
+  return { dtos, facetTowns: facetTownsFrom(townsByTheme) };
 }
 
 export function filterClusterDtos(
