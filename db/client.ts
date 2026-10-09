@@ -54,14 +54,32 @@ const CACHE_TTL_MS = 60 * 1000; // 1 分钟缓存
 export async function getAllRegions(): Promise<schema.RegionRecord[]> {
   try {
     const rows = await db
-      .select()
+      .select({
+        id: schema.regionsTable.id,
+        name: schema.regionsTable.name,
+        city: schema.regionsTable.city,
+        province: schema.regionsTable.province,
+        schemaName: schema.regionsTable.schemaName,
+        svgMapPath: schema.regionsTable.svgMapPath,
+        categoryConfigJson: schema.regionsTable.categoryConfigJson,
+        status: schema.regionsTable.status,
+        isDefault: schema.regionsTable.isDefault,
+        description: schema.regionsTable.description,
+        createdAt: schema.regionsTable.createdAt,
+        updatedAt: schema.regionsTable.updatedAt,
+      })
       .from(schema.regionsTable)
       .where(eq(schema.regionsTable.status, "ACTIVE"));
-    for (const r of rows) {
+    const records: schema.RegionRecord[] = rows.map((r) => ({
+      ...r,
+      geojsonBoundary: null,
+      subdistrictsGeojson: null,
+    }));
+    for (const r of records) {
       regionSchemaCache.set(r.id, { schemaName: r.schemaName, region: r });
     }
     cacheLastLoaded = Date.now();
-    return rows;
+    return records;
   } catch (err: any) {
     // 若尚未初始化 regions 表，返回空列表
     return [];

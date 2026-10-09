@@ -23,16 +23,14 @@ export async function GET(
     const { searchParams } = new URL(req.url);
     const level = searchParams.get("level") || "district";
 
-    // 1. 读取站点数据库中持久化的空间数据
-    const [row] = await sql`
-      SELECT geojson_boundary, subdistricts_geojson FROM public.regions WHERE id = ${id} LIMIT 1;
-    `;
-
-    // 2. 如果请求第四级镇街边界
+    // 镇街网格只读镇街列。区级轮廓和镇街面分两次取，避免每次都拉两份多边形。
     if (level === "subdistricts") {
-      if (row?.subdistricts_geojson) {
+      const [townRow] = await sql`
+        SELECT subdistricts_geojson FROM public.regions WHERE id = ${id} LIMIT 1;
+      `;
+      if (townRow?.subdistricts_geojson) {
         try {
-          const geojson = JSON.parse(row.subdistricts_geojson);
+          const geojson = JSON.parse(townRow.subdistricts_geojson);
           return apiSuccess({
             regionId: id,
             name: region.name,
@@ -45,7 +43,11 @@ export async function GET(
       return apiError(ApiCode.NOT_FOUND, "该站点尚未配置第四级镇街多边形数据", 404);
     }
 
-    // 3. 默认请求区县级权威边界
+    const [row] = await sql`
+      SELECT geojson_boundary, subdistricts_geojson FROM public.regions WHERE id = ${id} LIMIT 1;
+    `;
+
+    // 区级响应仍带镇街面，地图可以同时画轮廓和网格。
     if (row?.geojson_boundary) {
       try {
         const geojson = JSON.parse(row.geojson_boundary);
