@@ -183,7 +183,7 @@ export default function TicketsPage() {
             工单中心
           </div>
           <div className="page-hero__sub">
-            {activeRegion ? `${activeRegion.name} · ` : ""}全部工单 · 实时同步 · 共 <b style={{ color: "var(--c-ink)" }}>{s.total}</b> 条
+            {activeRegion ? `${activeRegion.name} · ` : ""}全部工单 · 实时同步
           </div>
         </div>
         <PageHeaderActions

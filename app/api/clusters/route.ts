@@ -11,7 +11,12 @@ export async function GET(req: Request) {
     const regionId = await resolveRequestRegionId(req);
     const { searchParams } = new URL(req.url);
     const mode = searchParams.get("mode") || "";
-    const region = searchParams.get("region") || "";
+    const regionQuery = searchParams.get("region") || "";
+    // ?region= 也用来选站点。fs_shunde 这种站点 id 不是镇街，不能拿去滤主题。
+    const region =
+      regionQuery !== regionId && (isTownLabel(regionQuery) || regionQuery === "未知")
+        ? regionQuery
+        : "";
     const keyword = searchParams.get("keyword") || "";
     const status = searchParams.get("status") || "";
     const urgency = searchParams.get("urgency") || "";

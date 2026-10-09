@@ -47,6 +47,26 @@ type Cluster = {
 
 type Overview = { regionDistribution?: Record<string, number> };
 
+/** 主题镇街可能是「大良 · 容桂」或「大良 · 容桂 等 3 镇街」。筛选项要拆成单个镇街。 */
+function townChoices(labels: string[]): string[] {
+  const set = new Set<string>();
+  for (const label of labels) {
+    if (!label) continue;
+    if (label === "未知") {
+      set.add("未知");
+      continue;
+    }
+    const head = label.split(" 等 ")[0];
+    for (const part of head.split(" · ")) {
+      const name = part.trim();
+      if (isTownLabel(name)) set.add(name);
+    }
+  }
+  const list = [...set].filter((name) => name !== "未知").sort((a, b) => a.localeCompare(b, "zh-CN"));
+  if (set.has("未知")) list.push("未知");
+  return list;
+}
+
 function MultifreqChrome() {
   return (
     <>
@@ -75,7 +95,8 @@ function MultifreqInner() {
   const { activeRegion, isLoading: regionLoading } = useRegion();
   const [rows, setRows] = useState<Cluster[]>([]);
   const [ov, setOv] = useState<Overview | null>(null);
-  const [region, setRegion] = useState(search.get("region") || "");
+  const urlTown = search.get("region") || "";
+  const [region, setRegion] = useState(isTownLabel(urlTown) || urlTown === "未知" ? urlTown : "");
   const [timeLabel, setTimeLabel] = useState("近 7 天");
   const [thresholdOpen, setThresholdOpen] = useState(false);
   const [confMin, setConfMin] = useState(85);
@@ -84,10 +105,11 @@ function MultifreqInner() {
   const [ready, setReady] = useState(false);
 
   function load() {
-    const regParam = activeRegion?.id ? `?region=${encodeURIComponent(activeRegion.id)}` : "";
+    const headers: Record<string, string> = {};
+    if (activeRegion?.id) headers["x-region-id"] = activeRegion.id;
     Promise.all([
-      fetch(`/api/clusters${regParam}`).then((r) => r.json()),
-      fetch(`/api/overview${regParam}`).then((r) => r.json()),
+      fetch("/api/clusters", { headers }).then((r) => r.json()),
+      fetch("/api/overview", { headers }).then((r) => r.json()),
     ])
       .then(([c, o]) => {
         setRows(c.topClusters || []);
@@ -139,11 +161,13 @@ function MultifreqInner() {
   }
 
   const regions = useMemo(() => {
-    const set = new Set(rows.map((r) => r.region).filter((n) => isTownLabel(n) || n === "未知"));
-    const list = [...set].filter((n) => n !== "未知").sort((a, b) => a.localeCompare(b, "zh-CN"));
+    const fromTickets = Object.keys(ov?.regionDistribution || {});
+    const labels = fromTickets.length > 0 ? fromTickets : townChoices(rows.map((r) => r.region));
+    const set = new Set(labels.filter((name) => isTownLabel(name) || name === "未知"));
+    const list = [...set].filter((name) => name !== "未知").sort((a, b) => a.localeCompare(b, "zh-CN"));
     if (set.has("未知")) list.push("未知");
     return list;
-  }, [rows]);
+  }, [ov, rows]);
 
   const top5 = [...filtered].sort((a, b) => b.count - a.count).slice(0, 5);
 
