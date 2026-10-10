@@ -109,10 +109,17 @@ export function CivicNav() {
       "/multifreq": "工单透势研判",
       "/tickets": "工单中心核查",
       "/dict": "标准字典与别名知识库",
+      "/screen": "实时指挥调度大屏",
       "/admin/regions": "多站点管理与 AI 拓荒",
+      "/mcp/authorize": "MCP 智能体授权中心",
       "/login": "系统登录",
     };
-    const title = pageTitles[pathname] || "智能研判中心";
+    let title = pageTitles[pathname];
+    if (!title) {
+      if (pathname.startsWith("/tickets/")) title = "工单详情核查";
+      else if (pathname.startsWith("/themes/")) title = "多频主题深度研判";
+      else title = "智能研判中心";
+    }
     const regionPrefix = activeRegion ? `${activeRegion.name} · ` : "";
     document.title = `${regionPrefix}${title} | 民声智理 12345`;
   }, [pathname, activeRegion?.name]);

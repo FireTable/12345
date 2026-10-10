@@ -69,6 +69,12 @@ export const metadata: Metadata = {
       "max-snippet": -1,
     },
   },
+  icons: {
+    icon: "/icon.svg",
+    shortcut: "/icon.svg",
+    apple: "/icon.svg",
+  },
+  manifest: "/manifest.webmanifest",
   other: {
     "geo.region": "CN-GD",
     "geo.placename": "Guangdong",
