@@ -140,7 +140,11 @@ export function PipelineDrawer() {
           </div>
 
           <div className="workbench-header__status">
-            {isAllAnalyzed ? (
+            {!pipelineData && loading ? (
+              <div className="workbench-badge workbench-badge--idle">
+                <span className="workbench-badge__text">正在读取流水线</span>
+              </div>
+            ) : isAllAnalyzed ? (
               <div className="workbench-badge workbench-badge--idle">
                 <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
                 <span className="workbench-badge__text">全部工单已完成研判 ({pipelineData?.metrics.totalTickets?.toLocaleString()} 件)</span>
@@ -172,7 +176,7 @@ export function PipelineDrawer() {
 
         <div className="pipeline-drawer__body">
           {pipelineDrawerOpen && (
-            <PipelineCanvas stateData={pipelineData} onRefresh={fetchState} />
+            <PipelineCanvas stateData={pipelineData} onRefresh={fetchState} pending={loading && !pipelineData} />
           )}
         </div>
 

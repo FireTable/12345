@@ -572,15 +572,38 @@ function InnerPipelineCanvas({
 export function PipelineCanvas({
   stateData,
   onRefresh,
+  pending = false,
 }: {
   stateData: PipelineStateResponse | null;
   onRefresh: () => void;
+  /** 抽屉刚打开、还没有第一份快照。已有快照时刷新不再盖住画布。 */
+  pending?: boolean;
 }) {
+  const showVeil = !stateData;
+
   return (
-    <div className="workbench-canvas-container">
+    <div className="workbench-canvas-container" aria-busy={pending}>
       <ReactFlowProvider>
         <InnerPipelineCanvas stateData={stateData} onRefresh={onRefresh} />
       </ReactFlowProvider>
+      {showVeil ? (
+        <div className="workbench-canvas-pending">
+          {pending ? (
+            <>
+              <span className="workbench-canvas-spinner" aria-hidden="true" />
+              <p className="workbench-canvas-pending__title">正在读取流水线</p>
+              <p className="workbench-canvas-pending__sub">确认算力节点和当前进度</p>
+            </>
+          ) : (
+            <>
+              <p className="workbench-canvas-pending__title">流水线状态暂时没有取到</p>
+              <button type="button" className="workbench-canvas-pending__retry" onClick={onRefresh}>
+                重试
+              </button>
+            </>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

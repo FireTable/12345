@@ -160,3 +160,28 @@ ALTER TABLE public.regions
 | `POST` | `/api/map/geocode` | Bi-directional geocoding & subdistrict reverse lookup |
 | `GET` | `/api/map/tile?type=vec&z=:z&x=:x&y=:y` | High-speed cached Tianditu vector raster tile proxy |
 | `GET` | `/api/map/tile?type=cva&z=:z&x=:x&y=:y` | High-speed cached Tianditu annotation tile proxy |
+
+---
+
+## 8. Geo-Spatial Indexing & Generative Engine Optimization (GEO/SEO Standards)
+
+### 8.1 Administrative Area Indexing & Schema.org Semantic Markup
+To ensure municipal administrative assets and civic intelligence services are machine-readable across web crawlers and modern AI search engines:
+- **Schema.org Integration**: The platform dynamically injects `GovernmentService` and `SoftwareApplication` JSON-LD schemas in the root layout, linking statutory administrative subdistricts (`佛山市顺德区`, `广州市天河区`) directly to civic analytics operations.
+- **Geographic HTML Directives**: Emits standard RFC geographic metadata:
+  ```html
+  <meta name="geo.region" content="CN-GD" />
+  <meta name="geo.placename" content="Guangdong" />
+  <meta name="geo.position" content="22.80;113.29" />
+  <meta name="ICBM" content="22.80, 113.29" />
+  ```
+
+### 8.2 Generative Engine Optimization (`/llms.txt` Specification)
+In accordance with modern LLM search agent standards (Anthropic, OpenAI, Perplexity):
+- **High-Density Manifest**: `/public/llms.txt` exposes canonical system architecture, System-1/2 dual-engine specs, Tianditu CGCS2000 standards, and core API endpoints in clean Markdown.
+- **Zero-Drift Spatial Discovery**: AI search bots indexing the platform immediately resolve official 4th-level subdistrict coverage and Model Context Protocol (MCP) tool bindings without hallucinations.
+
+### 8.3 Dynamic Robots & Sitemap Architecture
+- **`app/robots.ts`**: Provides strict crawl policy allowing public spatial overviews, themes, and `llms.txt` while shielding sensitive administrative `/admin/` and `/mcp/authorize` paths.
+- **`app/sitemap.ts`**: Next.js 15 metadata route registering high-frequency municipal analytics routes with prioritized crawl frequencies.
+

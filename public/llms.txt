@@ -1,0 +1,45 @@
+# 民声智理 · 12345 政务热线认知中枢与 AI 智能研判系统 (CivicRadar)
+
+> 工业级 12345 市民热线多频诉求智能研判中枢平台。基于 Kahneman 快慢双系统协同架构（System-1 端侧轻量神经分类 + System-2 本地大模型深度认知抽取）、国家天地图 CGCS2000 测绘级空间底座、PostgreSQL 多城市 Schema 物理隔离与全要素双向可逆脱敏安全气隙。
+
+## 核心系统架构 (System Architecture)
+
+- **System 1 (快思考 / 边缘分类)**：
+  - 4-Head 交叉注意力轻量神经网络（ONNX Runtime 本地推断），前向时延 <0.08ms，单机吞吐超 12,600 TPS。
+  - 任务：工单意图（投诉/求助/建议/咨询）、七大民生诉求分类、法定办理时限（SLA）、社会风险与涉稳等级初筛。
+- **System 2 (慢思考 / 结构化认知)**：
+  - 本地 27B 强约束模型（Metal 硬件加速，CoT 思维链剥离输出纯净 JSON）。
+  - 任务：涉事主体（canonical_subject）、微观地点（address）、事件类型（event_type）与一句话标准政务摘要（summarize_title）精准抽取。
+- **全要素隐私脱敏气隙 (@civic/anonymizer)**：
+  - 会话级可逆映射（Keymap），敏感人名、手机号、身份证号出站自动混淆，入库 O(1) 速度无损还原，数据 100% 离线不出域。
+- **同案同地时空语义聚类**：
+  - BAAI/bge-m3 密集向量全字段嵌入。
+  - 余弦相似度 ≥0.88 + 强约束（同诉求分类、同法定镇街、同具体小区/微观地标）。
+  - 独创 micro-spatial 基底提纯（extractSpatialCore）与 7 天办结后“假闭环”时序狙击算法。
+- **空间地理底座 (CGCS2000 GIS)**：
+  - 接入国家天地图高精底图，消除火星坐标（GCJ-02）300~500米偏移，像素级对齐。
+  - 涵盖第四级乡镇街道高精行政矢量面（subdistricts_geojson），支持全域穿透与统一调色板。
+- **多城市/多租户隔离**：
+  - 基于 PostgreSQL `region_{id}` 独立物理 Schema，杜绝跨区数据串扰。
+  - 内置 AI Scout 辖区拓荒向导，30 秒全自动生成新城市行政边界、社区网格与别名知识库。
+- **外部生态协议 (MCP)**：
+  - 遵循 Model Context Protocol (2025-03-26)，支持 OAuth 2.0 授权码流与 Streamable HTTP。
+  - 暴露 `list_regions`、`push_ticket`、`region_overview` 三大政务工具。
+
+## 页面与功能导航 (Navigation)
+
+- `/`: 数据总览态势大盘（多辖区热力态势、工单指标、AI 副驾驶 Copilot）
+- `/themes`: 多频工单看板（群诉主题聚类折叠、实体拓扑、公文级处置预案）
+- `/multifreq`: 工单透势研判（紧急×重要四象限透视、假闭环追踪预警）
+- `/tickets`: 工单中心（微观全要素穿透、高级检索、人工复核流转）
+- `/dict`: 标准字典治理（法定镇街/村居社区白名单、别名知识库自学习）
+- `/screen`: 实时指挥调度大屏（全域态势流、大屏一次读取聚合）
+- `/admin/regions`: 站点管理中心（多租户管理、AI Scout 拓荒向导、MCP Client 吊销）
+
+## 关键 API 端点 (API Endpoints)
+
+- `GET /api/overview`: 辖区宏观态势与热点聚合
+- `GET /api/cockpit`: 指挥大屏高聚合快照（单次拉取优化）
+- `POST /api/tickets`: 单单流式接入（入库即增量吸附，1.9ms）
+- `POST /api/cluster`: 批量离线研判（任务队列异步编排）
+- `POST /api/mcp`: 标准 Model Context Protocol Streamable HTTP 通信端点

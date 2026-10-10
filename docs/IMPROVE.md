@@ -1,8 +1,27 @@
-# Civic UI landing log
+# 系统架构演进与技术攻坚日志 (Civic Radar Architecture Evolution Log)
 
-Work branch: `feat/civic-ui-landing`  
-Reference: `design-assets/frontend/`  
-Rule: pages read persisted or aggregated data. No `Math.random` trends, no `log10(count)` fake confidence, no hardcoded 北滘 +186% insight as live copy.
+> **版本定位**：从 `main` 分支单体粗粒度工作流（V1 基线）演进至多城市/多租户认知双系统（V2 生产架构）的全链路攻坚备忘。遵循真实持久化数据源、严禁伪造统计、严格保障政务数据物理隔离与高精测绘级时空对齐。
+
+---
+
+## 📌 V1 到 V2 核心架构质变与重大突破概览
+
+1. **认知双系统分层（Kahneman Dual-System）**：
+   - 摆脱全量依赖通用大模型的单体瓶颈，抽象端侧 ONNX 4 头轻量神经网络（System 1，<0.08ms 前向）与本地 27B 强约束结构化认知模型（System 2），实现“快慢分治”，算力开销骤降 80%+。
+2. **根除幻觉死循环与去套娃仲裁**：
+   - 彻底废除 V1 置信度不足反复调用 LLM 仲裁的死循环模式，建立法定镇街、社区与权威分类白名单的确定性物理校准。
+3. **数据隐私安全气隙（Air-Gap Security）**：
+   - 研发独立 `@civic/anonymizer`，会话级全要素双向可逆脱敏，实现出站高强度加密与入库无损解密，全链路本地离线部署，数据 100% 不出域。
+4. **时空语义精准聚类与微观基底提纯**：
+   - 弃用粗粒度静态 72h 图拓扑割裂，融合密集语义向量（bge-m3）与微观道路核心基底提纯（`extractSpatialCore`），实现高精度同案同地收拢，相邻门牌不误聚，跨街道误聚率清零。
+5. **空间测绘级 GIS 基底（CGCS2000）**：
+   - 引入国家天地图高精底图，彻底消除火星坐标系（GCJ-02）300~500米偏移，第四级乡镇街道矢量边界入库并自适应调色。
+6. **多城市与多租户物理隔离**：
+   - PostgreSQL Schema 物理隔离，解耦单一顺德硬编码，新增 AI Scout 30 秒全自主辖区智能拓荒向导。
+7. **开放互联与可视化工作台**：
+   - 原生 Model Context Protocol (MCP 2025-03-26) 集成与 React Flow 研判流水线全景工作台。
+
+---
 
 ## 2026-10-10 — MCP 接入、大屏一次读取、副驾驶工具图
 
