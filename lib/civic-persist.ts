@@ -159,24 +159,23 @@ export async function persistTicketAnalysis(
 export async function persistClusterResult(input: {
   tickets: EnrichedTicket[];
   themes: MultiFrequencyTheme[];
+  /** 保留参数，不再使用。主题表和关联表都不删除。 */
   replaceThemes?: boolean;
   regionId?: string;
 }) {
-  const { tickets, themes, replaceThemes = true, regionId } = input;
+  const { tickets, themes, regionId } = input;
   const { db: tenantDb } = await getRegionDb(regionId);
 
   await persistTicketAnalysis(tickets, { themeId: null, regionId });
-
-  if (replaceThemes) {
-    await tenantDb.delete(ticketThemesTable);
-    await tenantDb.delete(themesTable);
-  }
 
   const themeRecords = themes.map(buildThemePersistRow);
   if (themeRecords.length > 0) {
     const THEME_CHUNK = 40;
     for (let i = 0; i < themeRecords.length; i += THEME_CHUNK) {
-      await tenantDb.insert(themesTable).values(themeRecords.slice(i, i + THEME_CHUNK));
+      await tenantDb
+        .insert(themesTable)
+        .values(themeRecords.slice(i, i + THEME_CHUNK))
+        .onConflictDoNothing({ target: themesTable.id });
     }
 
     const ticketThemeMappings: Array<{ ticketId: string; themeId: string }> = [];
@@ -201,5 +200,76 @@ export async function persistClusterResult(input: {
       }
     }
   }
+  invalidateCivicAggregates();
+}
+
+/**
+ * 增量写入。只更新这一批工单，并入的旧主题，以及新开的主题。
+ * 不删除 themes，也不删除 ticket_themes。
+ */
+export async function persistIncrementalResult(input: {
+  tickets: EnrichedTicket[];
+  attachedThemes: MultiFrequencyTheme[];
+  newThemes: MultiFrequencyTheme[];
+  regionId: string;
+}) {
+  const { tickets, attachedThemes, newThemes, regionId } = input;
+  const { db: tenantDb } = await getRegionDb(regionId);
+
+  const newRecords = newThemes.map(buildThemePersistRow);
+  const THEME_CHUNK = 40;
+  for (let i = 0; i < newRecords.length; i += THEME_CHUNK) {
+    await tenantDb
+      .insert(themesTable)
+      .values(newRecords.slice(i, i + THEME_CHUNK))
+      .onConflictDoNothing({ target: themesTable.id });
+  }
+
+  for (let i = 0; i < attachedThemes.length; i += THEME_CHUNK) {
+    const chunk = attachedThemes.slice(i, i + THEME_CHUNK);
+    await Promise.all(
+      chunk.map((theme) =>
+        tenantDb
+          .update(themesTable)
+          .set({
+            ticketCount: theme.ticketCount,
+            timeSpanHours: theme.timeSpanHours,
+            firstAt: parseThemeDate(theme.firstOccurrence),
+            lastAt: parseThemeDate(theme.lastOccurrence),
+            riskLevel: theme.riskLevel,
+            riskReason: theme.riskReason || null,
+            aiSummary: theme.aiSummary || null,
+            recommendedAction: theme.recommendedAction || null,
+          })
+          .where(eq(themesTable.id, theme.id))
+      )
+    );
+  }
+
+  await persistTicketAnalysis(tickets, { regionId });
+
+  const links: Array<{ ticketId: string; themeId: string }> = [];
+  for (const theme of [...attachedThemes, ...newThemes]) {
+    for (const ticket of theme.tickets || []) {
+      links.push({ ticketId: ticket.id, themeId: theme.id });
+    }
+  }
+  for (let i = 0; i < links.length; i += 500) {
+    await tenantDb
+      .insert(ticketThemesTable)
+      .values(links.slice(i, i + 500))
+      .onConflictDoNothing();
+  }
+
+  for (const theme of newThemes) {
+    for (const ticket of theme.tickets || []) {
+      if (!ticket.isFakeClosure) continue;
+      await tenantDb
+        .update(ticketsTable)
+        .set({ isFakeClosure: true, closureStatus: "REOPENED" })
+        .where(eq(ticketsTable.id, ticket.id));
+    }
+  }
+
   invalidateCivicAggregates();
 }

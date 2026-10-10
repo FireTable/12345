@@ -47,12 +47,25 @@ function safeParseDate(dateStr: string): Date {
   return new Date();
 }
 
+export interface ClusterNodeOptions {
+  /** 新主题从这个序号开始。默认 1，即 THEME-1。 */
+  serialStart?: number;
+  /** 只在这些工单之间找近邻。增量归并用，避免扫全市。 */
+  onlyTicketIds?: string[];
+}
+
 /**
- * 全量聚类：只合并同一类事，并且主体或地点对得上的工单。
+ * 把交给它的工单按同一事件归并。
+ * 调用方决定这批是全市，还是没并进旧聚类的新工单。
  * 同一标题下的无关诉求各自成单，不进入多频主题。
  */
-export async function clusterNode(
-  state: TicketRadarState
+export async function clusterNode(state: TicketRadarState): Promise<Partial<TicketRadarState>> {
+  return clusterTicketSet(state);
+}
+
+export async function clusterTicketSet(
+  state: TicketRadarState,
+  options?: ClusterNodeOptions
 ): Promise<Partial<TicketRadarState>> {
   const enrichedTickets = state.enrichedTickets || [];
   const taskId = state.taskId;
@@ -79,7 +92,7 @@ export async function clusterNode(
   const themes: MultiFrequencyTheme[] = [];
   let neighborPairs: Array<[number, number]> | undefined;
   if (regionId) {
-    const storedPairs = await loadStoredNeighborPairs(regionId);
+    const storedPairs = await loadStoredNeighborPairs(regionId, options?.onlyTicketIds);
     if (storedPairs && storedPairs.length > 0) {
       const indexById = new Map(enrichedTickets.map((ticket, index) => [ticket.id, index]));
       const mapped = storedPairs.flatMap(([leftId, rightId]) => {
@@ -138,7 +151,8 @@ export async function clusterNode(
       1,
       differenceInHours(safeParseDate(lastTime), safeParseDate(firstTime))
     );
-    const themeId = `THEME-${themes.length + 1}`;
+    const serialStart = options?.serialStart && options.serialStart > 0 ? options.serialStart : 1;
+    const themeId = `THEME-${serialStart + themes.length}`;
     const eventType = majority(tickets.map((ticket) => ticket.eventType)) || "同类诉求";
     const township = majority(tickets.map((ticket) => ticket.subdistrict));
     const category = majority(tickets.map((ticket) => ticket.sourceCategory)) || "";

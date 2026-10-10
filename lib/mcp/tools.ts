@@ -3,6 +3,7 @@ import { getAllRegions, getRegionDb } from "@/db/client";
 import { themesTable, ticketsTable } from "@/db/schema";
 import { loadOverview } from "@/lib/civic-queries";
 import { buildRecordsFromRows, insertRecordsBatch } from "@/lib/ticket-ingest";
+import { triggerClusterJobAuto } from "@/lib/cluster-runner";
 
 export const MCP_TOOLS = [
   {
@@ -16,7 +17,7 @@ export const MCP_TOOLS = [
   },
   {
     name: "push_ticket",
-    description: "向指定地区写入一条工单。走站点现有的入库，不触发全市重新聚类。",
+    description: "向指定地区写入一条工单。入库后只对还没研判的工单做增量聚类：能并进已有聚类就并进去，并不进去才可能新开聚类。不删除已有主题。",
     inputSchema: {
       type: "object",
       properties: {
@@ -98,6 +99,11 @@ async function pushTicket(args: Record<string, unknown>) {
 
   const report = await insertRecordsBatch(built.records, region.id);
   const ticketNo = built.records[0].ticketNo as string;
+  if (report.insertedCount > 0) {
+    triggerClusterJobAuto(region.id).catch((err) => {
+      console.warn("[mcp] 增量研判触发失败:", err?.message || err);
+    });
+  }
   return textResult({
     regionId: region.id,
     ticketNo,

@@ -163,15 +163,62 @@ export async function buildTicketEmbeddingHnsw(regionId: string, backfillInProgr
   await db.execute(drizzleSql.raw(statement));
 }
 
-/** 从库存向量取近邻工单对。失败时返回 null，调用方改用内存里的已存向量。 */
-export async function loadStoredNeighborPairs(regionId: string): Promise<Array<[string, string]> | null> {
+async function rowsToNeighborPairs(result: unknown): Promise<Array<[string, string]>> {
+  const pairs: Array<[string, string]> = [];
+  const seen = new Set<string>();
+  const neighborRows = rowsOf(result);
+  for (let index = 0; index < neighborRows.length; index++) {
+    const row = neighborRows[index];
+    const left = cell(row, "ticket_id");
+    const right = cell(row, "neighbor_id");
+    if (!left || !right) continue;
+    const key = [left, right].sort().join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    pairs.push([left, right]);
+    if ((index + 1) % 5000 === 0) await yieldToEventLoop();
+  }
+  return pairs;
+}
+
+/**
+ * 从库存向量取近邻工单对。失败时返回 null，调用方改用内存里的已存向量。
+ * onlyTicketIds 有值时只在这批工单内部找近邻，不扫全市。
+ */
+export async function loadStoredNeighborPairs(
+  regionId: string,
+  onlyTicketIds?: string[]
+): Promise<Array<[string, string]> | null> {
+  if (onlyTicketIds && onlyTicketIds.length === 0) return [];
   const tableReady = await ensureTicketEmbeddingsTable(regionId);
   if (!tableReady) return null;
   try {
     const { db } = await getRegionDb(regionId);
     const result = await db.transaction(async (tx) => {
       await tx.execute(drizzleSql.raw(`SET LOCAL hnsw.ef_search = ${HNSW_EF_SEARCH}`));
-      return tx.execute(drizzleSql.raw(`
+      if (!onlyTicketIds) {
+        return tx.execute(drizzleSql.raw(`
+          SELECT t.id AS ticket_id, n.neighbor_id
+          FROM tickets t
+          JOIN ticket_embeddings e ON e.ticket_id = t.id
+          JOIN LATERAL (
+            SELECT e2.ticket_id AS neighbor_id
+            FROM ticket_embeddings e2
+            JOIN tickets t2 ON t2.id = e2.ticket_id
+            WHERE t2.source_category IS NOT DISTINCT FROM t.source_category
+              AND t2.subdistrict IS NOT DISTINCT FROM t.subdistrict
+              AND e2.ticket_id <> t.id
+            ORDER BY e2.embedding <=> e.embedding
+            LIMIT ${NEIGHBOR_K}
+          ) n ON true
+        `));
+      }
+      const idList = drizzleSql.join(
+        onlyTicketIds.map((id) => drizzleSql`${id}`),
+        drizzleSql`, `
+      );
+      const limit = drizzleSql.raw(String(NEIGHBOR_K));
+      return tx.execute(drizzleSql`
         SELECT t.id AS ticket_id, n.neighbor_id
         FROM tickets t
         JOIN ticket_embeddings e ON e.ticket_id = t.id
@@ -182,26 +229,14 @@ export async function loadStoredNeighborPairs(regionId: string): Promise<Array<[
           WHERE t2.source_category IS NOT DISTINCT FROM t.source_category
             AND t2.subdistrict IS NOT DISTINCT FROM t.subdistrict
             AND e2.ticket_id <> t.id
+            AND e2.ticket_id IN (${idList})
           ORDER BY e2.embedding <=> e.embedding
-          LIMIT ${NEIGHBOR_K}
+          LIMIT ${limit}
         ) n ON true
-      `));
+        WHERE t.id IN (${idList})
+      `);
     });
-    const pairs: Array<[string, string]> = [];
-    const seen = new Set<string>();
-    const neighborRows = rowsOf(result);
-    for (let index = 0; index < neighborRows.length; index++) {
-      const row = neighborRows[index];
-      const left = cell(row, "ticket_id");
-      const right = cell(row, "neighbor_id");
-      if (!left || !right) continue;
-      const key = [left, right].sort().join("|");
-      if (seen.has(key)) continue;
-      seen.add(key);
-      pairs.push([left, right]);
-      if ((index + 1) % 5000 === 0) await yieldToEventLoop();
-    }
-    return pairs;
+    return rowsToNeighborPairs(result);
   } catch (error) {
     console.warn("[embed] neighbor lookup failed:", error instanceof Error ? error.message : error);
     return null;

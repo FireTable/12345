@@ -1,5 +1,5 @@
 import { getRegionDb } from "@/db/client";
-import { ticketsTable } from "@/db/schema";
+import { themesTable, ticketsTable } from "@/db/schema";
 import { sql as drizzleSql } from "drizzle-orm";
 import {
   enqueueClusterJob,
@@ -11,7 +11,6 @@ import {
 } from "./cluster-queue";
 import { executeClusterJob } from "./cluster-job";
 import { isJobHeartbeatHealthy, shouldStartStage04 } from "@/backend/embed-policy";
-import { loadEmbedSnapshot } from "@/lib/ticket-embeddings";
 import { sql } from "@/db/client";
 
 // 内存互斥锁：防止同一 Next.js 实例中对同一个辖区并发重入触发多个 worker
@@ -20,7 +19,7 @@ const activeRegionWorkers = new Set<string>();
 /**
  * 自动检测并启动辖区研判任务 (Auto-Trigger In-Process Runner)
  * Per-region 队列：每个 region 独立的 task 行，独立的 worker。
- * 只要辖区有待处理工单 (unprocessed > 0)，且当前没有活跃任务，自动触发研判流水线。
+ * 已有聚类时，只在还有未研判工单时触发增量。没有聚类时，用现有工单做出第一批主题。不因嵌入过期重跑全市。
  */
 export async function triggerClusterJobAuto(regionId: string): Promise<boolean> {
   if (!regionId) return false;
@@ -47,8 +46,18 @@ export async function triggerClusterJobAuto(regionId: string): Promise<boolean> 
 
     const total = Number(counts?.total || 0);
     const unprocessed = Number(counts?.unprocessed || 0);
+    const [themeRow] = await tenantDb
+      .select({ themes: drizzleSql<number>`count(*)::int` })
+      .from(themesTable);
+    const themeCount = Number(themeRow?.themes || 0);
 
     if (total === 0) {
+      activeRegionWorkers.delete(regionId);
+      return false;
+    }
+
+    // 已有聚类且没有新工单：不因嵌入过期去重跑全市。主题表保持不动。
+    if (themeCount > 0 && unprocessed === 0) {
       activeRegionWorkers.delete(regionId);
       return false;
     }
@@ -62,19 +71,6 @@ export async function triggerClusterJobAuto(regionId: string): Promise<boolean> 
         healthyStage: beat.stage,
       });
       if (!blocked.start) {
-        activeRegionWorkers.delete(regionId);
-        return false;
-      }
-    }
-
-    // 置信度都写过时，缺嵌入或哈希过期仍然要跑工序 04。哈希都对齐才停。
-    if (unprocessed === 0) {
-      const snapshot = await loadEmbedSnapshot(regionId);
-      const decision = shouldStartStage04({
-        tickets: snapshot?.tickets ?? [],
-        stored: snapshot?.stored ?? [],
-      });
-      if (!decision.start) {
         activeRegionWorkers.delete(regionId);
         return false;
       }
@@ -157,7 +153,7 @@ async function runWorkerLoopForRegion(regionId: string): Promise<void> {
       try {
         const themeCount = await executeClusterJob(job);
         await finishClusterJob(job.taskId, themeCount);
-        console.log(`[cluster-runner] ✅ 自动研判完成: ${job.taskId}, 生成多频主题: ${themeCount}`);
+        console.log(`[cluster-runner] ✅ 自动研判完成: ${job.taskId}, 当前多频主题: ${themeCount}`);
       } catch (execErr: any) {
         const errMsg = execErr?.message || String(execErr);
         console.error(`[cluster-runner] ❌ 研判任务执行失败: ${job.taskId}: ${errMsg}`);
