@@ -27,7 +27,10 @@
     "db:export": "tsx scripts/db-export.ts",
     "db:import": "tsx scripts/db-import.ts",
     "db:clear": "tsx scripts/db-clear.ts",
-    "db:sync-vps": "bash scripts/sync-db-to-vps.sh",
+    "db:sync": "bash scripts/sync-db.sh",
+    "db:push-vps": "bash scripts/sync-db.sh --push",
+    "db:pull-vps": "bash scripts/sync-db.sh --pull",
+    "db:sync-vps": "bash scripts/sync-db.sh --push",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {

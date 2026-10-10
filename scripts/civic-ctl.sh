@@ -353,10 +353,9 @@ action_sync_vps() {
   echo -e "${GREEN}✓ VPS 部署已更新并重载，站点状态: HTTP ${http_code}${NC}"
 }
 
-# 8. 一键热同步全量数据库至 VPS
+# 8. 跨机数据库双向热同步 (Mac <-> VPS)
 action_sync_db() {
-  echo -e "\n${BOLD}>>> [数据库热同步] 调用全量流式直灌脚本...${NC}"
-  bash "${SCRIPT_DIR}/sync-db-to-vps.sh" "$@"
+  bash "${SCRIPT_DIR}/sync-db.sh" "$@"
 }
 
 # 9. 快速单条工单端到端研判测试
