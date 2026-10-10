@@ -23,32 +23,55 @@ NC='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-VPS_TS_IP="100.104.117.104"
-VPS_PUB_IP="185.99.135.72"
-LOCAL_DB_URL="${DATABASE_URL:-postgresql://FireTable@localhost:5432/ticket_radar}"
-PROD_DOMAIN="https://12345.firetable.tech"
+# 自动加载本地环境变量（若存在且未在系统环境中声明）
+if [ -f "${ROOT_DIR}/.env.local" ]; then
+  # 提取可能存在的 DATABASE_URL、VPS_HOST、VPS_USER、PROD_DOMAIN
+  eval $(grep -E '^(DATABASE_URL|VPS_HOST|VPS_TS_IP|VPS_PUB_IP|VPS_USER|PROD_DOMAIN)=' "${ROOT_DIR}/.env.local" | sed 's/^/export /' 2>/dev/null || true)
+fi
+
+# 通用网络与节点配置（支持环境变量动态覆盖）
+VPS_USER="${VPS_USER:-root}"
+VPS_TS_IP="${VPS_TS_IP:-100.104.117.104}"
+VPS_PUB_IP="${VPS_PUB_IP:-185.99.135.72}"
+VPS_HOST="${VPS_HOST:-}"
+PROD_DOMAIN="${PROD_DOMAIN:-https://12345.firetable.tech}"
+VPS_STACK_DIR="${VPS_STACK_DIR:-/opt/12345-stack}"
+
+# 动态本地数据库连接串（支持当前 OS 用户 $USER，或显式 DATABASE_URL）
+LOCAL_DB_URL="${DATABASE_URL:-postgresql://${USER}@localhost:5432/ticket_radar}"
 
 echo -e "${CYAN}==============================================================================${NC}"
 echo -e "${BOLD}  🚀 民声智理 · 数据库无痛热同步至 VPS (本地 Mac ➔ VPS 生产站)${NC}"
 echo -e "${CYAN}==============================================================================${NC}"
 
-# 1. 探测 VPS 最佳连接 IP
+# 1. 探测 VPS 最佳连接 IP (自适应 Tailscale 专网 / 公网 IP / 自定义 Host)
 TARGET_IP=""
 echo -e "\n${BOLD}[1/5] 正在探测 VPS 链路...${NC}"
-if ssh -o BatchMode=yes -o ConnectTimeout=3 "root@${VPS_TS_IP}" "echo OK" >/dev/null 2>&1; then
-  TARGET_IP="${VPS_TS_IP}"
-  echo -e "${GREEN}✓ 优先使用 Tailscale 点对点专网: ${TARGET_IP}${NC}"
-elif ssh -o BatchMode=yes -o ConnectTimeout=3 "root@${VPS_PUB_IP}" "echo OK" >/dev/null 2>&1; then
-  TARGET_IP="${VPS_PUB_IP}"
-  echo -e "${YELLOW}! Tailscale 未直连，回退至公网 IP: ${TARGET_IP}${NC}"
-else
-  echo -e "${RED}✖ 无法通过 SSH 连接至 VPS (${VPS_TS_IP} 或 ${VPS_PUB_IP})，请检查网络与密钥。${NC}"
-  exit 1
+
+if [ -n "${VPS_HOST}" ]; then
+  if ssh -o BatchMode=yes -o ConnectTimeout=3 "${VPS_USER}@${VPS_HOST}" "echo OK" >/dev/null 2>&1; then
+    TARGET_IP="${VPS_HOST}"
+    echo -e "${GREEN}✓ 使用自定义指定主机: ${TARGET_IP}${NC}"
+  fi
+fi
+
+if [ -z "${TARGET_IP}" ]; then
+  if ssh -o BatchMode=yes -o ConnectTimeout=3 "${VPS_USER}@${VPS_TS_IP}" "echo OK" >/dev/null 2>&1; then
+    TARGET_IP="${VPS_TS_IP}"
+    echo -e "${GREEN}✓ 优先使用 Tailscale 点对点专网: ${TARGET_IP}${NC}"
+  elif ssh -o BatchMode=yes -o ConnectTimeout=3 "${VPS_USER}@${VPS_PUB_IP}" "echo OK" >/dev/null 2>&1; then
+    TARGET_IP="${VPS_PUB_IP}"
+    echo -e "${YELLOW}! Tailscale 未直连，回退至公网 IP: ${TARGET_IP}${NC}"
+  else
+    echo -e "${RED}✖ 无法通过 SSH 连接至 VPS (${VPS_TS_IP} 或 ${VPS_PUB_IP})。${NC}"
+    echo -e "${YELLOW}提示: 可通过环境变量指定可用主机，例如: VPS_HOST=your-server-ip ${0}${NC}"
+    exit 1
+  fi
 fi
 
 # 2. 检查 VPS 上 postgres 容器状态与 pgvector 插件
 echo -e "\n${BOLD}[2/5] 检查 VPS 容器与 pgvector 状态...${NC}"
-ssh "root@${TARGET_IP}" "docker exec 12345-postgres psql -U postgres -d ticket_radar -c 'CREATE EXTENSION IF NOT EXISTS vector;'" >/dev/null 2>&1
+ssh "${VPS_USER}@${TARGET_IP}" "docker exec 12345-postgres psql -U postgres -d ticket_radar -c 'CREATE EXTENSION IF NOT EXISTS vector;'" >/dev/null 2>&1
 echo -e "${GREEN}✓ VPS 12345-postgres 与 pgvector 扩展已就绪${NC}"
 
 # 3. 统计本地数据量并确认
@@ -78,7 +101,7 @@ START_TIME=$(date +%s)
 pg_dump "${LOCAL_DB_URL}" \
   --clean --if-exists --no-owner --no-privileges \
   | gzip -c \
-  | ssh -C "root@${TARGET_IP}" "gunzip -c | docker exec -i 12345-postgres psql -U postgres -d ticket_radar" >/dev/null
+  | ssh -C "${VPS_USER}@${TARGET_IP}" "gunzip -c | docker exec -i 12345-postgres psql -U postgres -d ticket_radar" >/dev/null
 
 END_TIME=$(date +%s)
 ELAPSED=$((END_TIME - START_TIME))
@@ -86,7 +109,7 @@ echo -e "${GREEN}✓ 数据库流式直灌完成！耗时: ${ELAPSED} 秒${NC}"
 
 # 5. 重启 VPS 容器并验证健康
 echo -e "\n${BOLD}[5/5] 正在重载 VPS 生产容器并巡检健康状态...${NC}"
-ssh "root@${TARGET_IP}" "cd /opt/12345-stack && docker compose --env-file .env.vps restart app && docker restart langgraph-app-caddy-1" >/dev/null 2>&1
+ssh "${VPS_USER}@${TARGET_IP}" "cd ${VPS_STACK_DIR} && docker compose --env-file .env.vps restart app && docker restart langgraph-app-caddy-1" >/dev/null 2>&1
 
 sleep 3
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 10 "${PROD_DOMAIN}")

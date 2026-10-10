@@ -24,19 +24,57 @@ cd "${ROOT_DIR}" || exit 1
 S2_SCRIPT="${ROOT_DIR}/packages/civic-system-two/scripts/serve.ts"
 EMBED_SCRIPT="${ROOT_DIR}/packages/civic-embed/scripts/serve.ts"
 
-VPS_SSH="root@185.99.135.72"
-VPS_TS_IP="100.104.117.104"
-PROD_DOMAIN="https://12345.firetable.tech"
+# 自动加载本地环境变量（若存在且未在系统环境中声明）
+if [ -f "${ROOT_DIR}/.env.local" ]; then
+  eval $(grep -E '^(DATABASE_URL|VPS_HOST|VPS_TS_IP|VPS_PUB_IP|VPS_USER|PROD_DOMAIN|MAC_NODE_IP)=' "${ROOT_DIR}/.env.local" | sed 's/^/export /' 2>/dev/null || true)
+fi
+
+# 通用网络与节点配置（支持环境变量动态覆盖，杜绝硬编码）
+VPS_USER="${VPS_USER:-root}"
+VPS_TS_IP="${VPS_TS_IP:-100.104.117.104}"
+VPS_PUB_IP="${VPS_PUB_IP:-185.99.135.72}"
+VPS_HOST="${VPS_HOST:-}"
+PROD_DOMAIN="${PROD_DOMAIN:-https://12345.firetable.tech}"
+VPS_STACK_DIR="${VPS_STACK_DIR:-/opt/12345-stack}"
+
+# 动态本地数据库连接串（支持当前 OS 用户 $USER，或显式 DATABASE_URL）
+LOCAL_DB_URL="${DATABASE_URL:-postgresql://${USER}@localhost:5432/ticket_radar}"
 
 # ------------------------------------------------------------------------------
 # 辅助函数：网络与状态探测
 # ------------------------------------------------------------------------------
-get_mac_ts_ip() {
-  if command -v tailscale >/dev/null 2>&1; then
-    tailscale ip -4 2>/dev/null | head -n 1
-  else
-    echo "未安装"
+get_mac_node_ip() {
+  if [ -n "${MAC_NODE_IP}" ]; then
+    echo "${MAC_NODE_IP}"
+    return 0
   fi
+  local ip=""
+  if command -v tailscale >/dev/null 2>&1; then
+    ip=$(tailscale ip -4 2>/dev/null | head -n 1)
+  fi
+  if [ -z "${ip}" ] && command -v ipconfig >/dev/null 2>&1; then
+    ip=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)
+  fi
+  if [ -z "${ip}" ] && command -v hostname >/dev/null 2>&1; then
+    ip=$(hostname -I 2>/dev/null | awk '{print $1}' || true)
+  fi
+  echo "${ip:-未连接}"
+}
+
+get_vps_ssh_target() {
+  if [ -n "${VPS_HOST}" ]; then
+    echo "${VPS_HOST}"
+    return 0
+  fi
+  if ssh -o BatchMode=yes -o ConnectTimeout=2 "${VPS_USER}@${VPS_TS_IP}" "echo OK" >/dev/null 2>&1; then
+    echo "${VPS_TS_IP}"
+    return 0
+  fi
+  if ssh -o BatchMode=yes -o ConnectTimeout=2 "${VPS_USER}@${VPS_PUB_IP}" "echo OK" >/dev/null 2>&1; then
+    echo "${VPS_PUB_IP}"
+    return 0
+  fi
+  echo "${VPS_TS_IP}"
 }
 
 check_port() {
@@ -70,8 +108,11 @@ check_pm2_app() {
 show_header() {
   clear
   local mac_ip
-  mac_ip=$(get_mac_ts_ip)
+  mac_ip=$(get_mac_node_ip)
   [ -z "${mac_ip}" ] && mac_ip="未连接"
+
+  local vps_target
+  vps_target=$(get_vps_ssh_target)
 
   local s2_status
   s2_status=$(check_pm2_app "civic-s2")
@@ -113,8 +154,8 @@ show_header() {
   echo -e "${CYAN}================================================================================${NC}"
   echo -e "${BOLD}  🏛️  CivicRadar 12345 · 跨机混合推理与全栈智能治理控制台 (macOS)${NC}"
   echo -e "${CYAN}================================================================================${NC}"
-  echo -e "  🖥️  ${BOLD}Mac 本地节点${NC}  : Tailscale IP [${BOLD}${mac_ip}${NC}]"
-  echo -e "  ☁️  ${BOLD}VPS 云端节点${NC}  : [${BOLD}${VPS_TS_IP}${NC}] (生产站: ${CYAN}${PROD_DOMAIN}${NC})"
+  echo -e "  🖥️  ${BOLD}Mac 本地节点${NC}  : 节点 IP [${BOLD}${mac_ip}${NC}]"
+  echo -e "  ☁️  ${BOLD}VPS 云端节点${NC}  : [${BOLD}${vps_target}${NC}] (生产站: ${CYAN}${PROD_DOMAIN}${NC})"
   echo -e "  ------------------------------------------------------------------------------"
   echo -e "  🧠  ${BOLD}System-2 (27B)${NC}: ${s2_state_display} | ${s2_port_tag}"
   echo -e "  🔍  ${BOLD}Civic-Embed${NC}   : ${embed_state_display} | ${embed_port_tag}"
@@ -234,41 +275,44 @@ action_view_metrics() {
   lsof -i:8132 -i:8133 2>/dev/null || echo "端口 8132 / 8133 未被占用"
 }
 
-# 6. 跨机 Tailscale 链路自检
+# 6. 跨机协同网络与双模型链路自检
 action_check_network() {
   local mac_ip
-  mac_ip=$(get_mac_ts_ip)
-  echo -e "\n${BOLD}=== [1/4] 本机 Tailscale 状态 ===${NC}"
+  mac_ip=$(get_mac_node_ip)
+  local vps_target
+  vps_target=$(get_vps_ssh_target)
+
+  echo -e "\n${BOLD}=== [1/4] 本机算力节点网络状态 ===${NC}"
   echo -e "本机 IP: ${BOLD}${mac_ip}${NC}"
 
-  echo -e "\n${BOLD}=== [2/4] Ping VPS Tailscale IP (${VPS_TS_IP}) ===${NC}"
-  if ping -c 2 -W 1500 "${VPS_TS_IP}" >/dev/null 2>&1; then
-    echo -e "${GREEN}✓ VPS Tailscale 网络直连正常！${NC}"
+  echo -e "\n${BOLD}=== [2/4] Ping VPS 目标节点 (${vps_target}) ===${NC}"
+  if ping -c 2 -W 1500 "${vps_target}" >/dev/null 2>&1; then
+    echo -e "${GREEN}✓ VPS 网络直连正常！${NC}"
   else
-    echo -e "${RED}✖ 无法 Ping 通 VPS Tailscale IP (${VPS_TS_IP})，请确认双方 Tailscale 运行中。${NC}"
+    echo -e "${YELLOW}⚠️ 无法直接 Ping 通 VPS (${vps_target})，可能开启了 ICMP 禁 ping，继续探测 SSH...${NC}"
   fi
 
-  echo -e "\n${BOLD}=== [3/4] 验证 VPS 跨网调用 Mac 8132 & 8133 ===${NC}"
-  if ssh -o ConnectTimeout=3 -o BatchMode=yes "${VPS_SSH}" "echo OK" >/dev/null 2>&1; then
+  echo -e "\n${BOLD}=== [3/4] 验证 VPS 跨网反向调用 Mac 8132 & 8133 ===${NC}"
+  if ssh -o ConnectTimeout=3 -o BatchMode=yes "${VPS_USER}@${vps_target}" "echo OK" >/dev/null 2>&1; then
     echo -e "SSH 登录 VPS 成功，正在从 VPS 发起反向探测..."
     local vps_test_s2
-    vps_test_s2=$(ssh -o ConnectTimeout=3 "${VPS_SSH}" "curl -s -m 2 http://${mac_ip}:8132/v1/models | grep -o 'bonsai-2-27b' || echo FAIL")
+    vps_test_s2=$(ssh -o ConnectTimeout=5 "${VPS_USER}@${vps_target}" "curl -s -m 4 http://${mac_ip}:8132/health | grep -o '\"status\":\"ok\"' || echo FAIL")
     local vps_test_embed
-    vps_test_embed=$(ssh -o ConnectTimeout=3 "${VPS_SSH}" "curl -s -m 2 http://${mac_ip}:8133/v1/models | grep -o 'bge-m3' || echo FAIL")
+    vps_test_embed=$(ssh -o ConnectTimeout=5 "${VPS_USER}@${vps_target}" "curl -s -m 4 http://${mac_ip}:8133/health | grep -o '\"status\":\"ok\"' || echo FAIL")
 
-    if [ "${vps_test_s2}" = "bonsai-2-27b" ]; then
+    if [ "${vps_test_s2}" = '"status":"ok"' ]; then
       echo -e "${GREEN}✓ VPS 成功直连 Mac 8132 (System-2 27B)！${NC}"
     else
       echo -e "${RED}✖ VPS 无法访问 Mac 8132，请检查端口是否为 0.0.0.0 监听。${NC}"
     fi
 
-    if [ "${vps_test_embed}" = "bge-m3" ]; then
+    if [ "${vps_test_embed}" = '"status":"ok"' ]; then
       echo -e "${GREEN}✓ VPS 成功直连 Mac 8133 (Civic-Embed bge-m3)！${NC}"
     else
       echo -e "${RED}✖ VPS 无法访问 Mac 8133，请检查端口是否为 0.0.0.0 监听。${NC}"
     fi
   else
-    echo -e "${YELLOW}⚠️ 无法无密 SSH 连接到 ${VPS_SSH}，跳过云端反向探测。${NC}"
+    echo -e "${YELLOW}⚠️ 无法无密 SSH 连接到 ${VPS_USER}@${vps_target}，跳过云端反向探测。${NC}"
   fi
 
   echo -e "\n${BOLD}=== [4/4] 探测生产站健康 (${PROD_DOMAIN}) ===${NC}"
@@ -283,13 +327,16 @@ action_check_network() {
 
 # 7. 一键同步 .env.vps 并热重载 VPS
 action_sync_vps() {
-  echo -e "\n${BOLD}>>> [1/3] 上传 .env.vps 到 VPS (/opt/12345-stack/.env.vps)...${NC}"
+  local vps_target
+  vps_target=$(get_vps_ssh_target)
+
+  echo -e "\n${BOLD}>>> [1/3] 上传 .env.vps 到 VPS (${VPS_USER}@${vps_target}:${VPS_STACK_DIR}/.env.vps)...${NC}"
   if [ ! -f ".env.vps" ]; then
     echo -e "${RED}错误：本地未找到 .env.vps 文件！${NC}"
     return 1
   fi
 
-  scp -o ConnectTimeout=5 .env.vps "${VPS_SSH}:/opt/12345-stack/.env.vps"
+  scp -o ConnectTimeout=5 .env.vps "${VPS_USER}@${vps_target}:${VPS_STACK_DIR}/.env.vps"
   if [ $? -ne 0 ]; then
     echo -e "${RED}上传失败，请检查 SSH 连通性。${NC}"
     return 1
@@ -297,7 +344,7 @@ action_sync_vps() {
   echo -e "${GREEN}✓ 配置上传成功！${NC}"
 
   echo -e "\n${BOLD}>>> [2/3] 重启 VPS 上的 12345-app 容器与 Caddy 反代...${NC}"
-  ssh -o ConnectTimeout=5 "${VPS_SSH}" "docker restart 12345-app && docker restart langgraph-app-caddy-1"
+  ssh -o ConnectTimeout=5 "${VPS_USER}@${vps_target}" "cd ${VPS_STACK_DIR} && docker restart 12345-app && docker restart langgraph-app-caddy-1"
 
   echo -e "\n${BOLD}>>> [3/3] 验证生产端响应...${NC}"
   sleep 2
@@ -306,7 +353,13 @@ action_sync_vps() {
   echo -e "${GREEN}✓ VPS 部署已更新并重载，站点状态: HTTP ${http_code}${NC}"
 }
 
-# 8. 快速单条工单端到端研判测试
+# 8. 一键热同步全量数据库至 VPS
+action_sync_db() {
+  echo -e "\n${BOLD}>>> [数据库热同步] 调用全量流式直灌脚本...${NC}"
+  bash "${SCRIPT_DIR}/sync-db-to-vps.sh" "$@"
+}
+
+# 9. 快速单条工单端到端研判测试
 action_test_inference() {
   echo -e "\n${BOLD}=== 12345 诉求智能研判交互测试 (System-2 27B) ===${NC}"
   echo -e "请输入需要研判的市民诉求文本（直接回车将使用默认天河区占道经营测试）："
@@ -358,7 +411,7 @@ action_test_inference() {
   " "${user_input}"
 }
 
-# 9. 快速测试 Civic-Embed 向量嵌入
+# 10. 快速测试 Civic-Embed 向量嵌入
 action_test_embedding() {
   echo -e "\n${BOLD}=== Civic-Embed 密集向量特征提取测试 (bge-m3) ===${NC}"
   echo -e "请输入测试词句（直接回车使用默认政务词汇）："
@@ -405,19 +458,19 @@ action_test_embedding() {
   " "${embed_input}"
 }
 
-# 10. 启动本地全栈开发环境
+# 11. 启动本地全栈开发环境
 action_start_local_dev() {
   echo -e "\n${BOLD}>>> 启动本地前端开发服务器 (Next.js)...${NC}"
   pnpm dev
 }
 
-# 11. 打开数据库管理后台
+# 12. 打开数据库管理后台
 action_db_studio() {
   echo -e "\n${BOLD}>>> 正在启动 Drizzle Studio 数据可视化后台...${NC}"
   pnpm db:studio
 }
 
-# 12. 数据库与词汇管理子菜单
+# 13. 数据库与词汇管理子菜单
 action_db_menu() {
   while true; do
     echo -e "\n${CYAN}------------------------------------------------------------------------------${NC}"
@@ -427,14 +480,16 @@ action_db_menu() {
     echo -e "  [2] 初始化超级管理员账号 (db:init-admin)"
     echo -e "  [3] 初始化多租户行政区划 (db:init-tenants)"
     echo -e "  [4] 导入预设政务词汇表 (db:vocab)"
+    echo -e "  [5] 一键热同步全量数据库至 VPS (db:sync-vps)"
     echo -e "  [0] 返回上级菜单"
     echo -e "${CYAN}------------------------------------------------------------------------------${NC}"
-    read -r -p "请选择操作 [0-4]: " db_choice
+    read -r -p "请选择操作 [0-5]: " db_choice
     case "${db_choice}" in
       1) pnpm db:init ;;
       2) pnpm db:init-admin ;;
       3) pnpm db:init-tenants ;;
       4) pnpm db:vocab ;;
+      5) action_sync_db ;;
       0) break ;;
       *) echo -e "${RED}无效选项${NC}" ;;
     esac
@@ -443,10 +498,10 @@ action_db_menu() {
   done
 }
 
-# 13. 开机自启配置引导
+# 14. 开机自启配置引导
 action_startup_guide() {
   echo -e "\n${BOLD}=== PM2 开机自启动配置管理 ===${NC}"
-  echo -e "在 macOS 下，PM2 可以生成 Launchd 守护守护脚本，实现开机自动唤起推理服务。\n"
+  echo -e "在 macOS 下，PM2 可以生成 Launchd 守护脚本，实现开机自动唤起推理服务。\n"
   echo -e "1. 开启开机自启："
   echo -e "   运行：${CYAN}pm2 startup${NC}"
   echo -e "   然后复制控制台提示的那条 ${BOLD}sudo env PATH=... pm2 startup darwin ...${NC} 执行即可。\n"
@@ -457,9 +512,59 @@ action_startup_guide() {
 }
 
 # ------------------------------------------------------------------------------
-# 主循环菜单
+# 主入口与菜单调度
 # ------------------------------------------------------------------------------
 main() {
+  # CLI 快捷参数分发（支持非交互脚本与 CI 调用）
+  if [ -n "$1" ]; then
+    case "$1" in
+      sync-db|db:sync|db:sync-vps)
+        shift
+        action_sync_db "$@"
+        exit $?
+        ;;
+      sync-env|sync-vps)
+        action_sync_vps
+        exit $?
+        ;;
+      start)
+        action_start_pm2
+        exit $?
+        ;;
+      stop)
+        action_stop_pm2
+        exit $?
+        ;;
+      restart)
+        action_restart_pm2
+        exit $?
+        ;;
+      check|test)
+        action_check_network
+        exit $?
+        ;;
+      logs)
+        action_view_logs
+        exit $?
+        ;;
+      status)
+        action_view_metrics
+        exit $?
+        ;;
+      dev)
+        action_start_local_dev
+        exit $?
+        ;;
+      studio)
+        action_db_studio
+        exit $?
+        ;;
+      *)
+        # 未匹配则继续进入交互菜单
+        ;;
+    esac
+  fi
+
   while true; do
     show_header
     echo -e "\n${BOLD}【 推理集群常驻运维 (PM2 / Apple Silicon) 】${NC}"
@@ -470,22 +575,23 @@ main() {
     echo -e "  ${PURPLE}5)${NC} 查看模型进程与显存占用      ${CYAN}(Metal 吞吐与内存统计)${NC}"
 
     echo -e "\n${BOLD}【 跨机协同与 VPS 联调 】${NC}"
-    echo -e "  ${CYAN}6)${NC} 跨机 Tailscale 链路自检      ${CYAN}(Ping VPS / 端口连通 / 验证 VPS 反向调用 Mac)${NC}"
+    echo -e "  ${CYAN}6)${NC} 跨机网络与模型链路自检      ${CYAN}(自适应 IP / 双向模型探针 / 生产站健康)${NC}"
     echo -e "  ${CYAN}7)${NC} 同步配置并重启 VPS 容器     ${CYAN}(上传 .env.vps -> 重启 Docker 生产服务)${NC}"
+    echo -e "  ${GREEN}8)${NC} 一键热同步全量数据库至 VPS  ${CYAN}(流式推送 22 万+ 工单/主题到 VPS)${NC}"
 
     echo -e "\n${BOLD}【 12345 核心功能与测试 】${NC}"
-    echo -e "  ${BOLD}8)${NC} 发起单条市民工单端到端研判  ${CYAN}(调用本地 System-2 27B 输出标准政务研判)${NC}"
-    echo -e "  ${BOLD}9)${NC} 测试 Civic-Embed 向量嵌入   ${CYAN}(调用本地 bge-m3 计算 1024 维特征)${NC}"
-    echo -e " 10) 启动本地全栈开发环境        ${CYAN}(pnpm dev)${NC}"
-    echo -e " 11) 打开 Drizzle Studio 数据库  ${CYAN}(本地可视化管理)${NC}"
-    echo -e " 12) 数据库与词汇管理            ${CYAN}(初始化/词表/租户)${NC}"
+    echo -e "  ${BOLD}9)${NC} 发起单条市民工单端到端研判  ${CYAN}(调用本地 System-2 27B 输出标准政务研判)${NC}"
+    echo -e " ${BOLD}10)${NC} 测试 Civic-Embed 向量嵌入   ${CYAN}(调用本地 bge-m3 计算 1024 维特征)${NC}"
+    echo -e " 11) 启动本地全栈开发环境        ${CYAN}(pnpm dev)${NC}"
+    echo -e " 12) 打开 Drizzle Studio 数据库  ${CYAN}(本地可视化管理)${NC}"
+    echo -e " 13) 数据库与政务知识库管理      ${CYAN}(初始化/词表/租户/同步)${NC}"
 
     echo -e "\n${BOLD}【 系统设置 】${NC}"
-    echo -e " 13) 配置 Mac 开机自启动         ${CYAN}(PM2 Startup 托管指引)${NC}"
+    echo -e " 14) 配置 Mac 开机自启动         ${CYAN}(PM2 Startup 托管指引)${NC}"
     echo -e "  0) 退出控制台"
     echo -e "${CYAN}================================================================================${NC}"
 
-    if ! read -r -p "请输入选项 [0-13]: " choice; then
+    if ! read -r -p "请输入选项 [0-14]: " choice; then
       echo -e "\n检测到输入流结束，退出控制台。"
       exit 0
     fi
@@ -497,14 +603,15 @@ main() {
       5) action_view_metrics ;;
       6) action_check_network ;;
       7) action_sync_vps ;;
-      8) action_test_inference ;;
-      9) action_test_embedding ;;
-      10) action_start_local_dev ;;
-      11) action_db_studio ;;
-      12) action_db_menu ;;
-      13) action_startup_guide ;;
+      8) action_sync_db ;;
+      9) action_test_inference ;;
+      10) action_test_embedding ;;
+      11) action_start_local_dev ;;
+      12) action_db_studio ;;
+      13) action_db_menu ;;
+      14) action_startup_guide ;;
       0|q|exit) echo -e "\n👋 祝研发顺利，再见！\n"; exit 0 ;;
-      *) echo -e "\n${RED}无效选项，请输入 0-13 之间的数字${NC}" ;;
+      *) echo -e "\n${RED}无效选项，请输入 0-14 之间的数字${NC}" ;;
     esac
 
     echo -e "\n${CYAN}------------------------------------------------------------------------------${NC}"
