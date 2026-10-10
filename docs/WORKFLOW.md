@@ -127,7 +127,7 @@ flowchart TD
 
 System 1 的镇街恒为 `UNKNOWN`，不会写成街道名。社区和地标不会被当成镇街。
 
-主体、事件、摘要、地点都已经在库里，并且置信度大于 0 时，重跑可以不再请 System 2。缺任何一项都会再抽。本地 llama 以 `-np 1` 启动，所以这些调用一次只发一条。
+主体、事件、摘要、地点都已经在库里，并且置信度大于 0 时，重跑可以不再请 System 2。缺任何一项都会再抽。这些调用和后面的摘要、补建议、险情升级共用一个队列，同时在飞的条数等于端点数。每台 llama-server 以 `-np 1` 启动，一台同时只算一条。
 
 出站前用 [`@civic/anonymizer`](../packages/civic-anonymizer/) 掩掉姓名、电话和证件号，模型返回后再填回来。
 
@@ -150,11 +150,15 @@ System 1 的镇街恒为 `UNKNOWN`，不会写成街道名。社区和地标不�
 
 主题名优先用大家一致的具体主体。主体是「市民」这类空话时，改用共同的小区或地标，例如东湖学府。质检器会丢掉主体过短或是空泛词的主题。少于 2 条不成主题。
 
-新来的单张工单走 [`backend/incremental-cluster.ts`](../backend/incremental-cluster.ts)，用和批量一样的规则：同一件事，或者向量很近的同一个具体地点。不按相隔多久拆开。时间只用来记节奏。编号没有钟点、又落在同一天时，记为同日，不叫突发。险情升级会把风险调高，并重写这条主题的建议，思考关掉，模型不能改风险等级。
+新来的单张工单走 [`backend/incremental-cluster.ts`](../backend/incremental-cluster.ts)，用和批量一样的规则：同一件事，或者向量很近的同一个具体地点。不按相隔多久拆开。时间只用来记节奏。编号没有钟点、又落在同一天时，记为同日，不叫突发。险情升级会把风险调高，并重写这条主题的建议，思考关掉，模型不能改风险等级。一批里有多条要升级时，先本地判完，再把这些主题放进下面的共用队列。同一个主题只重写一次。
 
 ### 6. 主题级处置建议
 
-[`backend/node/summary-node.ts`](../backend/node/summary-node.ts) 只处理已经收成主题的工单。思考关掉，只要 JSON。建议如果是空的，会再要几次，不用同一句套话填上。
+[`backend/node/summary-node.ts`](../backend/node/summary-node.ts) 只处理已经收成主题的工单。思考关掉，只要 JSON。一批 10 个主题，生成上限 6144 token（[`lib/tokens.ts`](../lib/tokens.ts) 的 `THEME_ADVICE`）。模型习惯把建议写成公文，3072 会在第 10 条半截切断，整批 JSON 合不上。提示词大约 2000 token，加 6144 贴着 8192 的上下文窗口，不能再加大。建议如果是空的，同一批会再要几次，不用同一句套话填上。
+
+已经有主题、但 `recommended_action` 还是空的，由 [`backend/node/advice-backfill.ts`](../backend/node/advice-backfill.ts) 补上。不改成员，不删主题。模型处于离线兜底，或连续两批一条都没写上，就停。
+
+抽取、新主题摘要、补建议、险情升级都进 [`backend/llm-pool.ts`](../backend/llm-pool.ts) 的同一个队列。同时在飞的请求数等于配置的 System Two 端点数。快的那台写完立刻领下一批，不用等慢的那台。每台 llama-server 以 `-np 1` 启动，一台同时只算一条。副驾是一句一句的对话，不进这个队列。
 
 单独留下的工单已经有自己的 System 2 摘要，这里不再给它写主题建议。
 
@@ -163,7 +167,7 @@ System 1 的镇街恒为 `UNKNOWN`，不会写成街道名。社区和地标不�
 ## 三、生产入口
 
 - [app/api/tickets/route.ts](../app/api/tickets/route.ts)：单条接入。新工单先过 System 1 和 System 2，再用和批量一样的规则并入已有主题。
-- [app/api/cluster/route.ts](../app/api/cluster/route.ts)：批量研判。读取该城市已入库的工单，跑完整条流水线，替换该城市的主题。
+- [app/api/cluster/route.ts](../app/api/cluster/route.ts)：批量研判。已有主题时只处理新工单，或给还没有建议的主题补建议，不删主题表。一个主题都没有时，才用现有工单做出第一批。
 
 不要对 `public.tickets` 跑这套批量研判。顺德数据在 `region_fs_shunde`。
 
@@ -217,7 +221,7 @@ System 1 的镇街恒为 `UNKNOWN`，不会写成街道名。社区和地标不�
 
 1. 调 `getAllRegions()` 拿到所有 region
 2. 对每个 region 调 `triggerClusterJobAuto(regionId)` —— 这个函数内部已经有 unprocessed 检查 + 进程内 lock + DB unique index
-3. unprocessed=0 的 region 跳过；其余入队 PENDING + 启 per-region 协程
+3. 已有主题、没有新工单、建议也已经写齐的 region 跳过。还有空建议时只补建议。其余入队 PENDING + 启 per-region 协程
 
 防重入用 `globalThis.__cluster_bootstrap_done` 标志，dev mode hot reload 多次启动也只跑一次。生产环境用 process manager（systemd / pm2）拉起 next-server 即可，每个实例 bootstrap 一次；多实例下各实例都会去 trigger，但 `triggerClusterJobAuto` 内部的 in-process lock + DB unique index 保证每个 region 只入一个 PENDING + 启一个 worker。
 

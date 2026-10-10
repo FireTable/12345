@@ -6,6 +6,7 @@ import { updateTaskProgress } from "@/lib/task-progress";
 import { stagePercent } from "@/lib/pipeline-progress";
 import { yieldToEventLoop } from "@/lib/yield-loop";
 import { getSystemTwoEngine } from "@/backend/model";
+import { getLlmPool } from "@/backend/llm-pool";
 import type { EnrichedTicket, MultiFrequencyTheme, RiskLevel } from "@/backend/state";
 import { enrichThemeBatchWithLLM } from "@/backend/node/summary-node";
 
@@ -142,51 +143,65 @@ export async function fillThemesMissingAdvice(regionId: string, taskId?: string)
   }));
 
   let filled = 0;
+  let finished = 0;
   let emptyStreak = 0;
+  let stopped = false;
+  let invalidatedAt = 0;
   console.log(`[summary] 补建议：${themes.length} 个聚类还没有处置建议`);
 
+  // 和抽取一样进共用队列。快的那台写完立刻接下一批，不用等慢的那台。
+  const queue = getLlmPool();
+  const tasks: Array<() => Promise<void>> = [];
   for (let index = 0; index < themes.length; index += CHUNK) {
     const batch = themes.slice(index, index + CHUNK);
-    const results = await enrichThemeBatchWithLLM(batch);
-    let wrote = 0;
-    for (let offset = 0; offset < batch.length; offset++) {
-      const theme = batch[offset];
-      const advice = (results[offset]?.recommendedAction || "").trim();
-      if (!advice) continue;
-      const summary = (results[offset]?.aiSummary || theme.aiSummary || "").trim();
-      await db
-        .update(themesTable)
-        .set({
-          aiSummary: summary || null,
-          recommendedAction: advice,
-        })
-        .where(sql`${themesTable.id} = ${theme.id} AND (${themesTable.recommendedAction} IS NULL OR btrim(${themesTable.recommendedAction}) = '')`);
-      wrote += 1;
-    }
-    filled += wrote;
-    const done = Math.min(index + batch.length, themes.length);
-    console.log(`[summary] 补建议 ${done}/${themes.length}，已写入 ${filled}`);
-    if (taskId) {
-      updateTaskProgress(taskId, regionId, {
-        stage: "SYNTHESIZING",
-        stageText: `正在补写没有建议的聚类 (${done}/${themes.length})`,
-        percent: stagePercent("SUMMARY", done, themes.length),
-        themeCount: themes.length,
-      });
-    }
-    if (wrote === 0) {
-      emptyStreak += 1;
-      const backend = (await getSystemTwoEngine()).getActiveBackend();
-      if (backend.includes("Fallback") || emptyStreak >= 2) {
-        console.warn(`[summary] 补建议停下：连续没有写出建议（${backend}），已写入 ${filled}`);
-        break;
+    tasks.push(async () => {
+      if (stopped) return;
+      const results = await enrichThemeBatchWithLLM(batch);
+      let wrote = 0;
+      for (let offset = 0; offset < batch.length; offset++) {
+        const theme = batch[offset];
+        const advice = (results[offset]?.recommendedAction || "").trim();
+        if (!advice) continue;
+        const summary = (results[offset]?.aiSummary || theme.aiSummary || "").trim();
+        await db
+          .update(themesTable)
+          .set({
+            aiSummary: summary || null,
+            recommendedAction: advice,
+          })
+          .where(sql`${themesTable.id} = ${theme.id} AND (${themesTable.recommendedAction} IS NULL OR btrim(${themesTable.recommendedAction}) = '')`);
+        wrote += 1;
       }
-    } else {
-      emptyStreak = 0;
-    }
-    if (filled > 0 && filled % 100 === 0) invalidateCivicAggregates(regionId);
-    await yieldToEventLoop();
+      filled += wrote;
+      finished += batch.length;
+      const done = Math.min(finished, themes.length);
+      console.log(`[summary] 补建议 ${done}/${themes.length}，已写入 ${filled}`);
+      if (taskId) {
+        updateTaskProgress(taskId, regionId, {
+          stage: "SYNTHESIZING",
+          stageText: `正在补写没有建议的聚类 (${done}/${themes.length})`,
+          percent: stagePercent("SUMMARY", done, themes.length),
+          themeCount: themes.length,
+        });
+      }
+      if (wrote === 0) {
+        emptyStreak += 1;
+        const backend = (await getSystemTwoEngine()).getActiveBackend();
+        if (!stopped && (backend.includes("Fallback") || emptyStreak >= 2)) {
+          stopped = true;
+          console.warn(`[summary] 补建议停下：连续没有写出建议（${backend}），已写入 ${filled}`);
+        }
+      } else {
+        emptyStreak = 0;
+      }
+      const bucket = Math.floor(filled / 100);
+      if (bucket > invalidatedAt) {
+        invalidatedAt = bucket;
+        invalidateCivicAggregates(regionId);
+      }
+    });
   }
+  await queue.addAll(tasks);
 
   if (filled > 0) invalidateCivicAggregates(regionId);
   return filled;

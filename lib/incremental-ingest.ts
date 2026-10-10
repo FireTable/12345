@@ -14,6 +14,7 @@ import { getRegionVocabulary } from "@/lib/vocabulary";
 import type { ClusterJob } from "@/lib/cluster-queue";
 import type { EnrichedTicket, MultiFrequencyTheme, RiskLevel, TicketRadarState } from "@/backend/state";
 import { evaluateIncrementalTicket, upgradeThemeWithSystemTwo } from "@/backend/incremental-cluster";
+import { getLlmPool } from "@/backend/llm-pool";
 import { nextThemeSerial } from "@/backend/theme-serial";
 import { extractNode } from "@/backend/node/extract-node";
 import { canonicalNode } from "@/backend/node/canonical-node";
@@ -165,6 +166,7 @@ export async function ingestNewTickets(job: ClusterJob): Promise<number> {
     activeThemes.map((theme) => theme.id)
   );
   const attached = new Map<string, MultiFrequencyTheme>();
+  const upgrades = new Map<string, MultiFrequencyTheme>();
   const standalones: EnrichedTicket[] = [];
 
   updateTaskProgress(job.taskId, job.regionId, {
@@ -182,14 +184,22 @@ export async function ingestNewTickets(job: ClusterJob): Promise<number> {
       themeVectors,
     });
     if (decision.action === "ATTACHED" && decision.matchedTheme) {
-      const theme = decision.needDeepThinkingUpgrade
-        ? await upgradeThemeWithSystemTwo(decision.matchedTheme)
-        : decision.matchedTheme;
-      attached.set(theme.id, theme);
+      if (decision.needDeepThinkingUpgrade) upgrades.set(decision.matchedTheme.id, decision.matchedTheme);
+      attached.set(decision.matchedTheme.id, decision.matchedTheme);
     } else {
       standalones.push(ticket);
     }
     if ((index + 1) % 20 === 0) await yieldToEventLoop();
+  }
+
+  if (upgrades.size > 0) {
+    const queue = getLlmPool();
+    await queue.addAll(
+      [...upgrades.values()].map((theme) => async () => {
+        const upgraded = await upgradeThemeWithSystemTwo(theme);
+        attached.set(upgraded.id, upgraded);
+      })
+    );
   }
 
   let newThemes: MultiFrequencyTheme[] = [];

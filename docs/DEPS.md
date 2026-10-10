@@ -29,7 +29,7 @@
 | **`@langchain/core`** | `^0.3.40` | 大模型基础接口抽象与统一消息模型 | **MIT** | [langchain-ai/langchainjs](https://github.com/langchain-ai/langchainjs) |
 | **`@langchain/openai`** | `^0.4.4` | OpenAI 兼容接口（DeepSeek / vLLM / Ollama）客户端 | **MIT** | [langchain-ai/langchainjs](https://github.com/langchain-ai/langchainjs) |
 | **`zod`** | `^3.24.2` | 强类型数据验证与 Prompt 结构化输出 Schema 约束 | **MIT** | [colinhacks/zod](https://github.com/colinhacks/zod) |
-| **`p-queue`** | `^8.1.0` | 批量工单并发控制与限流调度器 | **MIT** | [sindresorhus/p-queue](https://github.com/sindresorhus/p-queue) |
+| **`p-queue`** | `^8.1.0` | System Two 共用队列。抽取、新主题摘要、补建议、险情升级一起排队，并发等于端点数 | **MIT** | [sindresorhus/p-queue](https://github.com/sindresorhus/p-queue) |
 | **`date-fns`** | `^4.1.0` | 工单爆发时序跨度与假闭环时间衰减计算 | **MIT** | [date-fns/date-fns](https://github.com/date-fns/date-fns) |
 
 ### 2. 现代前端全栈与 Civic Light 设计体系

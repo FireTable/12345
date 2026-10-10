@@ -265,7 +265,7 @@ PostgreSQL 实例 (ticket_radar)
 | `ticket_count` | `INTEGER` | `NOT NULL, INDEX, DEFAULT 0`| 🤖 聚合工单总件数 | 🤖 该多频群组下包含的工单数 |
 | `time_span_hours` | `INTEGER` | `NOT NULL, DEFAULT 1` | 🤖 爆发时间跨度 (小时) | 🤖 最大与最小发生时间的间隔 |
 | `ai_summary` | `TEXT` | `NULLABLE` | 🤖 态势全貌分析摘要 | 🤖 高层研判简报，总结集中爆发的时段规律与核心诉求 |
-| `recommended_action`| `TEXT` | `NULLABLE` | 主题处置建议 | 只写给已收成主题的多条工单。System 2 思考关掉。模型没写出就空着，不用同一句套话填上 |
+| `recommended_action`| `TEXT` | `NULLABLE` | 主题处置建议 | 只写给已收成主题的多条工单。System 2 思考关掉。空着的由补建议补上，不删主题。模型没写出就继续空着，不用同一句套话填上 |
 | `pattern_type` | `VARCHAR(32)` | `INDEX, NULLABLE` | 🤖 聚类形态分类 | 🤖 `INDIVIDUAL_REPEAT` (主体重复) / `GROUP_GATHERING` (群体聚集) |
 | `civic_mode` | `VARCHAR(16)` | `NULLABLE` | 主题形态 | `aggregate` 群体聚集 / `repeat` 同一人反复 / `diverge` 同一地点多类问题。由成团方式算出，不是二次仲裁 |
 | `ai_confidence` | `INTEGER` | `NULLABLE` | 🤖 研判置信度评分 | 🤖 综合质检置信度得分 (0~100) |

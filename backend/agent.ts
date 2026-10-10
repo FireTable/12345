@@ -1,6 +1,7 @@
 import { graph } from "./agent/ticket-agent";
 import type { RawTicket, TicketRadarState, MultiFrequencyTheme, EnrichedTicket } from "./state";
 import { evaluateIncrementalTicket, upgradeThemeWithSystemTwo, type IncrementalClusterResult } from "./incremental-cluster";
+import { getLlmPool } from "./llm-pool";
 import { embedTextsWithRetry, extractionProductText } from "./embed-products";
 import { isEmbedEligible, productHashForTicket } from "./embed-policy";
 import { upsertTicketEmbeddings } from "@/lib/ticket-embeddings";
@@ -95,7 +96,9 @@ export async function ingestSingleTicketPipeline(
   // 4. 险情升级只重写建议，思考关掉，风险等级用本地规则
   let updatedTheme: MultiFrequencyTheme | undefined = clusterResult.matchedTheme;
   if (clusterResult.needDeepThinkingUpgrade && clusterResult.matchedTheme) {
-    updatedTheme = await upgradeThemeWithSystemTwo(clusterResult.matchedTheme);
+    const matched = clusterResult.matchedTheme;
+    const res = await getLlmPool().add(() => upgradeThemeWithSystemTwo(matched));
+    if (res) updatedTheme = res;
   }
 
   return {
