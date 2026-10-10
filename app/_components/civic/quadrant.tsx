@@ -1,5 +1,6 @@
 "use client";
 
+import React, { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import type { ClusterUrgency } from "@/lib/civic-cluster";
 
@@ -55,12 +56,28 @@ export function QuadrantBoard({ clusters }: { clusters: QuadCluster[] }) {
   const router = useRouter();
   const pending = clusters.filter((c) => ((c.status as any)?.code || "PENDING") !== "RESOLVED");
 
-  // Per-quadrant counts for the corner labels
+  // 各象限真实总数（宏观角标忠实统计）
   const grouped: Record<Q, number> = { tl: 0, tr: 0, bl: 0, br: 0 };
   pending.forEach((c) => { grouped[quadKey(c)] += 1; });
 
+  // 散点图可视化：保留各象限最具代表性、工单量最高的重点聚类（保证图表优雅高质感，避免数千 DOM 挤压重叠与主线程卡顿）
+  const displayPending = useMemo(() => {
+    if (pending.length <= 100) return pending;
+    const byQ: Record<Q, QuadCluster[]> = { tl: [], tr: [], bl: [], br: [] };
+    for (const c of pending) {
+      byQ[quadKey(c)].push(c);
+    }
+    const result: QuadCluster[] = [];
+    (Object.keys(byQ) as Q[]).forEach((q) => {
+      // 优先按工单量从大到小排序，精选 Top 25
+      const sorted = byQ[q].sort((a, b) => (b.count || 0) - (a.count || 0));
+      result.push(...sorted.slice(0, 25));
+    });
+    return result;
+  }, [pending]);
+
   type Dot = { c: QuadCluster; left: number; top: number; size: number; cls: string };
-  const dots: Dot[] = pending.map((c) => {
+  const dots: Dot[] = displayPending.map((c) => {
     const q = quadKey(c);
     const box = QBOX[q];
     // Pseudo-random scatter inside the quadrant's inner box.

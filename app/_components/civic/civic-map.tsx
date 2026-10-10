@@ -289,6 +289,12 @@ export function CivicMap({
           map.fitBounds(bounds, { padding: [24, 24], maxZoom: 13 });
         }
       } catch (e) {}
+
+      setTimeout(() => {
+        if (mapRef.current) {
+          mapRef.current.invalidateSize();
+        }
+      }, 100);
     });
 
     return () => {

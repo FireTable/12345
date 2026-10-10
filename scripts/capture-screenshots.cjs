@@ -81,14 +81,19 @@ async function run() {
   console.log('\n📸 [4/9] 截取: 02-multifreq-quadrant.png (四象限态势与假闭环狙击 · 全部时间)');
   await page.goto('http://localhost:3000/multifreq', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2000);
-  for (let i = 0; i < 5; i++) {
-    const timeBtn = page.locator('button.btn:has-text("近 7 天"), button.btn:has-text("近 30 天"), button.btn:has-text("近 90 天"), button.btn:has-text("全部")').first();
-    const txt = (await timeBtn.innerText()).trim();
-    if (txt === '全部') break;
-    await timeBtn.click();
-    await page.waitForTimeout(1000);
+  const timeBtn = page.locator('#cycle-time-btn');
+  if (await timeBtn.isVisible()) {
+    for (let i = 0; i < 5; i++) {
+      const txt = (await timeBtn.innerText()).trim();
+      if (txt === '全部') break;
+      await timeBtn.click();
+      await page.waitForTimeout(800);
+    }
   }
-  await waitPageLoaded(page, '工单透势研判 (全部)', 4500);
+  try {
+    await page.waitForSelector('.civic-town-pill', { timeout: 15000 });
+  } catch (e) {}
+  await waitPageLoaded(page, '工单透势研判 (全部)', 4000);
   await page.screenshot({ path: path.join(OUT_DIR, '02-multifreq-quadrant.png') });
   console.log('  ✓ 已保存 02-multifreq-quadrant.png');
 
@@ -126,10 +131,14 @@ async function run() {
   await page.screenshot({ path: path.join(OUT_DIR, '07-admin-regions.png') });
   console.log('  ✓ 已保存 07-admin-regions.png');
 
-  // 10. 全景智能调度指挥驾驶舱大屏 (/screen)
-  console.log('\n📸 [9/9] 截取: 09-screen-cockpit.png (全景智能调度驾驶舱数据大屏)');
-  await page.goto('http://localhost:3000/screen', { waitUntil: 'domcontentloaded' });
-  await waitPageLoaded(page, '政企智理数据大屏', 6000);
+  // 10. 全景智能调度指挥驾驶舱大屏 (/screen) -> 采用广州市天河区 9.6 万全量工单数据
+  console.log('\n📸 [9/9] 截取: 09-screen-cockpit.png (全景智能调度驾驶舱数据大屏 · 广州天河)');
+  await page.evaluate(() => {
+    localStorage.setItem("active_region_id", "gz_tianhe");
+    document.cookie = "active_region=gz_tianhe; path=/; max-age=31536000";
+  });
+  await page.goto('http://localhost:3000/screen?region=gz_tianhe', { waitUntil: 'domcontentloaded' });
+  await waitPageLoaded(page, '政企智理数据大屏 (广州天河)', 6000);
   await page.screenshot({ path: path.join(OUT_DIR, '09-screen-cockpit.png') });
   console.log('  ✓ 已保存 09-screen-cockpit.png');
 

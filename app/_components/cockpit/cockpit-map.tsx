@@ -113,7 +113,10 @@ export function CockpitMap({
         zoomAnimation: true,
         fadeAnimation: true,
         markerZoomAnimation: true,
-      }).setView([22.84, 113.25], 11);
+      }).setView(
+        regionId.includes("tianhe") || regionId.includes("gz") ? [23.14, 113.36] : [22.84, 113.25],
+        regionId.includes("tianhe") || regionId.includes("gz") ? 12 : 11
+      );
 
       const tileOptions = {
         maxZoom: 18,

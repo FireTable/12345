@@ -197,7 +197,7 @@ function MultifreqInner() {
           </div>
         </div>
         <PageHeaderActions onRefresh={load}>
-          <button type="button" className="btn btn--default h-[34px] px-3 text-xs font-medium" onClick={cycleTime}>
+          <button id="cycle-time-btn" type="button" className="btn btn--default h-[34px] px-3 text-xs font-medium" onClick={cycleTime}>
             {timeLabel}
           </button>
           <Select
