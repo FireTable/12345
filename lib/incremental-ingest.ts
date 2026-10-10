@@ -1,4 +1,4 @@
-import { asc, sql as drizzleSql } from "drizzle-orm";
+import { asc, desc, sql as drizzleSql } from "drizzle-orm";
 import { batchSizeForProfile } from "@civic/embed";
 import { HANDLING_STATUS, normalizeStatusCode } from "@/lib/civic-dto";
 import { getRegionDb } from "@/db/client";
@@ -109,7 +109,6 @@ export async function ingestNewTickets(job: ClusterJob): Promise<number> {
     .from(themesTable);
   const serialStart = nextThemeSerial(themeRows.map((row) => row.id));
   const activeThemes: MultiFrequencyTheme[] = themeRows
-    .filter((row) => normalizeStatusCode(row.handlingStatus) !== HANDLING_STATUS.RESOLVED)
     .map((row) => ({
       id: row.id,
       title: row.title,
@@ -204,42 +203,71 @@ export async function ingestNewTickets(job: ClusterJob): Promise<number> {
 
   let newThemes: MultiFrequencyTheme[] = [];
   let summarized = false;
-  if (standalones.length >= 2) {
-    const clustered = await clusterTicketSet(
-      {
-        enrichedTickets: standalones,
-        regionId: job.regionId,
-        taskId: job.taskId,
-        status: "clustering",
-      } as TicketRadarState,
-      {
-        serialStart,
-        onlyTicketIds: standalones.map((ticket) => ticket.id),
+  if (standalones.length > 0) {
+    const incomingStandaloneIds = new Set(standalones.map((t) => t.id));
+    const recentStandalones = await tenantDb
+      .select()
+      .from(ticketsTable)
+      .where(
+        drizzleSql`${ticketsTable.primaryThemeId} IS NULL AND ${ticketsTable.confidence} > 0`
+      )
+      .orderBy(desc(ticketsTable.createTime))
+      .limit(1000);
+
+    const historicalStandalones: EnrichedTicket[] = recentStandalones
+      .filter((row) => !incomingStandaloneIds.has(row.id))
+      .map((row) => ({
+        ...toRawTicket(row),
+        canonicalSubject: row.canonicalSubject || "",
+        canonicalLocation: row.address || "",
+        eventType: row.eventType || "民生诉求",
+        sourceCategory: row.sourceCategory || undefined,
+        summarizeTitle: row.summarizeTitle || undefined,
+        themes: [row.sourceCategory || "民生诉求"],
+        entities: [],
+        relations: [],
+      }));
+
+    const candidatePool = [...standalones, ...historicalStandalones];
+    if (candidatePool.length >= 2) {
+      const clustered = await clusterTicketSet(
+        {
+          enrichedTickets: candidatePool,
+          regionId: job.regionId,
+          taskId: job.taskId,
+          status: "clustering",
+        } as TicketRadarState,
+        {
+          serialStart,
+          onlyTicketIds: candidatePool.map((ticket) => ticket.id),
+        }
+      );
+      const rawThemes = (clustered.themes || []).filter((theme) =>
+        (theme.tickets || []).some((t) => incomingStandaloneIds.has(t.id))
+      );
+      const kept = new Set(rawThemes.map((theme) => theme.id));
+      for (const ticket of standalones) {
+        if (!ticket.clusterId || !kept.has(ticket.clusterId)) {
+          ticket.clusterId = undefined;
+          ticket.primaryThemeId = undefined;
+        }
       }
-    );
-    newThemes = clustered.themes || [];
-    const kept = new Set(newThemes.map((theme) => theme.id));
-    for (const ticket of standalones) {
-      if (!ticket.clusterId || !kept.has(ticket.clusterId)) {
+      if (rawThemes.length > 0) {
+        const synthesized = await summaryNode({
+          themes: rawThemes,
+          rawTickets: candidatePool,
+          regionId: job.regionId,
+          taskId: job.taskId,
+          status: "clustering",
+        } as unknown as TicketRadarState);
+        newThemes = synthesized.themes || rawThemes;
+        summarized = true;
+      }
+    } else {
+      for (const ticket of standalones) {
         ticket.clusterId = undefined;
         ticket.primaryThemeId = undefined;
       }
-    }
-    if (newThemes.length > 0) {
-      const synthesized = await summaryNode({
-        themes: newThemes,
-        rawTickets: standalones,
-        regionId: job.regionId,
-        taskId: job.taskId,
-        status: "clustering",
-      } as unknown as TicketRadarState);
-      newThemes = synthesized.themes || newThemes;
-      summarized = true;
-    }
-  } else {
-    for (const ticket of standalones) {
-      ticket.clusterId = undefined;
-      ticket.primaryThemeId = undefined;
     }
   }
 

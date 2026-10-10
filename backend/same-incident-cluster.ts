@@ -88,7 +88,7 @@ export function shouldLinkIncidents(left: IncidentLinkCandidate, right: Incident
   if (!categoryLeft || categoryLeft !== categoryRight) return false;
   const townLeft = left.township.trim();
   const townRight = right.township.trim();
-  if (!townLeft || townLeft !== townRight) return false;
+  if (townLeft && townRight && townLeft !== townRight) return false;
   if (!isConcretePlace(left.placeEvidence) || !isConcretePlace(right.placeEvidence)) return false;
   if (sameConcretePlace(left.placeEvidence, right.placeEvidence)) return true;
   if (sameNamedSubject(left.subject, right.subject)) return true;

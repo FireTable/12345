@@ -17,8 +17,9 @@ import { CADENCE, cadenceLabel, describeCadence, type ThemeCadence } from "./the
 import { legalTownshipName, loadPresetVocabulary, type RegionVocabulary, type TownshipInfo } from "@/lib/vocabulary";
 import { HANDLING_STATUS, normalizeStatusCode } from "@/lib/civic-dto";
 
-function safeParseDate(dateStr: string): Date {
+function safeParseDate(dateStr: string | Date | undefined | null): Date {
   if (!dateStr) return new Date();
+  if (dateStr instanceof Date) return dateStr;
   const d1 = parse(dateStr, "yyyy-MM-dd HH:mm:ss", new Date());
   if (isValid(d1)) return d1;
   const d2 = parseISO(dateStr);
@@ -71,7 +72,9 @@ export function evaluateIncrementalTicket(
     const active = profileTicket(
       {
         title: [theme.eventType, theme.title].filter(Boolean).join(" "),
-        content: [theme.canonicalSubject, theme.canonicalLocation].filter(Boolean).join("\n"),
+        content: [theme.canonicalSubject, theme.canonicalLocation, theme.aiSummary, theme.recommendedAction]
+          .filter(Boolean)
+          .join("\n"),
         subdistrict: theme.canonicalLocation,
       },
       townships

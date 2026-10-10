@@ -263,10 +263,12 @@ export async function persistIncrementalResult(input: {
 
   for (const theme of newThemes) {
     for (const ticket of theme.tickets || []) {
-      if (!ticket.isFakeClosure) continue;
       await tenantDb
         .update(ticketsTable)
-        .set({ isFakeClosure: true, closureStatus: "REOPENED" })
+        .set({
+          primaryThemeId: theme.id,
+          ...(ticket.isFakeClosure ? { isFakeClosure: true, closureStatus: "REOPENED" as const } : {}),
+        })
         .where(eq(ticketsTable.id, ticket.id));
     }
   }
