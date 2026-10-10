@@ -28,6 +28,7 @@ export function middleware(request: NextRequest) {
   if (
     pathname.startsWith("/api/map/tile") ||
     pathname.startsWith("/api/map/geocode") ||
+    pathname === "/api/regions" ||
     pathname.startsWith("/api/regions/")
   ) {
     return NextResponse.next();

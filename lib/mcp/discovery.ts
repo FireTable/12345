@@ -43,7 +43,29 @@ export function authorizationServerMetadata(origin: string) {
 }
 
 export function requestOrigin(request: Request): string {
-  return new URL(request.url).origin;
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const forwardedProto = request.headers.get("x-forwarded-proto");
+  if (forwardedHost) {
+    const proto = forwardedProto || (request.url.startsWith("https") ? "https" : "http");
+    return `${proto}://${forwardedHost}`;
+  }
+
+  const url = new URL(request.url);
+  if ((url.hostname === "0.0.0.0" || url.hostname === "127.0.0.1") && process.env.BETTER_AUTH_URL) {
+    try {
+      return new URL(process.env.BETTER_AUTH_URL).origin;
+    } catch {
+      // ignore
+    }
+  }
+
+  const hostHeader = request.headers.get("host");
+  if (hostHeader && !hostHeader.startsWith("0.0.0.0")) {
+    const proto = forwardedProto || (request.url.startsWith("https") ? "https" : "http");
+    return `${proto}://${hostHeader}`;
+  }
+
+  return url.origin;
 }
 
 export function handleProtectedResourceMetadata(request: Request): Response {
