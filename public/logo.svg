@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" fill="none">
+  <defs>
+    <!-- 主背景深邃政务蓝微光渐变 -->
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="120" y2="120" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stopColor="#0B1E48" />
+      <stop offset="50%" stopColor="#051433" />
+      <stop offset="100%" stopColor="#020817" />
+    </linearGradient>
+
+    <!-- 品牌主色高亮光环 -->
+    <linearGradient id="primaryGrad" x1="20" y1="20" x2="100" y2="100" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stopColor="#00D2FF" />
+      <stop offset="45%" stopColor="#1E5AFF" />
+      <stop offset="100%" stopColor="#0958D9" />
+    </linearGradient>
+
+    <!-- 认知中枢神经网络脉冲 -->
+    <linearGradient id="pulseGrad" x1="60" y1="25" x2="60" y2="95" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stopColor="#38BDF8" />
+      <stop offset="100%" stopColor="#818CF8" />
+    </linearGradient>
+
+    <!-- 柔和外发光滤镜 -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="3.5" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- 外层圆角矩形基座 (超轻质感微边框) -->
+  <rect x="4" y="4" width="112" height="112" rx="28" fill="url(#bgGrad)" stroke="#1E5AFF" stroke-width="1.8" stroke-opacity="0.45" />
+
+  <!-- 背景科技雷达同心回响环 -->
+  <circle cx="60" cy="60" r="42" stroke="#1E5AFF" stroke-width="1" stroke-dasharray="3 4" stroke-opacity="0.25" />
+  <circle cx="60" cy="60" r="28" stroke="#00D2FF" stroke-width="1" stroke-dasharray="2 3" stroke-opacity="0.2" />
+
+  <!-- 核心中枢：12345 数字民声天线与 AI 认知脉冲图形 -->
+  <g filter="url(#glow)">
+    <!-- 动态呼应波峰 (民意声纹) -->
+    <path d="M26 60 C32 50, 36 70, 42 60 C46 52, 52 40, 60 40 C68 40, 74 52, 78 60 C84 70, 88 50, 94 60" 
+          stroke="url(#primaryGrad)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+
+    <!-- 顶层认知之冠 (聚类闭环与研判天平拓扑) -->
+    <path d="M42 60 L60 30 L78 60" stroke="#00D2FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.85" />
+    <path d="M42 60 L60 84 L78 60" stroke="#38BDF8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.65" />
+    <path d="M60 30 L60 84" stroke="url(#pulseGrad)" stroke-width="2.5" stroke-linecap="round" />
+
+    <!-- 核心微网格与认知交点节点 -->
+    <circle cx="60" cy="30" r="4" fill="#FFFFFF" stroke="#00D2FF" stroke-width="2" />
+    <circle cx="60" cy="60" r="5" fill="#00D2FF" stroke="#FFFFFF" stroke-width="2" />
+    <circle cx="60" cy="84" r="3.5" fill="#38BDF8" stroke="#1E5AFF" stroke-width="1.5" />
+    <circle cx="42" cy="60" r="3" fill="#60A5FA" />
+    <circle cx="78" cy="60" r="3" fill="#60A5FA" />
+    <circle cx="26" cy="60" r="2" fill="#38BDF8" opacity="0.8" />
+    <circle cx="94" cy="60" r="2" fill="#38BDF8" opacity="0.8" />
+  </g>
+
+  <!-- 底部科技光芒指示微粒 -->
+  <circle cx="60" cy="100" r="1.5" fill="#38BDF8" opacity="0.6" />
+</svg>
