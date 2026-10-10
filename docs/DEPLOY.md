@@ -1,7 +1,7 @@
 # 民声智理 · 系统部署与运维手册 (Deployment & Ops Guide)
 
 > **项目名称**：民声智理 · 12345 政务热线认知中枢与 AI 智能研判系统 (多城市 / 多租户 V2 生产架构)  
-> **参赛团队**：赢了就回家吃鱼生  
+> **研发团队**：赢了就回家吃鱼生  
 > **部署形态**：支持 **本地开发环境**、**VPS 云服务器容器化部署** 及 **政务内网纯离线私有化部署**。
 
 ---
@@ -87,7 +87,7 @@ BETTER_AUTH_URL=https://<your-domain>
 
 # ---------- 默认系统管理员账号 (pnpm db:init-admin 读取) ----------
 # 生产环境务必覆盖 ADMIN_PASSWORD 为高强度密码: openssl rand -hex 12
-ADMIN_EMAIL=firetable@foxmail.com
+ADMIN_EMAIL=admin@civic.local
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=<生成高强度密码: openssl rand -hex 12>
 

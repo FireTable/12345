@@ -10,6 +10,7 @@
  */
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import XLSX from "xlsx";
 
@@ -884,7 +885,7 @@ async function main() {
   }
 
   console.log(`\n📦 数据全部生成完毕，正在写入 Excel 文件...`);
-  const outDir = "/Users/FireTable/Downloads";
+  const outDir = process.env.OUTPUT_DIR || path.join(os.homedir(), "Downloads");
 
   // 1. 写入 18万条总表
   const ws18 = XLSX.utils.aoa_to_sheet(rows);

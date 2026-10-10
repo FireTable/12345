@@ -31,8 +31,8 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(SCRIPT_DIR)
 from train import LayaDecisionModelV4, DualStreamCivicTokenizer, CRITERIA_CHOICES
 
-DEFAULT_FULL_EXCEL = "/Users/FireTable/Downloads/政数局资料-顺德区12345热线工单（2025年1月至3月）.xlsx"
-DEFAULT_SAMPLE_EXCEL = "/Users/FireTable/Downloads/sample_300.xlsx"
+DEFAULT_FULL_EXCEL = os.path.expanduser("~/Downloads/政数局资料-顺德区12345热线工单（2025年1月至3月）.xlsx")
+DEFAULT_SAMPLE_EXCEL = os.path.expanduser("~/Downloads/sample_300.xlsx")
 VOCAB_PATH = os.path.join(SCRIPT_DIR, "../models/vocab_civic.json")
 
 # Production Model Paths

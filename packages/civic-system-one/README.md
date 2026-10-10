@@ -133,11 +133,11 @@ console.log(decision.latencyMs);    // 0.4 ms
 
 ### 2. 生产脚本清单 (`scripts/`)
 
-- [engine.py](file:///Users/FireTable/OpenClaw/Code/12345/packages/civic-system-one/scripts/engine.py)：**生产级推理引擎**（支持单单分析、主办+协办联合分派、安全互锁与 0.08ms 极速响应）
-- [train.py](file:///Users/FireTable/OpenClaw/Code/12345/packages/civic-system-one/scripts/train.py)：**训练主管线**（交叉注意力架构、类别焦点损失权重、余弦学习率衰减）
-- [benchmark.py](file:///Users/FireTable/OpenClaw/Code/12345/packages/civic-system-one/scripts/benchmark.py)：**统一压测工具**（默认 10,000 条样本，集成深层质检审核流）
-- [generate-full-train-set.ts](file:///Users/FireTable/OpenClaw/Code/12345/packages/civic-system-one/scripts/generate-full-train-set.ts)：**政务数据精准生成器**（源头消除标签噪声，规范 7 类法定领域）
-- [build_civic_vocab.py](file:///Users/FireTable/OpenClaw/Code/12345/packages/civic-system-one/scripts/build_civic_vocab.py)：政务分词词表构建脚本
+- [`scripts/engine.py`](scripts/engine.py)：**生产级推理引擎**（支持单单分析、主办+协办联合分派、安全互锁与 0.08ms 极速响应）
+- [`scripts/train.py`](scripts/train.py)：**训练主管线**（交叉注意力架构、类别焦点损失权重、余弦学习率衰减）
+- [`scripts/benchmark.py`](scripts/benchmark.py)：**统一压测工具**（默认 10,000 条样本，集成深层质检审核流）
+- [`scripts/generate-full-train-set.ts`](scripts/generate-full-train-set.ts)：**政务数据精准生成器**（源头消除标签噪声，规范 7 类法定领域）
+- [`scripts/build_civic_vocab.py`](scripts/build_civic_vocab.py)：政务分词词表构建脚本
 
 ---
 

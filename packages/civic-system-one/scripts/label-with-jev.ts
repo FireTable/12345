@@ -11,6 +11,7 @@
  *   试跑 1 条：加上 --limit 1 --concurrency 1
  */
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import nextEnvPkg from "@next/env";
 import * as xlsxModule from "xlsx";
@@ -25,7 +26,7 @@ const civic = buildCivicQuestions();
 const ENDPOINT = "https://classifier.dev/v1/systemone";
 const MODEL = "jev-1.13.0";
 const PROVIDER = "classifier.dev";
-const DEFAULT_INPUT = "/Users/FireTable/Downloads/政数局资料-顺德区12345热线工单 simple.xlsx";
+const DEFAULT_INPUT = path.join(os.homedir(), "Downloads/政数局资料-顺德区12345热线工单 simple.xlsx");
 const DEFAULT_OUTPUT = path.resolve("packages/civic-system-one/data/civic_jev.jsonl");
 const INTENT_LABELS = new Set(["INQUIRY", "COMPLAINT", "SUGGESTION", "REMINDER", "COMMENDATION"]);
 const CATEGORY_LABELS = new Set([

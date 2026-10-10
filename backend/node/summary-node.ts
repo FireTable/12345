@@ -155,6 +155,11 @@ export async function summaryNode(
     await queue.addAll(chunkTasks);
   }
 
+  if (regionId) {
+    const { fillThemesMissingAdvice } = await import("./advice-backfill");
+    await fillThemesMissingAdvice(regionId, taskId);
+  }
+
   if (taskId) {
     const spotlightClusters = enrichedThemes.slice(0, 6).map((t) => ({
       id: t.id,

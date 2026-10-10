@@ -4,6 +4,7 @@
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defaultWeightPath, weightFileNameIsF16 } from "./pull";
@@ -67,7 +68,7 @@ function resolveServerBin(): string | null {
   const binName = process.platform === "win32" ? "llama-server.exe" : "llama-server";
   const candidates = [
     path.resolve(process.cwd(), "bin", binName),
-    "/Users/FireTable/prismml-llama/build/bin/llama-server",
+    path.join(os.homedir(), "prismml-llama/build/bin/llama-server"),
   ];
   return candidates.find((candidate) => fs.existsSync(candidate)) || null;
 }

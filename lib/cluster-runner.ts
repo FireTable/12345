@@ -11,6 +11,7 @@ import {
 } from "./cluster-queue";
 import { executeClusterJob } from "./cluster-job";
 import { isJobHeartbeatHealthy, shouldStartStage04 } from "@/backend/embed-policy";
+import { countThemesMissingAdvice } from "@/backend/node/advice-backfill";
 import { sql } from "@/db/client";
 
 // 内存互斥锁：防止同一 Next.js 实例中对同一个辖区并发重入触发多个 worker
@@ -56,10 +57,13 @@ export async function triggerClusterJobAuto(regionId: string): Promise<boolean> 
       return false;
     }
 
-    // 已有聚类且没有新工单：不因嵌入过期去重跑全市。主题表保持不动。
+    // 已有聚类且没有新工单：不重做主题。还有没写建议的聚类时，只补建议。
     if (themeCount > 0 && unprocessed === 0) {
-      activeRegionWorkers.delete(regionId);
-      return false;
+      const missingAdvice = await countThemesMissingAdvice(regionId);
+      if (missingAdvice === 0) {
+        activeRegionWorkers.delete(regionId);
+        return false;
+      }
     }
 
     const beat = await readEmbeddingHeartbeat(regionId);

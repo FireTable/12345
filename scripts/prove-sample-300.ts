@@ -1,8 +1,9 @@
 /**
  * 用 sample_300.xlsx 走入库和完整研判，再核对顺德库里的字段、日期和主题。
- * 用法：PROOF_DIR=/path npx tsx scripts/prove-sample-300.ts /Users/FireTable/Downloads/sample_300.xlsx
+ * 用法：PROOF_DIR=/path npx tsx scripts/prove-sample-300.ts [sample_300.xlsx]
  */
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import nextEnvPkg from "@next/env";
 
@@ -10,7 +11,7 @@ const { loadEnvConfig } = (nextEnvPkg as any).default || nextEnvPkg;
 if (loadEnvConfig) loadEnvConfig(process.cwd());
 
 async function main() {
-  const xlsxPath = process.argv[2] || "/Users/FireTable/Downloads/sample_300.xlsx";
+  const xlsxPath = process.argv[2] || path.join(os.homedir(), "Downloads/sample_300.xlsx");
   const xlsxModule = await import("xlsx");
   const xlsx = (xlsxModule as any).default || xlsxModule;
   const { buildRecordsFromRows, insertRecordsBatch } = await import("../lib/ticket-ingest");

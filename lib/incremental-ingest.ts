@@ -19,6 +19,7 @@ import { extractNode } from "@/backend/node/extract-node";
 import { canonicalNode } from "@/backend/node/canonical-node";
 import { clusterTicketSet } from "@/backend/node/cluster-node";
 import { summaryNode } from "@/backend/node/summary-node";
+import { fillThemesMissingAdvice } from "@/backend/node/advice-backfill";
 import {
   embedEligibleBatches,
   embeddingProgressLabel,
@@ -192,6 +193,7 @@ export async function ingestNewTickets(job: ClusterJob): Promise<number> {
   }
 
   let newThemes: MultiFrequencyTheme[] = [];
+  let summarized = false;
   if (standalones.length >= 2) {
     const clustered = await clusterTicketSet(
       {
@@ -222,6 +224,7 @@ export async function ingestNewTickets(job: ClusterJob): Promise<number> {
         status: "clustering",
       } as unknown as TicketRadarState);
       newThemes = synthesized.themes || newThemes;
+      summarized = true;
     }
   } else {
     for (const ticket of standalones) {
@@ -236,6 +239,9 @@ export async function ingestNewTickets(job: ClusterJob): Promise<number> {
     newThemes,
     regionId: job.regionId,
   });
+  if (!summarized) {
+    await fillThemesMissingAdvice(job.regionId, job.taskId);
+  }
   if (lowConfidence.length > 0) {
     await seedReviewQueue(lowConfidence, job.regionId);
   }

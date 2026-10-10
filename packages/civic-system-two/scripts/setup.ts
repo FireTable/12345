@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -33,7 +34,7 @@ function resolveServerBin(): string | null {
   }
 
   if (!isWin) {
-    const macDefault = '/Users/FireTable/prismml-llama/build/bin/llama-server';
+    const macDefault = path.join(os.homedir(), 'prismml-llama/build/bin/llama-server');
     if (fs.existsSync(macDefault)) return macDefault;
   }
 
@@ -60,7 +61,7 @@ function resolveModelPath(): string | null {
   }
 
   if (!isWin) {
-    const macDefault = '/Users/FireTable/models/bonsai2-gguf/Ternary-Bonsai-2-27B-PTQ1_0.gguf';
+    const macDefault = path.join(os.homedir(), 'models/bonsai2-gguf/Ternary-Bonsai-2-27B-PTQ1_0.gguf');
     if (fs.existsSync(macDefault)) return macDefault;
   }
 

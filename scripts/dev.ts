@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
+import os from "node:os";
 import path from "node:path";
 import {
   EMBED_DEV_HOST,
@@ -15,11 +16,11 @@ const HOST = "127.0.0.1";
 
 const MODEL_PATH =
   process.env.BONSAI_MODEL_PATH ||
-  "/Users/FireTable/models/bonsai2-gguf/Ternary-Bonsai-2-27B-PTQ1_0.gguf";
+  path.join(os.homedir(), "models/bonsai2-gguf/Ternary-Bonsai-2-27B-PTQ1_0.gguf");
 
 const SERVER_BIN =
   process.env.LLAMA_SERVER_BIN ||
-  "/Users/FireTable/prismml-llama/build/bin/llama-server";
+  path.join(os.homedir(), "prismml-llama/build/bin/llama-server");
 
 const SERVE_SCRIPT = path.resolve(
   process.cwd(),

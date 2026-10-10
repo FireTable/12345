@@ -1,7 +1,7 @@
 # 数据库表结构与字段字典 (Database Schema & Dictionary)
 
 > **项目名称**：民声智理 · 12345 政务热线认知中枢与 AI 智能研判系统 (多城市 / 多租户 V2 生产架构)  
-> **参赛团队**：赢了就回家吃鱼生  
+> **研发团队**：赢了就回家吃鱼生  
 > **ORM 框架**：Drizzle ORM (`drizzle-orm` + `postgres.js`)  
 > **数据库引擎**：PostgreSQL 16 (支持多租户独立 Schema 物理隔离 / JSONB / 时区时间戳 / 高并发索引)
 

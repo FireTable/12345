@@ -4,6 +4,7 @@ import { getRegionDb } from "@/db/client";
 import { ticketsTable, themesTable } from "@/db/schema";
 import { persistClusterResult } from "@/lib/civic-persist";
 import { ingestNewTickets } from "@/lib/incremental-ingest";
+import { fillThemesMissingAdvice } from "@/backend/node/advice-backfill";
 import { seedReviewQueue } from "@/lib/review-queue";
 import { updateTaskProgress } from "@/lib/task-progress";
 import { toRawTicket } from "@/lib/ticket-raw";
@@ -31,12 +32,13 @@ export async function executeClusterJob(job: ClusterJob): Promise<number> {
 
   if (themeCount > 0) {
     if (unprocessedCount === 0) {
+      const filled = await fillThemesMissingAdvice(job.regionId, job.taskId);
       console.log(
-        `[cluster-job] ${job.taskId} (${job.regionId}) 跳过：已有 ${themeCount} 个聚类，没有新工单，不改主题表`
+        `[cluster-job] ${job.taskId} (${job.regionId}) 没有新工单，补写处置建议 ${filled} 条，主题表未重做`
       );
       updateTaskProgress(job.taskId, job.regionId, {
         stage: "COMPLETED",
-        stageText: `已有 ${themeCount} 个聚类，没有新工单`,
+        stageText: filled > 0 ? `已补写 ${filled} 条处置建议` : `已有 ${themeCount} 个聚类，建议已齐`,
         percent: 100,
         themeCount,
       });
