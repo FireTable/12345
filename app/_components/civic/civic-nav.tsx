@@ -177,7 +177,7 @@ export function CivicNav() {
         </div>
 
         {isLoginPage ? (
-          <div className="navbar__user" style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "8px" }}>
+          <div className="navbar__actions navbar__actions--login">
             {/* 演示视频图标按钮 */}
             <button
               type="button"
