@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import type { Map as LeafletMap, GeoJSON as LeafletGeoJSON, Layer } from "leaflet";
 import { mapColorByShare, getTownshipColor } from "@/lib/civic-cluster";
+import { getTiandituTileUrls } from "@/lib/map/tile-layer";
 import { useRegion } from "./region-context";
 import { RefreshCw, ZoomIn, ZoomOut } from "lucide-react";
 
@@ -113,15 +114,17 @@ export function CivicMap({
         maxZoom: 18,
       });
 
-      // 恢复天地图 CGCS2000 标准底图（与 GeoJSON WGS-84/CGCS2000 严丝合缝像素级对齐，杜绝火星坐标偏移）
-      L.tileLayer("/api/map/tile?type=vec&z={z}&x={x}&y={y}", {
+      const { vecUrl, cvaUrl, subdomains } = getTiandituTileUrls();
+      const baseTileOptions = {
         maxZoom: 18,
-      }).addTo(map);
+        ...(subdomains.length > 0 ? { subdomains } : {}),
+      };
+
+      // 恢复天地图 CGCS2000 标准底图（与 GeoJSON WGS-84/CGCS2000 严丝合缝像素级对齐，杜绝火星坐标偏移）
+      L.tileLayer(vecUrl, baseTileOptions).addTo(map);
 
       // 天地图中文道路/街道注记 (各镇街天然境界与道路完美重合)
-      L.tileLayer("/api/map/tile?type=cva&z={z}&x={x}&y={y}", {
-        maxZoom: 18,
-      }).addTo(map);
+      L.tileLayer(cvaUrl, baseTileOptions).addTo(map);
 
       mapRef.current = map;
       setMapInstance(map);

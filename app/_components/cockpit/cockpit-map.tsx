@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState, useMemo } from "react";
 import type { Map as LeafletMap, GeoJSON as LeafletGeoJSON, Layer } from "leaflet";
 import { MapPin } from "lucide-react";
 import { getTownshipColor } from "@/lib/civic-cluster";
+import { getTiandituTileUrls } from "@/lib/map/tile-layer";
 import type { RegionInfo } from "../civic/region-context";
 
 interface CockpitMapProps {

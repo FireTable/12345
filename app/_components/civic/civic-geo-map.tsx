@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import type { Map as LeafletMap, Marker as LeafletMarker } from "leaflet";
 import { Loader2, MapPin, ZoomIn, ZoomOut } from "lucide-react";
+import { getTiandituTileUrls } from "@/lib/map/tile-layer";
 import { useRegion } from "./region-context";
 
 export type GeoPoint = {
@@ -97,17 +98,18 @@ export function CivicGeoMap({
         attributionControl: false,
       });
 
-      // 天地图矢量底图 (通过安全后端代理)
-      L.tileLayer("/api/map/tile?type=vec&z={z}&x={x}&y={y}", {
+      const { vecUrl, cvaUrl, subdomains } = getTiandituTileUrls();
+      const baseTileOptions = {
         maxZoom: 18,
         minZoom: 4,
-      }).addTo(map);
+        ...(subdomains.length > 0 ? { subdomains } : {}),
+      };
+
+      // 天地图矢量底图 (自适应前端 CDN 直连或后端代理)
+      L.tileLayer(vecUrl, baseTileOptions).addTo(map);
 
       // 天地图中文注记 (道路、建筑物名)
-      L.tileLayer("/api/map/tile?type=cva&z={z}&x={x}&y={y}", {
-        maxZoom: 18,
-        minZoom: 4,
-      }).addTo(map);
+      L.tileLayer(cvaUrl, baseTileOptions).addTo(map);
 
       mapRef.current = map;
       setLoading(false);
