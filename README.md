@@ -285,6 +285,7 @@ pnpm dev
 | :--- | :--- |
 | `pnpm dev` | **全栈启动**：自动并行拉起 System-2 本地大模型推理引擎 (8132) + 研判队列 worker + Next.js (3000)；Ctrl+C 3s 内兜底 SIGKILL，不会留孤儿 |
 | `pnpm dev:web` | **轻量启动**：仅启动 Next.js 本地开发服务 (大模型依赖云端 API 灾备模式) |
+| `pnpm dev:models` | **算力集群**：单机并行拉起 System-2 (8132) + Civic-Embed (8133)，供 VPS 经 Tailscale 跨网调度 |
 | `pnpm dev:llm` | **独立调试**：单独拉起 System-2 本地 Metal 推理服务 (Bonsai 2 27B) |
 | `pnpm build` | 编译 Next.js 生产版本构建 |
 | `pnpm db:init` | **全量一键初始化**：表结构迁移、顺德与天河双站点、高精天地图边界、全量字典、管理员账号 |

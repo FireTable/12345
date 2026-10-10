@@ -91,8 +91,11 @@ ADMIN_EMAIL=admin@civic.local
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=<生成高强度密码: openssl rand -hex 12>
 
-# ---------- 本地 System 2。不写则默认 http://127.0.0.1:8132/v1 ----------
-# SYSTEM_TWO_ENDPOINTS=http://127.0.0.1:8132/v1
+# ---------- System 2 (27B) 与 Embedding (BGE-M3) 端点配置 ----------
+# 场景 A: 纯云端模式 (默认走下方 OPENAI_API_KEY 云端 API 灾备)
+# 场景 B: 混合云模式 (VPS + Mac 本地推理通过 Tailscale 内网 100.x.y.z 互联)
+# SYSTEM_TWO_ENDPOINTS=http://100.x.y.z:8132/v1
+# EMBEDDING_ENDPOINTS=local:http://100.x.y.z:8133/v1
 
 # ---------- 云端回退与 AI 拓荒 ----------
 # 本地节点探活失败且写了 Key 时，getSystemTwoEngine 才用下面三行。
@@ -131,6 +134,27 @@ ssh root@<VPS_IP> 'cd /opt/12345-stack && \
   docker compose --env-file .env.vps up -d --build && \
   docker restart langgraph-app-caddy-1'
 ```
+
+### 3. VPS + 本地 Mac (Tailscale 混合云) 高性价比部署模式
+
+在 VPS 算力有限、无法本地运行 27B 大模型与密集向量模型时，可采用 **Tailscale 点对点 WireGuard 加密隧道** 将 Mac 的高性能 Apple Silicon 算力作为推理集群安全接入 VPS：
+
+1. **Mac 本机一键拉起双推理集群**：
+   ```bash
+   pnpm dev:models
+   ```
+   - 自动在后台监听 `0.0.0.0:8132` (System-2 27B) 和 `0.0.0.0:8133` (Civic-Embed bge-m3)；
+   - 在 Mac 终端运行 `tailscale ip -4` 查看内网 IP（例如 `100.88.99.100`）。
+
+2. **VPS 在 `.env.vps` 中挂载端点**：
+   ```ini
+   SYSTEM_TWO_ENDPOINTS=http://100.88.99.100:8132/v1
+   EMBEDDING_ENDPOINTS=local:http://100.88.99.100:8133/v1
+   ```
+
+3. **双轨容灾与自愈兜底**：
+   - 当 Mac 在线时，VPS **优先走 Mac 本地算力**（零 Token 费用、私有高性能推理）；
+   - 若 Mac 关机或休眠，VPS 探活熔断并在 **2 秒内自动平滑降级至云端 API**，全站业务 100% 不中断。
 
 ---
 

@@ -69,7 +69,7 @@ export function getSystemTwoEndpoints(): string[] {
 export function isLocalSystemTwo(): boolean {
   const endpoints = getSystemTwoEndpoints();
   return endpoints.some((ep) =>
-    /localhost|127\.0\.0\.1|0\.0\.0\.0|::1|192\.168\.|10\.\d+\.|172\.(1[6-9]|2\d|3[01])\./i.test(
+    /localhost|127\.0\.0\.1|0\.0\.0\.0|::1|192\.168\.|10\.\d+\.|172\.(1[6-9]|2\d|3[01])\.|100\.\d+\./i.test(
       ep
     )
   );

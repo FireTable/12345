@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { defaultWeightPath, weightFileNameIsF16 } from "./pull";
 
 export const EMBED_DEV_PORT = 8133;
-export const EMBED_DEV_HOST = "127.0.0.1";
+export const EMBED_DEV_HOST = "0.0.0.0";
 
 export type EmbedDevAction = "reuse" | "start" | "skip";
 
