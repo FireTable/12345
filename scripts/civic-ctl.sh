@@ -34,6 +34,7 @@ VPS_USER="${VPS_USER:-root}"
 VPS_TS_IP="${VPS_TS_IP:-100.104.117.104}"
 VPS_PUB_IP="${VPS_PUB_IP:-185.99.135.72}"
 VPS_HOST="${VPS_HOST:-}"
+WIN_TS_IP="${WIN_TS_IP:-100.90.35.38}"
 PROD_DOMAIN="${PROD_DOMAIN:-https://12345.firetable.tech}"
 VPS_STACK_DIR="${VPS_STACK_DIR:-/opt/12345-stack}"
 
@@ -311,6 +312,23 @@ action_check_network() {
     else
       echo -e "${RED}✖ VPS 无法访问 Mac 8133，请检查端口是否为 0.0.0.0 监听。${NC}"
     fi
+
+    local vps_test_win_s2
+    vps_test_win_s2=$(ssh -o ConnectTimeout=5 "${VPS_USER}@${vps_target}" "curl -s -m 4 http://${WIN_TS_IP}:8091/v1/models | grep -o '\"id\":\"bonsai-2-27b\"' || echo FAIL")
+    local vps_test_win_embed
+    vps_test_win_embed=$(ssh -o ConnectTimeout=5 "${VPS_USER}@${vps_target}" "curl -s -m 4 http://${WIN_TS_IP}:8133/health | grep -o '\"status\":\"ok\"' || echo FAIL")
+
+    if [ "${vps_test_win_s2}" = '"id":"bonsai-2-27b"' ]; then
+      echo -e "${GREEN}✓ VPS 成功直连 Win 8091 (RTX GPU Bonsai-2 27B)！${NC}"
+    else
+      echo -e "${YELLOW}⚠️ VPS 无法访问 Win 8091，请检查 Windows ninfer 服务是否在线。${NC}"
+    fi
+
+    if [ "${vps_test_win_embed}" = '"status":"ok"' ]; then
+      echo -e "${GREEN}✓ VPS 成功直连 Win 8133 (BGE-M3 向量嵌入服务)！${NC}"
+    else
+      echo -e "${YELLOW}⚠️ VPS 无法访问 Win 8133，请检查 Windows BgeM3Embedding 计划任务。${NC}"
+    fi
   else
     echo -e "${YELLOW}⚠️ 无法无密 SSH 连接到 ${VPS_USER}@${vps_target}，跳过云端反向探测。${NC}"
   fi
@@ -343,8 +361,8 @@ action_sync_vps() {
   fi
   echo -e "${GREEN}✓ 配置上传成功！${NC}"
 
-  echo -e "\n${BOLD}>>> [2/3] 重启 VPS 上的 12345-app 容器与 Caddy 反代...${NC}"
-  ssh -o ConnectTimeout=5 "${VPS_USER}@${vps_target}" "cd ${VPS_STACK_DIR} && docker restart 12345-app && docker restart langgraph-app-caddy-1"
+  echo -e "\n${BOLD}>>> [2/3] 热重载 VPS 上的 12345-app 容器环境...${NC}"
+  ssh -o ConnectTimeout=5 "${VPS_USER}@${vps_target}" "cd ${VPS_STACK_DIR} && docker compose --env-file .env.vps up -d app && docker restart langgraph-app-caddy-1 2>/dev/null || true"
 
   echo -e "\n${BOLD}>>> [3/3] 验证生产端响应...${NC}"
   sleep 2
