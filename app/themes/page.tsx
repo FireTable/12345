@@ -16,6 +16,10 @@ import {
   SelectValue,
 } from "@/app/_components/ui/select";
 import { TablePager } from "@/app/_components/civic/table-pager";
+import { useRegion } from "@/app/_components/civic/region-context";
+import { useCivicSse } from "@/app/_hooks/use-civic-sse";
+import { PageHeaderActions } from "@/app/_components/civic/page-header-actions";
+import { HANDLING_STATUS, normalizeStatusCode } from "@/lib/civic-dto";
 
 type Cluster = {
   id: string;
@@ -27,7 +31,7 @@ type Cluster = {
   mode_name: string;
   mode_icon: string;
   ai_confidence: number | null;
-  status: { label: string; progress: number; owner: string };
+  status: { code?: "PENDING" | "IN_PROGRESS" | "RESOLVED"; label: string; progress: number; owner: string };
   trend: string;
   first_date: string;
   last_date: string;
@@ -47,6 +51,7 @@ const TABS = [
 
 export default function ThemesPage() {
   const router = useRouter();
+  const { activeRegion, isLoading: regionLoading } = useRegion();
   const [rows, setRows] = useState<Cluster[]>([]);
   const [regions, setRegions] = useState<string[]>([]);
   const [tab, setTab] = useState("all");
@@ -59,35 +64,43 @@ export default function ThemesPage() {
   const [ready, setReady] = useState(false);
 
   function load() {
+    // 站点由 cookie 决定。region 查询参数是镇街名，传站点 id 会把列表滤空。
     fetch("/api/clusters")
       .then((r) => r.json())
       .then((j) => {
         setRows(j.topClusters || []);
-        setRegions((j.facets?.regions || []).filter((r: string) => isTownLabel(r)));
+        setRegions((j.facets?.regions || []).filter((r: string) => isTownLabel(r) || r === "未知"));
       })
       .catch(() => setRows([]))
       .finally(() => setReady(true));
   }
 
   useEffect(() => {
+    if (regionLoading) return;
     load();
-    window.addEventListener("civic-data-refresh", load);
-    return () => window.removeEventListener("civic-data-refresh", load);
-  }, []);
+  }, [activeRegion?.id, regionLoading]);
+
+  // WS 推送：簇生成 / 上传完成后立即重拉聚合列表
+  useCivicSse(activeRegion?.id, (msg) => {
+    if (msg.type === "civic-data-refresh" || msg.type === "pipeline-state-refresh") {
+      load();
+    }
+  });
 
   const counts = {
     all: rows.length,
-    pending: rows.filter((r) => r.status.label === "未处理").length,
-    progress: rows.filter((r) => r.status.label === "处置中").length,
-    done: rows.filter((r) => r.status.label === "已办结").length,
+    pending: rows.filter((r) => (r.status.code || HANDLING_STATUS.PENDING) === HANDLING_STATUS.PENDING).length,
+    progress: rows.filter((r) => r.status.code === HANDLING_STATUS.IN_PROGRESS).length,
+    done: rows.filter((r) => r.status.code === HANDLING_STATUS.RESOLVED).length,
     urgent: rows.filter((r) => r.urgency === "urgent").length,
   };
 
   const filtered = useMemo(() => {
     const arr = rows.filter((r) => {
-      if (tab === "pending" && r.status.label !== "未处理") return false;
-      if (tab === "progress" && r.status.label !== "处置中") return false;
-      if (tab === "done" && r.status.label !== "已办结") return false;
+      const code = r.status.code || normalizeStatusCode(r.status.label);
+      if (tab === "pending" && code !== HANDLING_STATUS.PENDING) return false;
+      if (tab === "progress" && code !== HANDLING_STATUS.IN_PROGRESS) return false;
+      if (tab === "done" && code !== HANDLING_STATUS.RESOLVED) return false;
       if (tab === "urgent" && r.urgency !== "urgent") return false;
       if (region && !r.region.includes(region)) return false;
       if (mode && r.mode !== mode) return false;
@@ -95,9 +108,10 @@ export default function ThemesPage() {
       if (kw && !`${r.type}${r.region}${r.title}${r.code}`.toLowerCase().includes(kw.toLowerCase())) return false;
       return true;
     });
+    const statusOrder: Record<string, number> = { PENDING: 0, IN_PROGRESS: 1, RESOLVED: 2 };
     arr.sort((a, b) => {
-      const sa = a.status.label === "未处理" ? 0 : a.status.label === "处置中" ? 1 : 2;
-      const sb = b.status.label === "未处理" ? 0 : b.status.label === "处置中" ? 1 : 2;
+      const sa = statusOrder[a.status.code || "PENDING"] ?? 0;
+      const sb = statusOrder[b.status.code || "PENDING"] ?? 0;
       if (sa !== sb) return sa - sb;
       return b.count - a.count;
     });
@@ -140,16 +154,14 @@ export default function ThemesPage() {
       <section className="page-hero">
         <div>
           <h1 className="page-hero__title">多频工单</h1>
-          <div className="page-hero__sub">AI 识别的多频工单群组 · 每行为一个群组，包含多条关联工单</div>
+          <div className="page-hero__sub">
+            {activeRegion ? `${activeRegion.name} · ` : ""}AI 识别的多频工单群组 · 每行为一个群组，包含多条关联工单
+          </div>
         </div>
-        <div className="page-hero__actions">
-          <button type="button" className="btn btn--default" onClick={exportCsv}>
-            导出
-          </button>
-          <button type="button" className="btn btn--primary" onClick={load}>
-            刷新
-          </button>
-        </div>
+        <PageHeaderActions
+          onRefresh={load}
+          onExport={exportCsv}
+        />
       </section>
 
       {!ready ? (
@@ -314,11 +326,9 @@ export default function ThemesPage() {
                     <th style={{ width: 130, minWidth: 120 }}>研判模式</th>
                     <th style={{ width: 130, minWidth: 130 }}>辖区 · 业务</th>
                     <th>代表性诉求标题</th>
-                    <th style={{ width: 75, textAlign: "right" }}>工单数</th>
-                    <th style={{ width: 75, textAlign: "right" }}>未处理</th>
+                    <th style={{ width: 110, textAlign: "center" }}>待处理 / 总数</th>
                     <th style={{ width: 80, textAlign: "center" }}>紧急度</th>
                     <th style={{ width: 85, textAlign: "right" }}>持续天数</th>
-                    <th style={{ width: 125 }}>AI 置信度</th>
                     <th style={{ width: 85 }}>处置状态</th>
                     <th style={{ width: 75, textAlign: "right" }}>操作</th>
                   </tr>
@@ -326,9 +336,8 @@ export default function ThemesPage() {
                 <tbody>
                   {pageData.map((g) => {
                     const u = URGENCY_META[g.urgency];
-                    const sCls = g.status.label === "已办结" ? "status-tag--done" : g.status.label === "处置中" ? "status-tag--progress" : "status-tag--pending";
-                    const conf = g.ai_confidence;
-                    const confColor = conf == null ? "#86909C" : conf >= 90 ? "#52C41A" : conf >= 85 ? "#1677FF" : "#FF7D00";
+                    const statusCode = g.status.code || normalizeStatusCode(g.status.label);
+                    const sCls = statusCode === HANDLING_STATUS.RESOLVED ? "status-tag--done" : statusCode === HANDLING_STATUS.IN_PROGRESS ? "status-tag--progress" : "status-tag--pending";
                     return (
                       <tr key={g.id} onClick={() => router.push(`/themes/${g.id}`)} className="hover:bg-blue-50/40 transition-colors">
                         <td style={{ fontFeatureSettings: "'tnum'", color: "var(--c-ink-3)", fontSize: 12 }} className="font-mono">
@@ -358,11 +367,14 @@ export default function ThemesPage() {
                             {g.first_date} ~ {g.last_date}
                           </div>
                         </td>
-                        <td style={{ textAlign: "right", fontWeight: 700, fontFeatureSettings: "'tnum'", color: "#1E293B" }}>
-                          {g.count}
-                        </td>
-                        <td style={{ textAlign: "right", fontFeatureSettings: "'tnum'", fontWeight: 600, color: g.unprocessed > 0 ? "#F53F3F" : "var(--c-ink-3)" }}>
-                          {g.unprocessed}
+                        <td style={{ textAlign: "center", fontFeatureSettings: "'tnum'" }}>
+                          <span style={{ fontWeight: 700, color: g.unprocessed > 0 ? "#F53F3F" : "var(--c-ink-3)", fontSize: 13 }}>
+                            {g.unprocessed}
+                          </span>
+                          <span style={{ color: "#94A3B8", margin: "0 3px", fontSize: 12 }}>/</span>
+                          <span style={{ fontWeight: 600, color: "#1E293B", fontSize: 13 }}>
+                            {g.count}
+                          </span>
                         </td>
                         <td style={{ textAlign: "center" }}>
                           <span className={`urgency-tag ${u.cls}`}>{u.label}</span>
@@ -371,22 +383,10 @@ export default function ThemesPage() {
                           {g.days} 天
                         </td>
                         <td>
-                          {conf == null ? (
-                            "—"
-                          ) : (
-                            <div className="flex items-center gap-2">
-                              <span className="conf-bar" style={{ width: 54 }}>
-                                <span className="conf-bar__fill" style={{ width: `${conf}%`, background: confColor, display: "block" }} />
-                              </span>
-                              <span style={{ fontSize: 12, fontWeight: 700, color: confColor }}>{conf}%</span>
-                            </div>
-                          )}
-                        </td>
-                        <td>
                           <span className={`status-tag ${sCls}`}>{g.status.label}</span>
                         </td>
                         <td style={{ textAlign: "right" }}>
-                          <span style={{ color: "var(--c-brand)", fontWeight: 500, fontSize: 12 }}>查看 →</span>
+                          <span style={{ color: "var(--c-brand)", fontWeight: 500, fontSize: 12 }}>查看</span>
                         </td>
                       </tr>
                     );

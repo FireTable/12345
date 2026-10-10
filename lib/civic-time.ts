@@ -21,7 +21,7 @@ export function timeWindow(
   const endOfRef = new Date(startOfRef);
   endOfRef.setDate(endOfRef.getDate() + 1);
 
-  const near = key.match(/^近(\d+)天$/);
+  const near = key.match(/^(?:近|LAST_)?(\d+)(?:天|DAYS?|D)$/i);
   if (near) {
     const n = Math.max(1, Number(near[1]));
     const from = new Date(startOfRef);
@@ -29,19 +29,24 @@ export function timeWindow(
     return { from, to: endOfRef };
   }
 
-  switch (key) {
+  const upper = key.toUpperCase();
+  switch (upper) {
+    case "TODAY":
     case "今天":
       return { from: startOfRef, to: endOfRef };
+    case "YESTERDAY":
     case "昨天": {
       const from = new Date(startOfRef);
       from.setDate(from.getDate() - 1);
       return { from, to: startOfRef };
     }
+    case "THIS_MONTH":
     case "本月":
       return {
         from: new Date(startOfRef.getFullYear(), startOfRef.getMonth(), 1),
         to: endOfRef,
       };
+    case "LAST_MONTH":
     case "上月": {
       const from = new Date(startOfRef.getFullYear(), startOfRef.getMonth() - 1, 1);
       const to = new Date(startOfRef.getFullYear(), startOfRef.getMonth(), 1);
@@ -58,7 +63,7 @@ export function normalizeTimeLabel(time: string): string {
 
 export function inTimeWindow(dateStr: string | undefined | null, time: string, ref: Date): boolean {
   const key = normalizeTimeLabel(time);
-  if (!key || key === "全部") return true;
+  if (!key || key.toUpperCase() === "ALL" || key === "全部") return true;
   const win = timeWindow(key, ref);
   if (!win.from && !win.to) return true;
   if (!dateStr) return false;

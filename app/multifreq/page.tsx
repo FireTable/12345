@@ -3,14 +3,17 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { ShundeMap } from "@/app/_components/civic/shunde-map";
+import { CivicMap } from "@/app/_components/civic/civic-map";
 import { QuadrantBoard } from "@/app/_components/civic/quadrant";
-import type { ClusterUrgency } from "@/lib/civic-cluster";
+import { URGENCY_META, type ClusterUrgency } from "@/lib/civic-cluster";
 import { clampTimeRef, formatYmd, inTimeWindow } from "@/lib/civic-time";
 import { isTownLabel } from "@/lib/admin-area";
+import { HANDLING_STATUS, normalizeStatusCode } from "@/lib/civic-dto";
 import { Clock, TrendingUp, Flame, Layers } from "lucide-react";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { SkMultifreq } from "@/app/_components/civic/skeletons";
+import { useRegion } from "@/app/_components/civic/region-context";
+import { useCivicSse } from "@/app/_hooks/use-civic-sse";
 import {
   Select,
   SelectContent,
@@ -18,9 +21,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/app/_components/ui/select";
+import { PageHeaderActions } from "@/app/_components/civic/page-header-actions";
 
 type Cluster = {
   id: string;
+  code?: string;
   type: string;
   region: string;
   count: number;
@@ -28,7 +33,7 @@ type Cluster = {
   mode_name: string;
   mode_icon: string;
   ai_confidence: number | null;
-  status: { label: string };
+  status: { code?: "PENDING" | "IN_PROGRESS" | "RESOLVED"; label: string; progress?: number; owner?: string };
   trend: string;
   title: string;
   urgency: ClusterUrgency;
@@ -37,16 +42,37 @@ type Cluster = {
   sample_titles?: string[];
   first_date?: string;
   last_date?: string;
+  days?: number;
 };
 
 type Overview = { regionDistribution?: Record<string, number> };
+
+/** 主题镇街可能是「大良 · 容桂」或「大良 · 容桂 等 3 镇街」。筛选项要拆成单个镇街。 */
+function townChoices(labels: string[]): string[] {
+  const set = new Set<string>();
+  for (const label of labels) {
+    if (!label) continue;
+    if (label === "未知") {
+      set.add("未知");
+      continue;
+    }
+    const head = label.split(" 等 ")[0];
+    for (const part of head.split(" · ")) {
+      const name = part.trim();
+      if (isTownLabel(name)) set.add(name);
+    }
+  }
+  const list = [...set].filter((name) => name !== "未知").sort((a, b) => a.localeCompare(b, "zh-CN"));
+  if (set.has("未知")) list.push("未知");
+  return list;
+}
 
 function MultifreqChrome() {
   return (
     <>
       <section className="page-hero">
         <div>
-          <h1 className="page-hero__title">多频工单实时透势</h1>
+          <h1 className="page-hero__title">工单透势</h1>
           <div className="page-hero__sub">实时识别 · AI 自动聚类</div>
         </div>
       </section>
@@ -66,9 +92,11 @@ export default function MultifreqPage() {
 function MultifreqInner() {
   const router = useRouter();
   const search = useSearchParams();
+  const { activeRegion, isLoading: regionLoading } = useRegion();
   const [rows, setRows] = useState<Cluster[]>([]);
   const [ov, setOv] = useState<Overview | null>(null);
-  const [region, setRegion] = useState(search.get("region") || "");
+  const urlTown = search.get("region") || "";
+  const [region, setRegion] = useState(isTownLabel(urlTown) || urlTown === "未知" ? urlTown : "");
   const [timeLabel, setTimeLabel] = useState("近 7 天");
   const [thresholdOpen, setThresholdOpen] = useState(false);
   const [confMin, setConfMin] = useState(85);
@@ -77,7 +105,12 @@ function MultifreqInner() {
   const [ready, setReady] = useState(false);
 
   function load() {
-    Promise.all([fetch("/api/clusters").then((r) => r.json()), fetch("/api/overview").then((r) => r.json())])
+    const headers: Record<string, string> = {};
+    if (activeRegion?.id) headers["x-region-id"] = activeRegion.id;
+    Promise.all([
+      fetch("/api/clusters", { headers }).then((r) => r.json()),
+      fetch("/api/overview", { headers }).then((r) => r.json()),
+    ])
       .then(([c, o]) => {
         setRows(c.topClusters || []);
         setOv(o);
@@ -87,10 +120,16 @@ function MultifreqInner() {
   }
 
   useEffect(() => {
+    if (regionLoading) return;
     load();
-    window.addEventListener("civic-data-refresh", load);
-    return () => window.removeEventListener("civic-data-refresh", load);
-  }, []);
+  }, [activeRegion?.id, regionLoading]);
+
+  // WS 推送：簇生成 / 上传后服务端推 civic-data-refresh，立即重拉聚合数据
+  useCivicSse(activeRegion?.id, (msg) => {
+    if (msg.type === "civic-data-refresh" || msg.type === "pipeline-state-refresh") {
+      load();
+    }
+  });
 
   const filtered = useMemo(() => {
     const latestStr = rows.reduce((acc, r) => {
@@ -107,7 +146,7 @@ function MultifreqInner() {
     });
   }, [rows, region, confMin, minCount, timeLabel]);
 
-  const pending = filtered.filter((r) => r.status.label === "未处理");
+  const pending = filtered.filter((r) => r.status.code ? r.status.code === "PENDING" : r.status.label === "未处理");
   const urgent = filtered.filter((r) => r.urgency === "urgent");
   const latestStr = rows.reduce((acc, r) => {
     const d = r.last_date || r.first_date || "";
@@ -122,20 +161,27 @@ function MultifreqInner() {
   }
 
   const regions = useMemo(() => {
-    const set = new Set(rows.map((r) => r.region).filter((n) => isTownLabel(n)));
-    return [...set].sort((a, b) => a.localeCompare(b, "zh-CN"));
-  }, [rows]);
+    const fromTickets = Object.keys(ov?.regionDistribution || {});
+    const labels = fromTickets.length > 0 ? fromTickets : townChoices(rows.map((r) => r.region));
+    const set = new Set(labels.filter((name) => isTownLabel(name) || name === "未知"));
+    const list = [...set].filter((name) => name !== "未知").sort((a, b) => a.localeCompare(b, "zh-CN"));
+    if (set.has("未知")) list.push("未知");
+    return list;
+  }, [ov, rows]);
 
   const top5 = [...filtered].sort((a, b) => b.count - a.count).slice(0, 5);
 
   function cycleTime() {
-    const times = ["近 7 天", "近 30 天", "近 90 天", "全部"];
-    const idx = times.indexOf(timeLabel);
-    const next = times[idx === -1 ? 0 : (idx + 1) % times.length];
-    setTimeLabel(next);
-    if (next === "近 7 天") setWindowDays(7);
-    else if (next === "近 30 天") setWindowDays(30);
-    else if (next === "近 90 天") setWindowDays(90);
+    const intervals = [
+      { days: 7, label: "近 7 天" },
+      { days: 30, label: "近 30 天" },
+      { days: 90, label: "近 90 天" },
+      { days: 0, label: "全部" },
+    ];
+    const idx = intervals.findIndex((t) => t.label === timeLabel);
+    const nextItem = intervals[idx === -1 ? 0 : (idx + 1) % intervals.length];
+    setTimeLabel(nextItem.label);
+    setWindowDays(nextItem.days);
     load();
   }
 
@@ -144,12 +190,14 @@ function MultifreqInner() {
       <section className="page-hero">
         <div>
           <h1 className="page-hero__title">
-            多频工单实时透势
+            工单透势
           </h1>
-          <div className="page-hero__sub">实时识别 · AI 自动聚类 · 置信度 ≥ {confMin}%</div>
+          <div className="page-hero__sub">
+            {activeRegion ? `${activeRegion.name} · ` : ""}实时识别 · AI 自动聚类 · 置信度 ≥ {confMin}%
+          </div>
         </div>
-        <div className="page-hero__actions">
-          <button type="button" className="btn btn--default" onClick={cycleTime}>
+        <PageHeaderActions onRefresh={load}>
+          <button id="cycle-time-btn" type="button" className="btn btn--default h-[34px] px-3 text-xs font-medium" onClick={cycleTime}>
             {timeLabel}
           </button>
           <Select
@@ -171,182 +219,176 @@ function MultifreqInner() {
               ))}
             </SelectContent>
           </Select>
-          <button type="button" className="btn btn--default" onClick={() => setThresholdOpen(true)}>
+          <button type="button" className="btn btn--default h-[34px] px-3 text-xs font-medium" onClick={() => setThresholdOpen(true)}>
             阈值设置
           </button>
-          <button type="button" className="icon-circle" title="刷新" onClick={load}>
-            ↻
-          </button>
-        </div>
+        </PageHeaderActions>
       </section>
 
       {!ready ? (
         <SkMultifreq />
       ) : (
-      <>
-      <StatCardGrid columns={4}>
-        <StatCard
-          icon={Clock}
-          tone="blue"
-          label="未处理"
-          value={pending.length}
-          sub="待派单协同处置"
-        />
-        <StatCard
-          icon={TrendingUp}
-          tone="orange"
-          label="今日新增"
-          value={todayNew}
-          sub="24小时内新识别"
-        />
-        <StatCard
-          icon={Flame}
-          tone="red"
-          label="紧急群组"
-          value={urgent.length}
-          sub="高风险优先跟进"
-        />
-        <StatCard
-          icon={Layers}
-          tone="purple"
-          label="多频总量"
-          value={filtered.length}
-          sub="当前筛选主题总计"
-        />
-      </StatCardGrid>
-
-      <section className="split-row split-row--map">
-        <div className="card">
-          <div className="card__header">
-            <div className="card__title">顺德区多频工单地理透势</div>
-            <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>点击镇街筛选 · 悬停查看详情</div>
-          </div>
-          <div className="card__body" style={{ padding: 8, paddingTop: 40, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 460 }}>
-            <ShundeMap
-              counts={ov?.regionDistribution || {}}
-              clusterCounts={clusterByRegion}
-              selected={region}
-              onSelect={(name) => {
-                setRegion(name);
-                load();
-              }}
+        <>
+          <StatCardGrid columns={4}>
+            <StatCard
+              icon={Clock}
+              tone="blue"
+              label="未处理"
+              value={pending.length}
+              sub="待派单协同处置"
             />
-          </div>
-        </div>
-        <div className="card">
-          <div className="card__header">
-            <div className="card__title">未处理群组 · 紧急 × 重要 四象限</div>
-            <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>
-              共 <b style={{ color: "#1E5AFF" }}>{pending.length}</b> 个未处理群组
-            </div>
-          </div>
-          <div className="card__body" style={{ padding: 8, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 460 }}>
-            {pending.length === 0 ? (
-              <div className="empty-hint">暂无未处理群组。请先启动 Agent 研判。</div>
-            ) : (
-              <QuadrantBoard clusters={filtered} />
-            )}
-          </div>
-        </div>
-      </section>
+            <StatCard
+              icon={TrendingUp}
+              tone="orange"
+              label="今日新增"
+              value={todayNew}
+              sub="24小时内新识别"
+            />
+            <StatCard
+              icon={Flame}
+              tone="red"
+              label="紧急群组"
+              value={urgent.length}
+              sub="高风险优先跟进"
+            />
+            <StatCard
+              icon={Layers}
+              tone="purple"
+              label="多频总量"
+              value={filtered.length}
+              sub="当前筛选主题总计"
+            />
+          </StatCardGrid>
 
-      <section className="card" style={{ marginTop: 20 }}>
-        <div className="top5-header">
-          <div className="top5-header__title">
-            <span style={{ color: "#F53F3F" }}>🔥</span>
-            TOP 5 多频聚类
-            <span style={{ fontSize: 12, color: "var(--c-ink-3)", fontWeight: 400, marginLeft: 6 }}>点击下钻到详情</span>
-          </div>
-          <button type="button" className="top5-header__more" onClick={() => router.push("/themes")}>
-            查看全部 {filtered.length} 个聚类 →
-          </button>
-        </div>
-        <div className="table-scroll">
-        <table className="workorder-table">
-          <thead>
-            <tr>
-              <th style={{ width: 55 }}>排名</th>
-              <th style={{ width: 213 }}>辖区</th>
-              <th style={{ width: 95 }}>业务类型</th>
-              <th style={{ width: 125 }}>研判模式</th>
-              <th>代表性诉求标题</th>
-              <th style={{ width: 70, textAlign: "right" }}>工单数</th>
-              <th style={{ width: 125 }}>AI 置信度</th>
-              <th style={{ width: 85 }}>风险等级</th>
-              <th style={{ width: 65, textAlign: "center" }}>趋势</th>
-              <th style={{ width: 75, textAlign: "center" }}>涉社区</th>
-              <th style={{ width: 45, textAlign: "right" }} />
-            </tr>
-          </thead>
-          <tbody>
-            {top5.map((c, i) => {
-              const risk = c.urgency === "urgent" ? "urgent" : i < 3 ? "medium" : "low";
-              const riskText = c.urgency === "urgent" ? "紧急" : i < 3 ? "较急" : "普通";
-              const conf = c.ai_confidence;
-              return (
-                <tr key={c.id} onClick={() => router.push(`/themes/${c.id}`)}>
-                  <td>
-                    <span className={`rank-badge rank-badge--${i + 1}`}>{i + 1}</span>
-                  </td>
-                  <td>
-                    <span className="font-semibold text-slate-800 text-xs">{c.region || "—"}</span>
-                  </td>
-                  <td>
-                    <span className={`badge-pill ${catPill(c.type)}`}>{c.type}</span>
-                  </td>
-                  <td>
-                    <span className={`mode-badge mode-badge--${c.mode}`}>
-                      {c.mode_icon} {c.mode_name}
-                    </span>
-                  </td>
-                  <td>
-                    <div
-                      className="font-medium text-slate-900 text-xs line-clamp-1"
-                      style={{ maxWidth: "min(35vw, 480px)" }}
-                      title={c.sample_titles?.[0] || c.title || `${c.region} · ${c.type}`}
-                    >
-                      {c.sample_titles?.[0] || c.title || `${c.region} · ${c.type}`}
-                    </div>
-                  </td>
-                  <td style={{ fontWeight: 700, fontFeatureSettings: "'tnum'", textAlign: "right", color: "#1E293B" }}>
-                    {c.count}
-                  </td>
-                  <td>
-                    {conf == null ? (
-                      "—"
-                    ) : (
-                      <div className="conf-inline">
-                        <span className="conf-bar conf-bar--wide">
-                          <span className="conf-bar__fill" style={{ width: `${conf}%`, display: "block" }} />
-                        </span>
-                        <span style={{ fontWeight: 600 }}>{conf}%</span>
-                      </div>
-                    )}
-                  </td>
-                  <td>
-                    <span className={`risk-pill risk-pill--${risk}`}>
-                      <span className="risk-pill__dot" />
-                      {riskText}
-                    </span>
-                  </td>
-                  <td style={{ textAlign: "center" }}>
-                    <span className="trend-up">{c.trend || "—"}</span>
-                  </td>
-                  <td style={{ textAlign: "center", color: "var(--c-ink-3)", fontFeatureSettings: "'tnum'" }}>
-                    {c.communities ? `${c.communities} 个` : `${Math.max(1, Math.ceil(c.count / 3))} 个`}
-                  </td>
-                  <td style={{ textAlign: "right" }}>
-                    <span className="row-arrow">→</span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        </div>
-        {top5.length === 0 && <div className="empty-hint">暂无多频群组。请先启动 Agent 研判。</div>}
-      </section>
-      </>
+          <section className="split-row split-row--map">
+            <div className="card">
+              <div className="card__header">
+                <div className="card__title">{activeRegion ? activeRegion.name : "全区"}多频工单地理透势</div>
+                <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>点击镇街筛选 · 悬停查看详情</div>
+              </div>
+              <div className="card__body split-pane">
+                <CivicMap
+                  counts={ov?.regionDistribution || {}}
+                  clusterCounts={clusterByRegion}
+                  selected={region}
+                  onSelect={(name) => {
+                    setRegion(name);
+                    load();
+                  }}
+                />
+              </div>
+            </div>
+            <div className="card">
+              <div className="card__header">
+                <div className="card__title">未处理群组 · 紧急 × 重要 四象限</div>
+                <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>
+                  共 <b style={{ color: "#1E5AFF" }}>{pending.length}</b> 个未处理群组
+                </div>
+              </div>
+              <div className="card__body split-pane">
+                {pending.length === 0 ? (
+                  <div className="empty-hint">暂无未处理群组。请先启动 Agent 研判。</div>
+                ) : (
+                  <QuadrantBoard clusters={filtered} />
+                )}
+              </div>
+            </div>
+          </section>
+
+          <section className="card" style={{ marginTop: 20 }}>
+            <div className="top5-header">
+              <div className="top5-header__title">
+                <span style={{ color: "#F53F3F" }}>🔥</span>
+                TOP 5 多频聚类
+                <span style={{ fontSize: 12, color: "var(--c-ink-3)", fontWeight: 400, marginLeft: 6 }}>点击下钻到详情</span>
+              </div>
+              <button type="button" className="top5-header__more" onClick={() => router.push("/themes")}>
+                查看全部 {filtered.length} 个聚类
+              </button>
+            </div>
+            <div className="table-scroll">
+              <table className="group-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: 55, minWidth: 45, textAlign: "center" }}>排名</th>
+                    <th style={{ width: 90, minWidth: 80 }}>群组编号</th>
+                    <th style={{ width: 130, minWidth: 120 }}>研判模式</th>
+                    <th style={{ width: 130, minWidth: 130 }}>辖区 · 业务</th>
+                    <th>代表性诉求标题</th>
+                    <th style={{ width: 110, textAlign: "center" }}>待处理 / 总数</th>
+                    <th style={{ width: 80, textAlign: "center" }}>紧急度</th>
+                    <th style={{ width: 85, textAlign: "right" }}>持续天数</th>
+                    <th style={{ width: 85 }}>处置状态</th>
+                    <th style={{ width: 75, textAlign: "right" }}>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {top5.map((c, i) => {
+                    const u = URGENCY_META[c.urgency] || { label: "普通", cls: "urgency-tag--low" };
+                    const statusCode = c.status.code || normalizeStatusCode(c.status.label);
+                    const sCls = statusCode === HANDLING_STATUS.RESOLVED ? "status-tag--done" : statusCode === HANDLING_STATUS.IN_PROGRESS ? "status-tag--progress" : "status-tag--pending";
+                    return (
+                      <tr key={c.id} onClick={() => router.push(`/themes/${c.id}`)} className="hover:bg-blue-50/40 transition-colors">
+                        <td style={{ textAlign: "center" }}>
+                          <span className={`rank-badge rank-badge--${i + 1}`}>{i + 1}</span>
+                        </td>
+                        <td style={{ fontFeatureSettings: "'tnum'", color: "var(--c-ink-3)", fontSize: 12 }} className="font-mono">
+                          {c.code || c.id.slice(0, 8)}
+                        </td>
+                        <td>
+                          <span className={`mode-badge mode-badge--${c.mode}`}>
+                            {c.mode_icon} {c.mode_name}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ fontWeight: 600, color: "var(--c-ink)", fontSize: 12, whiteSpace: "nowrap" }}>
+                            {c.region}
+                          </div>
+                          <div style={{ fontSize: 11, color: "var(--c-ink-3)", marginTop: 2, whiteSpace: "nowrap" }}>
+                            {c.type}
+                          </div>
+                        </td>
+                        <td>
+                          <div
+                            style={{ maxWidth: "min(38vw, 520px)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600, color: "var(--c-ink)", fontSize: 13 }}
+                            title={c.title || c.sample_titles?.[0] || `${c.region} · ${c.type}`}
+                          >
+                            {c.title || c.sample_titles?.[0] || `${c.region} · ${c.type}`}
+                          </div>
+                          <div style={{ fontSize: 11, color: "var(--c-ink-3)", marginTop: 2, fontFamily: "ui-monospace, monospace" }}>
+                            {c.first_date || "—"} ~ {c.last_date || "—"}
+                          </div>
+                        </td>
+                        <td style={{ textAlign: "center", fontFeatureSettings: "'tnum'" }}>
+                          <span style={{ fontWeight: 700, color: c.unprocessed > 0 ? "#F53F3F" : "var(--c-ink-3)", fontSize: 13 }}>
+                            {c.unprocessed}
+                          </span>
+                          <span style={{ color: "#94A3B8", margin: "0 3px", fontSize: 12 }}>/</span>
+                          <span style={{ fontWeight: 600, color: "#1E293B", fontSize: 13 }}>
+                            {c.count}
+                          </span>
+                        </td>
+                        <td style={{ textAlign: "center" }}>
+                          <span className={`urgency-tag ${u.cls}`}>{u.label}</span>
+                        </td>
+                        <td style={{ textAlign: "right", fontFeatureSettings: "'tnum'", color: "var(--c-ink-2)" }}>
+                          {c.days ?? 1} 天
+                        </td>
+                        <td>
+                          <span className={`status-tag ${sCls}`}>{c.status.label}</span>
+                        </td>
+                        <td style={{ textAlign: "right" }}>
+                          <span style={{ color: "var(--c-brand)", fontWeight: 500, fontSize: 12 }}>查看</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {top5.length === 0 && <div className="empty-hint">暂无多频群组。请先启动 Agent 研判。</div>}
+          </section>
+        </>
       )}
 
       <div className={`modal-mask${thresholdOpen ? " is-open" : ""}`} onClick={() => setThresholdOpen(false)}>
@@ -402,11 +444,3 @@ function MultifreqInner() {
   );
 }
 
-function catPill(cat?: string) {
-  if (!cat) return "badge-pill--default";
-  if (cat.includes("生态") || cat.includes("环保")) return "badge-pill--success";
-  if (cat.includes("劳动") || cat.includes("劳资")) return "badge-pill--warning";
-  if (cat.includes("市场") || cat.includes("消费")) return "badge-pill--danger";
-  if (cat.includes("城市") || cat.includes("城管")) return "badge-pill--info";
-  return "badge-pill--default";
-}

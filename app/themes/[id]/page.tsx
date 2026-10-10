@@ -1,15 +1,16 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { classifyDetailPayload, type DetailLoadStatus } from "@/lib/detail-load";
 import { MODE_META } from "@/backend/theme-metrics";
 import type { CivicMode } from "@/backend/state";
-import { spanDays } from "@/lib/civic-cluster";
+import { spanDays, categoryBadgeStyle } from "@/lib/civic-cluster";
 import { CivicEChart, radarOption } from "@/app/_components/civic/civic-charts";
 import { SkThemeDetail } from "@/app/_components/civic/skeletons";
+import { useRegion } from "@/app/_components/civic/region-context";
 import {
   FileText,
   MapPin,
@@ -30,6 +31,22 @@ import {
   Check,
 } from "lucide-react";
 
+const ADVICE_LABELS = ["牵头部门", "响应时限", "办理路径", "建议时限"];
+
+/** 模型把部门、时限、步骤写成一句。按这几个标记拆成行，页面才有分段。 */
+function segmentAdvice(raw: string): string[] {
+  const text = raw.replace(/\r\n/g, "\n").trim();
+  if (!text) return [];
+  if (text.includes("\n")) {
+    return text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  }
+  const label = ADVICE_LABELS.join("|");
+  let marked = text.replace(new RegExp(`(?<!^)\\s*(${label})\\s*[:：]`, "g"), "\n$1：");
+  marked = marked.replace(/(办理路径[:：])\s*(?=\d)/g, "$1\n");
+  marked = marked.replace(/[；;]\s*(?=\d+[.、．])/g, "\n");
+  return marked.split("\n").map((line) => line.trim()).filter(Boolean);
+}
+
 type Member = {
   id: string;
   ticketId: string;
@@ -44,6 +61,7 @@ type Member = {
   address?: string;
   urgency?: string;
   status?: string;
+  detailLoaded?: boolean;
 };
 
 type ClusterDetail = {
@@ -59,6 +77,7 @@ type ClusterDetail = {
   mode_tagline?: string;
   mode_risk?: string;
   mode_advice?: string;
+  summary?: string;
   title?: string;
   ai_confidence: number | null;
   first_date: string;
@@ -66,7 +85,7 @@ type ClusterDetail = {
   trend: string;
   features: Array<{ name: string; pct: number; desc: string }>;
   radar: number[];
-  status: { label: string; progress: number; owner: string; color: string; eta: string };
+  status: { code?: "PENDING" | "IN_PROGRESS" | "RESOLVED"; label: string; progress: number; owner: string; color: string; eta: string };
   members?: Member[];
   ungrouped?: boolean;
 };
@@ -107,6 +126,7 @@ function checkIsTarget(m: Member, target: string): boolean {
 }
 
 function ThemeDetailInner() {
+  const { activeRegion } = useRegion();
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -117,6 +137,17 @@ function ThemeDetailInner() {
   const [load, setLoad] = useState<DetailLoadStatus>("pending");
   const [expandedMap, setExpandedMap] = useState<Record<string, boolean>>({});
   const [extraMember, setExtraMember] = useState<Member | null>(null);
+  const [memberRows, setMemberRows] = useState<Member[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [membersDone, setMembersDone] = useState(false);
+  const [openingId, setOpeningId] = useState<string | null>(null);
+  const memberCursor = useRef<{ time: string | null; id: string } | null>(null);
+  const membersLoadingRef = useRef(false);
+  const membersDoneRef = useRef(false);
+  const membersPaused = useRef(false);
+  const memberGen = useRef(0);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const scrolledTarget = useRef(false);
 
   useEffect(() => {
     const qTarget = (searchParams.get("ticketId") || searchParams.get("highlight") || "").trim();
@@ -127,53 +158,127 @@ function ThemeDetailInner() {
     }
   }, [searchParams]);
 
+  const loadMembers = useCallback(async () => {
+    if (!params.id || isUnknownGroup(params.id)) return;
+    if (membersLoadingRef.current || membersDoneRef.current || membersPaused.current) return;
+    const gen = memberGen.current;
+    membersLoadingRef.current = true;
+    setMembersLoading(true);
+    try {
+      const q = new URLSearchParams({ limit: "30" });
+      const cursor = memberCursor.current;
+      if (cursor?.id) {
+        q.set("beforeId", cursor.id);
+        if (cursor.time) q.set("beforeTime", cursor.time);
+      }
+      const res = await fetch(`/api/clusters/${params.id}/members?${q}`);
+      const data = await res.json();
+      if (memberGen.current !== gen) return;
+      if (!data.success) throw new Error(data.error || "工单加载失败");
+      const incoming = (data.members || []) as Member[];
+      setMemberRows((prev) => {
+        const seen = new Set(prev.map((item) => item.ticketId));
+        const next = incoming.filter((item) => item.ticketId && !seen.has(item.ticketId));
+        return next.length ? [...prev, ...next] : prev;
+      });
+      memberCursor.current = data.next || null;
+      membersDoneRef.current = !data.next;
+      setMembersDone(!data.next);
+    } catch {
+      if (memberGen.current !== gen) return;
+      membersPaused.current = true;
+      toast.error("工单加载失败");
+    } finally {
+      if (memberGen.current === gen) {
+        membersLoadingRef.current = false;
+        setMembersLoading(false);
+      }
+    }
+  }, [params.id]);
+
   useEffect(() => {
     setLoad("pending");
     setRow(null);
     setExtraMember(null);
+    setMemberRows([]);
+    setExpandedMap({});
+    memberGen.current += 1;
+    memberCursor.current = null;
+    membersPaused.current = false;
+    membersLoadingRef.current = false;
+    membersDoneRef.current = isUnknownGroup(params.id);
+    setMembersDone(isUnknownGroup(params.id));
+    setMembersLoading(false);
+    scrolledTarget.current = false;
 
     const isUnknown = isUnknownGroup(params.id);
     const fetchUrl = isUnknown && targetTicketId
       ? `/api/clusters/unknown?ticketId=${encodeURIComponent(targetTicketId)}`
       : `/api/clusters/${params.id}`;
 
+    let cancelled = false;
     fetch(fetchUrl)
       .then((r) => r.json())
-      .then(async (j) => {
+      .then((j) => {
+        if (cancelled) return;
         setRow(j);
         setLoad("done");
-
-        // 若当前群组列表中未包含指定的目标工单，动态补全该工单
-        if (targetTicketId) {
-          const exists = (j.members || []).some((m: Member) => checkIsTarget(m, targetTicketId));
-          if (!exists) {
-            try {
-              const singleRes = await fetch(`/api/workorders/${encodeURIComponent(targetTicketId)}`);
-              const singleData = await singleRes.json();
-              if (singleData.success) {
-                setExtraMember({
-                  id: singleData.id,
-                  ticketId: singleData.ticketId || singleData.id,
-                  title: singleData.title,
-                  category: singleData.category,
-                  region: singleData.region,
-                  createdAt: singleData.createdAt,
-                  content: singleData.content,
-                  confidence: singleData.confidence,
-                  caller_name: singleData.caller_name,
-                  caller_phone: singleData.caller_phone,
-                  address: singleData.address,
-                });
-              }
-            } catch (e) {}
-          }
-        }
       })
       .catch(() => {
+        if (cancelled) return;
         setRow(null);
         setLoad("error");
       });
-  }, [params.id, targetTicketId]);
+    if (!isUnknown) void loadMembers();
+    return () => {
+      cancelled = true;
+    };
+  }, [params.id, targetTicketId, loadMembers]);
+
+  useEffect(() => {
+    if (!targetTicketId || isUnknownGroup(params.id)) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      const exists = memberRows.some((m) => checkIsTarget(m, targetTicketId));
+      if (exists || cancelled) return;
+      fetch(`/api/workorders/${encodeURIComponent(targetTicketId)}`)
+        .then((r) => r.json())
+        .then((singleData) => {
+          if (cancelled || !singleData.success) return;
+          setExtraMember({
+            id: singleData.id,
+            ticketId: singleData.ticketId || singleData.id,
+            title: singleData.title,
+            category: singleData.category,
+            region: singleData.region,
+            createdAt: singleData.createdAt,
+            content: singleData.content,
+            confidence: singleData.confidence,
+            caller_name: singleData.caller_name,
+            address: singleData.address,
+            detailLoaded: true,
+          });
+        })
+        .catch(() => {});
+    }, 400);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [params.id, targetTicketId, memberRows]);
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || membersDone) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) void loadMembers();
+      },
+      { rootMargin: "240px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [loadMembers, membersDone, memberRows.length]);
 
   const view = classifyDetailPayload(load, row);
   const mode = asMode(row?.mode);
@@ -181,17 +286,19 @@ function ThemeDetailInner() {
   
   // 合并群组成员工单（确保目标工单必定存在）
   const members = useMemo(() => {
-    const list = [...(row?.members || [])];
-    if (extraMember && !list.some((m) => checkIsTarget(m, extraMember.id))) {
+    const list = [...memberRows];
+    if (extraMember && !list.some((m) => checkIsTarget(m, extraMember.id) || m.ticketId === extraMember.ticketId)) {
       list.unshift(extraMember);
     }
     return list;
-  }, [row?.members, extraMember]);
+  }, [memberRows, extraMember]);
 
   const [copiedAdvice, setCopiedAdvice] = useState(false);
 
+  const adviceText = segmentAdvice(row?.mode_advice || meta.rule || "");
+
   const handleCopyAdvice = () => {
-    const text = row?.mode_advice || meta.rule;
+    const text = adviceText.join("\n");
     if (!text) return;
     navigator.clipboard
       .writeText(text)
@@ -212,41 +319,63 @@ function ThemeDetailInner() {
 
   // 自动滚动并锚点居中定位到目标工单
   useEffect(() => {
-    if (targetTicketId && members.length > 0) {
-      // 默认展开目标工单
-      setExpandedMap((prev) => ({ ...prev, [targetTicketId]: true }));
-
-      const timer = setTimeout(() => {
-        const cleanId = targetTicketId.replace(/^#/, "").replace(/^ticket-/, "");
-        const el =
-          document.getElementById(`ticket-${cleanId}`) ||
-          document.getElementById(cleanId) ||
-          document.querySelector(`[data-ticket-id="${cleanId}"]`) ||
-          document.querySelector(".is-target-ticket");
-        if (el) {
-          el.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
-      }, 300);
-      return () => clearTimeout(timer);
-    }
+    if (!targetTicketId || members.length === 0 || scrolledTarget.current) return;
+    const hit = members.some((m) => checkIsTarget(m, targetTicketId));
+    if (!hit) return;
+    scrolledTarget.current = true;
+    const target = members.find((m) => checkIsTarget(m, targetTicketId));
+    if (target && !target.detailLoaded) void toggleExpand(target);
+    setExpandedMap((prev) => ({ ...prev, [targetTicketId]: true }));
+    const timer = window.setTimeout(() => {
+      const cleanId = targetTicketId.replace(/^#/, "").replace(/^ticket-/, "");
+      const el =
+        document.getElementById(`ticket-${cleanId}`) ||
+        document.getElementById(cleanId) ||
+        document.querySelector(`[data-ticket-id="${cleanId}"]`) ||
+        document.querySelector(".is-target-ticket");
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 300);
+    return () => window.clearTimeout(timer);
   }, [targetTicketId, members]);
 
-  const toggleExpand = (id: string) => {
-    setExpandedMap((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
+  async function toggleExpand(member: Member) {
+    const key = member.ticketId || member.id;
+    const opening = !(expandedMap[key] || expandedMap[member.id]);
+    setExpandedMap((prev) => ({ ...prev, [key]: opening, [member.id]: opening }));
+    if (!opening || member.detailLoaded) return;
+    setOpeningId(key);
+    try {
+      const res = await fetch(`/api/workorders/${encodeURIComponent(member.ticketId || member.id)}`);
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || "读取工单失败");
+      const patch = {
+        content: typeof data.content === "string" ? data.content : member.content,
+        caller_name: data.caller_name || member.caller_name,
+        address: data.address || member.address,
+        detailLoaded: true,
+      };
+      setMemberRows((prev) => prev.map((item) => (item.ticketId === member.ticketId ? { ...item, ...patch } : item)));
+      setExtraMember((prev) => (prev && prev.ticketId === member.ticketId ? { ...prev, ...patch } : prev));
+    } catch {
+      toast.error("读取工单全文失败");
+    } finally {
+      setOpeningId(null);
+    }
+  }
 
   function stepTime(i: number) {
     const progress = row?.status?.progress || 0;
     if (i === 0) return row?.first_date || "—";
     if (i === 2 && progress >= 40) return row?.last_date || "—";
-    if (i === 4 && (row?.status?.label === "已办结" || progress >= 100)) return row?.status?.eta || row?.last_date || "—";
+    if (i === 4 && (row?.status?.code === "RESOLVED" || row?.status?.label === "已办结" || progress >= 100)) return row?.status?.eta || row?.last_date || "—";
     return "—";
   }
 
   function exportReport() {
     if (!row) return;
+    const regionName = activeRegion?.name || "辖区";
     const lines = [
-      `【顺德区 12345 热线多频诉求智能研判报告】`,
+      `【${regionName} 12345 热线多频诉求智能研判报告】`,
       `群组编号: ${row.code || row.id}`,
       `归属辖区: ${row.region} · 诉求领域: ${row.type}`,
       `研判模式: ${meta.name}（${meta.tagline}）`,
@@ -254,17 +383,17 @@ function ThemeDetailInner() {
       `时空脉络: ${row.first_date || "—"} 至 ${row.last_date || "—"}（跨度 ${days} 天）`,
       `AI 聚类置信度: ${row.ai_confidence ?? "—"}%`,
       `当前处置状态: ${row.status?.label || "未处理"} (进度 ${row.status?.progress ?? 0}%)`,
-      `牵头承办部门: ${row.status?.owner || "顺德区热线督办组"}`,
-      `协同处置建议: ${row.mode_advice || meta.rule}`,
+      `牵头承办部门: ${row.status?.owner || `${regionName}热线督办组`}`,
+      `协同处置建议:\n${adviceText.join("\n")}`,
       "",
-      `==================== 关联成员工单列表 ====================`,
+      `==================== 已加载工单（${members.length} / ${row.count}） ====================`,
       ...members.map((m, idx) => `[${idx + 1}] #${m.id} | ${m.createdAt} | 诉求人: ${m.caller_name || "市民"} | 涉事地址: ${m.address || m.region || "—"}\n    标题: ${m.title}\n    正文: ${m.content || "—"}\n`),
     ];
     const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `顺德12345群组研判报告-${row.region}-${row.type}-${row.id}.txt`;
+    a.download = `${regionName}12345群组研判报告-${row.region}-${row.type}-${row.id}.txt`;
     a.click();
     URL.revokeObjectURL(url);
     toast.success("已成功生成并下载群组公文研判报告！");
@@ -301,7 +430,7 @@ function ThemeDetailInner() {
     if (m.region && cluster.region && m.region === cluster.region && m.category && m.category === cluster.type) {
       return `同镇街「${m.region}」且诉求分类「${m.category}」`;
     }
-    if (m.region && cluster.region && m.region === cluster.region) return `同属顺德区「${m.region}」`;
+    if (m.region && cluster.region && m.region === cluster.region) return `同属${activeRegion?.name || "辖区"}「${m.region}」`;
     if (m.category && m.category === cluster.type) return `诉求分类同为「${m.category}」`;
     return `已深度关联主题「${cluster.title || cluster.type}」`;
   }
@@ -352,11 +481,15 @@ function ThemeDetailInner() {
                 <div className="cluster-hero__stat-val">{row.ai_confidence == null ? "—" : `${row.ai_confidence}%`}</div>
                 <div className="cluster-hero__stat-label">AI 聚类置信度</div>
               </div>
-              <div className="cluster-hero__stat">
-                <div className="cluster-hero__stat-val">{row.trend || "—"}</div>
-                <div className="cluster-hero__stat-label">近 7 天趋势</div>
-              </div>
+              {row.trend ? (
+                <div className="cluster-hero__stat">
+                  <div className="cluster-hero__stat-val">{row.trend}</div>
+                  <div className="cluster-hero__stat-label">近 7 天趋势</div>
+                </div>
+              ) : null}
             </div>
+
+            {row.summary ? <div className="cluster-hero__summary">{row.summary}</div> : null}
 
             <div className="mode-explainer">
               <b>研判规则：</b>
@@ -391,7 +524,11 @@ function ThemeDetailInner() {
                 </button>
               </div>
               <div className="glass-advice__body">
-                {row.mode_advice || meta.rule}
+                {adviceText.map((line, index) => (
+                  <p key={`${index}-${line.slice(0, 12)}`} className={/^\d+[.、．]/.test(line) ? "glass-advice__step" : undefined}>
+                    {line}
+                  </p>
+                ))}
               </div>
               <div className="glass-advice__foot">
                 <span>牵头：{row.status?.owner || "所属辖区行业主管部门"}</span>
@@ -411,7 +548,7 @@ function ThemeDetailInner() {
                 <span>📑</span>
                 群组成员工单明细
                 <span className="text-xs text-slate-500 font-normal">
-                  (共 {row.count} 件 · 当前展示 {members.length} 件)
+                  (共 {row.count} 件 · 已加载 {members.length} 件)
                 </span>
               </div>
               <div className="text-[11px] text-slate-400 mt-0.5">
@@ -429,7 +566,26 @@ function ThemeDetailInner() {
           <div className="card__body" style={{ padding: "14px 18px" }}>
             {members.length === 0 && (
               <div className="empty-hint">
-                {cluster.ungrouped ? "请从工单中心选择要查看的工单。" : "暂无关联工单数据"}
+                {membersLoading ? (
+                  "正在加载工单…"
+                ) : cluster.ungrouped ? (
+                  "请从工单中心选择要查看的工单。"
+                ) : (row.count || 0) > 0 ? (
+                  <button
+                    type="button"
+                    className="btn btn--default"
+                    onClick={() => {
+                      membersDoneRef.current = false;
+                      membersPaused.current = false;
+                      setMembersDone(false);
+                      void loadMembers();
+                    }}
+                  >
+                    重新加载工单
+                  </button>
+                ) : (
+                  "暂无关联工单数据"
+                )}
               </div>
             )}
             
@@ -455,7 +611,7 @@ function ThemeDetailInner() {
                         }
                       : {}
                   }
-                  onClick={() => toggleExpand(m.ticketId || m.id)}
+                  onClick={() => void toggleExpand(m)}
                 >
                   {/* 目标工单浮动徽标 */}
                   {isTarget && (
@@ -474,7 +630,10 @@ function ThemeDetailInner() {
                       {m.confidence == null ? "已校准" : `置信度 ${m.confidence}%`}
                     </span>
                     {m.category && (
-                      <span className="text-[11px] font-medium text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-md">
+                      <span
+                        className="badge-pill text-[11px] font-medium"
+                        style={categoryBadgeStyle(m.category)}
+                      >
                         {m.category}
                       </span>
                     )}
@@ -531,7 +690,9 @@ function ThemeDetailInner() {
                       </span>
                     </div>
                     <div className="flex items-center gap-1 text-blue-600 font-semibold text-[11px]">
-                      {isExpanded ? (
+                      {openingId === (m.ticketId || m.id) ? (
+                        <span>正在读取全文</span>
+                      ) : isExpanded ? (
                         <>
                           收起详情 <ChevronUp className="h-3.5 w-3.5" />
                         </>
@@ -545,6 +706,23 @@ function ThemeDetailInner() {
                 </div>
               );
             })}
+            <div ref={sentinelRef} />
+            {members.length > 0 && !membersDone && (
+              <button
+                type="button"
+                className="btn btn--default w-full"
+                disabled={membersLoading}
+                onClick={() => {
+                  membersPaused.current = false;
+                  void loadMembers();
+                }}
+              >
+                {membersLoading ? "正在加载更多…" : `继续加载（已显示 ${members.length} / ${row.count}）`}
+              </button>
+            )}
+            {membersDone && members.length > 0 && members.length >= (row.count || 0) && (
+              <div className="empty-hint">已加载全部 {members.length} 件</div>
+            )}
           </div>
         </div>
 
@@ -579,7 +757,7 @@ function ThemeDetailInner() {
               </div>
               <div className="info-row">
                 <span className="info-row__label">责任部门</span>
-                <span className="info-row__value">{row.status?.owner || "顺德区热线督办组"}</span>
+                <span className="info-row__value">{row.status?.owner || `${activeRegion?.name || ""}热线督办组`}</span>
               </div>
             </div>
           </div>
@@ -697,7 +875,7 @@ function ThemeDetailInner() {
               </div>
               <div className="info-row">
                 <span className="info-row__label">牵头部门</span>
-                <span className="info-row__value">{row.status?.owner || (cluster.ungrouped ? "—" : "顺德区热线督办组")}</span>
+                <span className="info-row__value">{row.status?.owner || (cluster.ungrouped ? "—" : `${activeRegion?.name || ""}热线督办组`)}</span>
               </div>
             </div>
           </div>

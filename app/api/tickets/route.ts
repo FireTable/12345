@@ -1,14 +1,38 @@
 import { NextResponse } from "next/server";
-import { MOCK_RAW_TICKETS } from "@/lib/mock-data";
-import { db } from "@/db/client";
-import { ticketsTable } from "@/db/schema";
-import { sql, inArray } from "drizzle-orm";
+import { getRegionDb } from "@/db/client";
+import { ticketsTable, themesTable, ticketThemesTable } from "@/db/schema";
+import { inArray, eq, desc, sql } from "drizzle-orm";
 import type { RawTicket } from "@/backend/state";
 import { desensitizeContent } from "@/backend/anonymizer";
+import { resolveRequestRegionId } from "@/lib/tenant/request-region";
+import { ingestSingleTicketPipeline } from "@/backend/agent";
+import { HANDLING_STATUS, normalizeStatusCode } from "@/lib/civic-dto";
+import { CATEGORY } from "@/lib/vocabulary";
+import { triggerClusterJobAuto } from "@/lib/cluster-runner";
+import { memberLastAt } from "@/backend/embed-policy";
+import { loadThemeMemberVectors } from "@/lib/ticket-embeddings";
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const dbRows = await db.select().from(ticketsTable).limit(500);
+    const regionId = await resolveRequestRegionId(req);
+    const { db: tenantDb } = await getRegionDb(regionId);
+    // 没有页面调用。工单中心用的是 /api/workorders。这里只留 80 字摘录，不带电话。
+    const dbRows = await tenantDb
+      .select({
+        id: ticketsTable.id,
+        ticketNo: ticketsTable.ticketNo,
+        title: ticketsTable.title,
+        summarizeTitle: ticketsTable.summarizeTitle,
+        content: sql<string>`left(${ticketsTable.content}, 80)`,
+        district: ticketsTable.district,
+        subdistrict: ticketsTable.subdistrict,
+        channel: ticketsTable.channel,
+        status: ticketsTable.status,
+        createTime: ticketsTable.createTime,
+      })
+      .from(ticketsTable)
+      .orderBy(desc(ticketsTable.createTime))
+      .limit(500);
     if (dbRows && dbRows.length > 0) {
       const tickets: RawTicket[] = dbRows.map((r) => ({
         id: r.id,
@@ -16,9 +40,9 @@ export async function GET() {
         title: r.title || undefined,
         summarizeTitle: r.summarizeTitle || undefined,
         createTime: r.createTime ? r.createTime.toISOString().slice(0, 19).replace("T", " ") : "2025-01-01 00:00:00",
-        citizenPhone: r.citizenPhone || "",
+        citizenPhone: "",
         content: r.content,
-        citizenName: r.citizenName || "市民*",
+        citizenName: "",
         district: r.district || undefined,
         subdistrict: r.subdistrict || undefined,
         channel: r.channel || "市民服务热线",
@@ -32,15 +56,19 @@ export async function GET() {
         data: tickets,
       });
     }
-  } catch (e) {
-    // Fallback
+  } catch (e: any) {
+    console.error("[tickets/route] GET error:", e?.message);
+    return NextResponse.json(
+      { success: false, error: e?.message || "Failed to fetch tickets" },
+      { status: 500 }
+    );
   }
 
   return NextResponse.json({
     success: true,
-    source: "memory",
-    total: MOCK_RAW_TICKETS.length,
-    data: MOCK_RAW_TICKETS,
+    source: "postgresql",
+    total: 0,
+    data: [],
   });
 }
 
@@ -81,10 +109,13 @@ export async function POST(req: Request) {
     let duplicateCount = 0;
 
     try {
+      const regionId = await resolveRequestRegionId(req);
+      const { db: tenantDb } = await getRegionDb(regionId);
+
       if (validRecords.length > 0) {
         // Collect ticket numbers to check duplicates
         const ticketNos = validRecords.map((r) => r.ticketNo);
-        const existingRows = await db
+        const existingRows = await tenantDb
           .select({ ticketNo: ticketsTable.ticketNo })
           .from(ticketsTable)
           .where(inArray(ticketsTable.ticketNo, ticketNos.slice(0, 1000)));
@@ -96,18 +127,133 @@ export async function POST(req: Request) {
 
         if (recordsToInsert.length > 0) {
           // Batch insert newly unique tickets
-          await db
+          await tenantDb
             .insert(ticketsTable)
             .values(recordsToInsert)
             .onConflictDoNothing({ target: ticketsTable.ticketNo });
 
           insertedCount = recordsToInsert.length;
+
+          // 若为单条新工单接入，后台异步触发增量时空吸附与研判，实现“入库即智能吸附”
+          if (recordsToInsert.length === 1) {
+            const singleRec = recordsToInsert[0];
+            (async () => {
+              try {
+                const activeRows = (
+                  await tenantDb
+                    .select({
+                      id: themesTable.id,
+                      title: themesTable.title,
+                      canonicalSubject: themesTable.canonicalSubject,
+                      canonicalLocation: themesTable.canonicalLocation,
+                      eventType: themesTable.eventType,
+                      category: themesTable.category,
+                      riskLevel: themesTable.riskLevel,
+                      riskReason: themesTable.riskReason,
+                      ticketCount: themesTable.ticketCount,
+                      timeSpanHours: themesTable.timeSpanHours,
+                      firstAt: themesTable.firstAt,
+                      lastAt: themesTable.lastAt,
+                      aiSummary: themesTable.aiSummary,
+                      recommendedAction: themesTable.recommendedAction,
+                      handlingStatus: themesTable.handlingStatus,
+                    })
+                    .from(themesTable)
+                ).filter((row) => normalizeStatusCode(row.handlingStatus) !== HANDLING_STATUS.RESOLVED);
+
+                const activeThemes: any[] = activeRows.map((r: any) => ({
+                  id: r.id,
+                  title: r.title,
+                  canonicalSubject: r.canonicalSubject,
+                  canonicalLocation: r.canonicalLocation,
+                  eventType: r.eventType,
+                  category: r.category || CATEGORY.URBAN_MANAGEMENT,
+                  riskLevel: r.riskLevel,
+                  riskReason: r.riskReason || "",
+                  ticketCount: r.ticketCount,
+                  timeSpanHours: r.timeSpanHours || 1,
+                  firstOccurrence: r.firstAt ? r.firstAt.toISOString().slice(0, 19).replace("T", " ") : "",
+                  lastOccurrence: r.lastAt ? r.lastAt.toISOString().slice(0, 19).replace("T", " ") : "",
+                  aiSummary: r.aiSummary || "",
+                  recommendedAction: r.recommendedAction || "",
+                  handlingStatus: r.handlingStatus || HANDLING_STATUS.PENDING,
+                  status: "CONFIRMED",
+                  tickets: [],
+                  relatedSubjects: [r.canonicalSubject],
+                  relatedLocations: [r.canonicalLocation],
+                }));
+
+                const themeVectors = await loadThemeMemberVectors(
+                  regionId,
+                  activeThemes.map((theme) => theme.id)
+                );
+                const { enrichedTicket, result: incResult } = await ingestSingleTicketPipeline(
+                  {
+                    ...singleRec,
+                    createTime: singleRec.createTime instanceof Date ? singleRec.createTime.toISOString().slice(0, 19).replace("T", " ") : String(singleRec.createTime),
+                  },
+                  activeThemes,
+                  regionId,
+                  { themeVectors }
+                );
+
+                // 1. 无条件将抽取提炼出的结构化要素持久化回工单表 (确保单条推送必定完成自动研判)
+                await tenantDb
+                  .update(ticketsTable)
+                  .set({
+                    primaryThemeId: incResult.action === "ATTACHED" && incResult.matchedThemeId ? incResult.matchedThemeId : null,
+                    summarizeTitle: enrichedTicket.summarizeTitle || singleRec.title,
+                    address: enrichedTicket.canonicalLocation || singleRec.district,
+                    sourceCategory: enrichedTicket.sourceCategory,
+                    confidence: enrichedTicket.confidence || 0.85,
+                    canonicalSubject: enrichedTicket.canonicalSubject,
+                    eventType: enrichedTicket.eventType,
+                    urgency: enrichedTicket.urgency,
+                    slaHours: enrichedTicket.slaHours,
+                    stabilityRisk: enrichedTicket.stabilityRisk,
+                    subdistrict: enrichedTicket.subdistrict || singleRec.subdistrict,
+                  })
+                  .where(eq(ticketsTable.id, singleRec.id));
+
+                // 2. 若成功吸附到已有主题，同步刷新对应专题的工单数与案卷建议
+                if (incResult.action === "ATTACHED" && incResult.matchedThemeId) {
+                  await tenantDb
+                    .insert(ticketThemesTable)
+                    .values({
+                      ticketId: singleRec.id,
+                      themeId: incResult.matchedThemeId,
+                    })
+                    .onConflictDoNothing();
+                  await tenantDb
+                    .update(themesTable)
+                    .set({
+                      ticketCount: incResult.matchedTheme?.ticketCount ?? 1,
+                      lastAt: memberLastAt(singleRec.ticketNo, singleRec.createTime ?? null),
+                      riskLevel: incResult.matchedTheme?.riskLevel,
+                      riskReason: incResult.matchedTheme?.riskReason,
+                      aiSummary: incResult.matchedTheme?.aiSummary,
+                      recommendedAction: incResult.matchedTheme?.recommendedAction,
+                    })
+                    .where(eq(themesTable.id, incResult.matchedThemeId));
+                }
+              } catch (asyncErr: any) {
+                console.warn("[tickets/route] Incremental ingestion background task warning:", asyncErr.message);
+              }
+            })().catch(() => {});
+          } else if (recordsToInsert.length > 1) {
+            // 若为批量新工单接入，后台自动开启研判流水线
+            triggerClusterJobAuto(regionId).catch((err) => {
+              console.warn("[tickets/route] Auto cluster trigger warning:", err?.message || err);
+            });
+          }
         }
       }
     } catch (dbErr: any) {
-      console.warn("DB insert fallback to memory:", dbErr.message);
-      insertedCount = validRecords.length;
-      duplicateCount = 0;
+      console.error("[tickets/route] DB insert error:", dbErr.message);
+      return NextResponse.json(
+        { success: false, error: `工单写入数据库失败: ${dbErr.message}` },
+        { status: 500 }
+      );
     }
 
     const durationMs = Date.now() - startTime;

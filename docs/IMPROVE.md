@@ -1,10 +1,65 @@
-# Civic UI landing log
+# 系统架构演进与技术攻坚日志 (Civic Radar Architecture Evolution Log)
 
-Work branch: `feat/civic-ui-landing`  
-Reference: `/Users/FireTable/Downloads/frontend/`  
-Rule: pages read persisted or aggregated data. No `Math.random` trends, no `log10(count)` fake confidence, no hardcoded 北滘 +186% insight as live copy.
+> **版本定位**：从 `main` 分支单体粗粒度工作流（V1 基线）演进至多城市/多租户认知双系统（V2 生产架构）的全链路攻坚备忘。遵循真实持久化数据源、严禁伪造统计、严格保障政务数据物理隔离与高精测绘级时空对齐。
 
-## 2026-08-21 — 13,659 件全量工单质量治理与 Themes 零串扰双轨实体聚类重构
+---
+
+## 📌 V1 到 V2 核心架构质变与重大突破概览
+
+1. **认知双系统分层（Kahneman Dual-System）**：
+   - 摆脱全量依赖通用大模型的单体瓶颈，抽象端侧 ONNX 4 头轻量神经网络（System 1，<0.08ms 前向）与本地 27B 强约束结构化认知模型（System 2），实现“快慢分治”，算力开销骤降 80%+。
+2. **根除幻觉死循环与去套娃仲裁**：
+   - 彻底废除 V1 置信度不足反复调用 LLM 仲裁的死循环模式，建立法定镇街、社区与权威分类白名单的确定性物理校准。
+3. **数据隐私安全气隙（Air-Gap Security）**：
+   - 研发独立 `@civic/anonymizer`，会话级全要素双向可逆脱敏，实现出站高强度加密与入库无损解密，全链路本地离线部署，数据 100% 不出域。
+4. **时空语义精准聚类与微观基底提纯**：
+   - 弃用粗粒度静态 72h 图拓扑割裂，融合密集语义向量（bge-m3）与微观道路核心基底提纯（`extractSpatialCore`），实现高精度同案同地收拢，相邻门牌不误聚，跨街道误聚率清零。
+5. **空间测绘级 GIS 基底（CGCS2000）**：
+   - 引入国家天地图高精底图，彻底消除火星坐标系（GCJ-02）300~500米偏移，第四级乡镇街道矢量边界入库并自适应调色。
+6. **多城市与多租户物理隔离**：
+   - PostgreSQL Schema 物理隔离，解耦单一顺德硬编码，新增 AI Scout 30 秒全自主辖区智能拓荒向导。
+7. **开放互联与可视化工作台**：
+   - 原生 Model Context Protocol (MCP 2025-03-26) 集成与 React Flow 研判流水线全景工作台。
+
+---
+
+## 2026-10-10 — MCP 接入、大屏一次读取、副驾驶工具图
+
+- 外部 Agent 只配站点 origin。`POST /api/mcp` 是 MCP Streamable HTTP，协议 `2025-03-26`。未授权返回 401，并带 RFC 9728 的 `WWW-Authenticate`。人用 Better Auth 登录后在 `/mcp/authorize` 同意，换到 `civic_` access key。三个工具：`list_regions`、`push_ticket`（一条，只入库）、`region_overview`（与站点总览同一套汇总）。吊销在站点管理中心。步骤见 [`MCP.md`](MCP.md)。`public.mcp_clients` 与 `public.mcp_auth_codes` 在第一次调用时建表。
+- 大屏改为一次 `GET /api/cockpit`。最近 30 条只带正文前 80 字。这一读不探活 System 2。最近工单已走 `idx_tickets_create_time`，没有再加索引。
+- 副驾驶改为 LangGraph `decide → tools → decide`，模型是本地 27B，工具按当前 region 检索。进入对话时不预读主题。
+- `OPENAI_API_KEY` 仍会读：本地 System 2 探活失败时的云端回退、AI 拓荒，以及没写 `EMBEDDING_API_KEY` 时的向量 Key。抽取、主题建议和副驾驶的主路径是 8132 上的 27B，向量是 BAAI/bge-m3。
+
+## 2026-10-07 — 流水线工厂抽屉与抽取空字段
+
+- AI 研判流水线工厂是顶部 `PipelineDrawer`，`/workbench` 页面已删除。窄屏和宽屏用同一块 React Flow 画布，只让抽屉标题换行，不再另做手机步骤列表。
+- 自动刷新保留节点 `measured`、宽高和拖拽位置。丢掉 `measured` 时 React Flow 会把节点藏起来。
+- 抽取 Schema 把主体、地点的 `null` / `无` / `未知` 收成空字符串。标题或事件还在就收下；主体为空时置信度不超过 55。
+- 算力节点耗时优先用 `predicted_ms`，界面一律写成秒。离线节点显示「无法连接」，不显示耗时。不健康节点超过 3 秒再探活，并轮询进调度。
+
+现行规则以 [`docs/WORKFLOW.md`](WORKFLOW.md) 为准。下面 2026-09-26 一节里的咨询直通、72 小时并单、主题建议开思考，都已经不用了。
+
+## 2026-09-26 — V2 双引擎架构重构、微观时空基底对齐与增量滑动窗口闭环落地
+
+- **System-1 / System-2 双引擎分层协同全面落地**：
+  - **Monorepo Packages 架构**：拆分并定型 `@civic/system-one`（4头交叉注意力神经分类器，单单推断 **0.079 ms**，吞吐超 **12,600 TPS**）、`@civic/system-two`（Bonsai 2 27B PTQ1_0 三值大模型，Apple Silicon Metal 深度调优，CoT 思维链剥离，`createJSON` 强类型驱动）与 `@civic/anonymizer`（全要素可逆隐私脱敏安全气隙）。
+  - **快思考极速直通**：政策咨询件（INQUIRY）与工单催办毫秒级直接分派直通（51ms），无需调用昂贵大模型，节约 80%+ 简单工单算力。
+  - **极速抽取与废除套娃仲裁**：工单抽取显式指定 `enableThinking: false`，单件约 3 秒结构化直出；彻底剔除旧版置信度 `< 60` 反复调用 LLM 仲裁的低效死循环，改由权威字典与本地白名单确定性校准。
+  - **多频成团统一慢思考**：仅在多频事件成团后统一调用 1 次 System-2 慢思考（`enableThinking: true`），推导 **3100+ 字符思维链**，深度穿透跨部门权责并生成分步处置预案。
+- **微观时空核心基底提纯算法 (`extractSpatialCore`)**：
+  - 自动剥离门牌号（“28号”）、店铺名等修饰噪点，提纯出公共微观道路核心基底（如 `大良街道金榜上街`），彻底解决市民表达细微差异无法聚类的历史顽疾。
+  - 建立纯行政区划防吸附隔离线，严禁将全街道泛诉求错误吸附进具体某条路段，杜绝工单串扰。
+- **增量工单时空吸附与 72h 滑动时间窗口机制 (`backend/incremental-cluster.ts`)**：
+  - 新增流式吸附判定：新工单 **1.9 毫秒** 判定是否吸附进当前在办活跃主题，工单数自动累加，杜绝重复建群。
+  - 确立“距离该事件最后一个事件发生时间（lastOccurrence）的 72 小时滑动时间窗口”政务业务标准。
+  - 平时 0 耗时继承老方案（0 等待、0 Token 消耗），座席秒级答复；突发严重险情（冲刷塌陷、次生灾害）质变精准触发 System-2 慢思考升级应急救援预案。
+- **集中式 Token 与超时预算体系 (`lib/tokens.ts`)**：
+  - 抽取分配 2048 Tokens / 5 分钟超时，慢思考分配 4096 Tokens / 10 分钟充足预算，彻底根除客户端写死短超时断联报错。
+- **业务 API 双模态全面贯通**：
+  - `POST /api/tickets`：单单流式入库后台异步触发 `ingestSingleTicketPipeline`，实现“入库即智能吸附”；
+  - `POST /api/cluster`：批处理研判自动带入未结案存量主题，实现跨批次连续性治理。
+
+---
 
 - **工单镇街与摘要全量治理 (`scripts/refine-data-quality.ts`)**：
   - 全量清洗 13,659 条工单，结合顺德 10 镇街、98+ 村居社区及 72+ 别名白名单，将 5,764 条缺失镇街工单 100% 准确归正，并去除 `'其在陈村镇'` 等前缀脏数据。
@@ -121,7 +176,7 @@ Verification this step: `pnpm build` 0 errors; `pnpm exec tsc --noEmit` 0; VPS r
 
 ## 2026-08-15 — 按设计稿还原四页结构
 
-对照 `/Users/FireTable/Downloads/frontend/` 补齐先前只搭了壳的页面：
+对照 `design-assets/frontend/` 补齐先前只搭了壳的页面：
 
 - 工作面板：双轴折线（每日工单 + 多频群组新增）和七类环形图改回 ECharts，镇街 TOP 10 用色条排名，热力表按设计色阶。
 - 工单中心：4 张统计卡 + 全部/待处理/处理中/已办结/紧急/多频聚类 Tab + 镇街/类型/时间筛选 + 行点击抽屉。

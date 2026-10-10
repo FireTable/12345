@@ -1,0 +1,145 @@
+/**
+ * 科技数据大屏 · 半透明液态玻璃 (Liquid Glassmorphism) 统一设计规范
+ * 统一管理全屏调度坞卡片、KPI 指标卡、图表容器的底色、磨砂折射率、流体边缘反光与内发光
+ */
+
+:root {
+  /* 液态玻璃核心 Token */
+  --cockpit-glass-bg: linear-gradient(135deg, rgba(8, 24, 60, 0.48) 0%, rgba(3, 10, 26, 0.38) 100%);
+  --cockpit-glass-blur: 28px;
+  --cockpit-glass-saturate: 190%;
+  --cockpit-glass-border: rgba(64, 150, 255, 0.22);
+  --cockpit-glass-border-hover: rgba(64, 150, 255, 0.45);
+  --cockpit-glass-specular: rgba(255, 255, 255, 0.18);
+  --cockpit-glass-inner-glow: rgba(22, 119, 255, 0.08);
+  --cockpit-glass-shadow: 0 10px 36px 0 rgba(0, 0, 0, 0.50);
+}
+
+/* 统一液态玻璃卡片基类 */
+.cockpit-glass-card {
+  position: relative;
+  background: var(--cockpit-glass-bg);
+  backdrop-filter: blur(var(--cockpit-glass-blur)) saturate(var(--cockpit-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--cockpit-glass-blur)) saturate(var(--cockpit-glass-saturate));
+  border: 1px solid var(--cockpit-glass-border);
+  border-radius: 1rem;
+  box-shadow: 
+    inset 0 1px 1.5px 0 var(--cockpit-glass-specular),
+    inset 0 0 24px 0 var(--cockpit-glass-inner-glow),
+    var(--cockpit-glass-shadow);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+
+/* 顶部流体高光反射线 (Liquid Specular Hairline) */
+.cockpit-glass-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 8%;
+  right: 8%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(64, 150, 255, 0.55) 50%, transparent 100%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* 悬停微互动：边缘微光强化 */
+.cockpit-glass-card:hover {
+  border-color: var(--cockpit-glass-border-hover);
+  box-shadow: 
+    inset 0 1px 2px 0 rgba(255, 255, 255, 0.26),
+    inset 0 0 30px 0 rgba(22, 119, 255, 0.14),
+    0 14px 44px 0 rgba(0, 0, 0, 0.60);
+}
+
+/* --- 专用色彩主题变体 --- */
+
+/* 1. 应急高危险情（Red/Rose 变体） */
+.cockpit-glass-card--danger {
+  background: linear-gradient(135deg, rgba(38, 8, 22, 0.50) 0%, rgba(18, 4, 12, 0.40) 100%);
+  border-color: rgba(244, 63, 94, 0.28);
+  box-shadow: 
+    inset 0 1px 1.5px 0 rgba(255, 255, 255, 0.18),
+    inset 0 0 24px 0 rgba(244, 63, 94, 0.10),
+    var(--cockpit-glass-shadow);
+}
+.cockpit-glass-card--danger::before {
+  background: linear-gradient(90deg, transparent 0%, rgba(244, 63, 94, 0.6) 50%, transparent 100%);
+}
+.cockpit-glass-card--danger:hover {
+  border-color: rgba(244, 63, 94, 0.50);
+  box-shadow: 
+    inset 0 1px 2px 0 rgba(255, 255, 255, 0.26),
+    inset 0 0 30px 0 rgba(244, 63, 94, 0.18),
+    0 14px 44px 0 rgba(0, 0, 0, 0.60);
+}
+
+/* 2. 慢思考/共性群组（Purple 变体） */
+.cockpit-glass-card--purple {
+  background: linear-gradient(135deg, rgba(28, 12, 48, 0.50) 0%, rgba(14, 5, 26, 0.40) 100%);
+  border-color: rgba(168, 85, 247, 0.28);
+  box-shadow: 
+    inset 0 1px 1.5px 0 rgba(255, 255, 255, 0.18),
+    inset 0 0 24px 0 rgba(168, 85, 247, 0.10),
+    var(--cockpit-glass-shadow);
+}
+.cockpit-glass-card--purple::before {
+  background: linear-gradient(90deg, transparent 0%, rgba(168, 85, 247, 0.6) 50%, transparent 100%);
+}
+.cockpit-glass-card--purple:hover {
+  border-color: rgba(168, 85, 247, 0.50);
+  box-shadow: 
+    inset 0 1px 2px 0 rgba(255, 255, 255, 0.26),
+    inset 0 0 30px 0 rgba(168, 85, 247, 0.18),
+    0 14px 44px 0 rgba(0, 0, 0, 0.60);
+}
+
+/* 3. 办结达标（Emerald 变体） */
+.cockpit-glass-card--emerald {
+  background: linear-gradient(135deg, rgba(6, 38, 26, 0.50) 0%, rgba(3, 18, 12, 0.40) 100%);
+  border-color: rgba(16, 185, 129, 0.28);
+  box-shadow: 
+    inset 0 1px 1.5px 0 rgba(255, 255, 255, 0.18),
+    inset 0 0 24px 0 rgba(16, 185, 129, 0.10),
+    var(--cockpit-glass-shadow);
+}
+.cockpit-glass-card--emerald::before {
+  background: linear-gradient(90deg, transparent 0%, rgba(16, 185, 129, 0.6) 50%, transparent 100%);
+}
+.cockpit-glass-card--emerald:hover {
+  border-color: rgba(16, 185, 129, 0.50);
+}
+
+/* 卡片内部子项悬浮液态玻璃层 */
+.cockpit-glass-subcard {
+  background: rgba(16, 36, 75, 0.32);
+  border: 1px solid rgba(64, 150, 255, 0.16);
+  border-radius: 0.75rem;
+  transition: all 0.2s ease;
+}
+.cockpit-glass-subcard:hover {
+  background: rgba(22, 54, 115, 0.45);
+  border-color: rgba(64, 150, 255, 0.35);
+}
+
+/* 卡片内部标准顶栏分割线 */
+.cockpit-glass-header {
+  border-bottom: 1px solid rgba(64, 150, 255, 0.14);
+}
+
+/* 大屏专属科技微滚动条 */
+.custom-cockpit-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-cockpit-scrollbar::-webkit-scrollbar-track {
+  background: rgba(22, 119, 255, 0.05);
+  border-radius: 4px;
+}
+.custom-cockpit-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(22, 119, 255, 0.35);
+  border-radius: 4px;
+}
+.custom-cockpit-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(22, 119, 255, 0.6);
+}

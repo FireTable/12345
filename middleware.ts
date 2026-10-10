@@ -24,9 +24,36 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // 2.6 Copilot endpoint: anon users can chat with the LLM using public stats.
-  // Doesn't expose ticket content / PII — only KPI numbers and LLM streaming.
-  if (pathname === "/api/copilot") {
+  // 2.7 Map tile proxy & Region boundary public APIs
+  if (
+    pathname.startsWith("/api/map/tile") ||
+    pathname.startsWith("/api/map/geocode") ||
+    pathname === "/api/regions" ||
+    pathname.startsWith("/api/regions/")
+  ) {
+    return NextResponse.next();
+  }
+
+  // 2.8 Internal server-to-server endpoints (e.g. cluster bootstrap
+  //      triggered by instrumentation.ts on next-server boot). The
+  //      caller is the same Node process via localhost fetch, so
+  //      there's no user identity to authenticate. We rely on the
+  //      /api/internal/ URL convention + the bind to 127.0.0.1 as
+  //      the only access control. NEVER expose anything user-facing
+  //      under /api/internal/.
+  if (pathname.startsWith("/api/internal/")) {
+    return NextResponse.next();
+  }
+
+  // MCP 发现与令牌交换不能走登录 cookie。
+  // 未带 access key 的调用要在路由里返回 401，并带上 WWW-Authenticate。
+  // /api/mcp/grant 仍要登录，已登录的人在授权页签发 access key。
+  if (
+    pathname === "/api/mcp" ||
+    pathname === "/api/mcp/token" ||
+    pathname === "/api/mcp/oauth-protected-resource" ||
+    pathname === "/api/mcp/oauth-authorization-server"
+  ) {
     return NextResponse.next();
   }
 
@@ -34,11 +61,8 @@ export function middleware(request: NextRequest) {
     request.cookies.get("better-auth.session_token")?.value ||
     request.cookies.get("__Secure-better-auth.session_token")?.value;
 
-  // 3. Login page handling
+  // 3. Login page handling (always allow access to login page)
   if (pathname.startsWith("/login")) {
-    if (sessionToken) {
-      return NextResponse.redirect(new URL("/", request.url));
-    }
     return NextResponse.next();
   }
 
@@ -64,6 +88,6 @@ export function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/tickets/upload).*)",
   ],
 };

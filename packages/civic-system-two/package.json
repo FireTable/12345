@@ -1,0 +1,40 @@
+{
+  "name": "@civic/system-two",
+  "version": "1.0.0",
+  "description": "12345 慢思考通用认知大模型引擎 (OpenAI 协议适配、思维链与纯正文分离、Apple Silicon 调优本地优先与自适应降级)",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "scripts",
+    "README.md"
+  ],
+  "scripts": {
+    "setup:model": "tsx scripts/setup.ts",
+    "serve": "tsx scripts/serve.ts",
+    "test": "tsx scripts/test-engine.ts"
+  },
+  "keywords": [
+    "system-2",
+    "llm",
+    "openai-compatible",
+    "metal",
+    "llama-cpp",
+    "chain-of-thought",
+    "reasoning"
+  ],
+  "author": "FireTable",
+  "license": "MIT",
+  "dependencies": {
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

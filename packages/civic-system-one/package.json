@@ -1,0 +1,42 @@
+{
+  "name": "@civic/system-one",
+  "version": "1.0.0",
+  "description": "12345 政务工单快思考极速分类、紧迫度评分、涉稳护栏与自适应双引擎决策状态机",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "models",
+    "scripts",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "tsx scripts/test-engine.ts",
+    "engine": "python3 scripts/engine.py",
+    "benchmark": "python3 scripts/benchmark.py"
+  },
+  "keywords": [
+    "12345",
+    "civic",
+    "system-1",
+    "decision-engine",
+    "laya",
+    "classifier",
+    "onnx",
+    "mps"
+  ],
+  "author": "FireTable",
+  "license": "MIT",
+  "dependencies": {
+    "onnxruntime-node": "^1.30.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

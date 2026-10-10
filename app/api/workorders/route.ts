@@ -1,15 +1,19 @@
-import { NextResponse } from "next/server";
-import { db } from "@/db/client";
+import { NextRequest, NextResponse } from "next/server";
+import { getRegionDb } from "@/db/client";
 import { ticketsTable } from "@/db/schema";
-import { and, desc, eq, gte, ilike, isNotNull, lt, or, sql } from "drizzle-orm";
-import { toWorkorderDto } from "@/lib/civic-dto";
+import { and, desc, eq, gte, ilike, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import { toWorkorderDto, UNKNOWN_TOWN } from "@/lib/civic-dto";
 import { clampPage, clampSize } from "@/lib/api-bounds";
 import { cacheGetOrLoad } from "@/lib/civic-cache";
 import { loadWorkorderStats } from "@/lib/civic-queries";
 import { clampTimeRef, timeWindow } from "@/lib/civic-time";
+import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   try {
+    const regionId = await resolveRequestRegionId(req);
+    const { db: tenantDb } = await getRegionDb(regionId);
+
     const { searchParams } = new URL(req.url);
     const page = clampPage(searchParams.get("page"));
     const size = clampSize(searchParams.get("size"));
@@ -21,15 +25,27 @@ export async function GET(req: Request) {
     const urgency = searchParams.get("urgency") || "";
     const time = searchParams.get("time") || "";
     const multifreq = searchParams.get("multifreq") || "";
+    const cluster = searchParams.get("cluster") || multifreq;
 
-    const { value: snap } = await cacheGetOrLoad("workorders:stats", () => loadWorkorderStats());
+    const { value: snap } = await cacheGetOrLoad(`workorders:stats:${regionId}`, () => loadWorkorderStats(regionId));
     const { stats, latest, facets } = snap;
 
     const filters = [];
     if (region) {
-      filters.push(
-        or(ilike(ticketsTable.subdistrict, `%${region}%`), ilike(ticketsTable.district, `%${region}%`))
-      );
+      if (region === UNKNOWN_TOWN || region === "未知") {
+        filters.push(
+          or(
+            isNull(ticketsTable.subdistrict),
+            eq(ticketsTable.subdistrict, ""),
+            eq(ticketsTable.subdistrict, "未知"),
+            eq(ticketsTable.subdistrict, "未指定")
+          )
+        );
+      } else {
+        filters.push(
+          or(ilike(ticketsTable.subdistrict, `%${region}%`), ilike(ticketsTable.district, `%${region}%`))
+        );
+      }
     }
     if (category) {
       filters.push(eq(ticketsTable.sourceCategory, category));
@@ -54,8 +70,16 @@ export async function GET(req: Request) {
     if (urgency === "URGENT" || tab === "urgent") {
       filters.push(eq(ticketsTable.urgency, "URGENT"));
     }
-    if (multifreq === "1" || tab === "multifreq") {
+    if (cluster === "1" || cluster === "multifreq" || tab === "multifreq") {
       filters.push(isNotNull(ticketsTable.primaryThemeId));
+    } else if (
+      cluster === "0" ||
+      cluster === "single" ||
+      cluster === "unclustered" ||
+      tab === "single" ||
+      tab === "unclustered"
+    ) {
+      filters.push(isNull(ticketsTable.primaryThemeId));
     }
     if (keyword) {
       filters.push(
@@ -74,15 +98,36 @@ export async function GET(req: Request) {
     }
 
     const where = filters.length ? and(...filters) : undefined;
-    const countQ = db.select({ count: sql<number>`count(*)` }).from(ticketsTable);
-    const listQ = db
-      .select()
+    const countQ = tenantDb.select({ count: sql<number>`count(*)` }).from(ticketsTable);
+    // 表格和导出只用这些列。正文、电话在打开抽屉时走 GET /api/workorders/[id]。
+    const listQ = tenantDb
+      .select({
+        id: ticketsTable.id,
+        ticketNo: ticketsTable.ticketNo,
+        title: ticketsTable.title,
+        summarizeTitle: ticketsTable.summarizeTitle,
+        sourceCategory: ticketsTable.sourceCategory,
+        subdistrict: ticketsTable.subdistrict,
+        district: ticketsTable.district,
+        urgency: ticketsTable.urgency,
+        status: ticketsTable.status,
+        createTime: ticketsTable.createTime,
+        address: ticketsTable.address,
+        primaryThemeId: ticketsTable.primaryThemeId,
+        confidence: ticketsTable.confidence,
+        channel: ticketsTable.channel,
+        slaHours: ticketsTable.slaHours,
+        stabilityRisk: ticketsTable.stabilityRisk,
+        canonicalSubject: ticketsTable.canonicalSubject,
+        eventType: ticketsTable.eventType,
+        isFakeClosure: ticketsTable.isFakeClosure,
+      })
       .from(ticketsTable)
       .orderBy(desc(ticketsTable.createTime))
       .limit(size)
       .offset((page - 1) * size);
     const [countRes, rows] = await Promise.all([
-      where ? countQ.where(where) : countQ,
+      where ? countQ.where(where) : Promise.resolve([{ count: snap.stats.total }]),
       where ? listQ.where(where) : listQ,
     ]);
 

@@ -4,8 +4,34 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { classifyDetailPayload, type DetailLoadStatus } from "@/lib/detail-load";
-import { Layers, ArrowRight, MessageSquareQuote } from "lucide-react";
+import {
+  Layers,
+  Sparkles,
+  ExternalLink,
+  ChevronLeft,
+} from "lucide-react";
 import { SkTicketDetail } from "@/app/_components/civic/skeletons";
+import {
+  categoryBadgeStyle,
+  getCategoryBadgeClass,
+  getUrgencyLabel,
+  normalizeStatusCode,
+} from "@/lib/civic-dto";
+import { AiVerdictCard, CitizenVoiceCard, TicketPropsGrid } from "@/app/_components/civic/ticket-verdict-view";
+
+function statusLabel(s: string) {
+  const code = normalizeStatusCode(s);
+  if (code === "RESOLVED") return "已办结";
+  if (code === "IN_PROGRESS") return "处理中";
+  return "待处理";
+}
+
+function statusTag(s: string) {
+  const code = normalizeStatusCode(s);
+  if (code === "RESOLVED") return "done";
+  if (code === "IN_PROGRESS") return "progress";
+  return "pending";
+}
 
 export default function TicketDetailPage() {
   const params = useParams<{ id: string }>();
@@ -53,109 +79,106 @@ export default function TicketDetailPage() {
     );
   }
 
-  const clusterId = row.cluster_info?.id || "";
+  const clusterId = row.cluster_info?.id || row.cluster_id || "";
 
   return (
     <>
-      <div className="breadcrumb">
-        <Link href="/tickets">工单中心</Link>
-        <span>/</span>
-        <span>{row.id}</span>
-      </div>
-
-      {clusterId && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4 flex items-center justify-between shadow-2xs">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-blue-600 text-white flex items-center justify-center">
-              <Layers className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="text-sm font-bold text-blue-950 flex items-center gap-2">
-                <span>该工单已关联至多频研判群组</span>
-                {row.cluster_info?.mode_name && (
-                  <span className="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-medium">
-                    {row.cluster_info.mode_name}
-                  </span>
-                )}
-              </div>
-              <div className="text-xs text-blue-700 mt-0.5">
-                所属主题：{row.cluster_info?.title || `${row.region} · ${row.category}`}
-              </div>
-            </div>
-          </div>
-          <Link
-            href={`/themes/${clusterId}?ticketId=${encodeURIComponent(row.id)}&highlight=${encodeURIComponent(row.id)}#ticket-${encodeURIComponent(row.id)}`}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-colors shadow-2xs"
-          >
-            <span>在群组中定位</span>
-            <ArrowRight className="h-3.5 w-3.5" />
+      <div className="breadcrumb flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <Link href="/tickets" className="hover:underline flex items-center gap-1">
+            <ChevronLeft className="w-3.5 h-3.5" />
+            <span>工单中心</span>
           </Link>
+          <span>/</span>
+          <span>{row.id}</span>
         </div>
-      )}
-
-      <div className="page-hero">
-        <div>
-          <h1 className="page-hero__title">{row.title}</h1>
-          <div className="page-hero__sub">
-            {[row.region, row.category, row.createdAt].filter(Boolean).join(" · ") || row.createdAt}
-          </div>
-        </div>
+        <Link
+          href="/tickets"
+          className="text-xs text-slate-500 hover:text-slate-800 transition-colors"
+        >
+          返回工单列表
+        </Link>
       </div>
 
-      <div className="split-row">
-        <div className="card">
-          <div className="card__header">
-            <div className="card__title flex items-center gap-2">
-              <MessageSquareQuote className="w-4 h-4 text-blue-600" />
-              市民原始诉求
-            </div>
-            <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>
-              共 {(row.content || "").length} 字 · 受理渠道:{row.channel || "市民服务热线"}
-            </div>
-          </div>
-          <div className="card__body" style={{ padding: 0 }}>
-            <div
-              style={{
-                padding: "20px 24px",
-                fontSize: 15,
-                lineHeight: 1.85,
-                color: "var(--c-ink)",
-                whiteSpace: "pre-wrap",
-                background:
-                  "linear-gradient(to right, rgba(30,90,255,0.05) 0%, rgba(30,90,255,0.01) 60%, transparent 100%)",
-                borderLeft: "3px solid #1E5AFF",
-                borderRadius: "0 8px 8px 0",
-                position: "relative",
-              }}
+      <div className="page-hero" style={{ marginBottom: 20 }}>
+        <div>
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
+            <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+              #{row.id}
+            </span>
+            {row.category && (
+              <span
+                className={`badge-pill ${getCategoryBadgeClass(row.category)}`}
+                style={categoryBadgeStyle(row.category)}
+              >
+                {row.category}
+              </span>
+            )}
+            <span className={`status-tag status-tag--${statusTag(row.status)}`}>
+              {statusLabel(row.status)}
+            </span>
+            <span
+              className={`badge-pill ${row.urgency === "URGENT" ? "badge-pill--danger" : "badge-pill--default"}`}
             >
-              {row.content || <span style={{ color: "var(--c-ink-3)" }}>暂无正文内容</span>}
-            </div>
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="card__header">
-            <div className="card__title">属性</div>
-          </div>
-          <div className="card__body" style={{ fontSize: 13, color: "var(--c-ink-2)" }}>
-            <p className="py-1">反映人：{row.caller_name || "—"}</p>
-            <p className="py-1">电话：{row.caller_phone || "—"}</p>
-            <p className="py-1">地址：{row.address || "—"}</p>
-            <p className="py-1">紧急度：{row.urgency || "NORMAL"}</p>
-            <p className="py-1">处置状态：{row.status || "待处理"}</p>
-            {row.cluster_info && (
-              <p className="py-1">
-                所属群组：
-                <Link
-                  href={`/themes/${row.cluster_info.id}?ticketId=${encodeURIComponent(row.id)}#ticket-${encodeURIComponent(row.id)}`}
-                  className="text-blue-600 font-medium ml-1"
-                >
-                  {row.cluster_info.title}
-                </Link>
-                {row.cluster_info.mode_name ? ` · ${row.cluster_info.mode_name}` : ""}
-              </p>
+              {getUrgencyLabel(row.urgency)}
+            </span>
+            {clusterId && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                多频专题已归集
+              </span>
             )}
           </div>
+          <h1 className="page-hero__title" style={{ fontSize: 20, fontWeight: 700 }}>
+            {row.title}
+          </h1>
+          {row.rawTitle && row.rawTitle !== row.title && (
+            <div style={{ fontSize: 13, color: "var(--c-ink-3)", marginTop: 4 }}>
+              市民原报原由：{row.rawTitle}
+            </div>
+          )}
+          <div className="page-hero__sub" style={{ marginTop: 6 }}>
+            {[row.region, row.createdAt].filter(Boolean).join(" · ") || row.createdAt}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        {/* 左侧主要区域：AI 研判解析与市民诉求原文 (8列) */}
+        <div className="lg:col-span-8 space-y-4">
+          {/* 1. AI 智能研判解析卡片 (复用统一组件) */}
+          <AiVerdictCard data={row} />
+
+          {/* 2. 市民原始诉求卡片 (复用统一组件) */}
+          <CitizenVoiceCard data={row} />
+        </div>
+
+        {/* 右侧边栏区域：多频专题与经办属性 (4列，无冗余多层嵌套) */}
+        <div className="lg:col-span-4 space-y-4">
+          {/* 1. 经办基础属性 (直接渲染，杜绝框套框) */}
+          <TicketPropsGrid data={row} />
+
+          {/* 2. 归属多频专题联动卡片 (采用统一的现代无缝质感) */}
+          {clusterId && (
+            <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3 shadow-2xs">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-blue-900 pb-2 border-b border-slate-100">
+                <Layers className="w-4 h-4 text-blue-600" />
+                <span>归属多频研判群组</span>
+              </div>
+              <div className="text-sm font-bold text-slate-800 leading-snug">
+                {row.cluster_info?.title || `${row.region} · ${row.category}专项`}
+              </div>
+              <div className="text-xs text-slate-500 leading-relaxed">
+                该工单已被 Civic Agent 识别为共性事件并自动归入该多频主题，支持协同攻坚处置。
+              </div>
+              <Link
+                href={`/themes/${clusterId}?ticketId=${encodeURIComponent(row.id)}&highlight=${encodeURIComponent(row.id)}#ticket-${encodeURIComponent(row.id)}`}
+                className="btn btn--default flex items-center justify-center gap-1.5 text-xs text-blue-700 w-full hover:bg-blue-50 py-2 font-medium"
+              >
+                <span>前往专题视图研判定位</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          )}
         </div>
       </div>
     </>

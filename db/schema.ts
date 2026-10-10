@@ -1,4 +1,5 @@
 import {
+  customType,
   pgTable,
   varchar,
   text,
@@ -8,6 +9,55 @@ import {
   primaryKey,
   boolean,
 } from "drizzle-orm/pg-core";
+
+/** pgvector 半精度列。1024 维是 BAAI/bge-m3 的稠密向量，不在这里截断。 */
+export const halfvec1024 = customType<{ data: number[]; driverData: string }>({
+  dataType() {
+    return "halfvec(1024)";
+  },
+  toDriver(value: number[]): string {
+    return `[${value.join(",")}]`;
+  },
+  fromDriver(value: string): number[] {
+    return String(value)
+      .replace(/^\[/, "")
+      .replace(/\]$/, "")
+      .split(",")
+      .filter((part) => part.length > 0)
+      .map(Number);
+  },
+});
+
+/**
+ * 0. 区域/站点注册花名册表 (Regions Registry Table, in public schema)
+ */
+export const regionsTable = pgTable(
+  "regions",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    name: varchar("name", { length: 128 }).notNull(),
+    city: varchar("city", { length: 128 }).notNull(),
+    province: varchar("province", { length: 128 }).default("广东省").notNull(),
+    schemaName: varchar("schema_name", { length: 64 }).notNull().unique(),
+    svgMapPath: varchar("svg_map_path", { length: 255 }),
+    categoryConfigJson: text("category_config_json"),
+    geojsonBoundary: text("geojson_boundary"),
+    subdistrictsGeojson: text("subdistricts_geojson"),
+    status: varchar("status", { length: 32 }).default("ACTIVE").notNull(),
+    isDefault: boolean("is_default").default(false).notNull(),
+    description: text("description"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_regions_city").on(table.city),
+    index("idx_regions_status").on(table.status),
+    index("idx_regions_schema_name").on(table.schemaName),
+  ]
+);
+
+export type RegionRecord = typeof regionsTable.$inferSelect;
+export type NewRegionRecord = typeof regionsTable.$inferInsert;
 
 /**
  * 1. 工单主表 (Tickets Table)
@@ -23,6 +73,8 @@ export const ticketsTable = pgTable(
     maskedContent: text("masked_content"),
     citizenName: varchar("citizen_name", { length: 64 }),
     citizenPhone: varchar("citizen_phone", { length: 64 }),
+    province: varchar("province", { length: 64 }),
+    city: varchar("city", { length: 64 }),
     district: varchar("district", { length: 64 }),
     subdistrict: varchar("subdistrict", { length: 64 }),
     sourceCategory: varchar("source_category", { length: 64 }),
@@ -30,6 +82,10 @@ export const ticketsTable = pgTable(
     ingestSubdistrict: varchar("ingest_subdistrict", { length: 64 }),
     ingestCategory: varchar("ingest_category", { length: 64 }),
     urgency: varchar("urgency", { length: 16 }).default("NORMAL"),
+    slaHours: integer("sla_hours"),
+    stabilityRisk: boolean("stability_risk"),
+    canonicalSubject: varchar("canonical_subject", { length: 255 }),
+    eventType: varchar("event_type", { length: 128 }),
     address: varchar("address", { length: 255 }),
     confidence: integer("confidence"),
     primaryThemeId: varchar("primary_theme_id", { length: 64 }),
@@ -40,6 +96,7 @@ export const ticketsTable = pgTable(
     closureStatus: varchar("closure_status", { length: 32 }),
     isFakeClosure: boolean("is_fake_closure").default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
   (table) => [
     index("idx_tickets_ticket_no").on(table.ticketNo),
@@ -53,6 +110,23 @@ export const ticketsTable = pgTable(
     index("idx_tickets_status_create_time").on(table.status, table.createTime),
   ]
 );
+
+/**
+ * 1b. 工单嵌入旁路表。一行对一张工单，不在 tickets 上加向量列。
+ * 缺行就是还没嵌。HNSW 不在建表时创建，回填写完再单独建。
+ */
+export const ticketEmbeddingsTable = pgTable("ticket_embeddings", {
+  ticketId: varchar("ticket_id", { length: 64 })
+    .primaryKey()
+    .references(() => ticketsTable.id, { onDelete: "cascade" }),
+  embedding: halfvec1024("embedding").notNull(),
+  productHash: varchar("product_hash", { length: 64 }).notNull(),
+  model: varchar("model", { length: 64 }).notNull().default("BAAI/bge-m3"),
+  embeddedAt: timestamp("embedded_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type TicketEmbeddingRecord = typeof ticketEmbeddingsTable.$inferSelect;
+export type NewTicketEmbeddingRecord = typeof ticketEmbeddingsTable.$inferInsert;
 
 /**
  * 2. 多频主题聚类表 (Themes Table)
@@ -77,7 +151,7 @@ export const themesTable = pgTable(
     aiConfidence: integer("ai_confidence"),
     firstAt: timestamp("first_at", { withTimezone: true }),
     lastAt: timestamp("last_at", { withTimezone: true }),
-    handlingStatus: varchar("handling_status", { length: 16 }).default("未处理"),
+    handlingStatus: varchar("handling_status", { length: 16 }).default("PENDING"),
     handlingProgress: integer("handling_progress").default(0),
     handlingOwner: varchar("handling_owner", { length: 64 }),
     handlingEta: timestamp("handling_eta", { withTimezone: true }),
@@ -215,6 +289,8 @@ export const taskProgressTable = pgTable(
     reviewCount: integer("review_count").notNull().default(0),
     failedCount: integer("failed_count").notNull().default(0),
     error: text("error"),
+    regionId: varchar("region_id", { length: 64 }),
+    heartbeatAt: timestamp("heartbeat_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },

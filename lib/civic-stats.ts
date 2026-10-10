@@ -1,5 +1,6 @@
 import { explicitAdmin, isTownLabel } from "./admin-area";
-import { regionLabel } from "./civic-dto";
+import { regionLabel, UNKNOWN_TOWN } from "./civic-dto";
+import { shanghaiCalendarDate } from "./work-order-date";
 
 export type TicketStatRow = {
   createTime?: Date | string | null;
@@ -24,11 +25,22 @@ function asDate(v?: Date | string | null): Date | null {
 }
 
 function ymd(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  return shanghaiCalendarDate(d);
 }
 
 function ym(d: Date): string {
-  return d.toISOString().slice(0, 7);
+  return shanghaiCalendarDate(d).slice(0, 7);
+}
+
+function weekKey(d: Date): string {
+  const [year, month, day] = shanghaiCalendarDate(d).split("-").map(Number);
+  const civil = new Date(Date.UTC(year, month - 1, day));
+  const dow = civil.getUTCDay() || 7;
+  const start = new Date(civil);
+  start.setUTCDate(start.getUTCDate() - (dow - 1));
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 6);
+  return `${shanghaiCalendarDate(start)}/${shanghaiCalendarDate(end)}`;
 }
 
 export type OverviewBuckets = {
@@ -57,9 +69,8 @@ export function buildOverviewFromBuckets(b: OverviewBuckets) {
 
   const regionDistribution: Record<string, number> = {};
   for (const row of b.regionRows) {
-    const town = explicitAdmin(row.subdistrict);
-    const region = town ? regionLabel(town) : "";
-    if (region && isTownLabel(region)) {
+    const region = regionLabel(row.subdistrict);
+    if (region && (isTownLabel(region) || region === UNKNOWN_TOWN)) {
       regionDistribution[region] = (regionDistribution[region] || 0) + Number(row.n || 0);
     }
   }
@@ -72,10 +83,9 @@ export function buildOverviewFromBuckets(b: OverviewBuckets) {
 
   const regionCategory: Record<string, Record<string, number>> = {};
   for (const row of b.regionCategoryRows) {
-    const town = explicitAdmin(row.subdistrict);
-    const region = town ? regionLabel(town) : "";
+    const region = regionLabel(row.subdistrict);
     const cat = (row.category || "").trim();
-    if (region && isTownLabel(region) && cat) {
+    if (region && (isTownLabel(region) || region === UNKNOWN_TOWN) && cat) {
       if (!regionCategory[region]) regionCategory[region] = {};
       regionCategory[region][cat] = (regionCategory[region][cat] || 0) + Number(row.n || 0);
     }
@@ -87,7 +97,9 @@ export function buildOverviewFromBuckets(b: OverviewBuckets) {
   }
 
   const topRegion =
-    Object.entries(regionDistribution).sort((a, c) => c[1] - a[1])[0]?.[0] || "";
+    Object.entries(regionDistribution)
+      .filter(([name]) => name !== UNKNOWN_TOWN)
+      .sort((a, c) => c[1] - a[1])[0]?.[0] || "";
   const topCategory =
     Object.entries(categoryDistribution).sort((a, c) => c[1] - a[1])[0]?.[0] || "";
 
@@ -163,24 +175,25 @@ export function buildOverview(tickets: TicketStatRow[], themeCount: number) {
     if (t.confidence == null) continue;
     analyzedCount += 1;
 
-    const town = explicitAdmin(t.subdistrict);
-    const region = town ? regionLabel(town) : "";
+    const region = regionLabel(t.subdistrict);
     const cat = (t.sourceCategory || t.category || "").trim();
 
-    if (region && isTownLabel(region)) {
+    if (region && (isTownLabel(region) || region === UNKNOWN_TOWN)) {
       regionDistribution[region] = (regionDistribution[region] || 0) + 1;
     }
     if (cat) {
       categoryDistribution[cat] = (categoryDistribution[cat] || 0) + 1;
     }
-    if (region && isTownLabel(region) && cat) {
+    if (region && (isTownLabel(region) || region === UNKNOWN_TOWN) && cat) {
       if (!regionCategory[region]) regionCategory[region] = {};
       regionCategory[region][cat] = (regionCategory[region][cat] || 0) + 1;
     }
   }
 
   const topRegion =
-    Object.entries(regionDistribution).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+    Object.entries(regionDistribution)
+      .filter(([name]) => name !== UNKNOWN_TOWN)
+      .sort((a, b) => b[1] - a[1])[0]?.[0] || "";
   const topCategory =
     Object.entries(categoryDistribution).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
 
@@ -213,12 +226,7 @@ export function buildTrends(tickets: TicketStatRow[], themes: ThemeStatRow[] = [
     const day = ymd(d);
     daily[day] = (daily[day] || 0) + 1;
     monthly[ym(d)] = (monthly[ym(d)] || 0) + 1;
-    const weekStart = new Date(d);
-    const dow = weekStart.getUTCDay() || 7;
-    weekStart.setUTCDate(weekStart.getUTCDate() - (dow - 1));
-    const weekEnd = new Date(weekStart);
-    weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
-    const wk = `${ymd(weekStart)}/${ymd(weekEnd)}`;
+    const wk = weekKey(d);
     weekly[wk] = (weekly[wk] || 0) + 1;
   }
 
@@ -242,13 +250,21 @@ export function buildInsights(
     trendPct?: number | null;
     canonicalSubject?: string | null;
     canonicalLocation?: string | null;
+    aiSummary?: string | null;
     recommendedAction?: string | null;
     riskLevel?: string | null;
   }>
 ) {
   if (!themes || themes.length === 0) return [];
 
-  const cards: Array<{ tag: string; tone: string; title: string; text: string; href?: string }> = [];
+  const cards: Array<{
+    type: "GATHERING" | "DIVERGE" | "REPEAT" | "ANALYSIS";
+    tag: string;
+    tone: string;
+    title: string;
+    text: string;
+    href?: string;
+  }> = [];
   const usedThemeIds = new Set<string>();
 
   // 1. 寻找最高频的“空间聚集”重点主题 (GROUP_GATHERING / SPATIAL_BURST)
@@ -259,10 +275,11 @@ export function buildInsights(
   if (gatherTheme) {
     usedThemeIds.add(gatherTheme.id);
     cards.push({
+      type: "GATHERING",
       tag: "聚集",
       tone: "danger",
-      title: gatherTheme.title || `${gatherTheme.canonicalLocation || "顺德"} · ${gatherTheme.category || "民生"}诉求聚集`,
-      text: `${gatherTheme.canonicalLocation || ""}集中出现 ${gatherTheme.ticketCount || 0} 件${gatherTheme.category || ""}诉求，建议多部门现场联合处置。`,
+      title: gatherTheme.title || `${gatherTheme.canonicalLocation || "辖区"} · ${gatherTheme.category || "民生"}诉求聚集`,
+      text: gatherTheme.aiSummary || gatherTheme.recommendedAction || `${gatherTheme.canonicalLocation || "辖区"}出现 ${gatherTheme.ticketCount || 0} 件${gatherTheme.category || ""}相关诉求`,
       href: `/themes/${gatherTheme.id}`,
     });
   }
@@ -275,10 +292,11 @@ export function buildInsights(
   if (divergeTheme) {
     usedThemeIds.add(divergeTheme.id);
     cards.push({
+      type: "DIVERGE",
       tag: "发散",
       tone: "info",
       title: divergeTheme.title || `${divergeTheme.canonicalSubject || "涉事主体"} 多类型问题发散`,
-      text: `涉及同一主体共 ${divergeTheme.ticketCount || 0} 件跨业务诉求，建议开展源头合规指导与督促整改。`,
+      text: divergeTheme.aiSummary || divergeTheme.recommendedAction || `涉及同一主体共 ${divergeTheme.ticketCount || 0} 件诉求`,
       href: `/themes/${divergeTheme.id}`,
     });
   }
@@ -292,10 +310,11 @@ export function buildInsights(
   if (repeatOrUrgentTheme) {
     usedThemeIds.add(repeatOrUrgentTheme.id);
     cards.push({
+      type: "REPEAT",
       tag: "重复",
       tone: "warning",
       title: repeatOrUrgentTheme.title || `${repeatOrUrgentTheme.canonicalSubject || "重点区域"} 多次重复诉求`,
-      text: `累计已产生 ${repeatOrUrgentTheme.ticketCount || 0} 次高频反映，建议上升处置优先级并实施全周期闭环跟踪。`,
+      text: repeatOrUrgentTheme.aiSummary || repeatOrUrgentTheme.recommendedAction || `累计产生 ${repeatOrUrgentTheme.ticketCount || 0} 次高频反映`,
       href: `/themes/${repeatOrUrgentTheme.id}`,
     });
   }
@@ -308,10 +327,11 @@ export function buildInsights(
   if (fourthTheme) {
     usedThemeIds.add(fourthTheme.id);
     cards.push({
+      type: fourthTheme.patternType === "DIVERGE" ? "DIVERGE" : "GATHERING",
       tag: fourthTheme.patternType === "DIVERGE" ? "发散" : "聚集",
-      tone: fourthTheme.category === "公共安全" ? "danger" : fourthTheme.category === "市场监管" ? "info" : "warning",
+      tone: fourthTheme.riskLevel === "HIGH" ? "danger" : fourthTheme.riskLevel === "LOW" ? "info" : "warning",
       title: fourthTheme.title || `${fourthTheme.canonicalLocation || "属地片区"} · ${fourthTheme.category || "民生"}集中研判`,
-      text: `${fourthTheme.canonicalLocation || "属地"}汇聚 ${fourthTheme.ticketCount || 0} 件工单，已匹配公文级协同建议与处置路径。`,
+      text: fourthTheme.aiSummary || fourthTheme.recommendedAction || `${fourthTheme.canonicalLocation || "辖区"}汇聚 ${fourthTheme.ticketCount || 0} 件工单`,
       href: `/themes/${fourthTheme.id}`,
     });
   }

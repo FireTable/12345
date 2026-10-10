@@ -3,8 +3,8 @@ import { RULES, negativeTermsPattern } from "./rules";
 
 const NEGATIVE_RE = negativeTermsPattern();
 
-// ponytail: 顺德 10 镇街 inline，不引 @/lib 避免 backend 依赖反转
-const SHUNDE_TOWNSHIP_RE = /(大良|容桂|伦教|勒流|陈村|北滘|乐从|龙江|杏坛|均安)/;
+// 通用行政区划模式（包含区/县/镇/街道/乡后缀或标准区划简称，无硬编码地名）
+const GENERAL_TOWNSHIP_RE = /(?:街道|镇|乡|区|县)$|^[\u4e00-\u9fff]{2,8}$/;
 
 export const MODE_META: Record<
   CivicMode,
@@ -59,6 +59,8 @@ export const MODE_META: Record<
   },
 };
 
+import { isAnonymizedCitizen } from "@/lib/civic-dto";
+
 export function civicModeFromPattern(pattern?: PatternType | null): CivicMode {
   if (pattern === "INDIVIDUAL_REPEAT") return "repeat";
   if (pattern === "DIVERGE") return "diverge";
@@ -74,10 +76,78 @@ export function inferPatternType(tickets: EnrichedTicket[]): PatternType {
   const callers = new Set(
     tickets
       .map((t) => (t.citizenPhone || t.citizenName || "").trim())
-      .filter((s) => s && s !== "市民*" && s !== "热线市民")
+      .filter((s) => s && !isAnonymizedCitizen(s))
   );
   if (callers.size === 1) return "INDIVIDUAL_REPEAT";
   return "GROUP_GATHERING";
+}
+
+export const CADENCE = {
+  BURST: "BURST",
+  RECURRING: "RECURRING",
+  SEASONAL: "SEASONAL",
+  SAME_DAY: "SAME_DAY",
+} as const;
+
+export type ThemeCadence = (typeof CADENCE)[keyof typeof CADENCE];
+
+const CADENCE_LABEL: Record<ThemeCadence, string> = {
+  BURST: "突发",
+  RECURRING: "反复",
+  SEASONAL: "季节性",
+  SAME_DAY: "同日",
+};
+
+export function cadenceLabel(cadence: ThemeCadence): string {
+  return CADENCE_LABEL[cadence] || cadence;
+}
+
+const BURST_HOURS = 72;
+const SEASONAL_GAP_HOURS = 14 * 24;
+
+/** 时间只描述已经聚在一起的主题有多频，不决定工单能不能进这个主题。 */
+export function describeCadence(times: Array<string | number | Date | undefined>): ThemeCadence {
+  const ms = times
+    .map((value) => {
+      if (value instanceof Date) return value.getTime();
+      if (typeof value === "number") return value;
+      return parseTime(value);
+    })
+    .filter((value) => value > 0)
+    .sort((a, b) => a - b);
+  if (ms.length < 2) return CADENCE.BURST;
+
+  const clocks = ms.map(shanghaiClock);
+  const sameCalendarDay = new Set(clocks.map((clock) => clock.date)).size === 1;
+  if (sameCalendarDay && clocks.every((clock) => clock.midnight)) return CADENCE.SAME_DAY;
+
+  let maxGapHours = 0;
+  for (let i = 1; i < ms.length; i++) {
+    maxGapHours = Math.max(maxGapHours, (ms[i] - ms[i - 1]) / 3600000);
+  }
+  if (maxGapHours >= SEASONAL_GAP_HOURS) return CADENCE.SEASONAL;
+
+  const spanHours = (ms[ms.length - 1] - ms[0]) / 3600000;
+  if (spanHours <= BURST_HOURS) return CADENCE.BURST;
+  return CADENCE.RECURRING;
+}
+
+function shanghaiClock(ms: number): { date: string; midnight: boolean } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(ms));
+  const read = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "";
+  return {
+    date: `${read("year")}-${read("month")}-${read("day")}`,
+    midnight: read("hour") === "00" && read("minute") === "00" && read("second") === "00",
+  };
 }
 
 function parseTime(s?: string): number {
@@ -111,6 +181,7 @@ export function deriveThemeMetrics(theme: Pick<
 
   const times = tickets.map((t) => parseTime(t.createTime)).filter(Boolean).sort((a, b) => a - b);
   const spanHours = times.length >= 2 ? (times[times.length - 1] - times[0]) / 3600000 : 1;
+  const cadence = describeCadence(times);
   const timePct = spanHours <= 24 ? 92 : spanHours <= 24 * 7 ? 78 : spanHours <= 24 * 30 ? 62 : 45;
 
   const moodHits = tickets.filter((t) =>
@@ -126,7 +197,7 @@ export function deriveThemeMetrics(theme: Pick<
   const townships = new Set(
     tickets
       .map((t) => (t.subdistrict || t.district || "").trim())
-      .filter((s) => s && SHUNDE_TOWNSHIP_RE.test(s))
+      .filter((s) => s && GENERAL_TOWNSHIP_RE.test(s))
   );
   const townshipCount = townships.size;
   const subject = tickets[0]?.canonicalSubject || "";
@@ -134,7 +205,14 @@ export function deriveThemeMetrics(theme: Pick<
   const features = [
     { name: "关键词命中", pct: keywordPct, desc: event ? `主题「${event}」覆盖 ${keywordHits}/${n}` : "无统一事件类型" },
     { name: "地理范围", pct: geoPct, desc: loc ? `落在同一地点 ${locHits}/${n}` : "地点未对齐" },
-    { name: "时间模式", pct: timePct, desc: `跨度约 ${Math.max(1, Math.round(spanHours))} 小时` },
+    {
+      name: "时间模式",
+      pct: timePct,
+      desc:
+        cadence === CADENCE.SAME_DAY
+          ? "同日 · 编号没有钟点"
+          : `${cadenceLabel(cadence)} · 跨度约 ${Math.max(1, Math.round(spanHours))} 小时`,
+    },
     { name: "情绪强度", pct: moodPct, desc: moodHits ? `险情/激烈用语 ${moodHits} 条` : "未命中险情词" },
   ];
 

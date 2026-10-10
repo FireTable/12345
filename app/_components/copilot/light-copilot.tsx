@@ -11,18 +11,16 @@ import {
   BotMessageSquare,
   Brain,
 } from "lucide-react";
-import type { MultiFrequencyTheme, OverallStats } from "@/backend/state";
 import { Button } from "@/app/_components/ui/button";
 import { Input } from "@/app/_components/ui/input";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/app/_components/ui/tooltip";
+import { useRegion } from "@/app/_components/civic/region-context";
+import { copilotGreeting, splitCopilotStream } from "@/lib/copilot-protocol";
 import "./copilot-md.css";
 
 interface LightCopilotProps {
   isOpen: boolean;
   onClose: () => void;
-  themes: MultiFrequencyTheme[];
-  stats: OverallStats;
-  onSelectTheme: (theme: MultiFrequencyTheme) => void;
 }
 
 interface Message {
@@ -30,39 +28,37 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   timestamp: string;
-  themeSuggestions?: MultiFrequencyTheme[];
   // ponytail: 模型 ``...`` 块里的思考过程独立存,渲染时折叠在答案上方,不污染正文区。
   think?: string;
+  status?: string;
 }
 
 export const LightCopilot: React.FC<LightCopilotProps> = ({
   isOpen,
   onClose,
-  themes,
-  stats,
-  onSelectTheme,
 }) => {
+  const { activeRegion } = useRegion();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const regionKey = `${activeRegion?.id || ""}|${activeRegion?.city || ""}|${activeRegion?.name || ""}`;
 
-  // ponytail: 招呼消息依赖 stats,但 stats 在父组件 openCopilot 异步加载后才到位,
-  // useState 初值只跑一次 → 改成 useEffect 监听 stats 后再注入,避免显示「0 件工单」。
   useEffect(() => {
-    if (messages.length > 0) return;
-    if (!stats || stats.totalTickets === 0) return;
     setMessages([
       {
         id: "m-init",
         role: "assistant",
-        content: `您好！我是 **民声智理 12345 智能研判副驾驶**。\n\n当前已全量接入 **${stats.totalTickets.toLocaleString()}** 件工单，系统识别出 **${stats.themeCount}** 个多频治理主题，其中包含 **${stats.highRiskCount}** 项紧急督办事件。\n\n您可以随时让我生成研判简报、查找高危事件或分析特定街道的重点责任主体。`,
+        content: activeRegion
+          ? copilotGreeting(activeRegion)
+          : "尚未确定当前辖区。请先在顶栏选择区，再提问。",
         timestamp: new Date().toLocaleTimeString(),
       },
     ]);
-  }, [stats, messages.length]);
+    // regionKey 已经覆盖 id / 城市 / 区名。不要把 activeRegion 对象放进依赖，避免同区重绘清空对话。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [regionKey]);
   const [streamingId, setStreamingId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const threadIdRef = useRef<string | null>(null);
 
   function scrollToBottom() {
     const el = listRef.current;
@@ -108,15 +104,14 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
     requestAnimationFrame(scrollToBottom);
 
     try {
-      // ponytail: 每个会话实例首次打开时生成 threadId,后续发送复用,直到组件卸载。
-      // 关闭再开会拿到新 threadId —— 自然切分对话上下文。
-      if (!threadIdRef.current) {
-        threadIdRef.current = `copilot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      }
+      const history = [...messages, userMsg]
+        .filter((item) => item.content.trim())
+        .slice(-8)
+        .map((item) => ({ role: item.role, content: item.content }));
       const res = await fetch("/api/copilot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: text, threadId: threadIdRef.current }),
+        body: JSON.stringify({ messages: history }),
       });
 
       if (!res.ok || !res.body) {
@@ -131,44 +126,49 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
         const { done, value } = await reader.read();
         if (done) break;
         acc += decoder.decode(value, { stream: true });
+        const split = splitCopilotStream(acc);
+        const visible = split.text;
         // ponytail: 流式累积时,`` 未闭合 → 全部算 think(用户看到思考中实时滚动);
         // `` 闭合后 → think 内容冻结,正文 content 只放 `` 之后的文本。
-        const thinkOpenIdx = acc.indexOf("<think>");
-        const thinkCloseIdx = acc.indexOf("</think>");
+        const thinkOpenIdx = visible.indexOf("<think>");
+        const thinkCloseIdx = visible.indexOf("</think>");
         let think: string | undefined;
         let content: string;
         if (thinkOpenIdx === -1) {
-          content = acc;
+          content = visible;
         } else if (thinkCloseIdx === -1 || thinkCloseIdx < thinkOpenIdx) {
           // think 块还没闭合,持续累积到 think
-          think = acc.slice(thinkOpenIdx + 7);
-          content = acc.slice(0, thinkOpenIdx);
+          think = visible.slice(thinkOpenIdx + 7);
+          content = visible.slice(0, thinkOpenIdx);
         } else {
-          think = acc.slice(thinkOpenIdx + 7, thinkCloseIdx).trim();
-          content = acc.slice(thinkCloseIdx + 8);
+          think = visible.slice(thinkOpenIdx + 7, thinkCloseIdx).trim();
+          content = visible.slice(thinkCloseIdx + 8);
         }
+        const status = content.trim() ? undefined : split.status;
         setMessages((prev) =>
           prev.map((m) =>
             m.id === aiId
-              ? { ...m, think: think ?? m.think, content }
+              ? { ...m, think: think ?? m.think, content, status }
               : m
           )
         );
         scrollToBottom();
       }
       acc += decoder.decode();
-      const finalOpen = acc.indexOf("<think>");
-      const finalClose = acc.indexOf("</think>");
+      const finalSplit = splitCopilotStream(acc);
+      const finalVisible = finalSplit.text;
+      const finalOpen = finalVisible.indexOf("<think>");
+      const finalClose = finalVisible.indexOf("</think>");
       let finalThink: string | undefined;
       let finalContent: string;
       if (finalOpen === -1) {
-        finalContent = acc;
+        finalContent = finalVisible;
       } else if (finalClose === -1 || finalClose < finalOpen) {
-        finalThink = acc.slice(finalOpen + 7).trim();
-        finalContent = acc.slice(0, finalOpen);
+        finalThink = finalVisible.slice(finalOpen + 7).trim();
+        finalContent = finalVisible.slice(0, finalOpen);
       } else {
-        finalThink = acc.slice(finalOpen + 7, finalClose).trim();
-        finalContent = acc.slice(finalClose + 8).trim();
+        finalThink = finalVisible.slice(finalOpen + 7, finalClose).trim();
+        finalContent = finalVisible.slice(finalClose + 8).trim();
       }
       setMessages((prev) =>
         prev.map((m) =>
@@ -176,7 +176,8 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
             ? {
                 ...m,
                 think: finalThink ?? m.think,
-                content: finalContent || m.content || "（空回复）",
+                status: undefined,
+                content: finalContent.trim() || m.content || "（空回复）",
               }
             : m
         )
@@ -204,7 +205,7 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
       {isOpen && (
       <motion.div
         key="copilot-backdrop"
-        className="fixed inset-0 z-[250] flex justify-end bg-slate-900/50 backdrop-blur-xs overscroll-contain"
+        className="fixed inset-0 z-[1000] flex justify-end bg-slate-900/50 backdrop-blur-xs overscroll-contain"
         onClick={onClose}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -231,11 +232,11 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
                   AI 智能研判副驾驶
                 </h2>
                 <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-blue-50 text-blue-700 border border-blue-200 font-medium">
-                  GraphRAG
+                  本区检索
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 truncate">
-                实时多频态势感知 · 智能归因分析 · 简报生成
+                {activeRegion ? `当前辖区 · ${activeRegion.city} · ${activeRegion.name}` : "正在确认当前辖区"}
               </p>
             </div>
           </div>
@@ -330,10 +331,13 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
                         <div className={m.role === "user" ? "copilot-md copilot-md--user" : "copilot-md"}>
                           {streaming && !m.content ? (
                             // ponytail: 答案还没产出时主气泡显示循环 loading,三个点从小到大错峰缩放。
-                            <span className="inline-flex items-center gap-1 py-1" aria-label="生成中">
-                              <span className="copilot-dot copilot-dot--1" />
-                              <span className="copilot-dot copilot-dot--2" />
-                              <span className="copilot-dot copilot-dot--3" />
+                            <span className="inline-flex items-center gap-2 py-1" aria-label={m.status || "生成中"}>
+                              <span className="inline-flex items-center gap-1">
+                                <span className="copilot-dot copilot-dot--1" />
+                                <span className="copilot-dot copilot-dot--2" />
+                                <span className="copilot-dot copilot-dot--3" />
+                              </span>
+                              {m.status ? <span className="text-[11px] text-slate-500">{m.status}</span> : null}
                             </span>
                           ) : (
                             <>

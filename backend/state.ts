@@ -41,6 +41,20 @@ export interface RawTicket {
   address?: string;
   confidence?: number;
   primaryThemeId?: string;
+  /** 已落库的 System 2 主体。四项都在时，重跑可以不再请模型抽一遍。 */
+  canonicalSubject?: string;
+  eventType?: string;
+  slaHours?: number;
+  stabilityRisk?: boolean;
+  // System-1 快思考决策字段
+  systemOneIntent?: string;
+  systemOneCategory?: string;
+  systemOneUrgencyTier?: number;
+  systemOneSlaHours?: number;
+  systemOneStabilityRisk?: boolean;
+  systemOneConfidence?: number;
+  systemOneTownship?: string;
+  isSystemOneFastTrack?: boolean;
 }
 
 export interface EnrichedTicket extends RawTicket {
@@ -54,6 +68,10 @@ export interface EnrichedTicket extends RawTicket {
   eventType: string;
   clusterId?: string;
   similarityScore?: number;
+  /** 对齐之后写入的库存向量。聚类只读它。 */
+  embedding?: number[];
+  /** System 2 没抽出这张工单，退回了本地兜底。 */
+  extractionFailed?: boolean;
 }
 
 export interface LowConfidenceTicketItem {
@@ -92,6 +110,8 @@ export interface MultiFrequencyTheme {
   handlingStatus?: string;
   handlingProgress?: number;
   handlingOwner?: string;
+  // System-2 慢思考思维链过程记录 (供座席与领导调阅深度研判推导)
+  reasoningContent?: string;
 }
 
 export interface GraphNode {
@@ -148,7 +168,7 @@ export const TicketRadarStateAnnotation = Annotation.Root({
     default: () => [],
   }),
   themes: Annotation<MultiFrequencyTheme[]>({
-    reducer: (prev, next) => (next && next.length > 0 ? next : prev),
+    reducer: (prev, next) => (next == null ? prev : next),
     default: () => [],
   }),
   stats: Annotation<OverallStats>({
@@ -181,6 +201,17 @@ export const TicketRadarStateAnnotation = Annotation.Root({
   taskId: Annotation<string | undefined>({
     reducer: (prev, next) => next || prev,
     default: () => undefined,
+  }),
+  regionId: Annotation<string | undefined>({
+    reducer: (prev, next) => next || prev,
+    default: () => undefined,
+  }),
+  /**
+   * false：这批工单的抽取已经落库，本轮没有新抽取。对齐节点不再做全表实体归并。
+   */
+  extractionFresh: Annotation<boolean>({
+    reducer: (prev, next) => (typeof next === "boolean" ? next : prev),
+    default: () => true,
   }),
 });
 

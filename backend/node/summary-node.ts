@@ -7,109 +7,73 @@ import type {
   MultiFrequencyTheme,
   RiskLevel,
 } from "../state";
-import { getChatModel, llmConcurrency, markToolCallingUnsupported, modelSupportsToolCalling } from "../model";
+import { getSystemTwoEngine, systemTwoConcurrency } from "../model";
+import { LLM_TOKENS, LLM_TIMEOUTS } from "@/lib/tokens";
 
 import {
-  ThemeEnrichmentSchema,
   BatchThemeEnrichmentSchema,
-  buildThemeEnrichmentPrompt,
   buildBatchThemeEnrichmentPrompt,
 } from "../prompt";
 
-const DEFAULT_RECOMMENDED_ACTION = "建议转派所属辖区行业主管部门牵头，2个工作日内核实具体诉求并向市民书面反馈办理进展。";
+const EMPTY_ADVICE = { aiSummary: "", recommendedAction: "" };
 
 /**
- * 批量调用大模型对多频主题进行深度公文研判（每批最多 10 个主题打包在 1 个 AI 请求中，不足 10 个按实际数量处理）
+ * 给一批主题写各自的摘要和处置建议。
+ * 只要 JSON，不开思考。思考会把输出额度用完，正文变空，最后每个主题都落成同一句套话。
  */
-async function enrichThemeBatchWithLLM(
+export async function enrichThemeBatchWithLLM(
   themeBatch: MultiFrequencyTheme[]
 ): Promise<Array<Partial<MultiFrequencyTheme>>> {
   if (themeBatch.length === 0) return [];
-  const fallbacks = themeBatch.map(() => ({
-    recommendedAction: DEFAULT_RECOMMENDED_ACTION,
-  }));
+  const fallbacks = themeBatch.map(() => ({ ...EMPTY_ADVICE }));
 
   const enrichTask = async (): Promise<Array<Partial<MultiFrequencyTheme>>> => {
-    try {
-      const chat = getChatModel(0.1);
-      const prompt = buildBatchThemeEnrichmentPrompt(themeBatch);
-
-      // 1. 探测通过才走 tool-calling
-      if (await modelSupportsToolCalling()) {
-        try {
-          const structuredChat = chat.withStructuredOutput(BatchThemeEnrichmentSchema);
-          const structuredRes = await structuredChat.invoke(prompt);
-          if (structuredRes && Array.isArray(structuredRes.results) && structuredRes.results.length > 0) {
-            const resultMap = new Map<number, any>();
-            structuredRes.results.forEach((r) => {
-              resultMap.set(r.themeIndex, r);
-            });
-
-            return themeBatch.map((theme, i) => {
-              const r = resultMap.get(i + 1) || structuredRes.results[i];
-              if (!r) return { recommendedAction: DEFAULT_RECOMMENDED_ACTION };
-
-              const incoming = r.riskLevel as RiskLevel;
-              const finalRisk: RiskLevel = theme.riskLevel === "HIGH" ? "HIGH" : incoming;
-              return {
-                riskLevel: finalRisk,
-                riskReason: r.riskReason || theme.riskReason,
-                aiSummary: r.aiSummary || theme.aiSummary,
-                recommendedAction: r.recommendedAction || DEFAULT_RECOMMENDED_ACTION,
-              };
-            });
-          }
-        } catch (structErr: unknown) {
-          const message = structErr instanceof Error ? structErr.message : String(structErr);
-          markToolCallingUnsupported(message);
-        }
-      }
-
-      // 2. 备用直接 Prompt + JSON 解析
-      const res = await chat.invoke(prompt);
-      const rawText = typeof res.content === "string" ? res.content : JSON.stringify(res.content);
-      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        const results = Array.isArray(parsed.results) ? parsed.results : Array.isArray(parsed) ? parsed : [];
-        if (results.length > 0) {
+    const merged = themeBatch.map((theme) => ({
+      aiSummary: theme.aiSummary || "",
+      recommendedAction: "",
+    }));
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0 && merged.every((row) => row.recommendedAction.trim())) break;
+      try {
+        const systemTwo = await getSystemTwoEngine();
+        const prompt = buildBatchThemeEnrichmentPrompt(themeBatch);
+        const { data } = await systemTwo.createJSON(BatchThemeEnrichmentSchema, {
+          messages: [{ role: "user", content: prompt }],
+          enableThinking: false,
+          maxTokens: LLM_TOKENS.THEME_ADVICE,
+          temperature: 0.2,
+        });
+        if (data && Array.isArray(data.results) && data.results.length > 0) {
           const resultMap = new Map<number, any>();
-          results.forEach((r: any, idx: number) => {
-            const index = typeof r.themeIndex === "number" ? r.themeIndex : idx + 1;
-            resultMap.set(index, r);
-          });
-
-          return themeBatch.map((theme, i) => {
-            const r = resultMap.get(i + 1) || results[i];
-            if (!r) return { recommendedAction: DEFAULT_RECOMMENDED_ACTION };
-
-            const candidate = (["HIGH", "MEDIUM", "LOW"].includes(r.riskLevel) ? r.riskLevel : theme.riskLevel) as RiskLevel;
-            const finalRisk: RiskLevel = theme.riskLevel === "HIGH" ? "HIGH" : candidate;
-            return {
-              riskLevel: finalRisk,
-              riskReason: r.riskReason || theme.riskReason,
-              aiSummary: r.aiSummary || theme.aiSummary,
-              recommendedAction: r.recommendedAction || DEFAULT_RECOMMENDED_ACTION,
-            };
+          data.results.forEach((row) => resultMap.set(row.themeIndex, row));
+          themeBatch.forEach((theme, index) => {
+            const row = resultMap.get(index + 1) || data.results[index];
+            if (!row) return;
+            if (!merged[index].aiSummary.trim()) merged[index].aiSummary = row.aiSummary || theme.aiSummary || "";
+            if (!merged[index].recommendedAction.trim()) merged[index].recommendedAction = row.recommendedAction || "";
           });
         }
+      } catch (err: any) {
+        console.warn(`[summary-node] System-2 batch enrichment error attempt ${attempt + 1}:`, err?.message);
       }
-    } catch (err: any) {
-      console.warn("[summary-node] Batch enrichment error:", err?.message);
+      if (merged.every((row) => row.recommendedAction.trim())) return merged;
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
     }
-    return fallbacks;
+    return merged;
   };
 
-  // 15秒批次超时控制
+  // 慢思考批次超时控制 (充分尊重模型思考推导过程，分配充裕的 10 分钟预算)
   const timeoutPromise = new Promise<Array<Partial<MultiFrequencyTheme>>>((resolve) =>
-    setTimeout(() => resolve(fallbacks), 15000)
+    setTimeout(() => resolve(fallbacks), LLM_TIMEOUTS.THINKING * 3)
   );
 
   return Promise.race([enrichTask(), timeoutPromise]);
 }
 
-import PQueue from "p-queue";
+import { getLlmPool } from "../llm-pool";
 import { updateTaskProgress } from "@/lib/task-progress";
+import { stagePercent } from "@/lib/pipeline-progress";
+import { yieldToEventLoop } from "@/lib/yield-loop";
 
 /**
  * Summary Node: Performs LLM deep synthesis for ALL themes, calculates metrics, and builds ForceGraph topology
@@ -121,21 +85,24 @@ export async function summaryNode(
   const initialThemes = state.themes || [];
   const enrichedThemes = [...initialThemes];
   const taskId = state.taskId;
+  const regionId = state.regionId;
 
   const THEME_CHUNK_SIZE = 10;
 
   // 1. LLM deep synthesis for themes with 10-per-batch chunking
-  if (enrichedThemes.length > 0 && process.env.OPENAI_API_KEY) {
+  if (enrichedThemes.length > 0) {
     if (taskId) {
-      updateTaskProgress(taskId, {
+      updateTaskProgress(taskId, regionId, {
         stage: "SYNTHESIZING",
-        stageText: `正在对 ${enrichedThemes.length} 个多频主题进行批量深度公文研判与协同处置建议生成...`,
-        percent: 78,
+        stageText: `正在为 ${enrichedThemes.length} 个主题生成各自的摘要和处置建议...`,
+        percent: stagePercent("SUMMARY", 0, enrichedThemes.length, "min"),
         themeCount: enrichedThemes.length,
       });
     }
 
-    const queue = new PQueue({ concurrency: Math.min(4, llmConcurrency()) });
+    // 共享进程级 LLM 池（见 backend/llm-pool.ts）：与 extract-node 同一个 PQueue，
+    // 跨 region 共享并发上限 = endpoint 数。
+    const queue = getLlmPool();
     let synthesizedCount = 0;
 
     const chunkTasks: Array<() => Promise<void>> = [];
@@ -161,11 +128,25 @@ export async function summaryNode(
         });
 
         synthesizedCount += batch.length;
+        console.log(`[summary] ${Math.min(synthesizedCount, enrichedThemes.length)}/${enrichedThemes.length}`);
         if (taskId) {
-          const percent = Math.min(96, 78 + Math.round((synthesizedCount / Math.max(1, enrichedThemes.length)) * 18));
-          updateTaskProgress(taskId, {
+          const percent = stagePercent("SUMMARY", synthesizedCount, enrichedThemes.length);
+          const sampleAdvice = batchResults.find((row) => row.recommendedAction?.trim())?.recommendedAction;
+          const spotlightClusters = enrichedThemes.slice(0, 5).map((t) => ({
+            id: t.id,
+            name: t.title,
+            category: t.category,
+            ticketCount: t.ticketCount,
+            subdistrict: t.canonicalLocation,
+            type: "NEW_CLUSTER" as const,
+          }));
+
+          updateTaskProgress(taskId, regionId, {
             percent,
-            stageText: `AI 正在生成公文级处置建议 (${Math.min(synthesizedCount, enrichedThemes.length)} / ${enrichedThemes.length})...`,
+            themeCount: enrichedThemes.length,
+            recentClusters: spotlightClusters,
+            currentReasoning: sampleAdvice ? sampleAdvice.slice(0, 180) : undefined,
+            stageText: `正在生成处置建议 (${Math.min(synthesizedCount, enrichedThemes.length)} / ${enrichedThemes.length} 主题)...`,
           });
         }
       });
@@ -174,13 +155,28 @@ export async function summaryNode(
     await queue.addAll(chunkTasks);
   }
 
+  if (regionId) {
+    const { fillThemesMissingAdvice } = await import("./advice-backfill");
+    await fillThemesMissingAdvice(regionId, taskId);
+  }
+
   if (taskId) {
-    updateTaskProgress(taskId, {
-      stage: "COMPLETED",
-      status: "COMPLETED",
-      percent: 100,
-      stageText: `多频研判完成！已聚合 ${enrichedThemes.length} 个多频主题`,
+    const spotlightClusters = enrichedThemes.slice(0, 6).map((t) => ({
+      id: t.id,
+      name: t.title,
+      category: t.category,
+      ticketCount: t.ticketCount,
+      subdistrict: t.canonicalLocation,
+      type: "NEW_CLUSTER" as const,
+    }));
+
+    updateTaskProgress(taskId, regionId, {
+      stage: "SYNTHESIZING",
+      status: "RUNNING",
+      percent: stagePercent("SUMMARY", enrichedThemes.length, enrichedThemes.length, "max"),
+      stageText: `主题已生成，正在写入数据库（${enrichedThemes.length} 个）...`,
       themeCount: enrichedThemes.length,
+      recentClusters: spotlightClusters,
     });
   }
 
@@ -223,7 +219,7 @@ export async function summaryNode(
   const nodesMap = new Map<string, GraphNode>();
   const links: GraphLink[] = [];
 
-  enrichedThemes.forEach((theme) => {
+  for (const theme of enrichedThemes) {
     const themeColor =
       theme.riskLevel === "HIGH" ? "#f43f5e" : theme.riskLevel === "MEDIUM" ? "#f59e0b" : "#10b981";
 
@@ -270,7 +266,9 @@ export async function summaryNode(
       relation: "所属区域",
     });
 
-    theme.tickets.forEach((ticket) => {
+    for (let ticketIndex = 0; ticketIndex < theme.tickets.length; ticketIndex++) {
+      if (ticketIndex > 0 && ticketIndex % 200 === 0) await yieldToEventLoop();
+      const ticket = theme.tickets[ticketIndex];
       const ticketNodeId = `TK-${ticket.id}`;
       nodesMap.set(ticketNodeId, {
         id: ticketNodeId,
@@ -286,8 +284,8 @@ export async function summaryNode(
         target: theme.id,
         relation: "归属多频主题",
       });
-    });
-  });
+    }
+  }
 
   const graphData: GraphData = {
     nodes: Array.from(nodesMap.values()),

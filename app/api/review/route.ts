@@ -6,64 +6,45 @@ import { eq, desc } from "drizzle-orm";
 
 /**
  * GET /api/review?status=PENDING
- * 查询待复核工单队列（连表查询工单详情）
+ * 复核队列只带标题和原因。原文在 GET /api/workorders/[id]。
  */
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const statusParam = searchParams.get("status") || "PENDING";
 
-    let query = db
-      .select({
-        id: reviewQueueTable.id,
-        ticketId: reviewQueueTable.ticketId,
-        confidence: reviewQueueTable.confidence,
-        reason: reviewQueueTable.reason,
-        status: reviewQueueTable.status,
-        operator: reviewQueueTable.operator,
-        note: reviewQueueTable.note,
-        createdAt: reviewQueueTable.createdAt,
-        reviewedAt: reviewQueueTable.reviewedAt,
-        ticketNo: ticketsTable.ticketNo,
-        title: ticketsTable.title,
-        summarizeTitle: ticketsTable.summarizeTitle,
-        content: ticketsTable.content,
-        maskedContent: ticketsTable.maskedContent,
-        district: ticketsTable.district,
-        subdistrict: ticketsTable.subdistrict,
-      })
+    const columns = {
+      id: reviewQueueTable.id,
+      ticketId: reviewQueueTable.ticketId,
+      confidence: reviewQueueTable.confidence,
+      reason: reviewQueueTable.reason,
+      status: reviewQueueTable.status,
+      operator: reviewQueueTable.operator,
+      note: reviewQueueTable.note,
+      createdAt: reviewQueueTable.createdAt,
+      reviewedAt: reviewQueueTable.reviewedAt,
+      ticketNo: ticketsTable.ticketNo,
+      title: ticketsTable.title,
+      summarizeTitle: ticketsTable.summarizeTitle,
+      district: ticketsTable.district,
+      subdistrict: ticketsTable.subdistrict,
+    };
+
+    const base = db
+      .select(columns)
       .from(reviewQueueTable)
       .leftJoin(ticketsTable, eq(reviewQueueTable.ticketId, ticketsTable.id))
       .orderBy(desc(reviewQueueTable.createdAt));
 
-    let rows;
-    if (statusParam && statusParam.toUpperCase() !== "ALL") {
-      rows = await db
-        .select({
-          id: reviewQueueTable.id,
-          ticketId: reviewQueueTable.ticketId,
-          confidence: reviewQueueTable.confidence,
-          reason: reviewQueueTable.reason,
-          status: reviewQueueTable.status,
-          operator: reviewQueueTable.operator,
-          note: reviewQueueTable.note,
-          createdAt: reviewQueueTable.createdAt,
-          reviewedAt: reviewQueueTable.reviewedAt,
-          ticketNo: ticketsTable.ticketNo,
-          title: ticketsTable.title,
-          summarizeTitle: ticketsTable.summarizeTitle,
-          content: ticketsTable.content,
-          maskedContent: ticketsTable.maskedContent,
-          district: ticketsTable.district,
-          subdistrict: ticketsTable.subdistrict,
-        })
-        .from(reviewQueueTable)
-        .leftJoin(ticketsTable, eq(reviewQueueTable.ticketId, ticketsTable.id))
-        .where(eq(reviewQueueTable.status, statusParam.toUpperCase()))
-        .orderBy(desc(reviewQueueTable.createdAt));
-    } else {
-      rows = await query;
-    }
+    const rows =
+      statusParam && statusParam.toUpperCase() !== "ALL"
+        ? await db
+            .select(columns)
+            .from(reviewQueueTable)
+            .leftJoin(ticketsTable, eq(reviewQueueTable.ticketId, ticketsTable.id))
+            .where(eq(reviewQueueTable.status, statusParam.toUpperCase()))
+            .orderBy(desc(reviewQueueTable.createdAt))
+        : await base;
 
     return NextResponse.json({
       success: true,

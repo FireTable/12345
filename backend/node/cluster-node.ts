@@ -8,8 +8,35 @@ import type {
 import { markFakeClosures } from "./fake-closure";
 import { deriveRiskLevel, scanNegativeSentiment } from "./risk-rules";
 import { RULES } from "../rules";
-import { civicModeFromPattern, deriveThemeMetrics, inferPatternType } from "../theme-metrics";
+import { cadenceLabel, civicModeFromPattern, deriveThemeMetrics, describeCadence, inferPatternType } from "../theme-metrics";
 import { validateAndFilterThemes } from "./cluster-validator";
+import { getRegionVocabulary, legalTownshipName } from "@/lib/vocabulary";
+import { updateTaskProgress } from "@/lib/task-progress";
+import { stagePercent } from "@/lib/pipeline-progress";
+import { HANDLING_STATUS } from "@/lib/civic-dto";
+import { profileTicket } from "../ticket-profile";
+import { chooseThemeAnchor } from "../same-incident-cluster";
+import { clusterFromStoredNeighborsYielding } from "../embed-neighbors";
+import { loadStoredNeighborPairs } from "@/lib/ticket-embeddings";
+import { mapInChunks, yieldToEventLoop } from "@/lib/yield-loop";
+
+function majority(values: Array<string | null | undefined>): string | null {
+  const counts = new Map<string, number>();
+  for (const value of values) {
+    const text = (value || "").trim();
+    if (!text) continue;
+    counts.set(text, (counts.get(text) || 0) + 1);
+  }
+  let best: string | null = null;
+  let n = 0;
+  for (const [value, count] of counts) {
+    if (count > n) {
+      best = value;
+      n = count;
+    }
+  }
+  return best;
+}
 
 function safeParseDate(dateStr: string): Date {
   if (!dateStr) return new Date();
@@ -20,253 +47,194 @@ function safeParseDate(dateStr: string): Date {
   return new Date();
 }
 
-/**
- * 校验是否为有效的具体业务实体（排除空泛虚词）
- */
-function isValidSpecificSubject(subject: string): boolean {
-  if (!subject) return false;
-  const s = subject.trim();
-  if (s.length < 2) return false;
-  if ((RULES.genericSubjects as readonly string[]).includes(s)) return false;
-  if (RULES.genericSubjectSuffix.test(s)) return false;
-  return true;
+export interface ClusterNodeOptions {
+  /** 新主题从这个序号开始。默认 1，即 THEME-1。 */
+  serialStart?: number;
+  /** 只在这些工单之间找近邻。增量归并用，避免扫全市。 */
+  onlyTicketIds?: string[];
 }
 
 /**
- * 校验是否为有效的微观具体地点（必须包含小区/门牌/路段/地标，而非泛区划）
+ * 把交给它的工单按同一事件归并。
+ * 调用方决定这批是全市，还是没并进旧聚类的新工单。
+ * 同一标题下的无关诉求各自成单，不进入多频主题。
  */
-function isSpecificMicroLocation(location: string): boolean {
-  if (!location) return false;
-  const loc = location.trim();
-  if (loc.length < 5) return false;
-  if (RULES.locationNoise.test(loc)) return false;
-  if (RULES.adminOnlyLocation.test(loc)) return false;
-  return RULES.microLocationHint.test(loc);
+export async function clusterNode(state: TicketRadarState): Promise<Partial<TicketRadarState>> {
+  return clusterTicketSet(state);
 }
 
-/**
- * Cluster Node: 严谨精准的多频主题智能聚类引擎
- * 严格支持两大真实政务业务场景：
- * 1. 【主体型多频】：同一明确涉事方（如同一个车牌/同一家民宿/同一个物业）的多次/群发投诉；
- * 2. 【微观地点型多频】：同一具体微观物理空间（同一小区/门牌/具体路段）的群发共性民生治理事件。
- * 绝不允许跨主体、跨地点的乱绑定与乱拉郎配！
- */
-import { updateTaskProgress } from "@/lib/task-progress";
-
-export async function clusterNode(
-  state: TicketRadarState
+export async function clusterTicketSet(
+  state: TicketRadarState,
+  options?: ClusterNodeOptions
 ): Promise<Partial<TicketRadarState>> {
   const enrichedTickets = state.enrichedTickets || [];
   const taskId = state.taskId;
+  const regionId = state.regionId;
 
   if (taskId) {
-    updateTaskProgress(taskId, {
+    updateTaskProgress(taskId, regionId, {
       stage: "CLUSTERING",
-      stageText: `正在构建多频知识图谱连通子图 (输入 ${enrichedTickets.length} 条已富化工单)...`,
-      percent: 72,
+      stageText: `正在按同一事件归并工单 (输入 ${enrichedTickets.length} 条)...`,
+      percent: stagePercent("CLUSTER", 0, Math.max(1, enrichedTickets.length), "min"),
     });
   }
 
   if (enrichedTickets.length === 0) {
-    return { themes: [], status: "clustering" };
+    return { themes: state.themes || [], status: "clustering" };
+  }
+
+  const regionVocab = await getRegionVocabulary(state.regionId);
+  for (let index = 0; index < enrichedTickets.length; index++) {
+    enrichedTickets[index].clusterId = undefined;
+    if ((index + 1) % 2000 === 0) await yieldToEventLoop();
   }
 
   const themes: MultiFrequencyTheme[] = [];
-  const assignedTicketIds = new Set<string>();
-
-  // ==========================================
-  // 模式 1：【同一明确涉事主体】多频共性聚类
-  // ==========================================
-  const subjectGroupMap = new Map<string, EnrichedTicket[]>();
-  for (const ticket of enrichedTickets) {
-    const subj = (ticket.canonicalSubject || "").trim();
-    if (!isValidSpecificSubject(subj)) continue;
-
-    if (!subjectGroupMap.has(subj)) {
-      subjectGroupMap.set(subj, []);
-    }
-    subjectGroupMap.get(subj)!.push(ticket);
-  }
-
-  for (const [subj, tickets] of subjectGroupMap.entries()) {
-    if (tickets.length >= RULES.minClusterSize) {
-      tickets.forEach((t) => assignedTicketIds.add(t.id));
-      tickets.sort(
-        (a, b) => safeParseDate(a.createTime).getTime() - safeParseDate(b.createTime).getTime()
-      );
-
-      const firstTime = tickets[0].createTime;
-      const lastTime = tickets[tickets.length - 1].createTime;
-      const timeSpanHours = Math.max(
-        1,
-        differenceInHours(safeParseDate(lastTime), safeParseDate(firstTime))
-      );
-
-      const eventType = tickets[0].eventType || "多频诉求跟进";
-      const distinctLocations = Array.from(new Set(tickets.map((t) => t.canonicalLocation).filter(Boolean)));
-      const canonicalLocation = distinctLocations.length === 1 ? distinctLocations[0] : `${distinctLocations[0]} 等多处`;
-
-      const themeId = `THEME-${themes.length + 1}`;
-      const title = `${subj} — ${eventType}`;
-
-      tickets.forEach((t) => {
-        t.clusterId = themeId;
+  let neighborPairs: Array<[number, number]> | undefined;
+  if (regionId) {
+    const storedPairs = await loadStoredNeighborPairs(regionId, options?.onlyTicketIds);
+    if (storedPairs && storedPairs.length > 0) {
+      const indexById = new Map(enrichedTickets.map((ticket, index) => [ticket.id, index]));
+      const mapped = storedPairs.flatMap(([leftId, rightId]) => {
+        const left = indexById.get(leftId);
+        const right = indexById.get(rightId);
+        if (left == null || right == null || left === right) return [];
+        return [[Math.min(left, right), Math.max(left, right)] as [number, number]];
       });
-
-      const { reopenCount, reopenTicketIds } = markFakeClosures(tickets);
-      const patternType = inferPatternType(tickets);
-      const hitNegative = scanNegativeSentiment(tickets);
-      const riskLevel = deriveRiskLevel({
-        ticketCount: tickets.length,
-        patternType,
-        hitNegative,
-        reopenCount,
-      });
-      const metrics = deriveThemeMetrics({
-        eventType,
-        canonicalLocation,
-        tickets,
-        patternType,
-      });
-
-      themes.push({
-        id: themeId,
-        title,
-        canonicalSubject: subj,
-        canonicalLocation,
-        eventType,
-        category: (tickets[0].themes && tickets[0].themes[0]) || RULES.defaultCategory,
-        riskLevel,
-        patternType,
-        civicMode: civicModeFromPattern(patternType),
-        riskReason:
-          reopenCount > 0
-            ? `疑似假闭环：办结 ${RULES.fakeClosure.windowDays} 天内同主体再次投诉 ${reopenCount} 次`
-            : `重点主体多频诉求：同一涉事主体在 ${timeSpanHours} 小时内集中被市民反映 ${tickets.length} 次`,
-        ticketCount: tickets.length,
-        timeSpanHours,
-        firstOccurrence: firstTime,
-        lastOccurrence: lastTime,
-        aiSummary: `多频研判发现：涉事主体【${subj}】在 ${timeSpanHours} 小时内累计被市民诉求反映 ${tickets.length} 次，集中在【${canonicalLocation}】，主要矛盾焦点为“${eventType}”。`,
-        recommendedAction: `建议转派所属辖区行业主管部门对【${subj}】开展专项核查，2个工作日内责令整改并向市民书面反馈办理进展。`,
-        tickets,
-        relatedSubjects: [subj],
-        relatedLocations: distinctLocations,
-        status: "UNCHECKED",
-        reopenCount,
-        reopenTicketIds,
-        aiConfidence: metrics.aiConfidence,
-        features: metrics.features,
-        radar: metrics.radar,
-        trendPct: metrics.trendPct,
-        handlingStatus: "未处理",
-        handlingProgress: 0,
-      });
+      if (mapped.length > 0) neighborPairs = mapped;
     }
   }
+  const prepared = await mapInChunks(
+    enrichedTickets,
+    (ticket) => ({
+      ticket,
+      candidate: {
+        profile: profileTicket(
+          { title: ticket.title, content: ticket.content, subdistrict: ticket.subdistrict },
+          regionVocab.townships
+        ),
+        category: ticket.sourceCategory || "",
+        township:
+          ticket.subdistrict ||
+          legalTownshipName(`${ticket.canonicalLocation || ""}\n${ticket.content || ""}`, regionVocab) ||
+          "",
+        placeEvidence: [ticket.canonicalLocation, ticket.summarizeTitle, ticket.content].filter(Boolean).join("\n"),
+        subject: ticket.canonicalSubject || "",
+        vector: ticket.embedding || [],
+      },
+    }),
+    32
+  );
+  const groups = await clusterFromStoredNeighborsYielding(
+    prepared,
+    (row) => row.candidate,
+    neighborPairs
+  );
 
-  // ==========================================
-  // 模式 2：【同一微观物理地点】群发共性问题聚类
-  // ==========================================
-  const unassignedTickets = enrichedTickets.filter((t) => !assignedTicketIds.has(t.id));
-  const locationEventMap = new Map<string, EnrichedTicket[]>();
-
-  for (const ticket of unassignedTickets) {
-    const loc = (ticket.canonicalLocation || "").trim();
-    if (!isSpecificMicroLocation(loc)) continue;
-
-    if (!locationEventMap.has(loc)) {
-      locationEventMap.set(loc, []);
+  for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
+    if (groupIndex > 0 && groupIndex % 20 === 0) {
+      await yieldToEventLoop();
+      if (taskId) {
+        updateTaskProgress(taskId, regionId, {
+          stageText: `正在按同一事件归并工单 (${groupIndex}/${groups.length} 组)...`,
+          percent: stagePercent("CLUSTER", groupIndex, Math.max(1, groups.length)),
+        });
+      }
     }
-    locationEventMap.get(loc)!.push(ticket);
+    const members = groups[groupIndex].map((row) => row.ticket);
+    const tickets = members.sort(
+      (a, b) => safeParseDate(a.createTime).getTime() - safeParseDate(b.createTime).getTime()
+    );
+    const firstTime = tickets[0].createTime;
+    const lastTime = tickets[tickets.length - 1].createTime;
+    const timeSpanHours = Math.max(
+      1,
+      differenceInHours(safeParseDate(lastTime), safeParseDate(firstTime))
+    );
+    const serialStart = options?.serialStart && options.serialStart > 0 ? options.serialStart : 1;
+    const themeId = `THEME-${serialStart + themes.length}`;
+    const eventType = majority(tickets.map((ticket) => ticket.eventType)) || "同类诉求";
+    const township = majority(tickets.map((ticket) => ticket.subdistrict));
+    const category = majority(tickets.map((ticket) => ticket.sourceCategory)) || "";
+    const place = majority(tickets.map((ticket) => ticket.canonicalLocation));
+    const anchor = chooseThemeAnchor({
+      subjects: tickets.map((ticket) => ticket.canonicalSubject || ""),
+      placeEvidence: tickets.map((ticket) =>
+        [ticket.canonicalLocation, ticket.summarizeTitle, ticket.content].filter(Boolean).join("\n")
+      ),
+      eventType,
+    });
+    const location = place
+      ? [township && place.includes(township) ? "" : township, place].filter(Boolean).join("")
+      : [township, anchor === eventType ? "" : anchor].filter(Boolean).join("") || anchor;
+    const title =
+      anchor === eventType
+        ? [township, eventType].filter(Boolean).join(" ")
+        : [township, anchor, eventType].filter(Boolean).join(" · ");
+
+    tickets.forEach((ticket) => {
+      ticket.clusterId = themeId;
+    });
+
+    const { reopenCount, reopenTicketIds } = markFakeClosures(tickets);
+    const patternType = inferPatternType(tickets);
+    const hitNegative = scanNegativeSentiment(tickets);
+    const riskLevel = deriveRiskLevel({
+      ticketCount: tickets.length,
+      patternType,
+      hitNegative,
+      reopenCount,
+    });
+    const cadence = describeCadence(tickets.map((ticket) => ticket.createTime));
+    const metrics = deriveThemeMetrics({
+      eventType,
+      canonicalLocation: location,
+      tickets,
+      patternType,
+    });
+    const distinctSubjects = Array.from(
+      new Set(tickets.map((ticket) => (ticket.canonicalSubject || "").trim()).filter(Boolean))
+    );
+    const distinctLocations = Array.from(
+      new Set(tickets.map((ticket) => (ticket.canonicalLocation || "").trim()).filter(Boolean))
+    );
+
+    themes.push({
+      id: themeId,
+      title,
+      canonicalSubject: anchor,
+      canonicalLocation: location,
+      eventType,
+      category,
+      riskLevel,
+      patternType,
+      civicMode: civicModeFromPattern(patternType),
+      riskReason:
+        reopenCount > 0
+          ? `办结${RULES.fakeClosure.windowDays}天内再次诉求（${reopenCount}次，${cadenceLabel(cadence)}）`
+          : `同一事件重复反映（${tickets.length}件，${cadenceLabel(cadence)}）`,
+      ticketCount: tickets.length,
+      timeSpanHours,
+      firstOccurrence: firstTime,
+      lastOccurrence: lastTime,
+      aiSummary: "",
+      recommendedAction: "",
+      tickets,
+      relatedSubjects: distinctSubjects.length > 0 ? distinctSubjects : [anchor],
+      relatedLocations: distinctLocations.length > 0 ? distinctLocations : [location],
+      status: "UNCHECKED",
+      reopenCount,
+      reopenTicketIds,
+      aiConfidence: metrics.aiConfidence,
+      features: metrics.features,
+      radar: metrics.radar,
+      trendPct: metrics.trendPct,
+      handlingStatus: HANDLING_STATUS.PENDING,
+      handlingProgress: 0,
+    });
   }
 
-  for (const [microLocation, tickets] of locationEventMap.entries()) {
-    if (tickets.length >= RULES.minClusterSize) {
-      tickets.forEach((t) => assignedTicketIds.add(t.id));
-      tickets.sort(
-        (a, b) => safeParseDate(a.createTime).getTime() - safeParseDate(b.createTime).getTime()
-      );
-
-      const firstTime = tickets[0].createTime;
-      const lastTime = tickets[tickets.length - 1].createTime;
-      const timeSpanHours = Math.max(
-        1,
-        differenceInHours(safeParseDate(lastTime), safeParseDate(firstTime))
-      );
-
-      const eventType = tickets[0].eventType || "区域集中诉求";
-      const distinctSubjects = Array.from(new Set(tickets.map((t) => t.canonicalSubject).filter(isValidSpecificSubject)));
-      const canonicalSubject = distinctSubjects.length > 0 ? distinctSubjects.join("、") : `${microLocation}周边涉事对象`;
-
-      const themeId = `THEME-${themes.length + 1}`;
-      const title = `${microLocation} — ${eventType}群发共性问题`;
-
-      tickets.forEach((t) => {
-        t.clusterId = themeId;
-      });
-
-      const { reopenCount, reopenTicketIds } = markFakeClosures(tickets);
-      const patternType = inferPatternType(tickets);
-      const hitNegative = scanNegativeSentiment(tickets);
-      const riskLevel = deriveRiskLevel({
-        ticketCount: tickets.length,
-        patternType,
-        hitNegative,
-        reopenCount,
-      });
-      const metrics = deriveThemeMetrics({
-        eventType,
-        canonicalLocation: microLocation,
-        tickets,
-        patternType,
-      });
-      const category = (tickets[0].themes && tickets[0].themes[0]) || RULES.defaultCategory;
-
-      themes.push({
-        id: themeId,
-        title,
-        canonicalSubject,
-        canonicalLocation: microLocation,
-        eventType,
-        category,
-        riskLevel,
-        patternType,
-        civicMode: civicModeFromPattern(patternType),
-        riskReason:
-          reopenCount > 0
-            ? `疑似假闭环：办结 ${RULES.fakeClosure.windowDays} 天内同地点再次投诉 ${reopenCount} 次`
-            : `区域微观点位群发：位于【${microLocation}】在 ${timeSpanHours} 小时内集中出现 ${tickets.length} 件同类诉求`,
-        ticketCount: tickets.length,
-        timeSpanHours,
-        firstOccurrence: firstTime,
-        lastOccurrence: lastTime,
-        aiSummary: `区域态势研判发现：微观地点【${microLocation}】在 ${timeSpanHours} 小时内出现 ${tickets.length} 起“${eventType}”群发反映，涉及【${canonicalSubject}】，呈现明显的空间点位聚集性。`,
-        recommendedAction: `建议属地综合行政执法队联合网格力量对【${microLocation}】点位开展集中现场整治与定点排查。`,
-        tickets,
-        relatedSubjects: distinctSubjects.length > 0 ? distinctSubjects : [canonicalSubject],
-        relatedLocations: [microLocation],
-        status: "UNCHECKED",
-        reopenCount,
-        reopenTicketIds,
-        aiConfidence: metrics.aiConfidence,
-        features: metrics.features,
-        radar: metrics.radar,
-        trendPct: metrics.trendPct,
-        handlingStatus: "未处理",
-        handlingProgress: 0,
-      });
-    }
-  }
-
-  // ==========================================
-  // 3. 严格真实性与质量交叉质检（Cluster Validator）
-  // ==========================================
-  const validatedThemes = validateAndFilterThemes(themes, enrichedTickets);
-
-  // ==========================================
-  // 4. 排序与结构输出（高风险与高频次优先）
-  // ==========================================
+  const validatedThemes = validateAndFilterThemes(themes, enrichedTickets, regionVocab);
   const riskOrder: Record<RiskLevel, number> = { HIGH: 0, MEDIUM: 1, LOW: 2 };
   validatedThemes.sort((a, b) => {
     if (riskOrder[a.riskLevel] !== riskOrder[b.riskLevel]) {
@@ -275,8 +243,18 @@ export async function clusterNode(
     return b.ticketCount - a.ticketCount;
   });
 
+  if (taskId) {
+    const joined = validatedThemes.reduce((sum, theme) => sum + theme.ticketCount, 0);
+    updateTaskProgress(taskId, regionId, {
+      absorbedCount: joined,
+      themeCount: validatedThemes.length,
+      stageText: `同一事件归并完成，${validatedThemes.length} 个主题`,
+    });
+  }
+
   return {
     themes: validatedThemes,
+    enrichedTickets,
     status: "clustering",
   };
 }

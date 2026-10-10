@@ -1,8 +1,8 @@
-import { db } from "@/db/client";
+import { getRegionDb, type DB } from "@/db/client";
 import { ticketsTable, themesTable, ticketThemesTable } from "@/db/schema";
 import { and, desc, eq, gte, isNotNull, lt, sql, type SQL } from "drizzle-orm";
-import { explicitAdmin, isTownLabel } from "@/lib/admin-area";
-import { regionLabel, toClusterDto } from "@/lib/civic-dto";
+import { isTownLabel, parseAdminArea } from "@/lib/admin-area";
+import { regionLabel, toClusterDto, normalizeStatusCode, UNKNOWN_TOWN } from "@/lib/civic-dto";
 import { CIVIC_CATEGORIES, deriveClusterUrgency, spanDays, urgentCutFromUnprocessed } from "@/lib/civic-cluster";
 import {
   buildInsights,
@@ -15,8 +15,8 @@ function asInt(v: unknown): number {
   return Number(v || 0);
 }
 
-async function latestTicketTime(): Promise<Date | null> {
-  const rows = await db
+async function latestTicketTime(tenantDb: DB): Promise<Date | null> {
+  const rows = await tenantDb
     .select({ max: sql<Date | null>`max(${ticketsTable.createTime})` })
     .from(ticketsTable);
   const v = rows[0]?.max;
@@ -36,16 +36,15 @@ function colInWindow(col: typeof ticketsTable.createTime | typeof themesTable.cr
   return parts.length === 1 ? parts[0] : and(...parts);
 }
 
-export async function loadOverview(days: number) {
-  const latest = await latestTicketTime();
+export async function loadOverview(days: number, regionId?: string) {
+  const { db: tenantDb } = await getRegionDb(regionId);
+  const latest = await latestTicketTime(tenantDb);
   const scoped = colInWindow(ticketsTable.createTime, windowForDays(days, latest));
-  const analyzed = scoped
-    ? and(isNotNull(ticketsTable.confidence), scoped)
-    : isNotNull(ticketsTable.confidence);
+  const inWindow = scoped ?? sql`true`;
 
   const [totals, themeCountRes, regionRows, categoryRows, regionCategoryRows, monthlyRows, themeInsightRows] =
     await Promise.all([
-      db
+      tenantDb
         .select({
           total: sql<number>`count(*)::int`,
           analyzed: sql<number>`count(*) filter (where ${ticketsTable.confidence} is not null)::int`,
@@ -55,41 +54,41 @@ export async function loadOverview(days: number) {
         })
         .from(ticketsTable)
         .where(scoped),
-      db.select({ count: sql<number>`count(*)::int` }).from(themesTable),
-      db
+      tenantDb.select({ count: sql<number>`count(*)::int` }).from(themesTable),
+      tenantDb
         .select({
           subdistrict: ticketsTable.subdistrict,
           n: sql<number>`count(*)::int`,
         })
         .from(ticketsTable)
-        .where(analyzed)
+        .where(inWindow)
         .groupBy(ticketsTable.subdistrict),
-      db
+      tenantDb
         .select({
           category: ticketsTable.sourceCategory,
           n: sql<number>`count(*)::int`,
         })
         .from(ticketsTable)
-        .where(analyzed)
+        .where(inWindow)
         .groupBy(ticketsTable.sourceCategory),
-      db
+      tenantDb
         .select({
           subdistrict: ticketsTable.subdistrict,
           category: ticketsTable.sourceCategory,
           n: sql<number>`count(*)::int`,
         })
         .from(ticketsTable)
-        .where(analyzed)
+        .where(inWindow)
         .groupBy(ticketsTable.subdistrict, ticketsTable.sourceCategory),
-      db
+      tenantDb
         .select({
-          month: sql<string>`to_char(date_trunc('month', ${ticketsTable.createTime} at time zone 'UTC'), 'YYYY-MM')`,
+          month: sql<string>`to_char(date_trunc('month', ${ticketsTable.createTime} at time zone 'Asia/Shanghai'), 'YYYY-MM')`,
           n: sql<number>`count(*)::int`,
         })
         .from(ticketsTable)
         .where(scoped ? and(isNotNull(ticketsTable.createTime), scoped) : isNotNull(ticketsTable.createTime))
         .groupBy(sql`1`),
-      db
+      tenantDb
         .select({
           id: themesTable.id,
           title: themesTable.title,
@@ -137,8 +136,9 @@ export async function loadOverview(days: number) {
   };
 }
 
-export async function loadTrends(days: number) {
-  const latest = await latestTicketTime();
+export async function loadTrends(days: number, regionId?: string) {
+  const { db: tenantDb } = await getRegionDb(regionId);
+  const latest = await latestTicketTime(tenantDb);
   const win = windowForDays(days, latest);
   const ticketScoped = colInWindow(ticketsTable.createTime, win);
   const themeScoped = colInWindow(themesTable.createdAt, win);
@@ -150,16 +150,16 @@ export async function loadTrends(days: number) {
     : isNotNull(themesTable.createdAt);
 
   const [dailyRows, clusterDayRows] = await Promise.all([
-    db
+    tenantDb
       .select({
-        day: sql<string>`to_char(${ticketsTable.createTime} at time zone 'UTC', 'YYYY-MM-DD')`,
+        day: sql<string>`to_char(${ticketsTable.createTime} at time zone 'Asia/Shanghai', 'YYYY-MM-DD')`,
         n: sql<number>`count(*)::int`,
       })
       .from(ticketsTable)
       .where(ticketWhere)
       .groupBy(sql`1`)
       .orderBy(sql`1`),
-    db
+    tenantDb
       .select({
         day: sql<string>`to_char(${themesTable.createdAt} at time zone 'UTC', 'YYYY-MM-DD')`,
         n: sql<number>`count(*)::int`,
@@ -176,9 +176,10 @@ export async function loadTrends(days: number) {
   };
 }
 
-export async function loadWorkorderStats() {
+export async function loadWorkorderStats(regionId?: string) {
+  const { db: tenantDb } = await getRegionDb(regionId);
   const [agg, regionRows, categoryRows] = await Promise.all([
-    db
+    tenantDb
       .select({
         total: sql<number>`count(*)::int`,
         finished: sql<number>`count(*) filter (where upper(coalesce(${ticketsTable.status}, '')) in ('RESOLVED','FINISHED'))::int`,
@@ -188,19 +189,18 @@ export async function loadWorkorderStats() {
         latest: sql<Date | null>`max(${ticketsTable.createTime})`,
       })
       .from(ticketsTable),
-    db
+    tenantDb
       .select({
         subdistrict: ticketsTable.subdistrict,
       })
       .from(ticketsTable)
-      .where(isNotNull(ticketsTable.confidence))
       .groupBy(ticketsTable.subdistrict),
-    db
+    tenantDb
       .select({
         category: ticketsTable.sourceCategory,
       })
       .from(ticketsTable)
-      .where(and(isNotNull(ticketsTable.confidence), isNotNull(ticketsTable.sourceCategory)))
+      .where(isNotNull(ticketsTable.sourceCategory))
       .groupBy(ticketsTable.sourceCategory),
   ]);
 
@@ -218,9 +218,10 @@ export async function loadWorkorderStats() {
 
   const regionSet = new Set<string>();
   for (const r of regionRows) {
-    const town = explicitAdmin(r.subdistrict);
-    const label = town ? regionLabel(town) : "";
-    if (isTownLabel(label)) regionSet.add(label);
+    const label = regionLabel(r.subdistrict);
+    if (label && (isTownLabel(label) || label === UNKNOWN_TOWN)) {
+      regionSet.add(label);
+    }
   }
 
   const categorySet = new Set<string>();
@@ -231,6 +232,13 @@ export async function loadWorkorderStats() {
   const known = CIVIC_CATEGORIES.filter((c) => categorySet.has(c));
   const extra = [...categorySet].filter((c) => !(CIVIC_CATEGORIES as readonly string[]).includes(c));
 
+  const sortedRegions = [...regionSet]
+    .filter((r) => r !== UNKNOWN_TOWN)
+    .sort((a, b) => a.localeCompare(b, "zh-CN"));
+  if (regionSet.has(UNKNOWN_TOWN)) {
+    sortedRegions.push(UNKNOWN_TOWN);
+  }
+
   return {
     stats: {
       total,
@@ -239,20 +247,67 @@ export async function loadWorkorderStats() {
       finished,
       urgent: asInt(row.urgent),
       multifreq: asInt(row.multifreq),
+      single: Math.max(0, total - asInt(row.multifreq)),
     },
     latest: row.latest ? new Date(row.latest) : null,
     facets: {
-      regions: [...regionSet].sort((a, b) => a.localeCompare(b, "zh-CN")),
+      regions: sortedRegions,
       categories: [...known, ...extra],
     },
   };
 }
 
-export async function loadClusterBundle() {
-  const themeRows = await db.select().from(themesTable).orderBy(desc(themesTable.ticketCount));
+export function clusterRegionLabel(towns: Set<string> | undefined, canonicalLocation: string | null | undefined): string {
+  const names = [...(towns || [])].filter((town) => town && town !== UNKNOWN_TOWN && town !== "未归属");
+  names.sort((a, b) => a.localeCompare(b, "zh-CN"));
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return names.join(" · ");
+  if (names.length > 2) return `${names.slice(0, 2).join(" · ")} 等 ${names.length} 镇街`;
+  const parsed = parseAdminArea(canonicalLocation);
+  if (parsed.subdistrict) return regionLabel(parsed.subdistrict);
+  return regionLabel(canonicalLocation);
+}
 
-  const [pendingRows, townRows, sampleRows] = await Promise.all([
-    db
+function facetTownsFrom(townsByTheme: Map<string, Set<string>>): string[] {
+  const set = new Set<string>();
+  for (const towns of townsByTheme.values()) {
+    for (const town of towns) {
+      if (isTownLabel(town) || town === UNKNOWN_TOWN) set.add(town);
+    }
+  }
+  const list = [...set].filter((town) => town !== UNKNOWN_TOWN).sort((a, b) => a.localeCompare(b, "zh-CN"));
+  if (set.has(UNKNOWN_TOWN)) list.push(UNKNOWN_TOWN);
+  return list;
+}
+
+export async function loadClusterBundle(regionId?: string) {
+  const { db: tenantDb } = await getRegionDb(regionId);
+  const themeRows = await tenantDb
+    .select({
+      id: themesTable.id,
+      title: themesTable.title,
+      canonicalSubject: themesTable.canonicalSubject,
+      canonicalLocation: themesTable.canonicalLocation,
+      eventType: themesTable.eventType,
+      category: themesTable.category,
+      riskLevel: themesTable.riskLevel,
+      ticketCount: themesTable.ticketCount,
+      patternType: themesTable.patternType,
+      civicMode: themesTable.civicMode,
+      aiConfidence: themesTable.aiConfidence,
+      firstAt: themesTable.firstAt,
+      lastAt: themesTable.lastAt,
+      handlingStatus: themesTable.handlingStatus,
+      handlingProgress: themesTable.handlingProgress,
+      handlingOwner: themesTable.handlingOwner,
+      handlingEta: themesTable.handlingEta,
+      trendPct: themesTable.trendPct,
+    })
+    .from(themesTable)
+    .orderBy(desc(themesTable.ticketCount));
+
+  const [pendingRows, townRows] = await Promise.all([
+    tenantDb
       .select({
         themeId: ticketThemesTable.themeId,
         pending: sql<number>`count(*) filter (where ${ticketsTable.status} = 'PENDING')::int`,
@@ -260,7 +315,7 @@ export async function loadClusterBundle() {
       .from(ticketThemesTable)
       .innerJoin(ticketsTable, eq(ticketsTable.id, ticketThemesTable.ticketId))
       .groupBy(ticketThemesTable.themeId),
-    db
+    tenantDb
       .select({
         themeId: ticketThemesTable.themeId,
         subdistrict: ticketsTable.subdistrict,
@@ -268,29 +323,6 @@ export async function loadClusterBundle() {
       .from(ticketThemesTable)
       .innerJoin(ticketsTable, eq(ticketsTable.id, ticketThemesTable.ticketId))
       .groupBy(ticketThemesTable.themeId, ticketsTable.subdistrict),
-    db.execute<{
-      id: string;
-      ticket_no: string | null;
-      title: string | null;
-      summarize_title: string | null;
-      content: string | null;
-      masked_content: string | null;
-      subdistrict: string | null;
-      district: string | null;
-      status: string | null;
-      theme_id: string;
-    }>(sql`
-      SELECT id, ticket_no, title, summarize_title, content, masked_content,
-             subdistrict, district, status, theme_id
-      FROM (
-        SELECT t.id, t.ticket_no, t.title, t.summarize_title, t.content, t.masked_content,
-               t.subdistrict, t.district, t.status, tt.theme_id,
-               row_number() OVER (PARTITION BY tt.theme_id ORDER BY t.create_time DESC NULLS LAST) AS rn
-        FROM ticket_themes tt
-        INNER JOIN tickets t ON t.id = tt.ticket_id
-      ) s
-      WHERE rn <= 5
-    `),
   ]);
 
   const pendingByTheme = new Map<string, number>();
@@ -298,78 +330,38 @@ export async function loadClusterBundle() {
 
   const townsByTheme = new Map<string, Set<string>>();
   for (const r of townRows) {
-    const town = explicitAdmin(r.subdistrict);
+    const town = regionLabel(r.subdistrict);
     if (!town) continue;
     const set = townsByTheme.get(r.themeId) || new Set<string>();
-    set.add(regionLabel(town));
+    set.add(town);
     townsByTheme.set(r.themeId, set);
   }
 
-  const samplesByTheme = new Map<
-    string,
-    Array<{
-      id: string;
-      ticketNo?: string;
-      title?: string | null;
-      summarizeTitle?: string | null;
-      content?: string | null;
-      maskedContent?: string | null;
-      subdistrict?: string | null;
-      district?: string | null;
-      status?: string | null;
-    }>
-  >();
-  const sampleList = Array.isArray(sampleRows)
-    ? sampleRows
-    : ((sampleRows as { rows?: typeof sampleRows }).rows as typeof sampleRows) || [];
-  for (const r of sampleList as Array<{
-    id: string;
-    ticket_no: string | null;
-    title: string | null;
-    summarize_title: string | null;
-    content: string | null;
-    masked_content: string | null;
-    subdistrict: string | null;
-    district: string | null;
-    status: string | null;
-    theme_id: string;
-  }>) {
-    const list = samplesByTheme.get(r.theme_id) || [];
-    list.push({
-      id: r.id,
-      ticketNo: r.ticket_no || undefined,
-      title: r.title,
-      summarizeTitle: r.summarize_title,
-      content: r.content,
-      maskedContent: r.masked_content,
-      subdistrict: r.subdistrict,
-      district: r.district,
-      status: r.status,
-    });
-    samplesByTheme.set(r.theme_id, list);
-  }
-
   const pendingValues = themeRows.map((t) => {
-    const label = t.handlingStatus || "未处理";
-    if (label === "已办结") return 0;
-    return pendingByTheme.get(t.id) ?? Math.round((t.ticketCount || 0) * (label === "处置中" ? 0.4 : 0.7));
+    const code = normalizeStatusCode(t.handlingStatus);
+    if (code === "RESOLVED") return 0;
+    return pendingByTheme.get(t.id) ?? Math.round((t.ticketCount || 0) * (code === "IN_PROGRESS" ? 0.4 : 0.7));
   });
   const cut = urgentCutFromUnprocessed(pendingValues);
 
   const dtos = themeRows.map((t, idx) => {
-    const base = toClusterDto({
-      ...t,
-      firstAt: t.firstAt,
-      lastAt: t.lastAt,
-      tickets: samplesByTheme.get(t.id) || [],
-    });
-    const label = base.status.label || "未处理";
+    const base = toClusterDto(
+      {
+        ...t,
+        firstAt: t.firstAt,
+        lastAt: t.lastAt,
+        tickets: [],
+      },
+      { brief: true }
+    );
+    const code = base.status.code || normalizeStatusCode(base.status.label);
     const unprocessed =
-      label === "已办结"
+      code === "RESOLVED"
         ? 0
-        : pendingByTheme.get(t.id) ?? Math.round(base.count * (label === "处置中" ? 0.4 : 0.7));
+        : pendingByTheme.get(t.id) ?? Math.round(base.count * (code === "IN_PROGRESS" ? 0.4 : 0.7));
     return {
       ...base,
+      region: clusterRegionLabel(townsByTheme.get(t.id), t.canonicalLocation),
       unprocessed,
       urgency: deriveClusterUrgency(unprocessed, base.type, cut),
       days: spanDays(base.first_date, base.last_date),
@@ -378,7 +370,7 @@ export async function loadClusterBundle() {
     };
   });
 
-  return { themeRows, dtos, samplesByTheme };
+  return { dtos, facetTowns: facetTownsFrom(townsByTheme) };
 }
 
 export function filterClusterDtos(
@@ -395,11 +387,11 @@ export function filterClusterDtos(
   let next = dtos;
   if (q.mode) next = next.filter((c) => c.mode === q.mode);
   if (q.region) next = next.filter((c) => c.region.includes(q.region!));
-  if (q.status) next = next.filter((c) => c.status.label === q.status);
+  if (q.status) next = next.filter((c) => c.status.code === normalizeStatusCode(q.status) || c.status.label === q.status);
   if (q.urgency) next = next.filter((c) => c.urgency === q.urgency);
-  if (q.tab === "pending") next = next.filter((c) => c.status.label === "未处理");
-  else if (q.tab === "progress") next = next.filter((c) => c.status.label === "处置中");
-  else if (q.tab === "done") next = next.filter((c) => c.status.label === "已办结");
+  if (q.tab === "pending") next = next.filter((c) => c.status.code === "PENDING");
+  else if (q.tab === "progress") next = next.filter((c) => c.status.code === "IN_PROGRESS");
+  else if (q.tab === "done") next = next.filter((c) => c.status.code === "RESOLVED");
   else if (q.tab === "urgent") next = next.filter((c) => c.urgency === "urgent");
   if (q.keyword) {
     const kw = q.keyword.toLowerCase();

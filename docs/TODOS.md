@@ -61,7 +61,7 @@
 - [ ] **验证 master-table 字段**:风险、eventType、recommendedAction 都出现,CSV 导出含新列
   - 备注:同上,需手动跑 dev + 导入样本
 - [x] **清理 worktree**:`wt-merge-midfix` / `wt-fake-closure` / `wt-classify-confidence` / `wt-table-and-risk` 全部 `--force` 移除;4 个分支 `branch -D` 删除
-  - `git worktree list` → 只剩 `/Users/FireTable/OpenClaw/Code/12345  e311b48 [main]`
+  - `git worktree list` → 只剩 `[workspace]/12345  e311b48 [main]`
 - [x] **删除 `docs/TODOS.md` 中的 `feat/p0-merge-midfix` 引用** — 当前工作分支已写为 `main`,文件无需再改
 
 ---

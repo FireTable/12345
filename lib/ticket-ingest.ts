@@ -1,9 +1,12 @@
-import { db } from "@/db/client";
+import { db, getRegionDb } from "@/db/client";
 import { ticketsTable } from "@/db/schema";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { desensitizeContent } from "@/backend/anonymizer";
+import { profileTicket } from "@/backend/ticket-profile";
 import { AGENT_TICKET_NULLS } from "@/lib/civic-persist";
 import { invalidateCivicAggregates } from "@/lib/civic-cache";
+import { loadPresetVocabulary, type TownshipInfo } from "@/lib/vocabulary";
+import { workOrderInstantFromTicketNo } from "@/lib/work-order-date";
 
 const HEADER_MAP: Record<string, string> = {
   序号: "index",
@@ -69,9 +72,17 @@ export interface IngestReport {
 
 // ponytail: 提取自原 upload/route,粘贴文本 / 上传文件共用同一份「规范化 + 批量去重插入」逻辑,
 // 任何字段补缺规则只需改这一处。
+export interface IngestProfileOptions {
+  townships?: TownshipInfo[];
+  district?: string | null;
+  city?: string | null;
+  province?: string | null;
+}
+
 export function buildRecordsFromRows(
   rawRows: Record<string, any>[],
-  idPrefix: string
+  idPrefix: string,
+  options: IngestProfileOptions = {}
 ): { records: any[]; failedCount: number } {
   const records: any[] = [];
   let failedCount = 0;
@@ -83,7 +94,7 @@ export function buildRecordsFromRows(
     for (const [k, v] of Object.entries(r)) {
       const trimmedKey = k.trim();
       const mappedKey = HEADER_MAP[trimmedKey] || trimmedKey;
-      normalized[mappedKey] = typeof v === "string" ? v.replace(/12345/g, "市民服务热线") : v;
+      normalized[mappedKey] = v;
     }
 
     const content = String(normalized.content || normalized.title || "").trim();
@@ -97,11 +108,18 @@ export function buildRecordsFromRows(
     const ticketNo = String(
       normalized.ticketNo || `${idPrefix}-${baseTs}-${String(idx + 1).padStart(6, "0")}`
     );
-    const createTime = extractDate(content);
+    const createTime = workOrderInstantFromTicketNo(ticketNo) ?? extractDate(content);
+    const effectiveTownships =
+      options.townships && options.townships.length > 0
+        ? options.townships
+        : loadPresetVocabulary(options.district || "fs_shunde").townships;
 
-    let channel = normalized.channel || "市民服务热线";
-    if (title.includes("小程序")) channel = "微信小程序";
-    else if (title.includes("公众号")) channel = "微信公众号";
+    const profile = profileTicket(
+      { title, content, subdistrict: optionalText(normalized.subdistrict) },
+      effectiveTownships
+    );
+
+    const channel = normalized.channel || normalized.sourceChannel || "市民服务热线";
 
     const closedAtRaw = normalized.closedAt;
     let closedAt: Date | null = null;
@@ -130,7 +148,12 @@ export function buildRecordsFromRows(
       ingestSubdistrict: optionalText(normalized.subdistrict),
       ingestCategory: optionalText(normalized.sourceCategory),
       ...AGENT_TICKET_NULLS,
-      urgency: "NORMAL",
+      province: options.province || null,
+      city: options.city || null,
+      district: optionalText(normalized.district) || options.district || null,
+      subdistrict: optionalText(normalized.subdistrict) || profile.township || null,
+      sourceCategory: optionalText(normalized.sourceCategory) || profile.category || null,
+      urgency: profile.urgent ? "URGENT" : "NORMAL",
       channel,
       status: "PENDING",
       createTime,
@@ -144,7 +167,10 @@ export function buildRecordsFromRows(
 }
 
 // 粘贴文本专用:每行=一条,首句作标题,余下作内容;自动补缺其余字段。
-export function buildRecordsFromTexts(texts: string[]): { records: any[]; failedCount: number } {
+export function buildRecordsFromTexts(
+  texts: string[],
+  options: IngestProfileOptions = {}
+): { records: any[]; failedCount: number } {
   const rawRows: Record<string, any>[] = [];
   for (const line of texts) {
     const trimmed = line.trim();
@@ -154,13 +180,13 @@ export function buildRecordsFromTexts(texts: string[]): { records: any[]; failed
     const title = titleMatch ? titleMatch[0].trim() : trimmed.slice(0, 30);
     rawRows.push({ title, content: trimmed });
   }
-  return buildRecordsFromRows(rawRows, "GD-PASTE");
+  return buildRecordsFromRows(rawRows, "GD-PASTE", options);
 }
 
 // ponytail: 500/批,22 字段上限 ~11k 参数,PG max_params=32767 安全区
 const BATCH_SIZE = 500;
 
-export async function insertRecordsBatch(records: any[]): Promise<{
+export async function insertRecordsBatch(records: any[], regionId?: string): Promise<{
   insertedCount: number;
   duplicateCount: number;
   failedCount: number;
@@ -169,11 +195,13 @@ export async function insertRecordsBatch(records: any[]): Promise<{
   let duplicateCount = 0;
   let failedCount = 0;
 
+  const { db: targetDb } = await getRegionDb(regionId);
+
   for (let i = 0; i < records.length; i += BATCH_SIZE) {
     const chunk = records.slice(i, i + BATCH_SIZE);
     try {
       const ticketNos = chunk.map((c) => c.ticketNo);
-      const existing = await db
+      const existing = await targetDb
         .select({ ticketNo: ticketsTable.ticketNo })
         .from(ticketsTable)
         .where(inArray(ticketsTable.ticketNo, ticketNos));
@@ -182,10 +210,27 @@ export async function insertRecordsBatch(records: any[]): Promise<{
       duplicateCount += existingSet.size;
 
       const newRecords = chunk.filter((c) => !existingSet.has(c.ticketNo));
+      if (existingSet.size > 0) {
+        const updateRows = chunk.filter(
+          (row) => existingSet.has(row.ticketNo) && row.createTime instanceof Date
+        );
+        const CONCURRENCY = 25;
+        for (let u = 0; u < updateRows.length; u += CONCURRENCY) {
+          const sub = updateRows.slice(u, u + CONCURRENCY);
+          await Promise.all(
+            sub.map((row) =>
+              targetDb
+                .update(ticketsTable)
+                .set({ createTime: row.createTime })
+                .where(eq(ticketsTable.ticketNo, row.ticketNo))
+            )
+          );
+        }
+      }
 
       if (newRecords.length > 0) {
         // ponytail: 锁定 ticketNo 唯一约束去重,用 returning 拿到 DB 真插入数。
-        const inserted = await db
+        const inserted = await targetDb
           .insert(ticketsTable)
           .values(newRecords)
           .onConflictDoNothing({ target: ticketsTable.ticketNo })
@@ -198,6 +243,6 @@ export async function insertRecordsBatch(records: any[]): Promise<{
     }
   }
 
-  invalidateCivicAggregates();
+  invalidateCivicAggregates(regionId);
   return { insertedCount, duplicateCount, failedCount };
 }

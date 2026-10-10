@@ -1,20 +1,174 @@
 import { drizzle } from "drizzle-orm/postgres-js";
+import { eq } from "drizzle-orm";
 import postgres from "postgres";
 import * as schema from "./schema";
 
+if (!process.env.DATABASE_URL && typeof process.loadEnvFile === "function") {
+  try {
+    process.loadEnvFile(".env.local");
+  } catch {}
+}
+
 const url =
   process.env.DATABASE_URL ||
-  "postgresql://FireTable@localhost:5432/ticket_radar";
+  "postgresql://postgres@localhost:5432/ticket_radar";
 
 declare global {
   var __pg: ReturnType<typeof postgres> | undefined;
+  var __tenantSqls: Map<string, ReturnType<typeof postgres>> | undefined;
+  var __tenantDbs: Map<string, DB> | undefined;
 }
 
-// Singleton pool for HMR in Next.js development
-const sql = globalThis.__pg ?? postgres(url, { max: 10 });
+// 1. 公共默认数据库连接（针对 public schema，用于 Better Auth、regions 表等）
+export const sql = globalThis.__pg ?? postgres(url, { max: 10 });
 if (process.env.NODE_ENV !== "production") {
   globalThis.__pg = sql;
 }
 
 export const db = drizzle(sql, { schema });
 export type DB = typeof db;
+
+// 2. 租户连接池缓存（按 schema_name 维护，带严格的 search_path 物理隔离）
+const tenantSqls: Map<string, ReturnType<typeof postgres>> =
+  globalThis.__tenantSqls ?? new Map();
+if (process.env.NODE_ENV !== "production") {
+  globalThis.__tenantSqls = tenantSqls;
+}
+
+const tenantDbs: Map<string, DB> =
+  globalThis.__tenantDbs ?? new Map();
+if (process.env.NODE_ENV !== "production") {
+  globalThis.__tenantDbs = tenantDbs;
+}
+
+/**
+ * 缓存的地区 ID 到 Schema 映射
+ */
+const regionSchemaCache = new Map<string, { schemaName: string; region: schema.RegionRecord }>();
+let cacheLastLoaded = 0;
+const CACHE_TTL_MS = 60 * 1000; // 1 分钟缓存
+
+/**
+ * 刷新或获取全量地区配置
+ */
+export async function getAllRegions(): Promise<schema.RegionRecord[]> {
+  try {
+    const rows = await db
+      .select({
+        id: schema.regionsTable.id,
+        name: schema.regionsTable.name,
+        city: schema.regionsTable.city,
+        province: schema.regionsTable.province,
+        schemaName: schema.regionsTable.schemaName,
+        svgMapPath: schema.regionsTable.svgMapPath,
+        categoryConfigJson: schema.regionsTable.categoryConfigJson,
+        status: schema.regionsTable.status,
+        isDefault: schema.regionsTable.isDefault,
+        description: schema.regionsTable.description,
+        createdAt: schema.regionsTable.createdAt,
+        updatedAt: schema.regionsTable.updatedAt,
+      })
+      .from(schema.regionsTable)
+      .where(eq(schema.regionsTable.status, "ACTIVE"));
+    const records: schema.RegionRecord[] = rows.map((r) => ({
+      ...r,
+      geojsonBoundary: null,
+      subdistrictsGeojson: null,
+    }));
+    for (const r of records) {
+      regionSchemaCache.set(r.id, { schemaName: r.schemaName, region: r });
+    }
+    cacheLastLoaded = Date.now();
+    return records;
+  } catch (err: any) {
+    // 若尚未初始化 regions 表，返回空列表
+    return [];
+  }
+}
+
+/**
+ * 获取默认激活地区
+ */
+export async function getDefaultRegion(): Promise<schema.RegionRecord | null> {
+  const regions = await getAllRegions();
+  if (regions.length === 0) return null;
+  return regions.find((r) => r.isDefault) || regions[0];
+}
+
+/**
+ * 根据地区 ID 或直接根据 Schema 名称获取隔离的 Drizzle 实例
+ */
+export async function getRegionDb(regionIdOrSchema?: string | null): Promise<{
+  db: DB;
+  region: schema.RegionRecord | null;
+  schemaName: string;
+}> {
+  // 如果未指定，获取默认地区
+  let targetId = regionIdOrSchema?.trim();
+  let schemaName = "public";
+  let targetRegion: schema.RegionRecord | null = null;
+
+  if (Date.now() - cacheLastLoaded > CACHE_TTL_MS || regionSchemaCache.size === 0) {
+    await getAllRegions();
+  }
+
+  // 别名与历史参数归一化
+  if (targetId === "shunde") targetId = "fs_shunde";
+  if (targetId === "haizhu") targetId = "gz_haizhu";
+
+  if (!targetId || targetId === "default") {
+    const def = await getDefaultRegion();
+    if (def) {
+      targetId = def.id;
+      schemaName = def.schemaName;
+      targetRegion = def;
+    }
+  } else if (regionSchemaCache.has(targetId)) {
+    const cached = regionSchemaCache.get(targetId)!;
+    schemaName = cached.schemaName;
+    targetRegion = cached.region;
+  } else if (targetId.startsWith("region_")) {
+    schemaName = targetId;
+  } else {
+    // 重新查一次 DB 确认是否有新创建的地区
+    await getAllRegions();
+    if (regionSchemaCache.has(targetId)) {
+      const cached = regionSchemaCache.get(targetId)!;
+      schemaName = cached.schemaName;
+      targetRegion = cached.region;
+    } else {
+      // 容错模糊匹配后缀（例如传了 shunde 匹配到 fs_shunde）
+      for (const [id, val] of regionSchemaCache.entries()) {
+        if (id.endsWith(`_${targetId}`) || id === targetId) {
+          targetId = id;
+          schemaName = val.schemaName;
+          targetRegion = val.region;
+          break;
+        }
+      }
+    }
+  }
+
+  // 获取该 Schema 专属的连接池与 Drizzle 实例
+  if (!tenantDbs.has(schemaName)) {
+    let tenantSql = tenantSqls.get(schemaName);
+    if (!tenantSql) {
+      tenantSql = postgres(url, {
+        connection: {
+          search_path: `${schemaName}, public`,
+        },
+        max: 8,
+      });
+      tenantSqls.set(schemaName, tenantSql);
+    }
+    tenantDbs.set(schemaName, drizzle(tenantSql, { schema }));
+  }
+
+  const resolvedDb = tenantDbs.get(schemaName) ?? db;
+
+  return {
+    db: resolvedDb,
+    region: targetRegion,
+    schemaName,
+  };
+}

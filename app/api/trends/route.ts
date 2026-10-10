@@ -2,11 +2,15 @@ import { NextResponse } from "next/server";
 import { clampDays } from "@/lib/api-bounds";
 import { cacheGetOrLoad } from "@/lib/civic-cache";
 import { loadTrends } from "@/lib/civic-queries";
+import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 
 export async function GET(req: Request) {
   try {
+    const regionId = await resolveRequestRegionId(req);
     const days = clampDays(new URL(req.url).searchParams.get("days"), 90);
-    const { value } = await cacheGetOrLoad(`trends:${days}`, () => loadTrends(days));
+    const { value } = await cacheGetOrLoad(`trends:${regionId}:${days}`, () =>
+      loadTrends(days, regionId)
+    );
     return NextResponse.json(value);
   } catch (err: any) {
     return NextResponse.json(

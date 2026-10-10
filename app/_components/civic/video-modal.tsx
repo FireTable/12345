@@ -37,7 +37,7 @@ export const DEMO_VIDEOS: DemoVideo[] = [
   {
     id: "multifreq",
     title: "工单透势研判",
-    desc: "四象限与假闭环追踪：紧急×重要象限图、72h 时序衰减追踪与重点督办单",
+    desc: "四象限与假闭环追踪：紧急×重要象限图、突发与反复节奏、重点督办单",
     src: "/videos/工单透势.mp4",
     tag: "📈 假闭环狙击",
   },
@@ -51,7 +51,7 @@ export const DEMO_VIDEOS: DemoVideo[] = [
   {
     id: "dict",
     title: "标准字典治理",
-    desc: "顺德 10 大镇街/98+村居白名单、别名自学习沉淀与权威实体对齐管理",
+    desc: "法定镇街/社区网格白名单、别名自学习沉淀与权威实体对齐管理",
     src: "/videos/标准字典.mp4",
     tag: "📖 权威白名单",
   },
@@ -136,7 +136,7 @@ export function VideoModal({
                 系统功能演示视频
               </div>
               <div className="video-modal-subtitle">
-                民声智理 · 顺德 12345 AI 智能研判系统演示全集
+                民声智理 · 12345 AI 智能研判系统演示全集
               </div>
             </div>
           </div>

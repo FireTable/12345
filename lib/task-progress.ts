@@ -6,11 +6,28 @@
 import { db } from "@/db/client";
 import { taskProgressTable } from "@/db/schema";
 import { eq, desc, lt, and } from "drizzle-orm";
+import { getSystemTwoEngine } from "@/backend/model";
+
+export interface ActiveCategoryStats {
+  category: string;
+  count: number;
+}
+
+export interface ActiveClusterSpotlight {
+  id: string;
+  name: string;
+  category: string;
+  ticketCount: number;
+  subdistrict?: string;
+  type: "EXISTING_ABSORBED" | "NEW_CLUSTER";
+}
 
 export interface TaskProgress {
   taskId: string;
+  /** 任务归属辖区。所有按辖区的进度读取（workbench、cluster/progress）都按此字段过滤。 */
+  regionId?: string;
   status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
-  stage: "PARSING" | "EXTRACTING" | "CLUSTERING" | "SYNTHESIZING" | "COMPLETED";
+  stage: "PARSING" | "EXTRACTING" | "EMBEDDING" | "CLUSTERING" | "SYNTHESIZING" | "COMPLETED";
   stageText: string;
   percent: number;
   total: number;
@@ -19,6 +36,36 @@ export interface TaskProgress {
   themeCount: number;
   reviewCount: number;
   failedCount: number;
+  // V2 流水线专有增强度量
+  fastTrackCount?: number;
+  classifiedCount?: number;
+  absorbedCount?: number;
+  activeCategories?: ActiveCategoryStats[];
+  recentClusters?: ActiveClusterSpotlight[];
+  currentReasoning?: string;
+  currentSubject?: string;
+  currentLocation?: string;
+  currentEventType?: string;
+  /**
+   * Per-endpoint 最近处理过的工单预览（in-memory，来自 SystemTwoEngine.endpointRecentTickets）。
+   * Key: endpoint URL；Value: 倒序的最近工单预览。
+   * 不入库 —— 这是"工单处理事件"的实时流，next-server 重启即丢失，
+   * 跟 currentLocation/currentSubject 一样是 in-memory UI 状态。
+   * workbench 的"研判节点一/二"用它替代之前的 modulo 分配，
+   * 保证每个节点卡片显示的是该 endpoint 实际处理过的工单。
+   */
+  endpointRecentTickets?: Record<
+    string,
+    Array<{
+      id: string;
+      ticketNo?: string;
+      address?: string | null;
+      canonicalSubject?: string | null;
+      eventType?: string | null;
+      durationMs?: number;
+      processedAt: number;
+    }>
+  >;
   error?: string;
   updatedAt: number;
 }
@@ -30,6 +77,19 @@ declare global {
 // In-memory global task progress map (singleton across module invocations & Next.js route chunks)
 const progressStore: Map<string, TaskProgress> =
   globalThis.__ticket_radar_task_progress_store ?? new Map<string, TaskProgress>();
+
+/**
+ * 只读本进程里已经记下的最新任务。不查库，也不连接 System 2。
+ * 大屏入口用它拿节点上最近的工单预览，避免为了这一屏去探测算力节点。
+ */
+export function peekLatestTaskProgress(regionId?: string): TaskProgress | null {
+  let newest: TaskProgress | null = null;
+  for (const task of progressStore.values()) {
+    if (regionId && task.regionId !== regionId) continue;
+    if (!newest || task.updatedAt > newest.updatedAt) newest = task;
+  }
+  return newest;
+}
 
 globalThis.__ticket_radar_task_progress_store = progressStore;
 
@@ -53,6 +113,7 @@ async function persistTaskToDb(task: TaskProgress) {
         reviewCount: task.reviewCount,
         failedCount: task.failedCount,
         error: task.error || null,
+        regionId: task.regionId || null,
         updatedAt: new Date(task.updatedAt),
       })
       .onConflictDoUpdate({
@@ -69,6 +130,7 @@ async function persistTaskToDb(task: TaskProgress) {
           reviewCount: task.reviewCount,
           failedCount: task.failedCount,
           error: task.error || null,
+          regionId: task.regionId || null,
           updatedAt: new Date(task.updatedAt),
         },
       });
@@ -77,9 +139,10 @@ async function persistTaskToDb(task: TaskProgress) {
   }
 }
 
-export function initTaskProgress(taskId: string, total: number = 0): TaskProgress {
+export function initTaskProgress(taskId: string, regionId: string, total: number = 0): TaskProgress {
   const initial: TaskProgress = {
     taskId,
+    regionId,
     status: "RUNNING",
     stage: "EXTRACTING",
     stageText: "正在初始化 Agent 研判流水线...",
@@ -97,14 +160,16 @@ export function initTaskProgress(taskId: string, total: number = 0): TaskProgres
   // 异步写入 DB
   persistTaskToDb(initial);
 
-  // 顺手清扫卡死任务(容器 OOM / 重启 / SIGKILL 残留),不阻塞初始化
-  sweepStaleTasks().catch(() => {});
-
   return initial;
 }
 
+/**
+ * 写入一次进度。regionId 为任务归属辖区，必须由调用方传入，避免多辖区共享同一内存条目。
+ * 既有内存条目会继承其 regionId；patch 里若显式给 regionId，以 patch 为准。
+ */
 export function updateTaskProgress(
   taskId: string,
+  regionId: string | undefined,
   patch: Partial<TaskProgress>
 ): TaskProgress {
   const current = progressStore.get(taskId);
@@ -113,6 +178,7 @@ export function updateTaskProgress(
   if (!current) {
     updated = {
       taskId,
+      regionId: patch.regionId ?? regionId,
       status: "RUNNING",
       stage: "EXTRACTING",
       stageText: "处理中...",
@@ -130,6 +196,7 @@ export function updateTaskProgress(
     updated = {
       ...current,
       ...patch,
+      regionId: patch.regionId ?? regionId ?? current.regionId,
       updatedAt: Date.now(),
     };
   }
@@ -138,15 +205,63 @@ export function updateTaskProgress(
   // 异步实时同步 DB
   persistTaskToDb(updated);
 
+  // SSE 推送：每个 region 的活跃订阅者立刻收到新一帧。
+  // regionId 来源优先级：patch > 函数参数 > 内存旧值（切区时保证旧 task 不会跨区泄漏）。
+  const broadcastRegionId = updated.regionId;
+  if (broadcastRegionId) {
+    // 动态 import 避免循环依赖；broadcastTaskProgress 现在是 async（会查 metrics），
+    // 调用方 fire-and-forget 不阻塞主流程
+    import("./sse-broadcaster")
+      .then((m) => m.broadcastTaskProgress(broadcastRegionId, updated))
+      .catch(() => {
+        /* sse-broadcaster 不可用时忽略（极少数 dev 模式边界场景） */
+      });
+  }
+
   return updated;
 }
 
 /**
  * 获取任务进度：优先从内存读取，若重启或跨实例未命中则回捞 PostgreSQL
  */
+function rowToProgress(r: {
+  taskId: string;
+  status: string | null;
+  stage: string | null;
+  stageText: string | null;
+  percent: number | null;
+  total: number | null;
+  processed: number | null;
+  extractedCount: number | null;
+  themeCount: number | null;
+  reviewCount: number | null;
+  failedCount: number | null;
+  error: string | null;
+  updatedAt: Date | null;
+}): TaskProgress {
+  return {
+    taskId: r.taskId,
+    status: (r.status as TaskProgress["status"]) || "PENDING",
+    stage: (r.stage as TaskProgress["stage"]) || "EXTRACTING",
+    stageText: r.stageText || "处理中...",
+    percent: r.percent || 0,
+    total: r.total || 0,
+    processed: r.processed || 0,
+    extractedCount: r.extractedCount || 0,
+    themeCount: r.themeCount || 0,
+    reviewCount: r.reviewCount || 0,
+    failedCount: r.failedCount || 0,
+    error: r.error || undefined,
+    updatedAt: r.updatedAt ? r.updatedAt.getTime() : Date.now(),
+  };
+}
+
+/**
+ * 进度由独立队列进程写入。Next 进程里的内存只是上一拍的副本，
+ * 每次都跟数据库比时间，避免页面刷新后一直停在旧百分比。
+ */
 export async function getTaskProgress(taskId: string): Promise<TaskProgress | null> {
   const mem = progressStore.get(taskId);
-  if (mem) return mem;
 
   try {
     const rows = await db
@@ -156,52 +271,44 @@ export async function getTaskProgress(taskId: string): Promise<TaskProgress | nu
       .limit(1);
 
     if (rows && rows.length > 0) {
-      const r = rows[0];
-      const restored: TaskProgress = {
-        taskId: r.taskId,
-        status: (r.status as any) || "PENDING",
-        stage: (r.stage as any) || "EXTRACTING",
-        stageText: r.stageText || "处理中...",
-        percent: r.percent || 0,
-        total: r.total || 0,
-        processed: r.processed || 0,
-        extractedCount: r.extractedCount || 0,
-        themeCount: r.themeCount || 0,
-        reviewCount: r.reviewCount || 0,
-        failedCount: r.failedCount || 0,
-        error: r.error || undefined,
-        updatedAt: r.updatedAt ? r.updatedAt.getTime() : Date.now(),
-      };
-      progressStore.set(taskId, restored);
-      return restored;
+      const fromDb = rowToProgress(rows[0]);
+      if (mem && mem.updatedAt > fromDb.updatedAt) return mem;
+      progressStore.set(taskId, fromDb);
+      return fromDb;
     }
   } catch (err: any) {
     console.warn(`[task-progress] Failed to fetch task ${taskId} from DB:`, err.message);
   }
 
-  return null;
+  return mem ?? null;
 }
 
 /**
- * 获取系统中最近一条执行的任务（用于页面初始化或断线重连）
+ * 获取系统中最近一条执行的任务。
+ * - 传 regionId 时，只返回该辖区的最新任务；多辖区并发时 UI 不会再跳。
+ * - 不传 regionId 时，保持历史「全局最近」语义（仅作兜底）。
  */
-export async function getLatestTaskProgress(): Promise<TaskProgress | null> {
+export async function getLatestTaskProgress(regionId?: string): Promise<TaskProgress | null> {
   let newestMem: TaskProgress | null = null;
   for (const t of progressStore.values()) {
+    if (regionId && t.regionId !== regionId) continue;
     if (!newestMem || t.updatedAt > newestMem.updatedAt) newestMem = t;
   }
 
   try {
-    const rows = await db
-      .select()
-      .from(taskProgressTable)
-      .orderBy(desc(taskProgressTable.updatedAt))
-      .limit(1);
+    const baseQuery = db.select().from(taskProgressTable);
+    const rows = regionId
+      ? await baseQuery
+          .where(eq(taskProgressTable.regionId, regionId))
+          .orderBy(desc(taskProgressTable.updatedAt))
+          .limit(1)
+      : await baseQuery.orderBy(desc(taskProgressTable.updatedAt)).limit(1);
 
     if (rows && rows.length > 0) {
       const r = rows[0];
       const fromDb: TaskProgress = {
         taskId: r.taskId,
+        regionId: r.regionId || undefined,
         status: (r.status as any) || "PENDING",
         stage: (r.stage as any) || "EXTRACTING",
         stageText: r.stageText || "处理中...",
@@ -218,13 +325,37 @@ export async function getLatestTaskProgress(): Promise<TaskProgress | null> {
       if (newestMem && newestMem.updatedAt >= fromDb.updatedAt) return newestMem;
       const live = progressStore.get(fromDb.taskId);
       if (live && live.updatedAt >= fromDb.updatedAt) return live;
+      // fromDb 路径：DB row 没存 in-memory 字段（endpointRecentTickets / currentLocation 等），
+      // 从进程内 SystemTwoEngine 补上，确保 pipeline-state API 返回给前端的 taskProgress
+      // 跟 SSE 推的 taskProgress 字段对齐，避免 fetchState 拿到缺字段的 taskProgress
+      // 导致 PipelineCanvas 节点卡空白。
+      try {
+        const engine = await getSystemTwoEngine();
+        (fromDb as any).endpointRecentTickets = engine.getEndpointRecentTickets();
+      } catch {
+        /* engine 不可用时保留 fromDb 原样 */
+      }
       return fromDb;
+    } else {
+      // 该辖区（或全局）已无任务记录：清掉对应内存条目，杜绝僵尸状态
+      if (regionId) {
+        for (const [taskId, value] of progressStore.entries()) {
+          if (value.regionId === regionId) progressStore.delete(taskId);
+        }
+      } else {
+        progressStore.clear();
+      }
+      return null;
     }
   } catch (err: any) {
     console.warn("[task-progress] Failed to fetch latest task from DB:", err.message);
   }
 
   return newestMem;
+}
+
+export function clearTaskProgressStore(): void {
+  progressStore.clear();
 }
 
 export function removeTaskProgress(taskId: string): void {

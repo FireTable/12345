@@ -17,8 +17,10 @@ import {
 } from "lucide-react";
 import type { MultiFrequencyTheme, RawTicket } from "@/backend/state";
 import { exportThemeTicketsToCSV } from "@/lib/export-csv";
+import { isAnonymizedCitizen } from "@/lib/alias-dict";
 import { Button } from "@/app/_components/ui/button";
 import { toast } from "sonner";
+import { categoryBadgeStyle } from "@/lib/civic-cluster";
 
 interface TicketDetailSheetProps {
   theme: MultiFrequencyTheme | null;
@@ -77,7 +79,7 @@ export const TicketDetailSheet: React.FC<TicketDetailSheetProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-[250] flex justify-end bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-200 overscroll-contain"
+      className="fixed inset-0 z-[1000] flex justify-end bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-200 overscroll-contain"
       onClick={onClose}
     >
       <div
@@ -106,7 +108,10 @@ export const TicketDetailSheet: React.FC<TicketDetailSheetProps> = ({
                 </span>
               )}
 
-              <span className="text-xs px-2.5 py-1 rounded-md bg-muted text-muted-foreground border border-border font-medium">
+              <span
+                className="text-xs px-2.5 py-1 rounded-md font-medium border"
+                style={categoryBadgeStyle(theme.category)}
+              >
                 {theme.category}
               </span>
 
@@ -271,7 +276,7 @@ export const TicketDetailSheet: React.FC<TicketDetailSheetProps> = ({
                       <div className="flex items-center gap-3">
                         <span className="flex items-center gap-1">
                           <User className="w-3.5 h-3.5 text-muted-foreground/70" />
-                          诉求人: <strong className="font-medium text-foreground/80">{ticket.citizenName && ticket.citizenName !== "市民*" ? ticket.citizenName : "热线市民"}</strong>
+                          诉求人: <strong className="font-medium text-foreground/80">{!isAnonymizedCitizen(ticket.citizenName) ? ticket.citizenName : "热线市民"}</strong>
                         </span>
                         <span className="flex items-center gap-1 font-mono text-[11px]">
                           <Phone className="w-3.5 h-3.5 text-muted-foreground/70" />

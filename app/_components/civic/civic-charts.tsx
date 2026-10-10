@@ -10,6 +10,9 @@ declare global {
         setOption: (opt: unknown) => void;
         resize: () => void;
         dispose: () => void;
+        on: (event: string, query: any, handler?: any) => void;
+        dispatchAction: (payload: any) => void;
+        [key: string]: any;
       };
     };
   }
@@ -39,59 +42,132 @@ export function loadEcharts() {
   return echartsPromise;
 }
 
-export function CivicEChart({ option, height }: { option: Record<string, unknown>; height: number }) {
+export function CivicEChart({
+  option,
+  height = "100%",
+  className = "",
+  onHover,
+  hoveredName,
+}: {
+  option: Record<string, unknown>;
+  height?: number | string;
+  className?: string;
+  onHover?: (name: string | null) => void;
+  hoveredName?: string | null;
+}) {
   const ref = useRef<HTMLDivElement>(null);
+  const chartInstanceRef = useRef<any>(null);
   const key = JSON.stringify(option);
 
   useEffect(() => {
-    let chart: any = null;
     let cancelled = false;
     loadEcharts().then((echarts) => {
       if (cancelled || !ref.current) return;
-      chart = echarts.init(ref.current);
+      const chart = echarts.init(ref.current);
+      chartInstanceRef.current = chart;
       const parsedOption = JSON.parse(key);
       chart.setOption(parsedOption);
 
-      // 监听鼠标悬停交互：动态实时切换环形图圆心百分比与分类
+      // 监听鼠标悬停交互：动态实时切换环形图圆心百分比与分类，并通知外部聚焦
       const defaultTitle = parsedOption.title ? JSON.parse(JSON.stringify(parsedOption.title)) : null;
-      if (defaultTitle && parsedOption.series?.some((s: any) => s.type === "pie")) {
+      if (parsedOption.series?.some((s: any) => s.type === "pie")) {
         chart.on("mouseover", "series.pie", (params: any) => {
           const pct = params.percent != null ? Number(params.percent).toFixed(1) : "0.0";
-          chart.setOption({
-            title: {
-              text: `${pct}%`,
-              subtext: params.name,
-              textStyle: {
-                color: params.color || "#1E5AFF",
-                fontSize: 28,
-                fontWeight: "bold",
+          if (defaultTitle && defaultTitle.show !== false) {
+            chart.setOption({
+              title: {
+                ...defaultTitle,
+                text: `${pct}%`,
+                subtext: params.name,
+                textStyle: {
+                  ...defaultTitle.textStyle,
+                  color: params.color || defaultTitle.textStyle?.color || "#1E5AFF",
+                },
+                subtextStyle: {
+                  ...defaultTitle.subtextStyle,
+                },
               },
-              subtextStyle: {
-                color: "#1E293B",
-                fontWeight: "600",
-                fontSize: 12,
-              },
-            },
-          });
+            });
+          }
+          onHover?.(params.name);
         });
 
         chart.on("mouseout", "series.pie", () => {
-          chart.setOption({
-            title: defaultTitle,
-          });
+          if (defaultTitle && defaultTitle.show !== false) {
+            chart.setOption({
+              title: defaultTitle,
+            });
+          }
+          onHover?.(null);
         });
       }
     });
-    const onResize = () => chart?.resize();
+
+    const onResize = () => chartInstanceRef.current?.resize();
     window.addEventListener("resize", onResize);
+    const ro = typeof ResizeObserver !== "undefined" && ref.current ? new ResizeObserver(() => {
+      chartInstanceRef.current?.resize();
+    }) : null;
+    if (ref.current && ro) {
+      ro.observe(ref.current);
+    }
+
     return () => {
       cancelled = true;
       window.removeEventListener("resize", onResize);
-      chart?.dispose();
+      ro?.disconnect();
+      chartInstanceRef.current?.dispose();
+      chartInstanceRef.current = null;
     };
   }, [key]);
 
-  return <div ref={ref} style={{ width: "100%", height }} />;
+  // 外部 hoverName 变化时，触发联动 highlight/downplay
+  useEffect(() => {
+    const chart = chartInstanceRef.current;
+    if (!chart) return;
+    const parsedOption = JSON.parse(key);
+    const defaultTitle = parsedOption.title ? JSON.parse(JSON.stringify(parsedOption.title)) : null;
+    if (hoveredName) {
+      chart.dispatchAction({
+        type: "highlight",
+        seriesIndex: 0,
+        name: hoveredName,
+      });
+      // 联动更新圆心文字
+      const pieSeries = parsedOption.series?.find((s: any) => s.type === "pie");
+      if (pieSeries && defaultTitle && defaultTitle.show !== false) {
+        const item = pieSeries.data?.find((d: any) => d.name === hoveredName);
+        const total = pieSeries.data?.reduce((sum: number, d: any) => sum + (d.value || 0), 0) || 1;
+        if (item) {
+          const pct = ((item.value / total) * 100).toFixed(1);
+          chart.setOption({
+            title: {
+              ...defaultTitle,
+              text: `${pct}%`,
+              subtext: item.name,
+              textStyle: {
+                ...defaultTitle.textStyle,
+                color: item.itemStyle?.color || defaultTitle.textStyle?.color || "#1E5AFF",
+              },
+            },
+          });
+        }
+      }
+    } else {
+      chart.dispatchAction({
+        type: "downplay",
+        seriesIndex: 0,
+      });
+      if (defaultTitle && defaultTitle.show !== false) {
+        chart.setOption({
+          title: defaultTitle,
+        });
+      }
+    }
+  }, [hoveredName, key]);
+
+  const heightStyle = typeof height === "number" ? `${height}px` : height;
+  return <div ref={ref} className={className} style={{ width: "100%", height: heightStyle }} />;
 }
 
 export function trendOption(daily: Record<string, number>, clusters: Record<string, number> = {}) {
@@ -101,7 +177,13 @@ export function trendOption(daily: Record<string, number>, clusters: Record<stri
   const aligned = entries.map(([d]) => clusters[d] || 0);
 
   return {
-    grid: { left: 50, right: 50, top: 30, bottom: 36 },
+    grid: {
+      left: 16,
+      right: 16,
+      top: 36,
+      bottom: 24,
+      containLabel: true,
+    },
     tooltip: {
       trigger: "axis",
       backgroundColor: "rgba(31,35,41,0.95)",
@@ -129,7 +211,7 @@ export function trendOption(daily: Record<string, number>, clusters: Record<stri
       {
         type: "value",
         name: "工单量",
-        nameTextStyle: { color: "#94A3B8", fontSize: 10 },
+        nameTextStyle: { color: "#94A3B8", fontSize: 11, align: "left" },
         axisLine: { show: false },
         axisTick: { show: false },
         splitLine: { lineStyle: { color: "#F0F1F3", type: "dashed" } },
@@ -138,7 +220,7 @@ export function trendOption(daily: Record<string, number>, clusters: Record<stri
       {
         type: "value",
         name: "新增群组",
-        nameTextStyle: { color: "#94A3B8", fontSize: 10 },
+        nameTextStyle: { color: "#94A3B8", fontSize: 11, align: "right" },
         axisLine: { show: false },
         axisTick: { show: false },
         splitLine: { show: false },
@@ -233,15 +315,12 @@ export function donutOption(dist: Record<string, number>) {
     },
     legend: {
       bottom: 0,
+      left: "center",
       icon: "circle",
       itemWidth: 8,
       itemHeight: 8,
+      itemGap: 10,
       textStyle: { color: "#64748B", fontSize: 11 },
-      formatter: (name: string) => {
-        const d = data.find((x) => x.name === name);
-        const pct = d && total ? ((d.value / total) * 100).toFixed(1) : "0.0";
-        return `${name} ${pct}%`;
-      },
     },
     series: [
       {
@@ -266,6 +345,57 @@ export function donutOption(dist: Record<string, number>) {
     ],
     animationDuration: 1000,
     animationEasing: "cubicOut",
+  };
+}
+
+export function miniDonutOption(
+  dist: Record<string, number> | Array<{ category: string; count: number }>
+) {
+  const entries = Array.isArray(dist)
+    ? dist.map((d) => [d.category, d.count] as [string, number])
+    : Object.entries(dist);
+
+  const data = entries
+    .filter(([, v]) => v > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, value]) => ({
+      value,
+      name,
+      itemStyle: { color: categoryColor(name) },
+    }));
+
+  const total = data.reduce((s, d) => s + d.value, 0);
+  const topItem = data[0];
+  const topPct = total > 0 && topItem ? ((topItem.value / total) * 100).toFixed(1) : "0.0";
+  const topColor = topItem ? categoryColor(topItem.name) : "#1677FF";
+
+  return {
+    title: {
+      show: false,
+    },
+    tooltip: {
+      show: false,
+    },
+    series: [
+      {
+        type: "pie",
+        radius: ["58%", "88%"],
+        center: ["50%", "50%"],
+        avoidLabelOverlap: false,
+        label: { show: false },
+        itemStyle: { borderColor: "#fff", borderWidth: 2 },
+        emphasis: {
+          focus: "self",
+          scale: true,
+          scaleSize: 6,
+          itemStyle: {
+            shadowBlur: 10,
+            shadowColor: "rgba(0, 0, 0, 0.18)",
+          },
+        },
+        data,
+      },
+    ],
   };
 }
 

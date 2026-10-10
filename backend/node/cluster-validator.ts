@@ -5,7 +5,7 @@
 
 import type { MultiFrequencyTheme, EnrichedTicket } from "../state";
 import { RULES } from "../rules";
-import { isValidShundeTownship } from "@/lib/vocabulary";
+import { isValidTownship, type RegionVocabulary } from "@/lib/vocabulary";
 
 export interface ValidationReport {
   passed: boolean;
@@ -17,7 +17,8 @@ export interface ValidationReport {
  */
 export function validateSingleTheme(
   theme: MultiFrequencyTheme,
-  clusterTickets: EnrichedTicket[]
+  clusterTickets: EnrichedTicket[],
+  vocab?: RegionVocabulary
 ): ValidationReport {
   const subject = (theme.canonicalSubject || "").trim();
   const location = (theme.canonicalLocation || "").trim();
@@ -39,8 +40,9 @@ export function validateSingleTheme(
     const targetPlate = plateMatch[1].replace(/\s+/g, "").toUpperCase();
     for (const t of clusterTickets) {
       const tSubj = (t.canonicalSubject || "").replace(/\s+/g, "").toUpperCase();
-      if (tSubj.includes("粤") && !tSubj.includes(targetPlate)) {
-        return { passed: false, rejectedReason: `跨车牌号串扰混淆：目标车牌 [${targetPlate}] 与成员工单主体 [${t.canonicalSubject}] 不一致` };
+      const tPlateMatch = tSubj.match(/([粤京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼][A-Z][\s]?[A-Z0-9]{4,6})/i);
+      if (tPlateMatch && tPlateMatch[1].replace(/\s+/g, "").toUpperCase() !== targetPlate) {
+        return { passed: false, rejectedReason: `跨车牌号串扰混淆：目标车牌 [${targetPlate}] 与成员工单主体 [${tPlateMatch[1]}] 不一致` };
       }
     }
   }
@@ -54,13 +56,14 @@ export function validateSingleTheme(
   const distinctTownships = new Set<string>();
   for (const t of clusterTickets) {
     const township = t.subdistrict || t.district;
-    if (township && isValidShundeTownship(township)) {
+    if (township && isValidTownship(township, vocab)) {
       distinctTownships.add(township);
     }
   }
 
-  // 主体型聚类若跨 3 个以上不相干镇街，属于潜在误拉郎配，需警惕
-  if (distinctTownships.size > 2 && !subject.includes("公司") && !subject.includes("集团") && !subject.includes("网")) {
+  // 主体型聚类若跨 3 个以上不同镇街，且非具有多分支特性的企事业单位，需警惕跨区误绑
+  const isMultiSiteEntity = /(?:公司|集团|网点|分行|专卖|连锁|医院|学校|中心|局|所|队)$/.test(subject) || subject.length >= 6;
+  if (distinctTownships.size > 2 && !isMultiSiteEntity) {
     return { passed: false, rejectedReason: `聚类工单跨越 ${distinctTownships.size} 个不同镇街，涉嫌跨区误绑` };
   }
 
@@ -79,14 +82,15 @@ export function validateSingleTheme(
  */
 export function validateAndFilterThemes(
   themes: MultiFrequencyTheme[],
-  allEnrichedTickets: EnrichedTicket[]
+  allEnrichedTickets: EnrichedTicket[],
+  vocab?: RegionVocabulary
 ): MultiFrequencyTheme[] {
   const validThemes: MultiFrequencyTheme[] = [];
 
   for (const theme of themes) {
     const memberTickets = theme.tickets || [];
 
-    const check = validateSingleTheme(theme, memberTickets);
+    const check = validateSingleTheme(theme, memberTickets, vocab);
     if (check.passed) {
       validThemes.push(theme);
     } else {
