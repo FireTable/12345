@@ -30,6 +30,7 @@
   - **已有主题微观特征对齐**：增量研判构建老主题特征 Profile 时，注入 `theme.aiSummary` 与 `theme.recommendedAction`，完整还原老主题中的微观道路名称（如“测试路”），避免因宏观行政区划概括导致同案同地误判为不匹配。
   - **镇街缺省策略校准 (`same-incident-cluster.ts`)**：优化镇街强校验规则，从“任一方为空直接否决”调整为“双方均具备且冲突时才否决”；对于未提取到明确镇街的公共设施类工单，允许依据微观地点、主体及向量相似度正常归并。
   - **放开办结主题复发吸纳**：增量候选主题池取消排除 `RESOLVED`（已办结）主题，市民再次反映已办结的同一事件时，系统自动识别为复发诉求（`reopenCount` 累加、标记 `isFakeClosure`），支持全周期闭环跟踪。
+  - **稠密向量相似度阈值校准 (`same-incident-cluster.ts`)**：将同案同地稠密产物向量最低余弦阈值 `PRODUCT_COSINE_MIN` 调整为 `0.85`（支持环境变量 `PRODUCT_COSINE_MIN` 动态覆盖），优化相近路段同类市政管网设施（如 0.8798 余弦相似度）的合理归并灵敏度。
   - **市政公用工单 Embedding 资格放开 (`embed-policy.ts`)**：对于无特定企业主体的公共设施工单（原主体缺省为“涉事方”），只要具备标题、地点或事件类型即可正常生成向量嵌入，彻底打通语义检索与稠密向量归并链路。
 - 外部 Agent 只配站点 origin。`POST /api/mcp` 是 MCP Streamable HTTP，协议 `2025-03-26`。未授权返回 401，并带 RFC 9728 的 `WWW-Authenticate`。人用 Better Auth 登录后在 `/mcp/authorize` 同意，换到 `civic_` access key。三个工具：`list_regions`、`push_ticket`（入库并自动触发异步增量研判）、`region_overview`（与站点总览同一套汇总）。吊销在站点管理中心。步骤见 [`MCP.md`](MCP.md)。`public.mcp_clients` 与 `public.mcp_auth_codes` 在第一次调用时建表。
 - 大屏改为一次 `GET /api/cockpit`。最近 30 条只带正文前 80 字。这一读不探活 System 2。最近工单已走 `idx_tickets_create_time`，没有再加索引。

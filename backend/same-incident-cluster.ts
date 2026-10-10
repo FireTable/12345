@@ -6,7 +6,14 @@ import type { IncidentProfile } from "./ticket-profile";
 import { incidentsMatch } from "./ticket-profile";
 import { RULES } from "./rules";
 
-export const PRODUCT_COSINE_MIN = 0.88;
+function envFloat(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw == null || raw === "") return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 && n <= 1 ? n : fallback;
+}
+
+export const PRODUCT_COSINE_MIN = envFloat("PRODUCT_COSINE_MIN", 0.85);
 
 const COMPOUND_KEYWORD = /学府|花园|小区|公寓|大厦|工业区|美食城|公园|新村|苑/g;
 const DOOR_NUMBER = /\d+(?:、\d+)*号/;
@@ -88,7 +95,7 @@ export function shouldLinkIncidents(left: IncidentLinkCandidate, right: Incident
   if (!categoryLeft || categoryLeft !== categoryRight) return false;
   const townLeft = left.township.trim();
   const townRight = right.township.trim();
-  if (townLeft && townRight && townLeft !== townRight) return false;
+  if (!townLeft || townLeft !== townRight) return false;
   if (!isConcretePlace(left.placeEvidence) || !isConcretePlace(right.placeEvidence)) return false;
   if (sameConcretePlace(left.placeEvidence, right.placeEvidence)) return true;
   if (sameNamedSubject(left.subject, right.subject)) return true;

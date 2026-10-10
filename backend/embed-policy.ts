@@ -38,13 +38,7 @@ export type Stage04Reason =
 
 export function isEmbedEligible(ticket: EmbedTicketInput): boolean {
   if (ticket.extractionFailed) return false;
-  const subj = (ticket.canonicalSubject || "").trim();
-  if (subj && subj !== FAILED_EXTRACTION_SUBJECT) return true;
-  return Boolean(
-    (ticket.summarizeTitle || "").trim() ||
-    (ticket.canonicalLocation || "").trim() ||
-    (ticket.eventType || "").trim()
-  );
+  return (ticket.canonicalSubject || "").trim() !== FAILED_EXTRACTION_SUBJECT;
 }
 
 export function productTextForTicket(ticket: EmbedTicketInput): string {
