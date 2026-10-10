@@ -9,7 +9,7 @@ import type { EnrichedTicket, MultiFrequencyTheme } from "./state";
 import { negativeTermsPattern, RULES } from "./rules";
 import { getSystemTwoEngine } from "./model";
 import { LLM_TOKENS } from "@/lib/tokens";
-import { BatchThemeEnrichmentSchema, buildBatchThemeEnrichmentPrompt } from "./prompt";
+import { BatchThemeEnrichmentSchema, buildBatchThemeEnrichmentPrompt, type BatchThemeEnrichmentResult } from "./prompt";
 import { familyLabel, profileTicket } from "./ticket-profile";
 import { shouldLinkIncidents } from "./same-incident-cluster";
 import { attachedMemberCount } from "./embed-policy";
@@ -201,7 +201,7 @@ export async function upgradeThemeWithSystemTwo(
         maxTokens: LLM_TOKENS.THEME_ADVICE,
         temperature: 0.2,
       });
-      const res = data?.results?.[0];
+      const res = (data as BatchThemeEnrichmentResult | null)?.results?.[0];
       if (res?.recommendedAction?.trim()) advice = res.recommendedAction;
       if (res?.aiSummary?.trim()) summary = res.aiSummary;
       if (advice.trim()) break;

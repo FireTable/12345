@@ -1,6 +1,8 @@
 <div align="center">
 
-<img src="public/logo.svg" width="120" height="120" alt="民声智理 CivicPulse Logo" />
+<a href="https://12345.firetable.tech" target="_blank">
+  <img src="public/logo.svg" width="112" height="112" alt="民声智理 CivicPulse Logo" />
+</a>
 
 # 民声智理 · 12345 市民热线多频工单 AI 智能研判与治理系统
 ### CivicPulse 12345 · Cognitive Dispatch & AI Intelligence Platform for Municipal Governance
@@ -20,19 +22,34 @@
 </p>
 
 <p align="center">
+  <a href="#1-civicsystem-one-12345-政务工单神经级快思考极速定性引擎">
+    <img src="https://img.shields.io/badge/@civic/system--one-4--Head_ONNX_12.6k_TPS-1E5AFF?style=flat-square&logo=speedtest&logoColor=white" alt="@civic/system-one" />
+  </a>
+  <a href="#2-civicsystem-two-慢思考通用认知大模型引擎">
+    <img src="https://img.shields.io/badge/@civic/system--two-Metal_27B_三值化_CoT分离-0284C7?style=flat-square&logo=apple&logoColor=white" alt="@civic/system-two" />
+  </a>
+  <a href="#3-civicanonymizer-全要素可逆脱敏引擎与实体回填状态机">
+    <img src="https://img.shields.io/badge/@civic/anonymizer-可逆脱敏_13μs_100%25还原-059669?style=flat-square&logo=shield&logoColor=white" alt="@civic/anonymizer" />
+  </a>
+  <a href="#4-civicembed-高可靠工单向量嵌入与多节点容灾客户端">
+    <img src="https://img.shields.io/badge/@civic/embed-BGE--M3_最少连接容灾-4F46E5?style=flat-square&logo=databricks&logoColor=white" alt="@civic/embed" />
+  </a>
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/Next.js-15.2_App_Router-black?style=flat-square&logo=next.js" alt="Next.js" />
   <img src="https://img.shields.io/badge/React-19.0-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React 19" />
-  <img src="https://img.shields.io/badge/Cognitive_Engine-LangGraph_JS-FF6F00?style=flat-square&logo=langchain" alt="LangGraph" />
-  <img src="https://img.shields.io/badge/Database-PostgreSQL_Multi--Tenant-336791?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL" />
-  <img src="https://img.shields.io/badge/GIS_Standard-天地图_CGCS2000-059669?style=flat-square" alt="Tianditu" />
+  <img src="https://img.shields.io/badge/Workflow-LangGraph_JS_StateGraph-FF6F00?style=flat-square&logo=langchain" alt="LangGraph" />
+  <img src="https://img.shields.io/badge/Database-PostgreSQL_Multi--Schema-336791?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL" />
+  <img src="https://img.shields.io/badge/GIS-天地图_CGCS2000-059669?style=flat-square" alt="Tianditu" />
   <img src="https://img.shields.io/badge/Auth-Better_Auth_Security-4F46E5?style=flat-square" alt="Better Auth" />
   <img src="https://img.shields.io/badge/Design-Civic_Light_System-0ea5e9?style=flat-square" alt="Civic Light" />
 </p>
 
 **[🌐 立即体验在线系统 (Live Demo)](https://12345.firetable.tech)** &nbsp;&bull;&nbsp; 
 **[🎬 观看系统全景宣传片](public/videos/民声智理_总览片_v1.mp4)** &nbsp;&bull;&nbsp; 
-**[📖 查阅部署运维手册](docs/DEPLOY.md)** &nbsp;&bull;&nbsp; 
-**[📐 查看现行认知工作流](docs/WORKFLOW.md)**
+**[📦 查看自研内核套件矩阵](#-自研四大核心内核套件矩阵-core-proprietary-packages)** &nbsp;&bull;&nbsp; 
+**[📖 查阅部署运维手册](docs/DEPLOY.md)**
 
 ---
 
@@ -104,6 +121,62 @@
 - **零漂移空间对齐**：全面接入国家天地图标准 Web 瓦片与 CGCS2000 测绘坐标系，彻底根除 GCJ-02 火星坐标导致的 300~500 米空间漂移；
 - **第四级镇街矢量面**：高精第四级行政区划矢量面入库，结合诉求热力生成精美色阶覆盖与微胶囊指标；
 - **IOC 智能调度驾驶舱**：专为城市运行管理中心大屏设计，支持 4K/8K 巨幕沉浸式投影，全景呈现万人诉求率、实时脉冲流、多维时序波峰与应急指挥链路。
+
+---
+
+## 📦 自研四大核心内核套件矩阵 (Core Proprietary Packages)
+
+为了支撑 12345 十万级全量工单毫秒级吞吐、端侧数据不出域与确定性可逆回填，本项目在 `packages/` 目录下深度研发了 **四大政务专属认知与安全内核套件**，实现从轻量前向分类、隐私气隙隔离、密集语义向量到通用慢思考推理的全栈自主可控：
+
+```
++--------------------------------------------------------------------------------------------------------------------+
+|                                    民声智理 · 自研四大核心内核套件协同架构                                           |
++--------------------------------------------------------------------------------------------------------------------+
+| 📥 原始市民工单 (文本 / 录音文本)                                                                                  |
+|    ↓                                                                                                               |
+| 🔒 [@civic/anonymizer] (全要素可逆脱敏) ──→ 13μs 国标校验脱敏，生成 Session Keymap，公民隐私 100% 留存本地专网     |
+|    ↓ (Masked Text)                                                                                                 |
+| ⚡ [@civic/system-one] (快思考轻量决策) ──→ 4-Head Cross-Attention (4.5MB ONNX, 0.079ms, 12,664 TPS)              |
+|    ├── 意图判别 (99.75%) | 紧迫等级 (99.84%) | 涉稳护栏 (99.86% 0漏报) | 法定领域单一/联合分派 (99.35%)            |
+|    ↓                                                                                                               |
+| 🧬 [@civic/embed] (高可靠向量嵌入客户端) ──→ BAAI/bge-m3 多端点最少连接负载均衡与自动熔断转移，生成时空共性向量        |
+|    ↓ (微观实体提纯 & 空间网格对齐)                                                                                |
+| 🧠 [@civic/system-two] (慢思考通用大模型) ──→ Apple Silicon Metal 27B 硬件调优 (20~24 T/s)，CoT 纯净分离直出 JSON   |
+|    ↓ (结构化抽取结果)                                                                                             |
+| 🔄 [@civic/anonymizer] (实体反向回填) ──→ O(1) 内存无损反向还原真实商户门头与车牌，持久化至物理 Schema 数据库       |
++--------------------------------------------------------------------------------------------------------------------+
+```
+
+### 1. `@civic/system-one`：12345 政务工单神经级快思考极速定性引擎
+> **定位**：端侧超轻量前置定性与分派状态机，基于 4 头交叉注意力双流架构与神经-符号安全互锁。
+
+- **极速低时延与万级吞吐**：单条纯前向推理耗时仅 **0.079 毫秒**（相较通用 ModernBERT-large 提速 **1,110 倍**），吞吐量突破 **12,664.9 TPS**，模型体积仅 **4.5 MB**，支持 `onnxruntime-node` 无需 Python 外部进程原生内嵌。
+- **12,828 条全盲工单官方实测**：
+  - 🛡️ **涉稳护栏 (Stability Risk)**：**99.86%（0 漏报）**，检测到堵路、极端维权等直接触发安全词网硬性提级至特急件；
+  - ⏱️ **紧迫等级 (Urgency Triage)**：**99.84%**（Level 0 咨询 ~ Level 3 特急响应）；
+  - 🎯 **诉求意图 (Intent Triage)**：**99.75%**（咨询、投诉、建议、催办、表扬五类行为）；
+  - 🏢 **法定领域 (Category Routing)**：**99.35%**（首创“单一承办 ➔ 主办+协办联合承办 ➔ 协同池流转”联合派单 SOP）。
+
+### 2. `@civic/system-two`：慢思考通用认知大模型引擎
+> **定位**：基于 Apple Silicon Metal 硬件深度调优的通用 LLM 慢思考推理运行时，100% 遵循 OpenAI 协议。
+
+- **思维链 (CoT) 与正文纯净分离**：默认开启深度思维链拆解复杂诉求权责，模型的思考过程自动剥离至 `reasoning_content`，纯净结构化抽取直出至 `content`，杜绝思维链耗尽 Token 导致 JSON 截断。
+- **Apple Silicon Metal 黄金参数调优**：搭载 Bonsai 2 27B PTQ1_0 三值大模型（5.5GB 权重），在 M 系列芯片上实现 **20 ~ 24 tokens/s** 稳定高吞吐输出。
+- **三层平滑容灾自愈降级**：`本地 Metal (llama-server:8132)` ➔ `远程兼容云端 (DeepSeek / OpenAI)` ➔ `离线安全兜底 (FallbackAdapter)`，具备多节点 3 秒健康自愈探测与在途请求负载均衡。
+
+### 3. `@civic/anonymizer`：全要素可逆脱敏引擎与实体回填状态机
+> **定位**：保障政务数据“不出域、不外泄”的数据安全气隙底座。
+
+- **严格国标数学校验**：采用中国二代身份证 ISO 7064:1983.MOD 11-2 加权算法，仅对合法有效身份证脱敏，不误伤长流水号或订单号；精准区分自然人称谓与群体角色词（如“广大业主”）。
+- **公私精细分治与共指去重**：公民个人隐私（手机号、身份证、住址、车牌、人名）出站严格替换为标准化 Token；坚决保留法定行政区划、街道社区、商业广场、商户门头（确保时空研判与网格治理不瘫痪）。
+- **微秒级性能与 100% 无损还原**：基于 12.8 万条真实工单抽测，平均处理时延仅 **13 微秒/件**，吞吐达 **7.5 万单/秒**，大模型完成抽取后在内存中以 $O(1)$ 时间复杂度实现 **100.0% 确定性无损反向回填**。
+
+### 4. `@civic/embed`：高可靠工单向量嵌入与多节点容灾客户端
+> **定位**：专为政务多频长文本设计的密集语义表征引擎，驱动“同案同地”微观空间吸附。
+
+- **多端点最少连接负载均衡 (Least Connections)**：支持跨机调度与集群部署，多端点并发时自动按各节点“在途请求数 + 连续失败次数”动态游标择优派发。
+- **云地双轨与 429 智能退避**：自动识别 `local:` 与 `cloud:` 端点协议；本地端点高速直连零等待，云端遇到速率限制时自动平滑退避重试，保障大批量工单导入不中断。
+- **高维密集表征**：标准化接入 BAAI/bge-m3 稠密向量，批量抽取与在线增量流自适应分批（Bulk 32 / Online 4）。
 
 ---
 
@@ -207,8 +280,10 @@
 | **工作流编排** | **@langchain/langgraph + LangGraph JS** | 确定性有向无环图 (DAG) 状态机编排，保证工序严谨闭环 |
 | **数据库 & ORM** | **PostgreSQL + Drizzle ORM** | 原生独立 Schema 物理隔离 (`region_{id}`)，兼具超高安全与查询性能 |
 | **GIS 测绘底图** | **Leaflet + 国家天地图 CGCS2000 瓦片** | 彻底消除坐标偏差，毫秒级瓦片代理与第四级法定镇街矢量面融合 |
-| **端侧快思考** | **ONNX Runtime (WebAssembly/Node)** | 4-Head 神经分类器，<0.08ms 完成意图、分类、SLA 及涉稳研判 |
-| **深度慢思考** | **Bonsai 2 27B / DeepSeek (OpenAI 协议)** | 严格四要素抽取直出与公文级处置预案构建 |
+| **端侧快思考** | **@civic/system-one (4-Head ONNX 神经分类器)** | 单单 0.079ms 极速定性意图、紧迫度与 99.86% 涉稳拦截 |
+| **深度慢思考** | **@civic/system-two (Apple Metal 27B / 通用 LLM)** | 严格四要素抽取直出、CoT 思维链分离与公文级处置预案构建 |
+| **数据安全脱敏** | **@civic/anonymizer (全要素可逆脱敏状态机)** | 13μs 国标校验脱敏，出站无感气隙隔离，100% 确定性无损反向还原 |
+| **密集语义向量** | **@civic/embed (BAAI/bge-m3 向量集群客户端)** | 多端点最少连接负载均衡，云地双轨 429 智能退避与故障转移 |
 | **安全认证** | **Better Auth + Drizzle 适配器** | 生产级会话管理、加盐哈希存储与全局路由安全气隙 |
 | **生态协议** | **Model Context Protocol (MCP 2025-03-26)** | 标准 Streamable HTTP 协议，赋能外部 AI Agent 跨系统无缝调度 |
 

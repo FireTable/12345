@@ -84,7 +84,7 @@ async function download(dest: string): Promise<void> {
       callback(null, chunk);
     },
   });
-  await pipeline(Readable.fromWeb(response.body), counter, createWriteStream(partial));
+  await pipeline(Readable.fromWeb(response.body as any), counter, createWriteStream(partial));
   const digest = hash.digest("hex");
   if (received !== EMBED_WEIGHT_BYTES || digest !== EMBED_WEIGHT_SHA256) {
     await rm(partial, { force: true });

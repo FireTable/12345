@@ -27,6 +27,7 @@
     "db:export": "tsx scripts/db-export.ts",
     "db:import": "tsx scripts/db-import.ts",
     "db:clear": "tsx scripts/db-clear.ts",
+    "db:sync-vps": "bash scripts/sync-db-to-vps.sh",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {

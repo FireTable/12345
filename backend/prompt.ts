@@ -306,7 +306,8 @@ export const BatchThemeEnrichmentSchema = z.object({
       // 红黄蓝由聚类规则写入。模型漏写这一项时，不能让同批其余建议一起作废。
       riskLevel: z.enum(["HIGH", "MEDIUM", "LOW"]).optional().describe("多频风险等级评定，可省略"),
       riskReason: z.string().describe("简明扼要的风险诱因与态势研判（25-45字）"),
-      aiSummary: z.string().describe("深度公文级全貌研判综述（60-100字）"),
+      // 摘要漏写时收成空串，处置建议仍留下。不能因为第 10 条少一个字段把整批作废。
+      aiSummary: z.string().catch("").describe("深度公文级全貌研判综述（60-100字），可省略"),
       recommendedAction: z.string().describe("针对性协同处置建议（明确牵头部门、响应时限及具体路径）（50-80字）"),
     })
   ),

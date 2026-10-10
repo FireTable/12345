@@ -28,9 +28,15 @@ output
 
 # Tests & docs
 scripts/test-accuracy-pipeline.ts
+tests
+screenshots
 docs
 README.md
 
 # Tooling that shouldn't reach the image
 .claude
+.gemini
+.cache
+.civic-node-metrics.json
+Modelfile*
 skills-lock.json
