@@ -378,4 +378,8 @@ React Flow 自带的 `animated` prop 也跟 `active` 同源，但**只控制 Rea
 
 ### 3. MCP
 
-外部 Agent 的对接步骤在 [`docs/MCP.md`](MCP.md)。`push_ticket` 只入库一条，不调用单条 LLM 接入，也不入队全市重新聚类。总览工具和上面的站点总览用同一套 `loadOverview`。
+外部 Agent 的对接步骤在 [`docs/MCP.md`](MCP.md)。`push_ticket` 接收单条工单入库后，异步调度该地区的增量研判流（`triggerClusterJobAuto`）：
+- 经 System 1 快定性 + System 2 深度抽取后，执行增量归并比对；
+- 命中已有主题时毫秒级吸附（包括已办结事件复发），并更新主题时序与件数；
+- 未命中已有主题时，与库中近期的历史落单工单跨批次联合归并，若存在同案事实（余弦≥0.88 + 空间主体约束）且满足 ≥2 件，立即自适应收敛成全新 Theme 并生成处置预案；
+- 绝不删除已有的历史多频主题和既有关联。总览工具与站点总览共用 `loadOverview`。

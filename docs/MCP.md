@@ -138,7 +138,11 @@ Accept: application/json, text/event-stream
 
 `tickets` 或 `rows` 数组会被拒绝。一次一条。同一 `ticketNo` 再推一次计入 `duplicateCount`，不覆盖原单。
 
-这次调用只入库。不走 `POST /api/tickets` 的单条抽取，不入队全市重新聚类。新工单要等该地区自己的研判任务才会过 System 1 和 System 2。
+入库成功后会自动触发该地区的异步增量研判（`triggerClusterJobAuto`）：
+- 经 System 1 快分类与 System 2 结构化要素抽取后，评估是否与已有主题（包含已办结复发主题）为同一事件；
+- 若匹配已有主题，毫秒级并入老聚类，自动更新主题时间跨度、工单数与复发标识；
+- 若未匹配已有主题，将与近期历史落单工单联合计算，满 2 件及以上自动聚类生成**全新 Theme**，并调用 System 2 生成跨部门处置预案；
+- 若仍无重复投诉，则作为单发件安全落库，等待后续同类诉求汇入时成群。
 
 成功 JSON：`regionId`、`ticketNo`、`insertedCount`、`duplicateCount`。
 
