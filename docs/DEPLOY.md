@@ -139,20 +139,28 @@ ssh root@<VPS_IP> 'cd /opt/12345-stack && \
 
 在 VPS 算力有限、无法本地运行 27B 大模型与密集向量模型时，可采用 **Tailscale 点对点 WireGuard 加密隧道** 将 Mac 的高性能 Apple Silicon 算力作为推理集群安全接入 VPS：
 
-1. **Mac 本机一键拉起双推理集群**：
+1. **Mac 本机交互式一键运维工具（推荐）**：
+   ```bash
+   pnpm civic   # 或运行 ./scripts/civic-ctl.sh
+   ```
+   - 交互式可视化控制台，集成开/关 PM2 常驻、冲突端口自动清理、Metal 显存释放；
+   - 支持跨机 Tailscale 链路自检、VPS 生产站健康探测、一键同步 `.env.vps`；
+   - 内置单条市民工单端到端研判测试、向量模型提取及数据库管理。
+
+2. **Mac 本机一键拉起双推理集群（前台守护）**：
    ```bash
    pnpm dev:models
    ```
    - 自动在后台监听 `0.0.0.0:8132` (System-2 27B) 和 `0.0.0.0:8133` (Civic-Embed bge-m3)；
    - 在 Mac 终端运行 `tailscale ip -4` 查看内网 IP（例如 `100.88.99.100`）。
 
-2. **VPS 在 `.env.vps` 中挂载端点**：
+3. **VPS 在 `.env.vps` 中挂载端点**：
    ```ini
    SYSTEM_TWO_ENDPOINTS=http://100.88.99.100:8132/v1
    EMBEDDING_ENDPOINTS=local:http://100.88.99.100:8133/v1
    ```
 
-3. **双轨容灾与自愈兜底**：
+4. **双轨容灾与自愈兜底**：
    - 当 Mac 在线时，VPS **优先走 Mac 本地算力**（零 Token 费用、私有高性能推理）；
    - 若 Mac 关机或休眠，VPS 探活熔断并在 **2 秒内自动平滑降级至云端 API**，全站业务 100% 不中断。
 

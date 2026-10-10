@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "civic": "./scripts/civic-ctl.sh",
+    "ctl": "./scripts/civic-ctl.sh",
     "dev": "tsx scripts/dev.ts",
     "dev:web": "next dev",
     "dev:models": "tsx scripts/serve-models.ts",

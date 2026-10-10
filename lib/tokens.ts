@@ -27,9 +27,9 @@ export const LLM_TOKENS = {
   /**
    * 主题建议 (SummaryNode)
    * 只要 JSON 正文，不开思考。一批 10 个主题。模型实际写成公文，3072 会在第 10 条半截切断。
-   * 5120 能写完并留下闭合括号。提示词大约 2000 token，加上这段仍在 ctx 8192 里面。
+   * 6144 用来写完 10 条并留下闭合括号。提示词大约 2000 token，加起来贴着 ctx 8192，不能再加大。
    */
-  THEME_ADVICE: parseEnvInt("LLM_THEME_ADVICE_MAX_TOKENS", 5120),
+  THEME_ADVICE: parseEnvInt("LLM_THEME_ADVICE_MAX_TOKENS", 6144),
 
   /**
    * 慢思考深度公文研判 (SummaryNode)
