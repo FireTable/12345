@@ -34,6 +34,55 @@ export async function POST(req: NextRequest) {
 
     const { db: tenantDb } = await getRegionDb(regionId);
 
+    // 2.0 若前端已通过国内直连 Key 成功解析出经纬度，直接将其沉淀写入标准词典并返回
+    const overrideLng = parseFloat(body.overrideLng);
+    const overrideLat = parseFloat(body.overrideLat);
+    if (!isNaN(overrideLng) && !isNaN(overrideLat)) {
+      try {
+        const locationId = `LOC-${Buffer.from(cleanAddress).toString("base64url").slice(0, 32)}`;
+        const meta = {
+          lng: overrideLng,
+          lat: overrideLat,
+          score: 100,
+          level: "前端直连",
+          formattedAddress: body.formattedAddress || cleanAddress,
+          township: body.township || "",
+          source: "CLIENT_TIANDITU",
+          updatedAt: new Date().toISOString(),
+        };
+        await tenantDb
+          .insert(vocabulariesTable)
+          .values({
+            id: locationId,
+            type: "LOCATION",
+            name: cleanAddress,
+            fullName: body.formattedAddress || cleanAddress,
+            parentName: body.township || null,
+            metaJson: JSON.stringify(meta),
+            description: "前端直连天地图解析标准坐标",
+            isStandard: true,
+          })
+          .onConflictDoUpdate({
+            target: vocabulariesTable.id,
+            set: {
+              fullName: body.formattedAddress || cleanAddress,
+              metaJson: JSON.stringify(meta),
+            },
+          });
+      } catch (err) {
+        console.warn("[Geocode] 写入前端直连坐标失败:", err);
+      }
+      return apiSuccess({
+        success: true,
+        lng: overrideLng,
+        lat: overrideLat,
+        formattedAddress: body.formattedAddress || cleanAddress,
+        township: body.township || "",
+        fromCache: false,
+        canonical: cleanAddress,
+      });
+    }
+
     // 2.1 检查标准字典中是否已有该 Canonical 地点的坐标缓存
     try {
       const cached = await tenantDb

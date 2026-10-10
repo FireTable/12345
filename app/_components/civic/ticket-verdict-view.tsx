@@ -18,6 +18,7 @@ import {
 import { toast } from "sonner";
 import { getUrgencyLabel } from "@/lib/civic-dto";
 import { CivicGeoMap } from "./civic-geo-map";
+import { geocodeAddressClient } from "@/lib/map/client-geocode";
 
 export interface TicketVerdictData {
   id: string;
@@ -273,25 +274,19 @@ export function TicketGeoMapCard({ data }: { data: TicketVerdictData }) {
     }
 
     setGeo({ loading: true });
-    fetch("/api/map/geocode", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ address: queryAddress }),
-    })
-      .then((r) => r.json())
+    geocodeAddressClient(queryAddress, data.region)
       .then((res) => {
         if (cancelled) return;
-        const d = res.data || res;
-        if (d.success && d.lng && d.lat) {
+        if (res.success && res.lng && res.lat) {
           setGeo({
-            lng: d.lng,
-            lat: d.lat,
-            formattedAddress: d.formattedAddress || queryAddress,
-            township: d.township || data.region,
+            lng: res.lng,
+            lat: res.lat,
+            formattedAddress: res.formattedAddress || queryAddress,
+            township: res.township || data.region,
             loading: false,
           });
         } else {
-          setGeo({ loading: false, error: d.error || "未匹配到精确坐标" });
+          setGeo({ loading: false, error: res.error || "未匹配到精确坐标" });
         }
       })
       .catch((err) => {
@@ -324,13 +319,7 @@ export function TicketGeoMapCard({ data }: { data: TicketVerdictData }) {
         for (const peer of samplePeers) {
           const addr = peer.address || peer.location;
           try {
-            const geoRes = await fetch("/api/map/geocode", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ address: addr }),
-            });
-            const geoJson = await geoRes.json();
-            const gd = geoJson.data || geoJson;
+            const gd = await geocodeAddressClient(addr, peer.region);
             if (gd.success && gd.lng && gd.lat) {
               resolved.push({
                 id: peer.id || peer.ticketId,

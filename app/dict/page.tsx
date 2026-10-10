@@ -35,6 +35,7 @@ import { useRegion } from "@/app/_components/civic/region-context";
 import { resolveApiError } from "@/lib/api-codes";
 import { categoryVisual, getTownshipColor, KNOWN_TOWNSHIP_COLORS } from "@/lib/civic-cluster";
 import { CivicGeoMap, GeoPoint } from "@/app/_components/civic/civic-geo-map";
+import { geocodeAddressClient } from "@/lib/map/client-geocode";
 
 // 统一接入全局标准镇街色彩单一事实来源 (SSOT)
 const TOWNSHIP_COLORS: Record<string, string> = new Proxy(KNOWN_TOWNSHIP_COLORS, {
@@ -260,15 +261,9 @@ export default function DictionaryManagementPage() {
     }
     setLocSubmitting(true);
     try {
-      const res = await fetch("/api/map/geocode", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address: newLocationAddress.trim() }),
-      });
-      const data = await res.json();
-      const d = data.data || data;
+      const d = await geocodeAddressClient(newLocationAddress.trim());
       if (d.success && d.lng && d.lat) {
-        toast.success(`高精坐标已沉淀：${d.canonical} [${d.lng.toFixed(5)}, ${d.lat.toFixed(5)}]`);
+        toast.success(`高精坐标已沉淀：${d.formattedAddress || newLocationAddress} [${d.lng.toFixed(5)}, ${d.lat.toFixed(5)}]`);
         setShowAddLocationModal(false);
         setNewLocationAddress("");
         fetchData();
