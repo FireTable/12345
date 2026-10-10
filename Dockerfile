@@ -23,6 +23,7 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
 # ---------- build: next build ----------
 FROM deps AS build
 COPY . .
+RUN if [ -f .env.vps ] && [ ! -f .env.production ]; then cp .env.vps .env.production; fi
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm build
 

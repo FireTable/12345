@@ -37,17 +37,16 @@ export async function GET(req: NextRequest) {
       },
     }).catch(() => null as Response | null);
 
-    // 若天地图受海外机房 WAF 拦截 (HTTP 418) 或网络异常，自动无缝降级到兼容 Web Mercator 的高可用源
+    // 若天地图受海外机房 WAF 拦截 (HTTP 418) 或网络异常，自动无缝降级到国内免 Key 高速图源 (高德)
     if (!res || !res.ok) {
-      const subdomains = ["a", "b", "c", "d"];
-      const s = subdomains[(x + y) % subdomains.length];
+      const s = ((x + y) % 4) + 1;
       let fallbackUrl = "";
       if (type === "cva" || type === "cia") {
-        fallbackUrl = `https://${s}.basemaps.cartocdn.com/light_only_labels/${z}/${x}/${y}.png`;
+        fallbackUrl = `https://wprd0${s}.is.autonavi.com/appmaptile?x=${x}&y=${y}&z=${z}&lang=zh_cn&size=1&scale=1&style=8`;
       } else if (type === "vec") {
-        fallbackUrl = `https://${s}.basemaps.cartocdn.com/light_nolabels/${z}/${x}/${y}.png`;
+        fallbackUrl = `https://wprd0${s}.is.autonavi.com/appmaptile?x=${x}&y=${y}&z=${z}&lang=zh_cn&size=1&scale=1&style=7`;
       } else if (type === "img") {
-        fallbackUrl = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
+        fallbackUrl = `https://wprd0${s}.is.autonavi.com/appmaptile?x=${x}&y=${y}&z=${z}&lang=zh_cn&size=1&scale=1&style=6`;
       }
 
       if (fallbackUrl) {

@@ -132,6 +132,12 @@ export default function RootLayout({
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
+        <script
+          id="tianditu-runtime-config"
+          dangerouslySetInnerHTML={{
+            __html: `window.__TIANDITU_TK__ = ${JSON.stringify(process.env.NEXT_PUBLIC_TIANDITU_TK || "")};`,
+          }}
+        />
       </head>
       <body>
         <RegionProvider>

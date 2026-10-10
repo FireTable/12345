@@ -7,7 +7,9 @@
  */
 
 export function getTiandituTileUrls() {
-  const tk = process.env.NEXT_PUBLIC_TIANDITU_TK;
+  const tk =
+    (typeof window !== "undefined" && (window as any).__TIANDITU_TK__) ||
+    process.env.NEXT_PUBLIC_TIANDITU_TK;
   if (tk && tk.trim() && tk !== "your_tianditu_frontend_key_here") {
     const key = tk.trim();
     return {
