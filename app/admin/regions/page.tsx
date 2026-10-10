@@ -509,22 +509,20 @@ export default function AdminRegionsPage() {
             return (
               <div
                 key={r.id}
-                className={`bg-white rounded-xl border p-5 transition-all shadow-2xs relative flex flex-col justify-between ${
-                  isActive
-                    ? "border-blue-500 ring-2 ring-blue-500/10"
-                    : "border-slate-200/90 hover:border-slate-300"
-                }`}
+                className={`bg-white rounded-xl border p-5 transition-all shadow-2xs relative flex flex-col justify-between ${isActive
+                  ? "border-blue-500 ring-2 ring-blue-500/10"
+                  : "border-slate-200/90 hover:border-slate-300"
+                  }`}
               >
                 <div>
                   {/* 卡片头部 */}
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-2.5">
                       <div
-                        className={`w-9 h-9 rounded-lg flex items-center justify-center font-bold text-sm ${
-                          isActive
-                            ? "bg-blue-600 text-white"
-                            : "bg-slate-100 text-slate-700"
-                        }`}
+                        className={`w-9 h-9 rounded-lg flex items-center justify-center font-bold text-sm ${isActive
+                          ? "bg-blue-600 text-white"
+                          : "bg-slate-100 text-slate-700"
+                          }`}
                       >
                         {r.name.slice(0, 2)}
                       </div>
@@ -863,33 +861,30 @@ export default function AdminRegionsPage() {
                     <button
                       type="button"
                       onClick={() => setScoutActiveTab("townships")}
-                      className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-                        scoutActiveTab === "townships"
-                          ? "bg-blue-600 text-white"
-                          : "text-slate-600 hover:bg-slate-100"
-                      }`}
+                      className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${scoutActiveTab === "townships"
+                        ? "bg-blue-600 text-white"
+                        : "text-slate-600 hover:bg-slate-100"
+                        }`}
                     >
                       法定镇街区划 ({scoutResult.townships.length})
                     </button>
                     <button
                       type="button"
                       onClick={() => setScoutActiveTab("departments")}
-                      className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-                        scoutActiveTab === "departments"
-                          ? "bg-blue-600 text-white"
-                          : "text-slate-600 hover:bg-slate-100"
-                      }`}
+                      className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${scoutActiveTab === "departments"
+                        ? "bg-blue-600 text-white"
+                        : "text-slate-600 hover:bg-slate-100"
+                        }`}
                     >
                       协同承办部门 ({scoutResult.departments.length})
                     </button>
                     <button
                       type="button"
                       onClick={() => setScoutActiveTab("categories")}
-                      className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-                        scoutActiveTab === "categories"
-                          ? "bg-blue-600 text-white"
-                          : "text-slate-600 hover:bg-slate-100"
-                      }`}
+                      className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${scoutActiveTab === "categories"
+                        ? "bg-blue-600 text-white"
+                        : "text-slate-600 hover:bg-slate-100"
+                        }`}
                     >
                       民生分类与科室 ({scoutResult.categories.length})
                     </button>
@@ -914,7 +909,7 @@ export default function AdminRegionsPage() {
                           </div>
                           {t.aliases && t.aliases.length > 0 && (
                             <div className="text-[11px] text-slate-500 mb-1 flex items-center gap-1 flex-wrap">
-                              <span className="text-slate-400">别称/俗称:</span>
+                              <span className="text-slate-400">俗称 / 别名: </span>
                               {t.aliases.map((a, i) => (
                                 <span key={i} className="bg-amber-50 text-amber-800 border border-amber-200/60 px-1.5 py-0.2 rounded font-mono text-[10px]">
                                   {a}

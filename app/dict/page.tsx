@@ -490,7 +490,7 @@ export default function DictionaryManagementPage() {
                   <table className="group-table">
                     <thead>
                       <tr>
-                        <th style={{ width: 170 }}>俗称 / 别名 (Alias)</th>
+                        <th style={{ width: 280 }}>俗称 / 别名 (Alias)</th>
                         <th>对应标准规范全称 (Canonical)</th>
                         <th style={{ width: 120 }}>实体类型</th>
                         <th style={{ width: 125 }}>来源渠道</th>
@@ -531,10 +531,10 @@ export default function DictionaryManagementPage() {
                             <td>
                               <span
                                 className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium border ${item.source === "AI_MINED"
-                                    ? "bg-purple-50 text-purple-700 border-purple-200/80"
-                                    : item.source === "MANUAL"
-                                      ? "bg-amber-50 text-amber-700 border-amber-200/80"
-                                      : "bg-slate-100 text-slate-600 border-slate-200/80"
+                                  ? "bg-purple-50 text-purple-700 border-purple-200/80"
+                                  : item.source === "MANUAL"
+                                    ? "bg-amber-50 text-amber-700 border-amber-200/80"
+                                    : "bg-slate-100 text-slate-600 border-slate-200/80"
                                   }`}
                               >
                                 {item.source === "AI_MINED"
@@ -1137,8 +1137,8 @@ export default function DictionaryManagementPage() {
                                     <td>
                                       <span
                                         className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium border ${meta.source === "TIANDITU_GEOCODE"
-                                            ? "bg-blue-50 text-blue-700 border-blue-200/80"
-                                            : "bg-emerald-50 text-emerald-700 border-emerald-200/80"
+                                          ? "bg-blue-50 text-blue-700 border-blue-200/80"
+                                          : "bg-emerald-50 text-emerald-700 border-emerald-200/80"
                                           }`}
                                       >
                                         {meta.source === "TIANDITU_GEOCODE" ? "天地图自动解析" : "人工录入"}
@@ -1150,8 +1150,8 @@ export default function DictionaryManagementPage() {
                                           type="button"
                                           onClick={() => setPreviewLocation(isPreviewing ? null : loc)}
                                           className={`p-1.5 rounded-md transition-colors inline-flex items-center justify-center ${isPreviewing
-                                              ? "bg-blue-100 text-blue-600"
-                                              : "text-slate-400 hover:text-blue-600 hover:bg-blue-50"
+                                            ? "bg-blue-100 text-blue-600"
+                                            : "text-slate-400 hover:text-blue-600 hover:bg-blue-50"
                                             }`}
                                           title={isPreviewing ? "收起地图定位" : "在地图中查看打点"}
                                         >

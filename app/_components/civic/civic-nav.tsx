@@ -173,7 +173,7 @@ export function CivicNav() {
               </div>
             </div>
           </Link>
-          <RegionSelector />
+          {!isLoginPage && <RegionSelector />}
         </div>
 
         {isLoginPage ? (
