@@ -31,14 +31,36 @@ export async function GET(req: NextRequest) {
     }
 
     const tileUrl = getTiandituTileUrl(type, z, x, y);
-    const res = await fetch(tileUrl, {
+    let res = await fetch(tileUrl, {
       headers: {
-        "User-Agent": "CivicRadar/1.0 MapTileProxy",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       },
-    });
+    }).catch(() => null as Response | null);
 
-    if (!res.ok) {
-      return new NextResponse(`Tile fetch failed: ${res.status}`, { status: res.status });
+    // 若天地图受海外机房 WAF 拦截 (HTTP 418) 或网络异常，自动无缝降级到兼容 Web Mercator 的高可用源
+    if (!res || !res.ok) {
+      const subdomains = ["a", "b", "c", "d"];
+      const s = subdomains[(x + y) % subdomains.length];
+      let fallbackUrl = "";
+      if (type === "cva" || type === "cia") {
+        fallbackUrl = `https://${s}.basemaps.cartocdn.com/light_only_labels/${z}/${x}/${y}.png`;
+      } else if (type === "vec") {
+        fallbackUrl = `https://${s}.basemaps.cartocdn.com/light_nolabels/${z}/${x}/${y}.png`;
+      } else if (type === "img") {
+        fallbackUrl = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
+      }
+
+      if (fallbackUrl) {
+        res = await fetch(fallbackUrl, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          },
+        }).catch(() => null as Response | null);
+      }
+    }
+
+    if (!res || !res.ok) {
+      return new NextResponse(`Tile fetch failed: ${res?.status || 502}`, { status: res?.status || 502 });
     }
 
     const contentType = res.headers.get("content-type") || "image/png";

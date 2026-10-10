@@ -125,15 +125,21 @@ export function CockpitMap({
         keepBuffer: 6,            // 视口外缓冲 6 块瓦片，缩放移动时避免白块
       };
 
+      const { vecUrl, cvaUrl, subdomains } = getTiandituTileUrls();
+      const baseTileOptions = {
+        ...tileOptions,
+        ...(subdomains.length > 0 ? { subdomains } : {}),
+      };
+
       // 加载天地图标准底图 (经过 CSS filter 转化为科技暗夜深蓝地图)
       try {
-        L.tileLayer("/api/map/tile?type=vec&z={z}&x={x}&y={y}", tileOptions).addTo(map);
+        L.tileLayer(vecUrl, baseTileOptions).addTo(map);
       } catch (e) {}
 
       // 加载天地图暗夜道路注记
       try {
-        L.tileLayer("/api/map/tile?type=cva&z={z}&x={x}&y={y}", {
-          ...tileOptions,
+        L.tileLayer(cvaUrl, {
+          ...baseTileOptions,
           opacity: 0.75,
         }).addTo(map);
       } catch (e) {}
