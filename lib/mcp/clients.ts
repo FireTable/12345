@@ -171,7 +171,7 @@ export async function issueMcpAuthorizationCode(input: {
 }): Promise<string> {
   await ensureMcpTables();
   const code = `civic_code_${randomBytes(24).toString("base64url")}`;
-  const expires = new Date(Date.now() + 10 * 60 * 1000);
+  const expiresIso = new Date(Date.now() + 10 * 60 * 1000).toISOString();
   await sql`
     INSERT INTO public.mcp_auth_codes (code_hash, client_name, user_id, redirect_uri, code_challenge, expires_at)
     VALUES (
@@ -180,7 +180,7 @@ export async function issueMcpAuthorizationCode(input: {
       ${input.userId},
       ${input.redirectUri},
       ${input.codeChallenge || null},
-      ${expires}
+      ${expiresIso}
     )
   `;
   return code;
