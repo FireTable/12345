@@ -89,11 +89,16 @@ function LoginForm() {
         <div className="login-header">
           <div className="login-brand-badge">
             <Building2 className="login-brand-icon" size={15} />
-            <span>12345 政务热线智能研判平台 · V2 双引擎架构</span>
+            <span className="login-brand-text">
+              <span>12345 政务热线智能研判平台</span>
+              <span>V2 双引擎架构</span>
+            </span>
           </div>
           <h1 className="login-title">民声智理 · 智能研判系统</h1>
           <p className="login-subtitle">
-            基于快慢思考双引擎协同 · 微观时空实体对齐 · 多频诉求全自动研判流水线
+            <span>基于快慢思考双引擎协同</span>
+            <span>微观时空实体对齐</span>
+            <span>多频诉求全自动研判流水线</span>
           </p>
           <div className="login-features-row">
             <span className="login-feature-pill">
@@ -202,7 +207,12 @@ function LoginForm() {
         <div className="login-footer">
           <div className="security-tag">
             <ShieldCheck size={14} />
-            <span>政务信创适配 · 端侧纯离线推理 · 隐私气隙脱敏 · 多租户 Schema 物理隔离</span>
+            <span className="security-tag__text">
+              <span>政务信创适配</span>
+              <span>端侧纯离线推理</span>
+              <span>隐私气隙脱敏</span>
+              <span>多租户 Schema 物理隔离</span>
+            </span>
           </div>
         </div>
       </div>

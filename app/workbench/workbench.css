@@ -530,18 +530,39 @@
   }
 
   .workbench-header {
-    align-items: flex-start;
-    padding: 8px 12px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    padding: 8px 8px 8px 12px;
+  }
+
+  .workbench-title-group {
+    grid-column: 1;
+    grid-row: 1;
+    flex: none;
+    padding-right: 4px;
+  }
+
+  .workbench-header__actions {
+    grid-column: 2;
+    grid-row: 1;
+    margin-left: 0;
   }
 
   .workbench-header__status {
-    flex: 1 1 100%;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    flex: none;
     max-width: none;
   }
 
+  .workbench-header__status:not(:has(.workbench-badge)) {
+    display: none;
+  }
+
   .workbench-close-btn {
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
   }
 
   .pipeline-drawer__handle {
