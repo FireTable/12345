@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { CivicEChart, CivicHeatmap, donutOption, trendOption } from "@/app/_components/civic/civic-charts";
 import { getTownshipColor } from "@/lib/civic-cluster";
-import { FileText, Activity, Sparkles, FolderKanban, MonitorPlay } from "lucide-react";
+import { FileText, Activity, Sparkles, FolderKanban, MonitorPlay, TrendingUp } from "lucide-react";
 import { CockpitView } from "@/app/_components/cockpit/cockpit-view";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { SkDashboard } from "@/app/_components/civic/skeletons";
@@ -23,6 +23,7 @@ import {
 
 type Overview = {
   totalWorkorders: number;
+  todayCount?: number;
   dateRange: string;
   totalDays: number;
   avgDaily: number;
@@ -165,30 +166,30 @@ export default function DashboardPage() {
               tone="blue"
               label="总工单"
               value={ov?.totalWorkorders}
-              sub={ov?.totalDays ? `${ov.totalDays} 天` : "--"}
+              sub={ov?.totalDays ? `${ov.totalDays} 天累计` : "--"}
               href="/tickets"
+            />
+            <StatCard
+              icon={TrendingUp}
+              tone="orange"
+              label="今日新增"
+              value={ov?.todayCount ?? 0}
+              sub="24小时实时接入"
+              href="/tickets?time=今天"
             />
             <StatCard
               icon={Activity}
               tone="green"
-              label="日均"
+              label="日均受理"
               value={ov?.avgDaily}
-              sub={maxDaily ? `最高 ${maxDaily.toLocaleString("zh-CN")}` : ov?.topRegion ? `最多 ${ov.topRegion}` : ""}
-            />
-            <StatCard
-              icon={Sparkles}
-              tone="purple"
-              label="AI 多频"
-              value={ov?.multiFreqCount}
-              sub="多频工单"
-              href="/multifreq"
+              sub={maxDaily ? `单日最高 ${maxDaily.toLocaleString("zh-CN")}` : ov?.topRegion ? `诉求最多 ${ov.topRegion}` : ""}
             />
             <StatCard
               icon={FolderKanban}
-              tone="orange"
-              label="聚类数"
+              tone="purple"
+              label="多频主题"
               value={ov?.multiFreqClusters}
-              sub="多频聚类"
+              sub={ov?.multiFreqCount ? `汇聚 ${ov.multiFreqCount.toLocaleString("zh-CN")} 件工单` : "多频聚类"}
               href="/themes"
             />
           </StatCardGrid>

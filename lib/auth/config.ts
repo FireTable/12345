@@ -8,6 +8,24 @@ const secret =
   process.env.BETTER_AUTH_SECRET || "civic-12345-auth-secret-key-production-dev-mode";
 const baseURL = process.env.BETTER_AUTH_URL || "http://localhost:3000";
 
+const envOrigins = (process.env.BETTER_AUTH_TRUSTED_ORIGINS || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+const trustedOrigins = Array.from(
+  new Set([
+    baseURL,
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:3002",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
+    "http://127.0.0.1:3002",
+    ...envOrigins,
+  ])
+);
+
 declare global {
   // biome-ignore lint/suspicious/noExplicitAny: HMR cache
   var __auth: any;
@@ -55,7 +73,7 @@ export const auth =
       expiresIn: 60 * 60 * 24 * 7, // 7 days
       updateAge: 60 * 60 * 24, // 1 day
     },
-    trustedOrigins: [baseURL],
+    trustedOrigins,
   });
 
 if (process.env.NODE_ENV !== "production") {

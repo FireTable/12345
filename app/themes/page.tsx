@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { URGENCY_META, type ClusterUrgency } from "@/lib/civic-cluster";
 import { isTownLabel } from "@/lib/admin-area";
-import { FolderKanban, Clock, Flame, CheckCircle2 } from "lucide-react";
+import { FolderKanban, Clock, Flame, TrendingUp } from "lucide-react";
+import { clampTimeRef, formatYmd } from "@/lib/civic-time";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { SkThemes } from "@/app/_components/civic/skeletons";
 import {
@@ -45,7 +46,6 @@ const TABS = [
   { key: "all", label: "全部" },
   { key: "pending", label: "未处理" },
   { key: "progress", label: "处置中" },
-  { key: "done", label: "已办结" },
   { key: "urgent", label: "紧急" },
 ] as const;
 
@@ -55,6 +55,7 @@ export default function ThemesPage() {
   const [rows, setRows] = useState<Cluster[]>([]);
   const [regions, setRegions] = useState<string[]>([]);
   const [tab, setTab] = useState("all");
+  const [todayOnly, setTodayOnly] = useState(false);
   const [kw, setKw] = useState("");
   const [region, setRegion] = useState("");
   const [mode, setMode] = useState("");
@@ -87,20 +88,27 @@ export default function ThemesPage() {
     }
   });
 
+  const latestStr = rows.reduce((acc, r) => {
+    const d = r.last_date || r.first_date || "";
+    return d > acc ? d : acc;
+  }, "");
+  const todayKey = formatYmd(clampTimeRef(latestStr ? new Date(latestStr.replace(" ", "T")) : null));
+  const todayNewCount = rows.filter((r) => r.last_date === todayKey || r.first_date === todayKey).length;
+
   const counts = {
     all: rows.length,
+    today: todayNewCount,
     pending: rows.filter((r) => (r.status.code || HANDLING_STATUS.PENDING) === HANDLING_STATUS.PENDING).length,
     progress: rows.filter((r) => r.status.code === HANDLING_STATUS.IN_PROGRESS).length,
-    done: rows.filter((r) => r.status.code === HANDLING_STATUS.RESOLVED).length,
     urgent: rows.filter((r) => r.urgency === "urgent").length,
   };
 
   const filtered = useMemo(() => {
     const arr = rows.filter((r) => {
       const code = r.status.code || normalizeStatusCode(r.status.label);
+      if (todayOnly && r.last_date !== todayKey && r.first_date !== todayKey) return false;
       if (tab === "pending" && code !== HANDLING_STATUS.PENDING) return false;
       if (tab === "progress" && code !== HANDLING_STATUS.IN_PROGRESS) return false;
-      if (tab === "done" && code !== HANDLING_STATUS.RESOLVED) return false;
       if (tab === "urgent" && r.urgency !== "urgent") return false;
       if (region && !r.region.includes(region)) return false;
       if (mode && r.mode !== mode) return false;
@@ -116,7 +124,7 @@ export default function ThemesPage() {
       return b.count - a.count;
     });
     return arr;
-  }, [rows, tab, region, mode, urgency, kw]);
+  }, [rows, tab, region, mode, urgency, kw, todayOnly, todayKey]);
 
   const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, pages);
@@ -177,45 +185,45 @@ export default function ThemesPage() {
               sub="已识别多频主题"
               onClick={() => {
                 setTab("all");
-                load();
+                setTodayOnly(false);
               }}
-              className={tab === "all" ? "ring-2 ring-blue-500/30" : ""}
+              className={tab === "all" && !todayOnly ? "ring-2 ring-blue-500/30" : ""}
+            />
+            <StatCard
+              icon={TrendingUp}
+              tone="orange"
+              label="今日新增"
+              value={counts.today}
+              sub={todayOnly ? "正在查看今日群组" : "24小时内新识别"}
+              onClick={() => {
+                setTodayOnly(!todayOnly);
+                setTab("all");
+              }}
+              className={todayOnly ? "ring-2 ring-amber-500/30" : ""}
             />
             <StatCard
               icon={Clock}
-              tone="orange"
+              tone="blue"
               label="未处理"
               value={counts.pending}
               sub="待处置群组"
               onClick={() => {
                 setTab("pending");
-                load();
+                setTodayOnly(false);
               }}
-              className={tab === "pending" ? "ring-2 ring-rose-500/30" : ""}
+              className={tab === "pending" && !todayOnly ? "ring-2 ring-blue-500/30" : ""}
             />
             <StatCard
               icon={Flame}
-              tone="orange"
-              label="紧急"
+              tone="red"
+              label="紧急群组"
               value={counts.urgent}
-              sub="未处理工单较多"
+              sub="高关注度共性诉求"
               onClick={() => {
                 setTab("urgent");
-                load();
+                setTodayOnly(false);
               }}
-              className={tab === "urgent" ? "ring-2 ring-amber-500/30" : ""}
-            />
-            <StatCard
-              icon={CheckCircle2}
-              tone="green"
-              label="已办结"
-              value={counts.done}
-              sub="处置完成"
-              onClick={() => {
-                setTab("done");
-                load();
-              }}
-              className={tab === "done" ? "ring-2 ring-emerald-500/30" : ""}
+              className={tab === "urgent" && !todayOnly ? "ring-2 ring-rose-500/30" : ""}
             />
           </StatCardGrid>
 

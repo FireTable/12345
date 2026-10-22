@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import {
   FileText,
   Clock,
-  CheckCircle2,
+  TrendingUp,
   Flame,
   ExternalLink,
   Layers,
@@ -69,6 +69,7 @@ type Row = {
 
 type Stats = {
   total: number;
+  today: number;
   pending: number;
   progress: number;
   finished: number;
@@ -81,7 +82,6 @@ const TABS = [
   { key: "all", label: "全部" },
   { key: "pending", label: "待处理" },
   { key: "progress", label: "处理中" },
-  { key: "finished", label: "已办结" },
   { key: "urgent", label: "紧急" },
   { key: "multifreq", label: "多频聚类" },
   { key: "single", label: "单发诉求" },
@@ -108,7 +108,7 @@ export default function TicketsPage() {
   }>({
     total: 0,
     data: [],
-    stats: { total: 0, pending: 0, progress: 0, finished: 0, urgent: 0, multifreq: 0, single: 0 },
+    stats: { total: 0, today: 0, pending: 0, progress: 0, finished: 0, urgent: 0, multifreq: 0, single: 0 },
     facets: { regions: [], categories: [] },
   });
   const [ready, setReady] = useState(false);
@@ -276,13 +276,31 @@ export default function TicketsPage() {
               sub="当前库累计"
               onClick={() => {
                 setTab("all");
+                setTime("");
                 setPage(1);
               }}
-              className={tab === "all" ? "ring-2 ring-blue-500/30" : ""}
+              className={tab === "all" && !time ? "ring-2 ring-blue-500/30" : ""}
+            />
+            <StatCard
+              icon={TrendingUp}
+              tone="orange"
+              label="今日新增"
+              value={s.today}
+              sub={time === "今天" ? "正在查看今日工单" : "24小时实时接入"}
+              onClick={() => {
+                if (time === "今天") {
+                  setTime("");
+                } else {
+                  setTime("今天");
+                  setTab("all");
+                }
+                setPage(1);
+              }}
+              className={time === "今天" ? "ring-2 ring-amber-500/30" : ""}
             />
             <StatCard
               icon={Clock}
-              tone="orange"
+              tone="blue"
               label="待处理"
               value={s.pending + s.progress}
               sub={`占总数 ${pendingShare}%`}
@@ -290,19 +308,7 @@ export default function TicketsPage() {
                 setTab("pending");
                 setPage(1);
               }}
-              className={tab === "pending" || tab === "progress" ? "ring-2 ring-amber-500/30" : ""}
-            />
-            <StatCard
-              icon={CheckCircle2}
-              tone="green"
-              label="已办结"
-              value={s.finished}
-              sub={`办结率 ${finishShare}%`}
-              onClick={() => {
-                setTab("finished");
-                setPage(1);
-              }}
-              className={tab === "finished" ? "ring-2 ring-emerald-500/30" : ""}
+              className={tab === "pending" || tab === "progress" ? "ring-2 ring-blue-500/30" : ""}
             />
             <StatCard
               icon={Flame}

@@ -41,12 +41,18 @@ export async function loadOverview(days: number, regionId?: string) {
   const latest = await latestTicketTime(tenantDb);
   const scoped = colInWindow(ticketsTable.createTime, windowForDays(days, latest));
   const inWindow = scoped ?? sql`true`;
+  const todayWin = timeWindow("今天", clampTimeRef(latest));
+  const todayCondition =
+    todayWin.from && todayWin.to
+      ? and(gte(ticketsTable.createTime, todayWin.from), lt(ticketsTable.createTime, todayWin.to))
+      : undefined;
 
   const [totals, themeCountRes, regionRows, categoryRows, regionCategoryRows, monthlyRows, themeInsightRows] =
     await Promise.all([
       tenantDb
         .select({
           total: sql<number>`count(*)::int`,
+          today: todayCondition ? sql<number>`count(*) filter (where ${todayCondition})::int` : sql<number>`0::int`,
           analyzed: sql<number>`count(*) filter (where ${ticketsTable.confidence} is not null)::int`,
           multifreq: sql<number>`count(*) filter (where ${ticketsTable.primaryThemeId} is not null)::int`,
           minTime: sql<Date | null>`min(${ticketsTable.createTime})`,
@@ -131,6 +137,7 @@ export async function loadOverview(days: number, regionId?: string) {
 
   return {
     success: true as const,
+    todayCount: asInt(totalsRow.today),
     ...overview,
     insights,
   };
@@ -178,15 +185,22 @@ export async function loadTrends(days: number, regionId?: string) {
 
 export async function loadWorkorderStats(regionId?: string) {
   const { db: tenantDb } = await getRegionDb(regionId);
+  const latest = await latestTicketTime(tenantDb);
+  const todayWin = timeWindow("今天", clampTimeRef(latest));
+  const todayCondition =
+    todayWin.from && todayWin.to
+      ? and(gte(ticketsTable.createTime, todayWin.from), lt(ticketsTable.createTime, todayWin.to))
+      : undefined;
+
   const [agg, regionRows, categoryRows] = await Promise.all([
     tenantDb
       .select({
         total: sql<number>`count(*)::int`,
+        today: todayCondition ? sql<number>`count(*) filter (where ${todayCondition})::int` : sql<number>`0::int`,
         finished: sql<number>`count(*) filter (where upper(coalesce(${ticketsTable.status}, '')) in ('RESOLVED','FINISHED'))::int`,
         progress: sql<number>`count(*) filter (where upper(coalesce(${ticketsTable.status}, '')) in ('DISPATCHED','VERIFIED','IN_PROGRESS','PROCESSING'))::int`,
         urgent: sql<number>`count(*) filter (where upper(coalesce(${ticketsTable.urgency}, '')) = 'URGENT')::int`,
         multifreq: sql<number>`count(*) filter (where ${ticketsTable.primaryThemeId} is not null)::int`,
-        latest: sql<Date | null>`max(${ticketsTable.createTime})`,
       })
       .from(ticketsTable),
     tenantDb
@@ -206,11 +220,11 @@ export async function loadWorkorderStats(regionId?: string) {
 
   const row = agg[0] || {
     total: 0,
+    today: 0,
     finished: 0,
     progress: 0,
     urgent: 0,
     multifreq: 0,
-    latest: null,
   };
   const total = asInt(row.total);
   const finished = asInt(row.finished);
@@ -242,6 +256,7 @@ export async function loadWorkorderStats(regionId?: string) {
   return {
     stats: {
       total,
+      today: asInt(row.today),
       pending: Math.max(0, total - finished - progress),
       progress,
       finished,
@@ -249,7 +264,7 @@ export async function loadWorkorderStats(regionId?: string) {
       multifreq: asInt(row.multifreq),
       single: Math.max(0, total - asInt(row.multifreq)),
     },
-    latest: row.latest ? new Date(row.latest) : null,
+    latest,
     facets: {
       regions: sortedRegions,
       categories: [...known, ...extra],
