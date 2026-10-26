@@ -52,11 +52,20 @@ export const metadata: Metadata = {
     siteName: "民声智理 CivicRadar",
     locale: "zh_CN",
     type: "website",
+    images: [
+      {
+        url: "/og.png",
+        width: 1200,
+        height: 630,
+        alt: "民声智理 · 12345 市民热线多频工单 AI 智能研判与治理系统",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "民声智理 · 12345 政务热线认知中枢",
     description: "工业级 12345 热线 AI 双系统研判与时空图谱聚类中枢平台",
+    images: ["/og.png"],
   },
   robots: {
     index: true,
