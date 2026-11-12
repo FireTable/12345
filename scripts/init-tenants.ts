@@ -188,7 +188,7 @@ export async function initTenants(customSql?: postgres.Sql) {
       geojsonBoundary: shundeGeojson || undefined,
       subdistrictsGeojson: shundeSubdistrictsGeojson || undefined,
       description: "顺德区 10 大法定镇街政务研判站点",
-      isDefault: true,
+      isDefault: false,
     });
     await seedVocabForSchema("region_fs_shunde", shundePreset, sqlClient);
 
@@ -212,7 +212,7 @@ export async function initTenants(customSql?: postgres.Sql) {
       geojsonBoundary: tianheGeojson || undefined,
       subdistrictsGeojson: tianheSubdistrictsGeojson || undefined,
       description: tianhePreset.description,
-      isDefault: false,
+      isDefault: true,
     });
     await seedVocabForSchema("region_gz_tianhe", tianhePreset, sqlClient);
 

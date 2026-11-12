@@ -286,7 +286,7 @@ export default function TicketsPage() {
               tone="orange"
               label="今日新增"
               value={s.today}
-              sub={time === "今天" ? "正在查看今日工单" : "24小时实时接入"}
+              sub={time === "今天" ? "正在查看今日工单" : "数据最新一日"}
               onClick={() => {
                 if (time === "今天") {
                   setTime("");
@@ -464,6 +464,11 @@ export default function TicketsPage() {
                           {r.multifreq && (
                             <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200 shrink-0" title="已归入多频聚类群组">
                               多频
+                            </span>
+                          )}
+                          {r.isFakeClosure && (
+                            <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-medium bg-amber-50 text-amber-800 border border-amber-200 shrink-0" title="办结后短期内再次投诉">
+                              假闭环
                             </span>
                           )}
                         </div>

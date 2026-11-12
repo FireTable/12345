@@ -56,5 +56,5 @@ export async function resolveRequestRegionId(
     // ignore
   }
 
-  return "fs_shunde";
+  return "gz_tianhe";
 }

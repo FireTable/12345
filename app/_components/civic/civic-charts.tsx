@@ -172,9 +172,10 @@ export function CivicEChart({
 
 export function trendOption(daily: Record<string, number>, clusters: Record<string, number> = {}) {
   const entries = Object.entries(daily).sort((a, b) => a[0].localeCompare(b[0]));
-  const dates = entries.map(([d]) => d.slice(5));
+  const dates = entries.map(([d]) => d);
   const orders = entries.map(([, v]) => v);
   const aligned = entries.map(([d]) => clusters[d] || 0);
+  const crossYear = new Set(dates.map((d) => d.slice(0, 4))).size > 1;
 
   return {
     grid: {
@@ -202,6 +203,14 @@ export function trendOption(daily: Record<string, number>, clusters: Record<stri
         fontSize: 11,
         interval: Math.max(0, Math.floor(dates.length / 8) - 1),
         formatter: (v: string) => {
+          const parts = v.split("-");
+          if (parts.length >= 3) {
+            const year = parts[0] || "";
+            const month = parseInt(parts[1] || "", 10);
+            const day = parseInt(parts[2] || "", 10);
+            if (crossYear) return `${year.slice(2)}/${month}/${day}`;
+            return `${month}月${day}日`;
+          }
           const [m, d] = v.split("-");
           return `${parseInt(m, 10)}月${parseInt(d, 10)}日`;
         },

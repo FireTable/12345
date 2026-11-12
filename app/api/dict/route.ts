@@ -2,10 +2,20 @@ import { NextRequest } from "next/server";
 import { getRegionDb } from "@/db/client";
 import { vocabulariesTable, aliasesTable, type AliasRecord, type VocabularyRecord } from "@/db/schema";
 import { eq, desc, ilike, or } from "drizzle-orm";
-import { normalizeAliasesInText, registerAlias, getAllAliases } from "@/lib/alias-dict";
+import { normalizeAliasesInText, registerAlias, getAllAliases, getRegionAliasMap } from "@/lib/alias-dict";
 import { getRegionVocabulary } from "@/lib/vocabulary";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 import { apiSuccess, apiError, ApiCode } from "@/lib/api-codes";
+
+function aliasListRank(row: { alias: string; canonical: string; type: string; source: string }): number {
+  const canon = row.canonical || "";
+  const town = row.type === "TOWNSHIP" || row.source === "PRESET" || /(?:街道|镇)$/.test(canon);
+  if (town && canon.length <= 8 && (row.alias || "").length <= 12) return 0;
+  if (town) return 1;
+  if (row.source === "MANUAL") return 2;
+  if (row.source === "AI_MINED" && canon.length > 16) return 4;
+  return 3;
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -43,6 +53,12 @@ export async function GET(req: NextRequest) {
         createdAt: new Date(),
       }));
     }
+    aliases.sort(
+      (a, b) =>
+        aliasListRank(a) - aliasListRank(b) ||
+        a.alias.length - b.alias.length ||
+        a.alias.localeCompare(b.alias, "zh-CN"),
+    );
 
     // 2. 查询当前 Schema 的标准词汇库
     try {
@@ -112,7 +128,8 @@ export async function POST(req: NextRequest) {
     // 1. 测试别名规范化
     if (action === "normalize" || action === "test_replace") {
       const text = String(body.text || "");
-      const normalized = normalizeAliasesInText(text);
+      const aliasMap = await getRegionAliasMap(regionId);
+      const normalized = normalizeAliasesInText(text, aliasMap);
       return apiSuccess({
         original: text,
         normalized,

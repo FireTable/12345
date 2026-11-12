@@ -924,14 +924,20 @@ a.btn--primary:hover,
   font-weight: 600;
   color: var(--c-ink);
   margin-bottom: 4px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-width: 0;
 }
 .insight-card__text {
   font-size: 12.5px;
   color: var(--c-ink-2);
   line-height: 1.6;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* ============== split-row 双栏 ============== */

@@ -124,9 +124,7 @@ export default function DictionaryManagementPage() {
 
   // 实时别名测试工具
   const [testText, setTestText] = useState(
-    activeRegion?.id?.includes("tianhe")
-      ? "市民在花城广场与正佳附近反映体育西商圈某商户噪音扰民，希望猎德综合行政执法队介入。"
-      : "市民在容奇大桥附近反映某商户违规经营，希望属地综合行政执法队介入。"
+    "市民从岗顶IT商圈走到正佳商圈，反映天河路商圈夜间噪音扰民。"
   );
   const [normalizedTestResult, setNormalizedTestResult] = useState("");
 
@@ -180,7 +178,10 @@ export default function DictionaryManagementPage() {
     try {
       const res = await fetch("/api/dict", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(activeRegion?.id ? { "x-region-id": activeRegion.id } : {}),
+        },
         body: JSON.stringify({ action: "test_replace", text }),
       });
       const data = await res.json();
@@ -192,8 +193,12 @@ export default function DictionaryManagementPage() {
   };
 
   useEffect(() => {
-    handleTestReplace(testText);
-  }, []);
+    if (!activeRegion?.id) return;
+    const sample = activeRegion.id.includes("tianhe")
+      ? "市民从岗顶IT商圈走到正佳商圈，反映天河路商圈夜间噪音扰民。"
+      : "市民在容奇大桥附近反映某商户违规经营，希望属地综合行政执法队介入。";
+    handleTestReplace(sample);
+  }, [activeRegion?.id]);
 
   // 新增别名提交
   const handleAddAlias = async (e: React.FormEvent) => {

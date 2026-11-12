@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -35,6 +35,7 @@ export function RegionProvider({ children }: { children: React.ReactNode }) {
 
   const pathname = usePathname();
   const router = useRouter();
+  const refreshedCookie = useRef(false);
 
   const fetchRegions = useCallback(async () => {
     // 登录页不触发，等登录成功后再拉取
@@ -56,8 +57,8 @@ export function RegionProvider({ children }: { children: React.ReactNode }) {
       if (json.success && Array.isArray(json.regions)) {
         setRegions(json.regions);
 
-        // 获取上次本地选择或默认激活的地区
-        const savedRegionId = localStorage.getItem("active_region_id");
+        // 新键只记用户这次主动切换。旧的 active_region_id 不再沿用，避免浏览器里留下的顺德盖住广州默认站。
+        const savedRegionId = localStorage.getItem("civic_active_region");
         const matched =
           json.regions.find((r: RegionInfo) => r.id === savedRegionId) ||
           json.regions.find((r: RegionInfo) => r.id === json.defaultRegionId) ||
@@ -66,7 +67,13 @@ export function RegionProvider({ children }: { children: React.ReactNode }) {
 
         setActiveRegion(matched);
         if (matched) {
+          const prev = document.cookie.match(/(?:^|; )active_region=([^;]*)/)?.[1] || "";
+          const prevId = prev ? decodeURIComponent(prev) : "";
           document.cookie = `active_region=${matched.id}; path=/; max-age=31536000; SameSite=Lax`;
+          if (prevId && prevId !== matched.id && !refreshedCookie.current) {
+            refreshedCookie.current = true;
+            router.refresh();
+          }
         }
       }
     } catch (err: any) {
@@ -74,7 +81,7 @@ export function RegionProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, [pathname]);
+  }, [pathname, router]);
 
   // 初次加载与路由切换监控：一旦离开 /login 且无站点数据，立即重新拉取
   useEffect(() => {
@@ -88,7 +95,7 @@ export function RegionProvider({ children }: { children: React.ReactNode }) {
     if (!target) return;
 
     setActiveRegion(target);
-    localStorage.setItem("active_region_id", target.id);
+    localStorage.setItem("civic_active_region", target.id);
     document.cookie = `active_region=${target.id}; path=/; max-age=31536000; SameSite=Lax`;
     toast.success(`已切换至【${target.city} · ${target.name} 12345 站点】`);
 

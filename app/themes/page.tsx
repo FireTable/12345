@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { URGENCY_META, type ClusterUrgency } from "@/lib/civic-cluster";
+import { URGENCY_META, clusterStoryPenalty, type ClusterUrgency } from "@/lib/civic-cluster";
 import { isTownLabel } from "@/lib/admin-area";
 import { FolderKanban, Clock, Flame, TrendingUp } from "lucide-react";
 import { clampTimeRef, formatYmd } from "@/lib/civic-time";
@@ -118,6 +118,9 @@ export default function ThemesPage() {
     });
     const statusOrder: Record<string, number> = { PENDING: 0, IN_PROGRESS: 1, RESOLVED: 2 };
     arr.sort((a, b) => {
+      const pa = clusterStoryPenalty(a);
+      const pb = clusterStoryPenalty(b);
+      if (pa !== pb) return pa - pb;
       const sa = statusOrder[a.status.code || "PENDING"] ?? 0;
       const sb = statusOrder[b.status.code || "PENDING"] ?? 0;
       if (sa !== sb) return sa - sb;
@@ -194,7 +197,7 @@ export default function ThemesPage() {
               tone="orange"
               label="今日新增"
               value={counts.today}
-              sub={todayOnly ? "正在查看今日群组" : "24小时内新识别"}
+              sub={todayOnly ? "正在查看今日群组" : "数据最新一日"}
               onClick={() => {
                 setTodayOnly(!todayOnly);
                 setTab("all");

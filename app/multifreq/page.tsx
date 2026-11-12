@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { CivicMap } from "@/app/_components/civic/civic-map";
 import { QuadrantBoard } from "@/app/_components/civic/quadrant";
-import { URGENCY_META, type ClusterUrgency } from "@/lib/civic-cluster";
+import { URGENCY_META, clusterStoryPenalty, type ClusterUrgency } from "@/lib/civic-cluster";
 import { clampTimeRef, formatYmd, inTimeWindow } from "@/lib/civic-time";
 import { isTownLabel } from "@/lib/admin-area";
 import { HANDLING_STATUS, normalizeStatusCode } from "@/lib/civic-dto";
@@ -169,7 +169,9 @@ function MultifreqInner() {
     return list;
   }, [ov, rows]);
 
-  const top5 = [...filtered].sort((a, b) => b.count - a.count).slice(0, 5);
+  const top5 = [...filtered]
+    .sort((a, b) => clusterStoryPenalty(a) - clusterStoryPenalty(b) || b.count - a.count)
+    .slice(0, 5);
 
   function cycleTime() {
     const intervals = [
@@ -242,7 +244,7 @@ function MultifreqInner() {
               tone="orange"
               label="今日新增"
               value={todayNew}
-              sub="24小时内新识别"
+              sub="数据最新一日"
             />
             <StatCard
               icon={Flame}

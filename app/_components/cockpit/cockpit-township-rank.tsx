@@ -9,14 +9,16 @@ interface CockpitTownshipRankProps {
   stats: CockpitTownshipStat[];
   selectedTownship: string | null;
   onSelectTownship: (name: string | null) => void;
+  loading?: boolean;
 }
 
 export function CockpitTownshipRank({
   stats,
   selectedTownship,
   onSelectTownship,
+  loading = false,
 }: CockpitTownshipRankProps) {
-  const maxCount = stats.length > 0 ? stats[0].count : 1;
+  const maxCount = Math.max(1, ...stats.map((item) => item.count));
 
   return (
     <div className="cockpit-glass-card w-full h-full flex flex-col rounded-2xl p-4">
@@ -35,7 +37,7 @@ export function CockpitTownshipRank({
       <div className="flex-1 overflow-y-auto mt-2.5 space-y-2 pr-1 custom-cockpit-scrollbar">
         {stats.length === 0 ? (
           <div className="h-full flex items-center justify-center text-xs text-slate-400 font-mono">
-            暂无镇街分布统计
+            {loading ? "正在读取" : "暂无镇街分布统计"}
           </div>
         ) : (
           stats.map((item) => {

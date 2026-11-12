@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useCivicSse } from "@/app/_hooks/use-civic-sse";
+import { isUnknownTownship } from "@/lib/civic-cluster";
 import type {
   CockpitTicket,
   CockpitTownshipStat,
@@ -127,8 +128,9 @@ export function useCockpitData(regionId: string) {
     ).length;
     const urgentFromTickets = recentTickets.filter((t) => t.isUrgent).length;
     const urgentAlertCount = urgentFromClusters + urgentFromTickets;
+    const resolvedCount = Number(rawOverview?.resolvedCount || 0);
     const resolutionRatePct = total > 0
-      ? Math.round(((total - (rawOverview?.pendingCount || 0)) / total) * 1000) / 10
+      ? Math.round((resolvedCount / total) * 1000) / 10
       : 0;
 
     return {
@@ -153,7 +155,12 @@ export function useCockpitData(regionId: string) {
     const entries = Object.entries(subdistrictCounts).filter(([, v]) => v > 0);
     if (!entries.length) return [];
     const total = entries.reduce((acc, [, n]) => acc + n, 0) || 1;
-    const sorted = [...entries].sort((a, b) => b[1] - a[1]);
+    const sorted = [...entries].sort((a, b) => {
+      const ua = isUnknownTownship(a[0]);
+      const ub = isUnknownTownship(b[0]);
+      if (ua !== ub) return ua ? 1 : -1;
+      return b[1] - a[1];
+    });
 
     return sorted.map(([name, count], idx) => ({
       name,
@@ -192,8 +199,8 @@ export function useCockpitData(regionId: string) {
             subdistrict: c.region || undefined,
             urgency: "HIGH",
             createTime: c.last_date || "今日",
-            status: "智能研判预警",
-            desc: c.advice || `涉及 ${c.count} 件同质诉求持续上报`,
+            status: "需跟进",
+            desc: `同组 ${c.count || 0} 件`,
           });
         }
       }
@@ -204,7 +211,7 @@ export function useCockpitData(regionId: string) {
         list.push({
           id: `alert-t-${t.id}`,
           title: t.title || t.content.slice(0, 20),
-          category: t.category || "紧急突发",
+          category: t.category || "紧急工单",
           subdistrict: t.subdistrict,
           urgency: "HIGH",
           createTime: t.createTime.length > 16 ? t.createTime.slice(11, 16) : "刚刚",

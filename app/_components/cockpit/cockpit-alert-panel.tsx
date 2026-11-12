@@ -8,9 +8,10 @@ import type { CockpitAlertItem } from "./cockpit-types";
 interface CockpitAlertPanelProps {
   alerts: CockpitAlertItem[];
   selectedTownship?: string | null;
+  loading?: boolean;
 }
 
-export function CockpitAlertPanel({ alerts, selectedTownship }: CockpitAlertPanelProps) {
+export function CockpitAlertPanel({ alerts, selectedTownship, loading = false }: CockpitAlertPanelProps) {
   const filtered = selectedTownship
     ? alerts.filter(
         (a) =>
@@ -26,13 +27,13 @@ export function CockpitAlertPanel({ alerts, selectedTownship }: CockpitAlertPane
     <div className="cockpit-glass-card cockpit-glass-card--danger w-full h-full flex flex-col rounded-2xl p-4 relative">
       <div className="cockpit-glass-header flex items-center justify-between pb-2 shrink-0">
         <div className="flex items-center gap-2">
-          <Flame size={15} className="text-rose-400 animate-pulse" />
+          <Flame size={15} className="text-rose-400" />
           <h3 className="text-xs font-semibold text-rose-200 tracking-wider">
-            重大突发与应急险情预警
+            高风险群诉
           </h3>
         </div>
         <span className="px-2 py-0.5 rounded-full bg-rose-950/80 border border-rose-500/40 text-[10px] font-mono text-rose-300">
-          {displayList.length} 起在控
+          {loading ? "读取中" : `${displayList.length} 起需跟进`}
         </span>
       </div>
 
@@ -44,7 +45,7 @@ export function CockpitAlertPanel({ alerts, selectedTownship }: CockpitAlertPane
         {displayList.length === 0 ? (
           <div className="h-full flex items-center justify-center text-xs text-emerald-400/80 font-mono gap-1.5">
             <CheckCircle size={14} />
-            <span>辖区暂无重大突发险情预警</span>
+            <span>{loading ? "正在读取" : "当前没有需要提级的群诉"}</span>
           </div>
         ) : (
           displayList.map((alert) => {

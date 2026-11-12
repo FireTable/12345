@@ -24,7 +24,7 @@ export function CockpitView({ onClose }: CockpitViewProps) {
   const escTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const currentRegion = activeRegion || (regions.length > 0 ? regions[0] : null);
-  const regionId = currentRegion?.id || "fs_shunde";
+  const regionId = currentRegion?.id || "gz_tianhe";
   const cockpit = useCockpitData(regionId);
 
   // 监听浏览器全屏状态
@@ -103,14 +103,14 @@ export function CockpitView({ onClose }: CockpitViewProps) {
 
       {/* 3. 顶部中央：无 Header 翼展流光标题 (顶格居中) */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
-        <CockpitTitleCrown title={currentRegion?.name || "顺德区"} />
+        <CockpitTitleCrown title={currentRegion?.name || "天河区"} />
       </div>
 
       {/* 4. 悬浮 HUD 视窗内容层 (顶层布局：顶部全宽横向 KPI 矩阵条，下部三栏贴边调度坞) */}
       <div className="absolute inset-0 z-20 p-3.5 pt-[58px] flex flex-col justify-between pointer-events-none">
         {/* 顶部全宽 KPI 矩阵条：横跨全屏宽幅，左右贴边对齐左右坞，彻底解决两边空 gap，四大卡片恢复宽幅单行呼吸空间 */}
         <div className="w-full pointer-events-auto shrink-0">
-          <CockpitKpiStrip kpi={cockpit.kpi} />
+          <CockpitKpiStrip kpi={cockpit.kpi} loading={cockpit.loading} />
         </div>
 
         {/* 下部三栏：左贴边悬浮坞、中间开阔 GIS 数字孪生地图视区（底部悬浮趋势）、右贴边悬浮坞 */}
@@ -118,12 +118,13 @@ export function CockpitView({ onClose }: CockpitViewProps) {
           {/* 左侧贴边悬浮坞 (对齐顶部卡片1左侧) */}
           <section className="w-[380px] xl:w-[410px] h-full flex flex-col gap-2.5 min-h-0 pointer-events-auto">
             <div className="h-[33%] min-h-[160px]">
-              <CockpitCategoryChart data={cockpit.categoryStats} />
+              <CockpitCategoryChart data={cockpit.categoryStats} loading={cockpit.loading} />
             </div>
             <div className="h-[24%] min-h-[125px]">
               <CockpitAlertPanel
                 alerts={cockpit.alerts}
                 selectedTownship={cockpit.selectedTownship}
+                loading={cockpit.loading}
               />
             </div>
             <div className="flex-1 min-h-[175px]">
@@ -151,6 +152,7 @@ export function CockpitView({ onClose }: CockpitViewProps) {
                 stats={cockpit.townshipStats}
                 selectedTownship={cockpit.selectedTownship}
                 onSelectTownship={cockpit.setSelectedTownship}
+                loading={cockpit.loading}
               />
             </div>
             <div className="flex-1 min-h-[175px]">

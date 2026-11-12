@@ -55,6 +55,8 @@ export async function loadOverview(days: number, regionId?: string) {
           today: todayCondition ? sql<number>`count(*) filter (where ${todayCondition})::int` : sql<number>`0::int`,
           analyzed: sql<number>`count(*) filter (where ${ticketsTable.confidence} is not null)::int`,
           multifreq: sql<number>`count(*) filter (where ${ticketsTable.primaryThemeId} is not null)::int`,
+          resolved: sql<number>`count(*) filter (where ${ticketsTable.status} in ('RESOLVED', 'FINISHED', 'CLOSED', '已办结') or ${ticketsTable.closedAt} is not null)::int`,
+          fakeClosure: sql<number>`count(*) filter (where ${ticketsTable.isFakeClosure} is true)::int`,
           minTime: sql<Date | null>`min(${ticketsTable.createTime})`,
           maxTime: sql<Date | null>`max(${ticketsTable.createTime})`,
         })
@@ -104,18 +106,26 @@ export async function loadOverview(days: number, regionId?: string) {
           trendPct: themesTable.trendPct,
           canonicalSubject: themesTable.canonicalSubject,
           canonicalLocation: themesTable.canonicalLocation,
+          aiSummary: themesTable.aiSummary,
           recommendedAction: themesTable.recommendedAction,
           riskLevel: themesTable.riskLevel,
         })
         .from(themesTable)
-        .orderBy(desc(themesTable.ticketCount))
-        .limit(200),
+        .orderBy(
+          sql`case when ${themesTable.ticketCount} between 2 and 240 and char_length(coalesce(${themesTable.title}, '')) <= 48 and coalesce(${themesTable.title}, '') not like '%身份证%' then 0 else 1 end`,
+          desc(themesTable.lastAt),
+          desc(themesTable.ticketCount),
+        )
+        .limit(80),
     ]);
 
   const totalsRow = totals[0] || {
     total: 0,
+    today: 0,
     analyzed: 0,
     multifreq: 0,
+    resolved: 0,
+    fakeClosure: 0,
     minTime: null,
     maxTime: null,
   };
@@ -138,6 +148,8 @@ export async function loadOverview(days: number, regionId?: string) {
   return {
     success: true as const,
     todayCount: asInt(totalsRow.today),
+    resolvedCount: asInt(totalsRow.resolved),
+    fakeClosureCount: asInt(totalsRow.fakeClosure),
     ...overview,
     insights,
   };

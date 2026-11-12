@@ -28,6 +28,39 @@ const IMPORTANT_TYPES = [
   "交通出行",
 ];
 
+/** 演示排序：单镇街、件数适中、标题短的群组排在跨区大组前面。 */
+export function clusterStoryPenalty(row: {
+  region?: string | null;
+  count?: number | null;
+  title?: string | null;
+}): number {
+  const region = row.region || "";
+  const spanMatch = region.match(/等\s*(\d+)\s*镇街/);
+  const span = spanMatch
+    ? Number(spanMatch[1])
+    : region.includes("·")
+      ? region.split("·").length
+      : region
+        ? 1
+        : 3;
+  const count = row.count || 0;
+  const titleLen = (row.title || "").length;
+  let score = 0;
+  if (span >= 4) score += 500;
+  else if (span >= 2) score += 30;
+  if (count > 500) score += 200;
+  else if (count > 240) score += 40;
+  if (titleLen > 42) score += 80;
+  if ((row.title || "").includes("身份证")) score += 300;
+  return score;
+}
+
+/** 未匹配镇街保持可见，但排在已知镇街后面。 */
+export function isUnknownTownship(name?: string | null): boolean {
+  const text = (name || "").trim();
+  return !text || text === "未知" || text === "UNKNOWN";
+}
+
 export function spanDays(first?: string | null, last?: string | null): number {
   if (!first || !last) return 1;
   const a = Date.parse(first);

@@ -5,6 +5,7 @@ import { loadOverview, loadTrends } from "@/lib/civic-queries";
 import { getNodeMetric } from "@/lib/node-metrics";
 import { peekLatestTaskProgress } from "@/lib/task-progress";
 import { desc, sql } from "drizzle-orm";
+import { isUnknownTownship } from "@/lib/civic-cluster";
 
 /** 大屏最近工单窗口。旧入口先拉 500 条全文，页面只用前 30 条。 */
 export const COCKPIT_RECENT_LIMIT = 30;
@@ -133,7 +134,11 @@ async function loadThemeSummary(regionId: string | undefined): Promise<Omit<Cock
         location: themesTable.canonicalLocation,
       })
       .from(themesTable)
-      .orderBy(desc(themesTable.ticketCount))
+      .orderBy(
+        sql`case when ${themesTable.ticketCount} between 2 and 240 and char_length(coalesce(${themesTable.title}, '')) <= 48 and coalesce(${themesTable.title}, '') not like '%身份证%' then 0 else 1 end`,
+        desc(themesTable.lastAt),
+        desc(themesTable.ticketCount),
+      )
       .limit(12),
   ]);
 
@@ -155,7 +160,12 @@ export function townshipStatsFromDistribution(distribution: Record<string, numbe
   const entries = Object.entries(distribution).filter(([, count]) => count > 0);
   const total = entries.reduce((sum, [, count]) => sum + count, 0) || 1;
   return entries
-    .sort((a, b) => b[1] - a[1])
+    .sort((a, b) => {
+      const ua = isUnknownTownship(a[0]);
+      const ub = isUnknownTownship(b[0]);
+      if (ua !== ub) return ua ? 1 : -1;
+      return b[1] - a[1];
+    })
     .map(([name, count], index) => ({
       name,
       count,
@@ -165,7 +175,7 @@ export function townshipStatsFromDistribution(distribution: Record<string, numbe
 }
 
 export async function loadCockpitRead(regionId?: string) {
-  const region = regionId || "fs_shunde";
+  const region = regionId || "gz_tianhe";
   const [overview, trends, recentTickets, themeParts] = await Promise.all([
     loadOverview(0, region),
     loadTrends(30, region),
@@ -200,7 +210,10 @@ export async function loadCockpitRead(regionId?: string) {
       todayGrowthPct: 0,
       totalTickets: overview.totalWorkorders,
       dailyAverage: overview.avgDaily,
-      resolutionRatePct: overview.totalWorkorders > 0 ? 100 : 0,
+      resolutionRatePct:
+        overview.totalWorkorders > 0
+          ? Math.round(((overview.resolvedCount || 0) / overview.totalWorkorders) * 1000) / 10
+          : 0,
       multifreqCount: overview.multiFreqCount,
       clusterCount: overview.multiFreqClusters,
       urgentAlertCount: urgentFromThemes + recentTickets.filter((ticket) => ticket.isUrgent).length,

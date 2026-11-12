@@ -25,6 +25,14 @@ export function getAllAliases(): Record<string, string> {
   return res;
 }
 
+/** 只给对得上的城市盖出厂镇街别名，避免天河句子被顺德词典改写。 */
+function presetTownshipKey(regionIdOrSchema?: string | null): "gz_tianhe" | "fs_shunde" | null {
+  const key = (regionIdOrSchema || "").trim().toLowerCase();
+  if (!key || key === "default" || key.includes("shunde")) return "fs_shunde";
+  if (key.includes("tianhe")) return "gz_tianhe";
+  return null;
+}
+
 /**
  * 动态加载指定地区的别名知识库（优先查 DB，无 DB 时自动从对应地区预置提炼）
  */
@@ -55,21 +63,27 @@ export async function getRegionAliasMap(regionIdOrSchema?: string | null): Promi
     // 数据库连接异常或未初始化
   }
 
-  // 2. 若数据库无记录（冷启动或离线测试），自动从对应地区出厂字典提炼别名
-  if (map.size === 0) {
+  // 2. 出厂镇街别名盖过库里挖错的同名映射。库里已有别名时不再铺地标，避免把正文改长。
+  const hadDbRows = map.size > 0;
+  const presetKey = presetTownshipKey(targetKey);
+  if (presetKey) {
     try {
-      const vocab = loadPresetVocabulary(targetKey);
+      const vocab = loadPresetVocabulary(presetKey);
       for (const t of vocab.townships) {
         for (const a of t.aliases || []) {
           if (a && a !== t.fullName) map.set(a, t.fullName);
         }
-        for (const lm of t.landmarks || []) {
-          if (lm) map.set(lm, `${t.fullName}${lm}`);
+        if (!hadDbRows) {
+          for (const lm of t.landmarks || []) {
+            if (lm) map.set(lm, `${t.fullName}${lm}`);
+          }
         }
       }
-      for (const d of vocab.departments) {
-        if (d.name && d.name !== d.fullName) {
-          map.set(d.name, d.fullName);
+      if (!hadDbRows) {
+        for (const d of vocab.departments) {
+          if (d.name && d.name !== d.fullName) {
+            map.set(d.name, d.fullName);
+          }
         }
       }
     } catch {

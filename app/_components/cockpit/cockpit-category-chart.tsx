@@ -7,9 +7,10 @@ import { categoryColor } from "@/lib/civic-cluster";
 
 interface CockpitCategoryChartProps {
   data: Record<string, number>;
+  loading?: boolean;
 }
 
-export function CockpitCategoryChart({ data }: CockpitCategoryChartProps) {
+export function CockpitCategoryChart({ data, loading = false }: CockpitCategoryChartProps) {
   const chartOption = useMemo(() => {
     const entries = Object.entries(data).filter(([, v]) => v > 0);
     const total = entries.reduce((acc, [, v]) => acc + v, 0) || 1;
@@ -130,7 +131,7 @@ export function CockpitCategoryChart({ data }: CockpitCategoryChartProps) {
           <CivicEChart option={chartOption} height="100%" className="w-full h-full" />
         ) : (
           <div className="h-full flex items-center justify-center text-xs text-slate-500 font-mono">
-            暂无诉求分类数据
+            {loading ? "正在读取" : "暂无诉求分类数据"}
           </div>
         )}
       </div>

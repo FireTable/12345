@@ -266,9 +266,27 @@ export function buildInsights(
     href?: string;
   }> = [];
   const usedThemeIds = new Set<string>();
+  const tight = themes.filter((t) => {
+    const title = t.title || "";
+    const n = t.ticketCount || 0;
+    return n >= 2 && n <= 240 && title.length > 0 && title.length <= 48 && !title.includes("身份证");
+  });
+  const pool = tight.length > 0 ? tight : themes.filter((t) => (t.ticketCount || 0) <= 240 && !(t.title || "").includes("身份证"));
+  const titleOf = (theme: (typeof themes)[number]) => {
+    const raw = (theme.title || "").replace(/\s+/g, " ").trim();
+    if (raw && raw.length <= 42 && !raw.includes("身份证")) return raw;
+    return `${theme.canonicalLocation || "辖区"} · ${theme.category || "民生"}诉求`;
+  };
+  const textOf = (theme: (typeof themes)[number]) => {
+    const summary = (theme.aiSummary || "").replace(/\s+/g, " ").trim();
+    if (summary && summary.length <= 72 && !summary.includes("【") && !summary.includes("身份证")) return summary;
+    const fromTitle = (theme.title || "").split("·")[0]?.trim() || "";
+    const place = fromTitle && fromTitle.length <= 12 ? fromTitle : "辖区";
+    return `${place}汇聚 ${theme.ticketCount || 0} 件${theme.category || "民生"}诉求`;
+  };
 
   // 1. 寻找最高频的“空间聚集”重点主题 (GROUP_GATHERING / SPATIAL_BURST)
-  const gatherTheme = themes
+  const gatherTheme = pool
     .filter((t) => (t.patternType === "GROUP_GATHERING" || t.patternType === "SPATIAL_BURST" || !t.patternType) && !usedThemeIds.has(t.id))
     .sort((a, b) => (b.ticketCount || 0) - (a.ticketCount || 0))[0];
 
@@ -278,14 +296,14 @@ export function buildInsights(
       type: "GATHERING",
       tag: "聚集",
       tone: "danger",
-      title: gatherTheme.title || `${gatherTheme.canonicalLocation || "辖区"} · ${gatherTheme.category || "民生"}诉求聚集`,
-      text: gatherTheme.aiSummary || gatherTheme.recommendedAction || `${gatherTheme.canonicalLocation || "辖区"}出现 ${gatherTheme.ticketCount || 0} 件${gatherTheme.category || ""}相关诉求`,
+      title: titleOf(gatherTheme),
+      text: textOf(gatherTheme),
       href: `/themes/${gatherTheme.id}`,
     });
   }
 
   // 2. 寻找最高频的“主体发散”重点主题 (DIVERGE)
-  const divergeTheme = themes
+  const divergeTheme = pool
     .filter((t) => t.patternType === "DIVERGE" && !usedThemeIds.has(t.id))
     .sort((a, b) => (b.ticketCount || 0) - (a.ticketCount || 0))[0];
 
@@ -295,17 +313,17 @@ export function buildInsights(
       type: "DIVERGE",
       tag: "发散",
       tone: "info",
-      title: divergeTheme.title || `${divergeTheme.canonicalSubject || "涉事主体"} 多类型问题发散`,
-      text: divergeTheme.aiSummary || divergeTheme.recommendedAction || `涉及同一主体共 ${divergeTheme.ticketCount || 0} 件诉求`,
+      title: titleOf(divergeTheme),
+      text: textOf(divergeTheme),
       href: `/themes/${divergeTheme.id}`,
     });
   }
 
   // 3. 寻找“高风险/重复反映”重点主题
-  const repeatOrUrgentTheme = themes
+  const repeatOrUrgentTheme = pool
     .filter((t) => (t.riskLevel === "HIGH" || t.patternType === "INDIVIDUAL_REPEAT") && !usedThemeIds.has(t.id))
     .sort((a, b) => (b.ticketCount || 0) - (a.ticketCount || 0))[0] ||
-    themes.filter((t) => !usedThemeIds.has(t.id)).sort((a, b) => (b.ticketCount || 0) - (a.ticketCount || 0))[0];
+    pool.filter((t) => !usedThemeIds.has(t.id)).sort((a, b) => (b.ticketCount || 0) - (a.ticketCount || 0))[0];
 
   if (repeatOrUrgentTheme) {
     usedThemeIds.add(repeatOrUrgentTheme.id);
@@ -313,14 +331,14 @@ export function buildInsights(
       type: "REPEAT",
       tag: "重复",
       tone: "warning",
-      title: repeatOrUrgentTheme.title || `${repeatOrUrgentTheme.canonicalSubject || "重点区域"} 多次重复诉求`,
-      text: repeatOrUrgentTheme.aiSummary || repeatOrUrgentTheme.recommendedAction || `累计产生 ${repeatOrUrgentTheme.ticketCount || 0} 次高频反映`,
+      title: titleOf(repeatOrUrgentTheme),
+      text: textOf(repeatOrUrgentTheme),
       href: `/themes/${repeatOrUrgentTheme.id}`,
     });
   }
 
   // 4. 寻找“协同处置 / 综合治理”第 4 席主题 (补齐 4 列网格)
-  const fourthTheme = themes
+  const fourthTheme = pool
     .filter((t) => !usedThemeIds.has(t.id))
     .sort((a, b) => (b.ticketCount || 0) - (a.ticketCount || 0))[0];
 
@@ -330,8 +348,8 @@ export function buildInsights(
       type: fourthTheme.patternType === "DIVERGE" ? "DIVERGE" : "GATHERING",
       tag: fourthTheme.patternType === "DIVERGE" ? "发散" : "聚集",
       tone: fourthTheme.riskLevel === "HIGH" ? "danger" : fourthTheme.riskLevel === "LOW" ? "info" : "warning",
-      title: fourthTheme.title || `${fourthTheme.canonicalLocation || "属地片区"} · ${fourthTheme.category || "民生"}集中研判`,
-      text: fourthTheme.aiSummary || fourthTheme.recommendedAction || `${fourthTheme.canonicalLocation || "辖区"}汇聚 ${fourthTheme.ticketCount || 0} 件工单`,
+      title: titleOf(fourthTheme),
+      text: textOf(fourthTheme),
       href: `/themes/${fourthTheme.id}`,
     });
   }

@@ -38,7 +38,7 @@ export function CivicMap({
   // 1. 默认动态从站点数据库拉取第四级镇街多边形网格面（内置本地静态兜底，确保 100% 出现）
   useEffect(() => {
     let cancelled = false;
-    const regionId = activeRegion?.id || "fs_shunde";
+    const regionId = activeRegion?.id || "gz_tianhe";
 
     async function loadBoundary() {
       try {

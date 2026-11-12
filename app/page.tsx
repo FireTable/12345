@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { CivicEChart, CivicHeatmap, donutOption, trendOption } from "@/app/_components/civic/civic-charts";
-import { getTownshipColor } from "@/lib/civic-cluster";
+import { getTownshipColor, isUnknownTownship } from "@/lib/civic-cluster";
 import { FileText, Activity, Sparkles, FolderKanban, MonitorPlay, TrendingUp } from "lucide-react";
 import { CockpitView } from "@/app/_components/cockpit/cockpit-view";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
@@ -97,9 +97,14 @@ export default function DashboardPage() {
     toast.success(`已导出 ${list.length} 个群组`);
   }
 
-  const regions = Object.entries(ov?.regionDistribution || {}).sort((a, b) => b[1] - a[1]);
+  const regions = Object.entries(ov?.regionDistribution || {}).sort((a, b) => {
+    const ua = isUnknownTownship(a[0]);
+    const ub = isUnknownTownship(b[0]);
+    if (ua !== ub) return ua ? 1 : -1;
+    return b[1] - a[1];
+  });
   const cats = Object.entries(ov?.categoryDistribution || {}).sort((a, b) => b[1] - a[1]);
-  const maxR = regions[0]?.[1] || 1;
+  const maxR = Math.max(1, ...regions.map(([, n]) => n));
   const maxDaily = Math.max(0, ...Object.values(tr?.daily || {}));
   const trendOpt = useMemo(
     () => trendOption(tr?.daily || {}, tr?.dailyNewClusters || {}),
@@ -117,7 +122,7 @@ export default function DashboardPage() {
           <div className="page-hero__sub flex items-center gap-2">
             <span className="status-dot status-dot--finished" style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#52C41A" }} />
             <span>
-              {activeRegion ? `${activeRegion.city} · ${activeRegion.name}` : "当前辖区"} · 接口正常 · {ov?.dateRange || "全部时间"} · 实时研判
+              {activeRegion ? `${activeRegion.city} · ${activeRegion.name}` : "当前辖区"} · 接口正常 · {ov?.dateRange || "全部时间"} · 工单已研判
             </span>
           </div>
         </div>
@@ -174,7 +179,7 @@ export default function DashboardPage() {
               tone="orange"
               label="今日新增"
               value={ov?.todayCount ?? 0}
-              sub="24小时实时接入"
+              sub="数据最新一日"
               href="/tickets?time=今天"
             />
             <StatCard
@@ -208,7 +213,7 @@ export default function DashboardPage() {
                   {ov.insights.map((c) => (
                     <Link key={c.title} href={c.href || "/themes"} className={`insight-card insight-card--${c.tone}`}>
                       <div className="insight-card__icon">{(c as any).type === "GATHERING" || c.tag === "聚集" ? "🚨" : (c as any).type === "REPEAT" || c.tag === "重复" ? "🔁" : (c as any).type === "DIVERGE" || c.tag === "发散" ? "📍" : "📉"}</div>
-                      <div>
+                      <div className="insight-card__body">
                         <div className="insight-card__title">{c.title}</div>
                         <div className="insight-card__text">{c.text}</div>
                       </div>
@@ -257,7 +262,7 @@ export default function DashboardPage() {
             <div className="card">
               <div className="card__header">
                 <div className="card__title">镇街工单量排行</div>
-                <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>近 {daysRange} 天 · 已研判</div>
+                <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>{daysRange === 0 ? "全周期 · 已研判" : `近 ${daysRange} 天 · 已研判`}</div>
               </div>
               <div className="card__body" style={{ padding: "8px 12px 4px" }}>
                 {regions.map(([name, n], i) => {

@@ -12,6 +12,8 @@
  */
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
+  // 本地看演示时设 CIVIC_SKIP_BOOTSTRAP=1，避免一启动就把未处理工单送进研判。
+  if (process.env.CIVIC_SKIP_BOOTSTRAP === "1") return;
 
   // 延迟 2s 等 next-server 完全监听，再 fire-and-forget 触发 bootstrap。
   // 失败也不阻塞 server 启动 —— user 可手动重试或下次 trigger 自然覆盖。

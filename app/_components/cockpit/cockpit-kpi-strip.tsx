@@ -1,31 +1,32 @@
 "use client";
 
 import React from "react";
-import { TrendingUp, AlertTriangle, Layers, CheckCircle2, Zap } from "lucide-react";
+import { AlertTriangle, Layers, CheckCircle2, Zap } from "lucide-react";
 import type { CockpitKpiData } from "./cockpit-types";
 
 interface CockpitKpiStripProps {
   kpi: CockpitKpiData;
+  loading?: boolean;
 }
 
-export function CockpitKpiStrip({ kpi }: CockpitKpiStripProps) {
+export function CockpitKpiStrip({ kpi, loading = false }: CockpitKpiStripProps) {
   const cards = [
     {
       title: "今日受理总量",
-      value: kpi.todayCount.toLocaleString(),
+      value: loading ? "—" : kpi.todayCount.toLocaleString(),
       unit: "件",
-      changeText: `+${kpi.todayGrowthPct}% 环比上周`,
-      changeTone: "up",
+      changeText: loading ? "读取中" : "数据最新一日",
+      changeTone: "normal",
       icon: Zap,
       borderColor: "border-[#1677FF]/40",
       glowColor: "text-[#4096ff]",
       accentBg: "bg-blue-600/20 text-[#4096ff]",
     },
     {
-      title: "实时办结率",
-      value: `${kpi.resolutionRatePct}`,
+      title: "办结率",
+      value: loading ? "—" : `${kpi.resolutionRatePct}`,
       unit: "%",
-      changeText: "符合工单办结时限标准",
+      changeText: loading ? "读取中" : "已办结占全部工单",
       changeTone: "normal",
       icon: CheckCircle2,
       borderColor: "border-emerald-500/35",
@@ -34,9 +35,9 @@ export function CockpitKpiStrip({ kpi }: CockpitKpiStripProps) {
     },
     {
       title: "活跃多频群组",
-      value: kpi.clusterCount.toLocaleString(),
+      value: loading ? "—" : kpi.clusterCount.toLocaleString(),
       unit: "组",
-      changeText: `累计汇聚 ${kpi.multifreqCount.toLocaleString()} 件共性诉求`,
+      changeText: loading ? "读取中" : `累计汇聚 ${kpi.multifreqCount.toLocaleString()} 件共性诉求`,
       changeTone: "normal",
       icon: Layers,
       borderColor: "border-purple-500/35",
@@ -44,15 +45,15 @@ export function CockpitKpiStrip({ kpi }: CockpitKpiStripProps) {
       accentBg: "bg-purple-500/15 text-purple-400",
     },
     {
-      title: "高危突发险情预警",
-      value: kpi.urgentAlertCount.toLocaleString(),
+      title: "高风险群诉",
+      value: loading ? "—" : kpi.urgentAlertCount.toLocaleString(),
       unit: "起",
-      changeText: "已触发联动处置预案",
+      changeText: loading ? "读取中" : "需跟进",
       changeTone: "danger",
       icon: AlertTriangle,
       borderColor: "border-rose-500/40",
       glowColor: "text-rose-400",
-      accentBg: "bg-rose-500/20 text-rose-400 animate-pulse",
+      accentBg: "bg-rose-500/20 text-rose-400",
     },
   ];
 
@@ -91,9 +92,6 @@ export function CockpitKpiStrip({ kpi }: CockpitKpiStripProps) {
             </div>
 
             <div className="mt-1 text-[11px] text-slate-300 flex items-center gap-1">
-              {card.changeTone === "up" && (
-                <TrendingUp size={11} className="text-[#4096ff] inline" />
-              )}
               <span className={card.changeTone === "danger" ? "text-rose-300 font-semibold" : ""}>
                 {card.changeText}
               </span>

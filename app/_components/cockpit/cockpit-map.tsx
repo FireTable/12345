@@ -32,7 +32,7 @@ export function CockpitMap({
   const [geoData, setGeoData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  const regionId = activeRegion?.id || "fs_shunde";
+  const regionId = activeRegion?.id || "gz_tianhe";
 
   const values = Object.values(counts);
   const totalCount = useMemo(() => values.reduce((a, b) => a + b, 0), [values]);

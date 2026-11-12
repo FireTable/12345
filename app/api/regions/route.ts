@@ -22,7 +22,7 @@ export async function GET() {
         isDefault: r.isDefault,
         description: r.description,
       })),
-      defaultRegionId: defaultRegion?.id || regions[0]?.id || "shunde",
+      defaultRegionId: defaultRegion?.id || regions[0]?.id || "gz_tianhe",
     });
   } catch (error: any) {
     console.error("[api/regions] Failed to list regions:", error);
@@ -32,25 +32,25 @@ export async function GET() {
         error: error.message || "Failed to load regions",
         regions: [
           {
-            id: "fs_shunde",
-            name: "顺德区",
-            city: "佛山市",
-            province: "广东省",
-            schemaName: "region_fs_shunde",
-            svgMapPath: "",
-            isDefault: true,
-          },
-          {
             id: "gz_tianhe",
             name: "天河区",
             city: "广州市",
             province: "广东省",
             schemaName: "region_gz_tianhe",
             svgMapPath: "",
+            isDefault: true,
+          },
+          {
+            id: "fs_shunde",
+            name: "顺德区",
+            city: "佛山市",
+            province: "广东省",
+            schemaName: "region_fs_shunde",
+            svgMapPath: "",
             isDefault: false,
           },
         ],
-        defaultRegionId: "shunde",
+        defaultRegionId: "gz_tianhe",
       },
       { status: 200 }
     );
