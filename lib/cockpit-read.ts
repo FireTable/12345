@@ -1,10 +1,10 @@
 import { getRegionDb } from "@/db/client";
-import { themesTable } from "@/db/schema";
+import { themesTable, ticketsTable } from "@/db/schema";
 import { getSystemTwoEndpoints } from "@/backend/model";
 import { loadOverview, loadTrends } from "@/lib/civic-queries";
 import { getNodeMetric } from "@/lib/node-metrics";
 import { peekLatestTaskProgress } from "@/lib/task-progress";
-import { desc, sql } from "drizzle-orm";
+import { desc, isNotNull, sql } from "drizzle-orm";
 import { isUnknownTownship } from "@/lib/civic-cluster";
 
 /** 大屏最近工单窗口。旧入口先拉 500 条全文，页面只用前 30 条。 */
@@ -174,13 +174,91 @@ export function townshipStatsFromDistribution(distribution: Record<string, numbe
     }));
 }
 
+export type CockpitClosureFunnel = {
+  total: number;
+  analyzed: number;
+  clustered: number;
+  dispatched: number;
+  resolved: number;
+  fakeClosureIntercepted: number;
+};
+
+export type CockpitHourlyBucket = {
+  hour: number;
+  label: string;
+  count: number;
+};
+
+async function loadClosureFunnelAndHours(regionId: string | undefined): Promise<{
+  closureFunnel: CockpitClosureFunnel;
+  hourlyDistribution: CockpitHourlyBucket[];
+}> {
+  const { db } = await getRegionDb(regionId);
+  const [funnelRows, hourRows] = await Promise.all([
+    db
+      .select({
+        total: sql<number>`count(*)::int`,
+        analyzed: sql<number>`count(*) filter (where ${ticketsTable.confidence} is not null and ${ticketsTable.confidence} > 0)::int`,
+        clustered: sql<number>`count(*) filter (where ${ticketsTable.primaryThemeId} is not null)::int`,
+        dispatched: sql<number>`count(*) filter (where upper(coalesce(${ticketsTable.status}, '')) in ('IN_PROGRESS', 'DISPATCHED', 'VERIFIED', 'PROCESSING', 'RESOLVED', 'FINISHED'))::int`,
+        resolved: sql<number>`count(*) filter (where upper(coalesce(${ticketsTable.status}, '')) in ('RESOLVED', 'FINISHED', 'CLOSED') or ${ticketsTable.closedAt} is not null)::int`,
+        fakeClosureIntercepted: sql<number>`count(*) filter (where ${ticketsTable.isFakeClosure} is true)::int`,
+      })
+      .from(ticketsTable),
+    db
+      .select({
+        hour: sql<number>`extract(hour from ${ticketsTable.createTime} at time zone 'Asia/Shanghai')::int`,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(ticketsTable)
+      .where(isNotNull(ticketsTable.createTime))
+      .groupBy(sql`1`),
+  ]);
+
+  const f = funnelRows[0] || {
+    total: 0,
+    analyzed: 0,
+    clustered: 0,
+    dispatched: 0,
+    resolved: 0,
+    fakeClosureIntercepted: 0,
+  };
+
+  const countByHour = new Map<number, number>();
+  for (const r of hourRows) {
+    const h = Number(r.hour);
+    if (Number.isInteger(h) && h >= 0 && h <= 23) {
+      countByHour.set(h, Number(r.count || 0));
+    }
+  }
+
+  const hourlyDistribution: CockpitHourlyBucket[] = Array.from({ length: 24 }, (_, hour) => ({
+    hour,
+    label: `${String(hour).padStart(2, "0")}:00`,
+    count: countByHour.get(hour) || 0,
+  }));
+
+  return {
+    closureFunnel: {
+      total: Number(f.total || 0),
+      analyzed: Number(f.analyzed || 0),
+      clustered: Number(f.clustered || 0),
+      dispatched: Number(f.dispatched || 0),
+      resolved: Number(f.resolved || 0),
+      fakeClosureIntercepted: Number(f.fakeClosureIntercepted || 0),
+    },
+    hourlyDistribution,
+  };
+}
+
 export async function loadCockpitRead(regionId?: string) {
   const region = regionId || "gz_tianhe";
-  const [overview, trends, recentTickets, themeParts] = await Promise.all([
+  const [overview, trends, recentTickets, themeParts, closureAndHours] = await Promise.all([
     loadOverview(0, region),
     loadTrends(30, region),
     loadCockpitRecentTickets(region),
     loadThemeSummary(region),
+    loadClosureFunnelAndHours(region),
   ]);
   const themes: CockpitThemeSummary = {
     themeCount: overview.multiFreqClusters,
@@ -220,7 +298,11 @@ export async function loadCockpitRead(regionId?: string) {
     },
     systemTwoNodes: cockpitSystemTwoNodes(),
     endpointRecentTickets: task?.endpointRecentTickets || {},
+    closureFunnel: closureAndHours.closureFunnel,
+    hourlyDistribution: closureAndHours.hourlyDistribution,
   };
 }
 
+export const loadCockpitSnapshot = loadCockpitRead;
 export type CockpitRead = Awaited<ReturnType<typeof loadCockpitRead>>;
+export type CockpitSnapshot = CockpitRead;

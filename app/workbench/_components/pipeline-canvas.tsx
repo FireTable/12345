@@ -23,6 +23,7 @@ import { TriageNode, type TriageNodeData } from "./nodes/triage-node";
 import { EntityNode, type EntityNodeData } from "./nodes/entity-node";
 import { ClusterNode, type ClusterNodeData } from "./nodes/cluster-node";
 import { DossierNode, type DossierNodeData } from "./nodes/dossier-node";
+import { DisposalNode, type DisposalNodeData } from "./nodes/disposal-node";
 import { resolvePipelineFactoryStage } from "./pipeline-factory-stage";
 import { useRegion } from "@/app/_components/civic/region-context";
 
@@ -34,6 +35,7 @@ const DEFAULT_POSITIONS: Record<string, { x: number; y: number }> = {
   // 案卷归档卡片下移：triage 卡片自带饼图 + 22 个镇街，实际渲染高度约 730px，
   // 旧 y=560 会与 triage 卡片下半段重叠。给到 860，留出 60+px 视觉缓冲。
   "node-dossier": { x: 620, y: 860 },
+  "node-disposal": { x: 80, y: 860 },
 };
 
 function getSavedPositions(key: string): Record<string, { x: number; y: number }> | null {
@@ -98,6 +100,13 @@ export type PipelineStateResponse = {
     totalThemes: number;
     highRiskThemes: number;
   };
+  disposalMetrics?: {
+    pendingThemes: number;
+    inProgressThemes: number;
+    resolvedThemes: number;
+    fakeClosureTickets: number;
+    pendingReviewCount: number;
+  };
   categoryStats: Array<{ category: string; count: number }>;
   townshipStats?: Array<{ township: string; count: number }>;
   recentTickets: Array<{
@@ -160,6 +169,7 @@ const nodeTypes = {
   entity: EntityNode,
   cluster: ClusterNode,
   dossier: DossierNode,
+  disposal: DisposalNode,
 };
 
 const edgeTypes = {
@@ -175,8 +185,8 @@ function InnerPipelineCanvas({
 }) {
   const { fitView } = useReactFlow();
   const { activeRegion } = useRegion();
-  // v7: 案卷归档节点下移到 y=860，避免与超高的分类初筛节点下半段重叠
-  const storageKey = `civic_workbench_pipeline_positions_v7_${activeRegion?.id || "default"}`;
+  // v8: 新增 06 协同处置与闭环回流节点 (x=80, y=860)
+  const storageKey = `civic_workbench_pipeline_positions_v8_${activeRegion?.id || "default"}`;
 
   const rawStatus = (stateData?.taskProgress?.status || "").toUpperCase();
   const isRunning = rawStatus === "RUNNING";
@@ -392,10 +402,29 @@ function InnerPipelineCanvas({
         data: {
           dossierCount: factory.dossierCount,
           totalTickets: total,
-          pseudoLoopCount: stateData?.metrics.highRiskThemes ?? 0,
+          pseudoLoopCount: stateData?.disposalMetrics?.fakeClosureTickets ?? stateData?.metrics.highRiskThemes ?? 0,
           status: factory.dossierStatus,
           statusText: factory.dossierStatusText,
         } as DossierNodeData,
+      },
+      {
+        id: "node-disposal",
+        type: "disposal",
+        position: getPos("node-disposal"),
+        data: {
+          pendingThemes: stateData?.disposalMetrics?.pendingThemes ?? 0,
+          inProgressThemes: stateData?.disposalMetrics?.inProgressThemes ?? 0,
+          resolvedThemes: stateData?.disposalMetrics?.resolvedThemes ?? 0,
+          fakeClosureTickets: stateData?.disposalMetrics?.fakeClosureTickets ?? 0,
+          pendingReviewCount: stateData?.disposalMetrics?.pendingReviewCount ?? 0,
+          status:
+            (stateData?.disposalMetrics?.inProgressThemes ?? 0) > 0 ||
+            (stateData?.disposalMetrics?.resolvedThemes ?? 0) > 0
+              ? "completed"
+              : total > 0
+                ? "running"
+                : "idle",
+        } as DisposalNodeData,
       },
     ];
   }, [stateData, isRunning, processed, onRefresh, storageKey, factory]);
@@ -403,6 +432,10 @@ function InnerPipelineCanvas({
   // 2. 连接边配置 (根据活跃阶段动态激活流动粒子导轨)
   const initialEdges: Edge[] = useMemo(() => {
     const total = stateData?.metrics.totalTickets ?? 0;
+    const disposal = stateData?.disposalMetrics;
+    const hasDisposalFlow =
+      (disposal?.inProgressThemes ?? 0) > 0 || (disposal?.resolvedThemes ?? 0) > 0;
+    const hasFakeClosureLoop = (disposal?.fakeClosureTickets ?? 0) > 0;
 
     return [
       {
@@ -455,6 +488,44 @@ function InnerPipelineCanvas({
           completed: factory.dossierCompleted,
           label: "生成案卷",
         },
+      },
+      {
+        id: "edge-dossier-disposal",
+        source: "node-dossier",
+        target: "node-disposal",
+        type: "flowing",
+        animated: factory.dossierCompleted && !hasDisposalFlow,
+        data: {
+          active: factory.dossierCompleted && !hasDisposalFlow,
+          completed: hasDisposalFlow,
+          label: "派单处置",
+        },
+      },
+      {
+        id: "edge-disposal-cluster",
+        source: "node-disposal",
+        target: "node-cluster",
+        type: "smoothstep",
+        animated: hasFakeClosureLoop,
+        label: "假闭环复发回流监测",
+        style: {
+          stroke: hasFakeClosureLoop ? "#F53F3F" : "#F59E0B",
+          strokeWidth: hasFakeClosureLoop ? 2.2 : 1.6,
+          strokeDasharray: "6 4",
+          opacity: 0.85,
+        },
+        labelStyle: {
+          fill: hasFakeClosureLoop ? "#DC2626" : "#B45309",
+          fontSize: 10,
+          fontWeight: 700,
+        },
+        labelBgStyle: {
+          fill: "#FFFBEB",
+          stroke: hasFakeClosureLoop ? "#FECACA" : "#FDE68A",
+          strokeWidth: 1,
+        },
+        labelBgPadding: [6, 3] as [number, number],
+        labelBgBorderRadius: 99,
       },
     ];
   }, [isRunning, stateData, processed, factory]);

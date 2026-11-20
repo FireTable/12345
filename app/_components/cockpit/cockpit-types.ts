@@ -54,3 +54,18 @@ export interface CockpitKpiData {
   clusterCount: number;
   urgentAlertCount: number;
 }
+
+export interface CockpitClosureFunnel {
+  total: number;
+  analyzed: number;
+  clustered: number;
+  dispatched: number;
+  resolved: number;
+  fakeClosureIntercepted: number;
+}
+
+export interface CockpitHourlyBucket {
+  hour: number;
+  label: string;
+  count: number;
+}

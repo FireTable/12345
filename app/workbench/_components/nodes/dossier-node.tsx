@@ -2,7 +2,7 @@
 
 import React from "react";
 import { type NodeProps, type Node, Position } from "@xyflow/react";
-import { ShieldCheck, FileSpreadsheet, MapPin, AlertTriangle, CheckCircle2, ArrowRight } from "lucide-react";
+import { ShieldCheck, FileSpreadsheet, MonitorPlay, Sparkles, AlertTriangle, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import { PipelineNodeShell } from "./pipeline-node-shell";
 
@@ -34,7 +34,9 @@ export function DossierNode({ data }: NodeProps<DossierNodeType>) {
       hasTargetHandle={true}
       targetHandlePosition={Position.Right}
       targetHandleColor="#0891B2"
-      hasSourceHandle={false}
+      hasSourceHandle={true}
+      sourceHandlePosition={Position.Left}
+      sourceHandleColor="#059669"
     >
       {/* 核心指标卡片看板 */}
       <div className="grid grid-cols-2 gap-2">
@@ -74,20 +76,27 @@ export function DossierNode({ data }: NodeProps<DossierNodeType>) {
 
         <div className="grid grid-cols-2 gap-2 mt-2">
           <Link
-            href="/multifreq"
-            className="flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md bg-white border border-slate-200 hover:border-emerald-500 hover:text-emerald-600 text-[11px] font-medium text-slate-700 transition-colors shadow-2xs"
-          >
-            <FileSpreadsheet size={12} className="text-emerald-600" />
-            查看诉求案卷
-          </Link>
-          <Link
-            href="/spatial"
+            href="/screen"
             className="flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md bg-white border border-slate-200 hover:border-blue-500 hover:text-blue-600 text-[11px] font-medium text-slate-700 transition-colors shadow-2xs"
           >
-            <MapPin size={12} className="text-blue-600" />
-            查看分布热力图
+            <MonitorPlay size={12} className="text-blue-600" />
+            指挥驾驶舱
+          </Link>
+          <Link
+            href="/sandbox"
+            className="flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md bg-white border border-slate-200 hover:border-emerald-500 hover:text-emerald-600 text-[11px] font-medium text-slate-700 transition-colors shadow-2xs"
+          >
+            <Sparkles size={12} className="text-emerald-600" />
+            X-Ray 实时演练
           </Link>
         </div>
+        <Link
+          href="/multifreq"
+          className="mt-1.5 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md bg-white border border-slate-200 hover:border-slate-400 text-[11px] font-medium text-slate-600 transition-colors shadow-2xs"
+        >
+          <FileSpreadsheet size={12} className="text-slate-500" />
+          查看多频工单透势
+        </Link>
 
         <div className="text-[10px] text-slate-400 text-center pt-2">
           全流程贯通：诉求接入 ➔ 要素提取 ➔ 问题归集 ➔ 协同处置

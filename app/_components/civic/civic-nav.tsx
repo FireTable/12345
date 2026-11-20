@@ -109,6 +109,7 @@ export function CivicNav() {
       "/multifreq": "工单透势研判",
       "/tickets": "工单中心核查",
       "/dict": "标准字典与别名知识库",
+      "/sandbox": "全链路 AI 透视演练",
       "/screen": "实时指挥调度大屏",
       "/admin/regions": "多站点管理与 AI 拓荒",
       "/mcp/authorize": "MCP 智能体授权中心",

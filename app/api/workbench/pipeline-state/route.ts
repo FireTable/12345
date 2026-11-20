@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRegionDb } from "@/db/client";
-import { ticketsTable, themesTable } from "@/db/schema";
+import { ticketsTable, themesTable, reviewQueueTable } from "@/db/schema";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 import { getLatestTaskProgress } from "@/lib/task-progress";
 import { sql, desc, eq, isNull } from "drizzle-orm";
@@ -54,6 +54,7 @@ export async function GET(req: NextRequest) {
         unprocessed: sql<number>`count(*) filter (where ${ticketsTable.confidence} is null or ${ticketsTable.confidence} = 0)`,
         urgent: sql<number>`count(*) filter (where ${ticketsTable.urgency} = 'URGENT')`,
         stabilityRisk: sql<number>`count(*) filter (where ${ticketsTable.stabilityRisk} = true)`,
+        fakeClosureTickets: sql<number>`count(*) filter (where ${ticketsTable.isFakeClosure} is true)::int`,
       })
       .from(ticketsTable);
 
@@ -61,8 +62,17 @@ export async function GET(req: NextRequest) {
       .select({
         totalThemes: sql<number>`count(*)`,
         highRiskThemes: sql<number>`count(*) filter (where ${themesTable.riskLevel} = 'HIGH')`,
+        pendingThemes: sql<number>`count(*) filter (where ${themesTable.handlingStatus} is null or upper(${themesTable.handlingStatus}) = 'PENDING')::int`,
+        inProgressThemes: sql<number>`count(*) filter (where upper(coalesce(${themesTable.handlingStatus}, '')) in ('IN_PROGRESS', 'DISPATCHED', 'PROCESSING'))::int`,
+        resolvedThemes: sql<number>`count(*) filter (where upper(coalesce(${themesTable.handlingStatus}, '')) in ('RESOLVED', 'FINISHED'))::int`,
       })
       .from(themesTable);
+
+    const pendingReviewRows = await tenantDb
+      .select({ count: sql<number>`count(*)::int` })
+      .from(reviewQueueTable)
+      .where(eq(reviewQueueTable.status, "PENDING"))
+      .catch(() => [{ count: 0 }]);
 
 
 
@@ -265,6 +275,13 @@ export async function GET(req: NextRequest) {
         stabilityRiskTickets: Number(ticketCounts?.stabilityRisk || 0),
         totalThemes: Number(themeCounts?.totalThemes || 0),
         highRiskThemes: Number(themeCounts?.highRiskThemes || 0),
+      },
+      disposalMetrics: {
+        pendingThemes: Number(themeCounts?.pendingThemes || 0),
+        inProgressThemes: Number(themeCounts?.inProgressThemes || 0),
+        resolvedThemes: Number(themeCounts?.resolvedThemes || 0),
+        fakeClosureTickets: Number(ticketCounts?.fakeClosureTickets || 0),
+        pendingReviewCount: Number(pendingReviewRows[0]?.count || 0),
       },
       categoryStats: categoryStats.map((c) => ({
         category: c.category,

@@ -6,11 +6,12 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { classifyDetailPayload, type DetailLoadStatus } from "@/lib/detail-load";
 import { MODE_META } from "@/backend/theme-metrics";
-import type { CivicMode } from "@/backend/state";
+import type { CivicMode, GraphData, GraphNode } from "@/backend/state";
 import { spanDays, categoryBadgeStyle } from "@/lib/civic-cluster";
 import { CivicEChart, radarOption } from "@/app/_components/civic/civic-charts";
 import { SkThemeDetail } from "@/app/_components/civic/skeletons";
 import { useRegion } from "@/app/_components/civic/region-context";
+import { GraphVisualizer } from "@/app/_components/graph/graph-visualizer";
 import { ConfirmDialog } from "@/app/_components/ui/confirm-dialog";
 import {
   Dialog,
@@ -45,6 +46,7 @@ import {
   RotateCcw,
   CheckCircle2,
   Trash2,
+  Network,
 } from "lucide-react";
 
 const ADVICE_LABELS = ["牵头部门", "响应时限", "办理路径", "建议时限"];
@@ -190,6 +192,10 @@ function ThemeDetailInner() {
   const [escalateOpen, setEscalateOpen] = useState(false);
   const [escalateNote, setEscalateNote] = useState("");
   const [detachTarget, setDetachTarget] = useState<Member | null>(null);
+  const [leftTab, setLeftTab] = useState<"members" | "graph">("members");
+  const [graphData, setGraphData] = useState<GraphData | null>(null);
+  const [graphLoading, setGraphLoading] = useState(false);
+  const [graphError, setGraphError] = useState<string | null>(null);
   const memberCursor = useRef<{ time: string | null; id: string } | null>(null);
   const membersLoadingRef = useRef(false);
   const membersDoneRef = useRef(false);
@@ -334,6 +340,61 @@ function ThemeDetailInner() {
   const meta = MODE_META[mode];
   
   // 合并群组成员工单（确保目标工单必定存在）
+  const loadThemeGraph = useCallback(async () => {
+    if (!params.id || isUnknownGroup(params.id)) return;
+    setGraphLoading(true);
+    setGraphError(null);
+    try {
+      const headers: Record<string, string> = {};
+      if (activeRegion?.id) headers["x-region-id"] = activeRegion.id;
+      const res = await fetch(
+        `/api/graph?themeId=${encodeURIComponent(params.id)}`,
+        { headers }
+      );
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.error || "实体关系图谱加载失败");
+      }
+      const raw = (json.data || { nodes: [], links: [] }) as GraphData;
+      const coloredNodes: GraphNode[] = (raw.nodes || []).map((n) => {
+        const nodeAny = n as GraphNode & { isFakeClosure?: boolean };
+        const isFake = Boolean(nodeAny.isFakeClosure || nodeAny.meta?.isFakeClosure);
+        let fallbackColor = "#64748b";
+        if (n.type === "THEME") {
+          fallbackColor = n.riskLevel === "HIGH" ? "#ef4444" : n.riskLevel === "MEDIUM" ? "#f59e0b" : "#1677ff";
+        } else if (n.type === "SUBJECT") {
+          fallbackColor = "#3b82f6";
+        } else if (n.type === "LOCATION") {
+          fallbackColor = "#a855f7";
+        } else if (n.type === "TICKET") {
+          fallbackColor = isFake ? "#e11d48" : "#64748b";
+        }
+        return {
+          ...n,
+          color: n.color || fallbackColor,
+        };
+      });
+      setGraphData({ nodes: coloredNodes, links: raw.links || [] });
+    } catch (err) {
+      setGraphError(err instanceof Error ? err.message : "图谱加载失败");
+      setGraphData(null);
+    } finally {
+      setGraphLoading(false);
+    }
+  }, [params.id, activeRegion?.id]);
+
+  useEffect(() => {
+    setLeftTab("members");
+    setGraphData(null);
+    setGraphError(null);
+  }, [params.id]);
+
+  useEffect(() => {
+    if (leftTab === "graph" && !graphData && !graphLoading && !graphError) {
+      void loadThemeGraph();
+    }
+  }, [leftTab, graphData, graphLoading, graphError, loadThemeGraph]);
+
   const members = useMemo(() => {
     const list = [...memberRows];
     if (extraMember && !list.some((m) => checkIsTarget(m, extraMember.id) || m.ticketId === extraMember.ticketId)) {
@@ -508,6 +569,7 @@ function ThemeDetailInner() {
       setExtraMember((prev) =>
         prev && (prev.ticketId === targetTicketId || prev.id === detachTarget.id) ? null : prev
       );
+      setGraphData(null);
       setDetachTarget(null);
     }
   }
@@ -728,31 +790,90 @@ function ThemeDetailInner() {
       </div>
 
       <div className="cluster-grid">
-        {/* 左侧：成员工单明细列表（支持锚点定位、1px 纯蓝边框与完整展开） */}
+        {/* 左侧：成员工单明细列表 / 实体关系图谱 */}
         <div className="card">
-          <div className="card__header flex items-center justify-between">
+          <div className="card__header flex items-center justify-between gap-3 flex-wrap">
             <div>
               <div className="card__title flex items-center gap-2">
-                <span>📑</span>
-                群组成员工单明细
+                <span>{leftTab === "graph" ? "🕸️" : "📑"}</span>
+                {leftTab === "graph" ? "实体与工单关系图谱" : "群组成员工单明细"}
                 <span className="text-xs text-slate-500 font-normal">
-                  (共 {row.count} 件 · 已加载 {members.length} 件)
+                  {leftTab === "graph"
+                    ? graphData
+                      ? `(${graphData.nodes.length} 节点 · ${graphData.links.length} 关系)`
+                      : ""
+                    : `(共 ${row.count} 件 · 已加载 ${members.length} 件)`}
                 </span>
               </div>
               <div className="text-[11px] text-slate-400 mt-0.5">
-                点击单条工单可展开详细诉求正文、涉事地址与提取要素
+                {leftTab === "graph"
+                  ? "展示当前专题与涉事主体、事发地点及关联工单（含假闭环复发边）拓扑"
+                  : "点击单条工单可展开详细诉求正文、涉事地址与提取要素"}
               </div>
             </div>
-            {targetTicketId && (
-              <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-200 shadow-2xs">
-                <Target className="h-3.5 w-3.5 text-blue-600 animate-spin" />
-                <span>目标工单定位: #{targetTicketId}</span>
-              </div>
-            )}
+            <div className="flex items-center gap-2 flex-wrap">
+              {targetTicketId && leftTab === "members" && (
+                <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-200 shadow-2xs">
+                  <Target className="h-3.5 w-3.5 text-blue-600 animate-spin" />
+                  <span>目标工单定位: #{targetTicketId}</span>
+                </div>
+              )}
+              {!cluster.ungrouped && (
+                <div className="inline-flex items-center rounded-lg bg-slate-100 p-0.5 border border-slate-200 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setLeftTab("members")}
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer ${
+                      leftTab === "members"
+                        ? "bg-white text-blue-600 shadow-2xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>成员工单明细</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLeftTab("graph")}
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer ${
+                      leftTab === "graph"
+                        ? "bg-white text-blue-600 shadow-2xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    <Network className="w-3.5 h-3.5" />
+                    <span>实体关系图谱</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="card__body" style={{ padding: "14px 18px" }}>
-            {members.length === 0 && (
+          <div className="card__body" style={{ padding: leftTab === "graph" ? "8px 0 0" : "14px 18px" }}>
+            {leftTab === "graph" ? (
+              graphLoading ? (
+                <div className="empty-hint">正在加载实体关系图谱…</div>
+              ) : graphError ? (
+                <div className="empty-hint space-y-2">
+                  <div className="text-rose-600">{graphError}</div>
+                  <button
+                    type="button"
+                    className="btn btn--default"
+                    onClick={() => void loadThemeGraph()}
+                  >
+                    重新加载图谱
+                  </button>
+                </div>
+              ) : !graphData || graphData.nodes.length === 0 ? (
+                <div className="empty-hint">暂无实体与工单关联图谱数据</div>
+              ) : (
+                <div className="-mx-2">
+                  <GraphVisualizer graphData={graphData} />
+                </div>
+              )
+            ) : (
+              <>
+                {members.length === 0 && (
               <div className="empty-hint">
                 {membersLoading ? (
                   "正在加载工单…"
@@ -940,6 +1061,8 @@ function ThemeDetailInner() {
             )}
             {membersDone && members.length > 0 && members.length >= (row.count || 0) && (
               <div className="empty-hint">已加载全部 {members.length} 件</div>
+            )}
+              </>
             )}
           </div>
         </div>

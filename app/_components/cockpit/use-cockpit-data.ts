@@ -8,6 +8,8 @@ import type {
   CockpitTownshipStat,
   CockpitAlertItem,
   CockpitKpiData,
+  CockpitClosureFunnel,
+  CockpitHourlyBucket,
 } from "./cockpit-types";
 
 /**
@@ -34,6 +36,15 @@ export function useCockpitData(regionId: string) {
     lastDurationMs?: number | null;
   }>>([]);
   const [endpointRecentTickets, setEndpointRecentTickets] = useState<Record<string, any[]>>({});
+  const [closureFunnel, setClosureFunnel] = useState<CockpitClosureFunnel>({
+    total: 0,
+    analyzed: 0,
+    clustered: 0,
+    dispatched: 0,
+    resolved: 0,
+    fakeClosureIntercepted: 0,
+  });
+  const [hourlyDistribution, setHourlyDistribution] = useState<CockpitHourlyBucket[]>([]);
 
   const fetchRef = useRef(0);
 
@@ -72,6 +83,19 @@ export function useCockpitData(regionId: string) {
       setSystemTwoNodes(payload?.systemTwoNodes || []);
       setEndpointRecentTickets(payload?.endpointRecentTickets || {});
       setRecentTickets(Array.isArray(payload?.recentTickets) ? payload.recentTickets : []);
+      setClosureFunnel(
+        payload?.closureFunnel || {
+          total: Number(payload?.overview?.totalWorkorders || 0),
+          analyzed: Number(payload?.overview?.analyzedCount || 0),
+          clustered: Number(payload?.overview?.multiFreqCount || 0),
+          dispatched: 0,
+          resolved: Number(payload?.overview?.resolvedCount || 0),
+          fakeClosureIntercepted: Number(payload?.overview?.fakeClosureCount || 0),
+        }
+      );
+      setHourlyDistribution(
+        Array.isArray(payload?.hourlyDistribution) ? payload.hourlyDistribution : []
+      );
 
       setLastUpdated(new Date());
     } catch (e) {
@@ -243,5 +267,7 @@ export function useCockpitData(regionId: string) {
     alerts,
     systemTwoNodes,
     endpointRecentTickets,
+    closureFunnel,
+    hourlyDistribution,
   };
 }
