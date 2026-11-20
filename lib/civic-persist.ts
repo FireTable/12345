@@ -5,6 +5,8 @@ import { adminFromLocation } from "@/lib/admin-area";
 import { civicModeFromPattern } from "@/backend/theme-metrics";
 import { HANDLING_STATUS } from "@/lib/civic-dto";
 import { invalidateCivicAggregates } from "@/lib/civic-cache";
+import { recordDisposalLog } from "@/lib/disposal";
+import { broadcastDataRefresh } from "@/lib/sse-broadcaster";
 import type { EnrichedTicket, MultiFrequencyTheme } from "@/backend/state";
 import { workOrderInstantFromTicketNo } from "@/lib/work-order-date";
 
@@ -21,6 +23,8 @@ export type TicketAgentPatch = {
   stabilityRisk: boolean | null;
   canonicalSubject: string | null;
   eventType: string | null;
+  isFakeClosure?: boolean;
+  closureStatus?: string | null;
   createTime?: Date;
 };
 
@@ -92,6 +96,7 @@ export function buildTicketAgentPatch(
     stabilityRisk: typeof ticket.systemOneStabilityRisk === "boolean" ? ticket.systemOneStabilityRisk : ticket.stabilityRisk ?? null,
     canonicalSubject: clipOrNull(ticket.canonicalSubject, 255),
     eventType: clipOrNull(ticket.eventType, 128),
+    ...(ticket.isFakeClosure ? { isFakeClosure: true, closureStatus: ticket.closureStatus || ("REOPENED" as const) } : {}),
     ...(createTime ? { createTime } : {}),
   };
 }
@@ -240,6 +245,8 @@ export async function persistIncrementalResult(input: {
             riskReason: theme.riskReason || null,
             aiSummary: theme.aiSummary || null,
             recommendedAction: theme.recommendedAction || null,
+            ...(theme.handlingStatus ? { handlingStatus: theme.handlingStatus } : {}),
+            ...(typeof theme.handlingProgress === "number" ? { handlingProgress: theme.handlingProgress } : {}),
           })
           .where(eq(themesTable.id, theme.id))
       )
@@ -273,5 +280,23 @@ export async function persistIncrementalResult(input: {
     }
   }
 
-  invalidateCivicAggregates();
+  for (const theme of attachedThemes) {
+    if ((theme.reopenCount || 0) > 0 && (theme.reopenTicketIds?.length || 0) > 0) {
+      await recordDisposalLog({
+        regionId,
+        targetType: "THEME",
+        targetId: theme.id,
+        action: "REOPEN",
+        fromStatus: "RESOLVED",
+        toStatus: theme.handlingStatus || "IN_PROGRESS",
+        owner: theme.handlingOwner || null,
+        operator: "system",
+        note: `假闭环复发重开：新增 ${theme.reopenTicketIds!.length} 条疑似假闭环工单，主题自动回弹处理中并升级高危`,
+        meta: { ticketIds: theme.reopenTicketIds },
+      }).catch(() => {});
+    }
+  }
+
+  invalidateCivicAggregates(regionId);
+  broadcastDataRefresh(regionId);
 }

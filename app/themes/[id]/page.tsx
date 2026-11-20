@@ -11,6 +11,16 @@ import { spanDays, categoryBadgeStyle } from "@/lib/civic-cluster";
 import { CivicEChart, radarOption } from "@/app/_components/civic/civic-charts";
 import { SkThemeDetail } from "@/app/_components/civic/skeletons";
 import { useRegion } from "@/app/_components/civic/region-context";
+import { ConfirmDialog } from "@/app/_components/ui/confirm-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/app/_components/ui/dialog";
+import { DisposalTimeline, type DisposalLogItem } from "@/app/_components/civic/disposal-timeline";
 import {
   FileText,
   MapPin,
@@ -29,9 +39,35 @@ import {
   ExternalLink,
   Copy,
   Check,
+  AlertTriangle,
+  Send,
+  ShieldAlert,
+  RotateCcw,
+  CheckCircle2,
+  Trash2,
 } from "lucide-react";
 
 const ADVICE_LABELS = ["牵头部门", "响应时限", "办理路径", "建议时限"];
+
+function extractOwnerFromAdvice(raw?: string | null): string {
+  if (!raw) return "";
+  const match = raw.match(/(?:牵头部门|牵头单位|责任部门)[:：]\s*([^\n；;。]+)/);
+  return match ? match[1].trim() : "";
+}
+
+function addWorkdaysYmd(workdays: number): string {
+  const date = new Date();
+  let remaining = Math.max(0, workdays);
+  while (remaining > 0) {
+    date.setDate(date.getDate() + 1);
+    const day = date.getDay();
+    if (day !== 0 && day !== 6) {
+      remaining -= 1;
+    }
+  }
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
 
 /** 模型把部门、时限、步骤写成一句。按这几个标记拆成行，页面才有分段。 */
 function segmentAdvice(raw: string): string[] {
@@ -61,6 +97,7 @@ type Member = {
   address?: string;
   urgency?: string;
   status?: string;
+  isFakeClosure?: boolean;
   detailLoaded?: boolean;
 };
 
@@ -86,6 +123,10 @@ type ClusterDetail = {
   features: Array<{ name: string; pct: number; desc: string }>;
   radar: number[];
   status: { code?: "PENDING" | "IN_PROGRESS" | "RESOLVED"; label: string; progress: number; owner: string; color: string; eta: string };
+  riskLevel?: string | null;
+  riskReason?: string | null;
+  fakeClosureCount?: number;
+  disposalLogs?: DisposalLogItem[];
   members?: Member[];
   ungrouped?: boolean;
 };
@@ -141,6 +182,14 @@ function ThemeDetailInner() {
   const [membersLoading, setMembersLoading] = useState(false);
   const [membersDone, setMembersDone] = useState(false);
   const [openingId, setOpeningId] = useState<string | null>(null);
+  const [actionPending, setActionPending] = useState(false);
+  const [dispatchOpen, setDispatchOpen] = useState(false);
+  const [dispatchOwner, setDispatchOwner] = useState("");
+  const [dispatchEta, setDispatchEta] = useState("");
+  const [dispatchNote, setDispatchNote] = useState("");
+  const [escalateOpen, setEscalateOpen] = useState(false);
+  const [escalateNote, setEscalateNote] = useState("");
+  const [detachTarget, setDetachTarget] = useState<Member | null>(null);
   const memberCursor = useRef<{ time: string | null; id: string } | null>(null);
   const membersLoadingRef = useRef(false);
   const membersDoneRef = useRef(false);
@@ -352,6 +401,8 @@ function ThemeDetailInner() {
         content: typeof data.content === "string" ? data.content : member.content,
         caller_name: data.caller_name || member.caller_name,
         address: data.address || member.address,
+        ...(typeof data.isFakeClosure === "boolean" ? { isFakeClosure: data.isFakeClosure } : {}),
+        ...(typeof data.status === "string" ? { status: data.status } : {}),
         detailLoaded: true,
       };
       setMemberRows((prev) => prev.map((item) => (item.ticketId === member.ticketId ? { ...item, ...patch } : item)));
@@ -360,6 +411,104 @@ function ThemeDetailInner() {
       toast.error("读取工单全文失败");
     } finally {
       setOpeningId(null);
+    }
+  }
+
+  async function patchCluster(
+    payload: {
+      action: "DISPATCH" | "ADVANCE" | "ESCALATE" | "RESOLVE" | "REOPEN" | "DETACH_TICKET";
+      step?: number;
+      owner?: string;
+      eta?: string;
+      note?: string;
+      ticketId?: string;
+    },
+    successMessage?: string
+  ): Promise<boolean> {
+    if (!row || row.ungrouped || actionPending) return false;
+    setActionPending(true);
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (activeRegion?.id) headers["x-region-id"] = activeRegion.id;
+      const res = await fetch(`/api/clusters/${encodeURIComponent(row.id)}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || `操作失败 (${res.status})`);
+      }
+      setRow((prev) => (prev ? { ...prev, ...json } : json));
+      if (successMessage) toast.success(successMessage);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("civic-data-refresh"));
+      }
+      return true;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "群组处置操作失败");
+      return false;
+    } finally {
+      setActionPending(false);
+    }
+  }
+
+  function openDispatchDialog() {
+    if (!row) return;
+    const suggestedOwner = row.status?.owner || extractOwnerFromAdvice(row.mode_advice);
+    setDispatchOwner(suggestedOwner);
+    setDispatchEta(row.status?.eta || addWorkdaysYmd(2));
+    setDispatchNote("");
+    setDispatchOpen(true);
+  }
+
+  async function handleDispatchSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const ok = await patchCluster(
+      {
+        action: "DISPATCH",
+        owner: dispatchOwner.trim() || undefined,
+        eta: dispatchEta || undefined,
+        note: dispatchNote.trim() || undefined,
+      },
+      "派单指令已下达"
+    );
+    if (ok) setDispatchOpen(false);
+  }
+
+  async function handleEscalateSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const ok = await patchCluster(
+      {
+        action: "ESCALATE",
+        note: escalateNote.trim() || "管理员发起升级重点督办",
+      },
+      "已升级为高危重点督办"
+    );
+    if (ok) {
+      setEscalateNote("");
+      setEscalateOpen(false);
+    }
+  }
+
+  async function handleConfirmDetach() {
+    if (!detachTarget) return;
+    const targetTicketId = detachTarget.ticketId || detachTarget.id;
+    const ok = await patchCluster(
+      {
+        action: "DETACH_TICKET",
+        ticketId: targetTicketId,
+      },
+      "已将该工单移出群组"
+    );
+    if (ok) {
+      setMemberRows((prev) =>
+        prev.filter((item) => item.ticketId !== targetTicketId && item.id !== detachTarget.id)
+      );
+      setExtraMember((prev) =>
+        prev && (prev.ticketId === targetTicketId || prev.id === detachTarget.id) ? null : prev
+      );
+      setDetachTarget(null);
     }
   }
 
@@ -374,26 +523,39 @@ function ThemeDetailInner() {
   function exportReport() {
     if (!row) return;
     const regionName = activeRegion?.name || "辖区";
+    const logs = row.disposalLogs || [];
     const lines = [
-      `【${regionName} 12345 热线多频诉求智能研判报告】`,
+      `【${regionName} 12345 热线多频诉求${row.riskLevel === "HIGH" ? "重点督办" : "智能研判"}报告】`,
       `群组编号: ${row.code || row.id}`,
       `归属辖区: ${row.region} · 诉求领域: ${row.type}`,
       `研判模式: ${meta.name}（${meta.tagline}）`,
-      `整合工单: ${row.count} 件`,
+      `风险等级: ${row.riskLevel || "MEDIUM"}${row.riskReason ? `（${row.riskReason}）` : ""}`,
+      `整合工单: ${row.count} 件${(row.fakeClosureCount ?? 0) > 0 ? `（含疑似假闭环 ${row.fakeClosureCount} 件）` : ""}`,
       `时空脉络: ${row.first_date || "—"} 至 ${row.last_date || "—"}（跨度 ${days} 天）`,
       `AI 聚类置信度: ${row.ai_confidence ?? "—"}%`,
       `当前处置状态: ${row.status?.label || "未处理"} (进度 ${row.status?.progress ?? 0}%)`,
       `牵头承办部门: ${row.status?.owner || `${regionName}热线督办组`}`,
+      `预计办结时限: ${row.status?.eta || "—"}`,
       `协同处置建议:\n${adviceText.join("\n")}`,
+      ...(logs.length > 0
+        ? [
+            "",
+            `==================== 处置流转记录（${logs.length} 条） ====================`,
+            ...logs.map(
+              (l) =>
+                `- ${l.createdAt} | ${l.action} | 操作人: ${l.operator || "—"} | 部门: ${l.owner || "—"}${l.note ? ` | 备注: ${l.note}` : ""}`
+            ),
+          ]
+        : []),
       "",
       `==================== 已加载工单（${members.length} / ${row.count}） ====================`,
-      ...members.map((m, idx) => `[${idx + 1}] #${m.id} | ${m.createdAt} | 诉求人: ${m.caller_name || "市民"} | 涉事地址: ${m.address || m.region || "—"}\n    标题: ${m.title}\n    正文: ${m.content || "—"}\n`),
+      ...members.map((m, idx) => `[${idx + 1}] #${m.id} | ${m.createdAt} | 诉求人: ${m.caller_name || "市民"} | 涉事地址: ${m.address || m.region || "—"}${m.isFakeClosure ? " | [疑似假闭环]" : ""}\n    标题: ${m.title}\n    正文: ${m.content || "—"}\n`),
     ];
     const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${regionName}12345群组研判报告-${row.region}-${row.type}-${row.id}.txt`;
+    a.download = `${regionName}12345${row.riskLevel === "HIGH" ? "重点督办单" : "群组研判报告"}-${row.region}-${row.type}-${row.id}.txt`;
     a.click();
     URL.revokeObjectURL(url);
     toast.success("已成功生成并下载群组公文研判报告！");
@@ -460,6 +622,30 @@ function ThemeDetailInner() {
                   <span className="hero-mode-badge">
                     {meta.icon} {meta.name}
                   </span>
+                  {row.riskLevel === "HIGH" && (
+                    <span
+                      className="hero-mode-badge"
+                      style={{
+                        background: "rgba(220, 38, 38, 0.9)",
+                        border: "1px solid rgba(255, 255, 255, 0.45)",
+                      }}
+                    >
+                      <ShieldAlert className="h-3.5 w-3.5" />
+                      高危督办
+                    </span>
+                  )}
+                  {(row.fakeClosureCount ?? 0) > 0 && (
+                    <span
+                      className="hero-mode-badge"
+                      style={{
+                        background: "rgba(180, 83, 9, 0.92)",
+                        border: "1px solid rgba(255, 255, 255, 0.45)",
+                      }}
+                    >
+                      <AlertTriangle className="h-3.5 w-3.5" />
+                      疑似假闭环 {row.fakeClosureCount} 件
+                    </span>
+                  )}
                 </div>
                 <div className="cluster-hero__sub">
                   {meta.tagline}
@@ -494,7 +680,9 @@ function ThemeDetailInner() {
             <div className="mode-explainer">
               <b>研判规则：</b>
               {meta.icon} {meta.name}（{meta.tagline}） · <b>触发依据：</b>
-              {row.mode_risk ? `${row.mode_risk} · ${meta.rule}` : meta.rule}
+              {row.riskReason || row.mode_risk
+                ? `${row.riskReason || row.mode_risk} · ${meta.rule}`
+                : meta.rule}
             </div>
           </div>
 
@@ -642,6 +830,12 @@ function ThemeDetailInner() {
                         📍 {m.region}
                       </span>
                     )}
+                    {m.isFakeClosure && (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md">
+                        <AlertTriangle className="h-3 w-3" />
+                        疑似假闭环
+                      </span>
+                    )}
                     <span className="ml-auto text-xs text-slate-400 font-mono">
                       {m.createdAt}
                     </span>
@@ -682,25 +876,49 @@ function ThemeDetailInner() {
                     </div>
                   )}
 
-                  <div className="member-item__why flex items-center justify-between text-xs text-slate-500 pt-1.5 border-t border-slate-100/80">
-                    <div className="flex items-center gap-1.5">
+                  <div className="member-item__why flex items-center justify-between gap-2 flex-wrap text-xs text-slate-500 pt-1.5 border-t border-slate-100/80">
+                    <div className="flex items-center gap-1.5 min-w-0">
                       <span>🔎</span>
-                      <span>
+                      <span className="truncate">
                         归入依据：<b className="text-slate-800 font-medium">{memberWhy(m)}</b>
                       </span>
                     </div>
-                    <div className="flex items-center gap-1 text-blue-600 font-semibold text-[11px]">
-                      {openingId === (m.ticketId || m.id) ? (
-                        <span>正在读取全文</span>
-                      ) : isExpanded ? (
-                        <>
-                          收起详情 <ChevronUp className="h-3.5 w-3.5" />
-                        </>
-                      ) : (
-                        <>
-                          展开详情 <ChevronDown className="h-3.5 w-3.5" />
-                        </>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <Link
+                        href={`/tickets/${encodeURIComponent(m.ticketId || m.id)}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600 hover:text-blue-600 transition-colors"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                        <span>查看工单详情</span>
+                      </Link>
+                      {!cluster.ungrouped && (
+                        <button
+                          type="button"
+                          disabled={actionPending}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDetachTarget(m);
+                          }}
+                          className="inline-flex items-center gap-1 text-[11px] font-medium text-rose-600 hover:text-rose-700 disabled:opacity-50 cursor-pointer"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          <span>移出群组</span>
+                        </button>
                       )}
+                      <div className="flex items-center gap-1 text-blue-600 font-semibold text-[11px]">
+                        {openingId === (m.ticketId || m.id) ? (
+                          <span>正在读取全文</span>
+                        ) : isExpanded ? (
+                          <>
+                            收起详情 <ChevronUp className="h-3.5 w-3.5" />
+                          </>
+                        ) : (
+                          <>
+                            展开详情 <ChevronDown className="h-3.5 w-3.5" />
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -853,7 +1071,19 @@ function ThemeDetailInner() {
                 </div>
               </div>
               {STEPS.map((s, i) => (
-                <div key={s.key} className="progress-step">
+                <button
+                  key={s.key}
+                  type="button"
+                  disabled={actionPending || cluster.ungrouped}
+                  onClick={() =>
+                    void patchCluster(
+                      { action: "ADVANCE", step: i + 1 },
+                      `已推进进度至「${s.name}」`
+                    )
+                  }
+                  className="progress-step w-full text-left rounded-lg px-2 -mx-2 hover:bg-slate-50 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+                  title={cluster.ungrouped ? "未聚类分组不可推进" : `点击推进至第 ${i + 1} 阶段：${s.name}`}
+                >
                   <span
                     className={`progress-step__dot${
                       i < doneSteps - 1
@@ -867,7 +1097,7 @@ function ThemeDetailInner() {
                     {i + 1}. {s.name}
                   </span>
                   <span className="progress-step__time">{stepTime(i)}</span>
-                </div>
+                </button>
               ))}
               <div className="info-row" style={{ marginTop: 6 }}>
                 <span className="info-row__label">预计办结</span>
@@ -880,33 +1110,209 @@ function ThemeDetailInner() {
             </div>
           </div>
 
-          {/* 底部操作工具栏：包含一键导出群组报告 */}
-          <div className="action-row">
-            <button
-              type="button"
-              className="btn btn--default"
-              onClick={() => toast.info(row.status?.owner ? `牵头部门：${row.status.owner}` : "尚未指定责任部门")}
-            >
-              联系部门
-            </button>
-            <button
-              type="button"
-              className="btn btn--default"
-              onClick={() => toast.success("已记录升级协同督办意向")}
-            >
-              升级处置
-            </button>
+          {/* 底部操作工具栏：真闭环处置 + 导出报告 */}
+          <div className="action-row" style={{ marginBottom: 14 }}>
+            {!cluster.ungrouped && (
+              <>
+                <button
+                  type="button"
+                  disabled={actionPending}
+                  className={`btn ${row.status?.code === "PENDING" || !row.status?.owner ? "btn--primary" : "btn--default"} flex items-center justify-center gap-1.5`}
+                  onClick={openDispatchDialog}
+                >
+                  <Send className="h-4 w-4" />
+                  {row.status?.owner || row.status?.code !== "PENDING" ? "重新指派 / 编辑派单" : "采纳建议并派单"}
+                </button>
+                <button
+                  type="button"
+                  disabled={actionPending}
+                  className="btn btn--default flex items-center justify-center gap-1.5 text-rose-700 border-rose-200 hover:border-rose-400"
+                  onClick={() => {
+                    setEscalateNote("");
+                    setEscalateOpen(true);
+                  }}
+                >
+                  <ShieldAlert className="h-4 w-4" />
+                  升级督办
+                </button>
+                {row.status?.code === "RESOLVED" ? (
+                  <button
+                    type="button"
+                    disabled={actionPending}
+                    className="btn btn--default flex items-center justify-center gap-1.5 text-amber-700 border-amber-200 hover:border-amber-400"
+                    onClick={() =>
+                      void patchCluster(
+                        { action: "REOPEN", note: "管理员发起重开督办" },
+                        "已重开群组督办"
+                      )
+                    }
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    重开督办
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={actionPending}
+                    className="btn btn--default flex items-center justify-center gap-1.5 text-emerald-700 border-emerald-200 hover:border-emerald-400"
+                    onClick={() =>
+                      void patchCluster(
+                        { action: "RESOLVE", note: "管理员确认办结归档" },
+                        "群组已办结归档"
+                      )
+                    }
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    办结归档
+                  </button>
+                )}
+              </>
+            )}
             <button
               type="button"
               className="btn btn--primary flex items-center justify-center gap-1.5"
               onClick={exportReport}
             >
               <Download className="h-4 w-4" />
-              生成群组报告
+              {row.riskLevel === "HIGH" ? "生成重点督办单" : "生成群组报告"}
             </button>
           </div>
+
+          <DisposalTimeline logs={row.disposalLogs || []} />
         </div>
       </div>
+
+      {/* 派单确认弹窗 */}
+      <Dialog open={dispatchOpen} onOpenChange={setDispatchOpen}>
+        <DialogContent className="max-w-[460px] gap-4 border-[var(--c-border)] bg-[var(--c-surface)] p-0 shadow-xl sm:rounded-xl text-[var(--c-ink)]">
+          <DialogHeader className="space-y-1.5 px-5 pt-5 text-left">
+            <DialogTitle className="text-[15px] font-semibold text-[var(--c-ink)]">
+              {row.status?.owner || row.status?.code !== "PENDING" ? "重新指派责任部门" : "采纳建议并派单处置"}
+            </DialogTitle>
+            <DialogDescription className="text-[12px] text-[var(--c-ink-3)]">
+              提交后将更新群组与成员工单状态为处置中，并记录处置流转日志。
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleDispatchSubmit} className="space-y-3 px-5">
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">
+                牵头承办部门
+              </label>
+              <input
+                type="text"
+                value={dispatchOwner}
+                onChange={(e) => setDispatchOwner(e.target.value)}
+                placeholder="例如：区城市管理和综合执法局（留空自动取默认值）"
+                className="w-full h-9 px-3 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">
+                预计办结时间（默认 +2 工作日）
+              </label>
+              <input
+                type="date"
+                value={dispatchEta}
+                onChange={(e) => setDispatchEta(e.target.value)}
+                className="w-full h-9 px-3 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">
+                派单要求与备注
+              </label>
+              <textarea
+                rows={3}
+                value={dispatchNote}
+                onChange={(e) => setDispatchNote(e.target.value)}
+                placeholder="填写现场核查要求、协同部门或督办意见（可选）"
+                className="w-full p-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500 resize-none"
+              />
+            </div>
+            <DialogFooter className="flex-row justify-end gap-2 border-t border-[var(--c-border-soft)] -mx-5 px-5 py-3">
+              <button
+                type="button"
+                className="btn btn--default"
+                disabled={actionPending}
+                onClick={() => setDispatchOpen(false)}
+              >
+                取消
+              </button>
+              <button
+                type="submit"
+                className="btn btn--primary"
+                disabled={actionPending}
+              >
+                {actionPending ? "提交中…" : "确认派单"}
+              </button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* 升级督办弹窗 */}
+      <Dialog open={escalateOpen} onOpenChange={setEscalateOpen}>
+        <DialogContent className="max-w-[440px] gap-4 border-[var(--c-border)] bg-[var(--c-surface)] p-0 shadow-xl sm:rounded-xl text-[var(--c-ink)]">
+          <DialogHeader className="space-y-1.5 px-5 pt-5 text-left">
+            <DialogTitle className="text-[15px] font-semibold text-[var(--c-ink)]">
+              升级为重点高危督办
+            </DialogTitle>
+            <DialogDescription className="text-[12px] text-[var(--c-ink-3)]">
+              群组风险等级将提升为高危（HIGH），并记录重点督办原因与操作日志。
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleEscalateSubmit} className="space-y-3 px-5">
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">
+                督办说明
+              </label>
+              <textarea
+                rows={3}
+                value={escalateNote}
+                onChange={(e) => setEscalateNote(e.target.value)}
+                placeholder="请填写升级督办的具体原因或整改时限要求…"
+                className="w-full p-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500 resize-none"
+              />
+            </div>
+            <DialogFooter className="flex-row justify-end gap-2 border-t border-[var(--c-border-soft)] -mx-5 px-5 py-3">
+              <button
+                type="button"
+                className="btn btn--default"
+                disabled={actionPending}
+                onClick={() => setEscalateOpen(false)}
+              >
+                取消
+              </button>
+              <button
+                type="submit"
+                className="btn btn--primary"
+                style={{ background: "#F53F3F", borderColor: "#F53F3F" }}
+                disabled={actionPending}
+              >
+                {actionPending ? "提交中…" : "确认升级督办"}
+              </button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* 移出群组二次确认弹窗 */}
+      <ConfirmDialog
+        open={Boolean(detachTarget)}
+        title="确认将该工单移出当前群组？"
+        description={
+          detachTarget
+            ? `工单 #${detachTarget.id}（${detachTarget.title}）将解除与本专题群组的关联，并重算群组工单总数。`
+            : undefined
+        }
+        confirmLabel="确认移出"
+        destructive
+        pending={actionPending}
+        onConfirm={() => void handleConfirmDetach()}
+        onOpenChange={(open) => {
+          if (!open) setDetachTarget(null);
+        }}
+      />
     </>
   );
 }

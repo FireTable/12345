@@ -303,5 +303,32 @@ export const taskProgressTable = pgTable(
 export type TaskProgressRecord = typeof taskProgressTable.$inferSelect;
 export type NewTaskProgressRecord = typeof taskProgressTable.$inferInsert;
 
+/**
+ * 8. 处置流转与人工纠偏审计日志表 (Disposal Logs Table)
+ */
+export const disposalLogsTable = pgTable(
+  "disposal_logs",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    targetType: varchar("target_type", { length: 16 }).notNull(), // THEME | TICKET
+    targetId: varchar("target_id", { length: 64 }).notNull(),
+    action: varchar("action", { length: 32 }).notNull(), // DISPATCH | ADVANCE | ESCALATE | RESOLVE | REOPEN | CORRECT_ENTITY | DETACH_TICKET | REVIEW_APPROVE | REVIEW_DISMISS
+    fromStatus: varchar("from_status", { length: 32 }),
+    toStatus: varchar("to_status", { length: 32 }),
+    owner: varchar("owner", { length: 128 }),
+    operator: varchar("operator", { length: 64 }),
+    note: text("note"),
+    metaJson: text("meta_json"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_disposal_logs_target").on(table.targetType, table.targetId),
+    index("idx_disposal_logs_created_at").on(table.createdAt),
+  ]
+);
+
+export type DisposalLogRecord = typeof disposalLogsTable.$inferSelect;
+export type NewDisposalLogRecord = typeof disposalLogsTable.$inferInsert;
+
 export * from "@/lib/auth/schema";
 

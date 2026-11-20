@@ -10,6 +10,7 @@ export const COPILOT_TOOL_NAMES = [
   "get_theme",
   "region_overview",
   "list_townships",
+  "propose_theme_action",
 ] as const;
 
 export type CopilotToolName = (typeof COPILOT_TOOL_NAMES)[number];
@@ -17,6 +18,17 @@ export type CopilotToolName = (typeof COPILOT_TOOL_NAMES)[number];
 const TOOL_NAME_SET = new Set<string>(COPILOT_TOOL_NAMES);
 
 export const COPILOT_OFFLINE_TEXT = "本区研判模型暂时不可用，请稍后再问。";
+
+export type CopilotActionName = "DISPATCH" | "ESCALATE" | "RESOLVE";
+
+export interface CivicActionProposal {
+  themeId: string;
+  themeTitle?: string;
+  action: CopilotActionName;
+  owner?: string;
+  eta?: string;
+  note?: string;
+}
 
 export type CopilotTurn =
   | { type: "tool"; name: CopilotToolName; args: Record<string, unknown> }
@@ -47,6 +59,8 @@ export function copilotToolStatus(name: string): string {
       return "正在统计本区";
     case "list_townships":
       return "正在统计镇街";
+    case "propose_theme_action":
+      return "正在生成处置确认提案";
     default:
       return "正在检索本区";
   }
@@ -81,6 +95,11 @@ ${toolRule}
 - get_theme：按主题编号读一条。args.themeId，例如 THEME-12。
 - region_overview：本区工单数、主题数、高风险主题数、已嵌入条数。args 用 {}。
 - list_townships：各镇街工单量。args 用 {}。
+- propose_theme_action：校验主题并生成待管理员确认的处置提案（不直接修改数据库）。args.themeId 必填，args.action 只能是 DISPATCH、ESCALATE 或 RESOLVE，可选 args.owner、args.eta、args.note。
+当建议对主题执行派单、升级督办或办结时，必须先调用 propose_theme_action 校验，并在答复末尾附带如下代码块供前端渲染确认按钮（禁止声称已直接执行改库）：
+\`\`\`civic-action
+{"themeId":"THEME-1","themeTitle":"主题标题","action":"DISPATCH","owner":"牵头部门","eta":"YYYY-MM-DD","note":"处置说明"}
+\`\`\`
 引用工具返回的编号和数量。没有查到就说明没查到，不要编造。`;
 }
 
@@ -92,12 +111,50 @@ function stripThink(raw: string): string {
 
 function jsonPayload(text: string): string | null {
   const trimmed = text.trim();
-  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*)\s*```$/i);
   const body = (fenced ? fenced[1] : trimmed).trim();
   if (!body.startsWith("{")) return null;
   const end = body.lastIndexOf("}");
   if (end <= 0) return null;
   return body.slice(0, end + 1);
+}
+
+const VALID_CIVIC_ACTIONS = new Set<CopilotActionName>(["DISPATCH", "ESCALATE", "RESOLVE"]);
+
+/**
+ * 从助手答复 Markdown 中剥离并解析 ```civic-action {...} ``` 行动提案块。
+ */
+export function parseCivicActionBlocks(markdown: string): {
+  cleanText: string;
+  actions: CivicActionProposal[];
+} {
+  const actions: CivicActionProposal[] = [];
+  const cleanText = (markdown || "")
+    .replace(/```civic-action\s*\n([\s\S]*?)\n?```/gi, (full, jsonBody: string) => {
+      try {
+        const parsed = JSON.parse(jsonBody.trim()) as Record<string, unknown>;
+        const themeId = typeof parsed.themeId === "string" ? parsed.themeId.trim() : "";
+        const actionRaw = typeof parsed.action === "string" ? parsed.action.trim().toUpperCase() : "";
+        if (!themeId || !VALID_CIVIC_ACTIONS.has(actionRaw as CopilotActionName)) {
+          return full;
+        }
+        actions.push({
+          themeId,
+          themeTitle: typeof parsed.themeTitle === "string" ? parsed.themeTitle.trim() : undefined,
+          action: actionRaw as CopilotActionName,
+          owner: typeof parsed.owner === "string" ? parsed.owner.trim() : undefined,
+          eta: typeof parsed.eta === "string" ? parsed.eta.trim() : undefined,
+          note: typeof parsed.note === "string" ? parsed.note.trim() : undefined,
+        });
+        return "";
+      } catch {
+        return full;
+      }
+    })
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  return { cleanText, actions };
 }
 
 export function parseCopilotTurn(raw: string): CopilotTurn {

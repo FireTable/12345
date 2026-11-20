@@ -301,5 +301,92 @@ export function createCopilotTools(regionId: string) {
     }
   );
 
-  return [searchTickets, searchThemes, getTicket, getTheme, regionOverview, listTownships];
+  const proposeThemeAction = tool(
+    async (input) => {
+      const themeId = String(input.themeId || "").trim().slice(0, 64);
+      if (!themeId) return JSON.stringify({ error: "缺少主题编号 themeId" });
+      const actionRaw = String(input.action || "").trim().toUpperCase();
+      if (actionRaw !== "DISPATCH" && actionRaw !== "ESCALATE" && actionRaw !== "RESOLVE") {
+        return JSON.stringify({ error: "action 仅支持 DISPATCH、ESCALATE 或 RESOLVE" });
+      }
+
+      const { db } = await getRegionDb(regionId);
+      const rows = await db
+        .select({
+          id: themesTable.id,
+          title: themesTable.title,
+          handlingOwner: themesTable.handlingOwner,
+          recommendedAction: themesTable.recommendedAction,
+          handlingStatus: themesTable.handlingStatus,
+        })
+        .from(themesTable)
+        .where(eq(themesTable.id, themeId))
+        .limit(1);
+      const theme = rows[0];
+      if (!theme) return JSON.stringify({ error: `本区没有主题 ${themeId}` });
+
+      const rawOwner = typeof input.owner === "string" ? input.owner.trim() : "";
+      let owner = rawOwner || (theme.handlingOwner || "").trim();
+      if (!owner && actionRaw === "DISPATCH") {
+        const rec = (theme.recommendedAction || "").trim();
+        const match = rec.match(/牵头部门\s*[:：]\s*([^\n；;。，,]+)/);
+        owner = (match?.[1] || "").trim() || "热线协同督办组";
+      }
+
+      const rawEta = typeof input.eta === "string" ? input.eta.trim() : "";
+      const eta =
+        rawEta ||
+        (actionRaw === "DISPATCH"
+          ? new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+          : "");
+      const rawNote = typeof input.note === "string" ? input.note.trim() : "";
+      const defaultNote =
+        actionRaw === "DISPATCH"
+          ? `建议派单至${owner || "牵头部门"}协同核查处置`
+          : actionRaw === "ESCALATE"
+            ? "建议升级为重点高危督办事项"
+            : "建议按处置结果核验后办结归档";
+      const note = rawNote || defaultNote;
+
+      const proposal = {
+        themeId: theme.id,
+        themeTitle: theme.title,
+        action: actionRaw,
+        ...(owner ? { owner } : {}),
+        ...(eta ? { eta } : {}),
+        ...(note ? { note } : {}),
+      };
+
+      return JSON.stringify({
+        ok: true,
+        executable: false,
+        requiresConfirmation: true,
+        currentStatus: theme.handlingStatus || "PENDING",
+        proposal,
+        actionBlock: `\`\`\`civic-action\n${JSON.stringify(proposal)}\n\`\`\``,
+      });
+    },
+    {
+      name: "propose_theme_action",
+      description:
+        "校验当前区主题存在并生成派单(DISPATCH)/升级督办(ESCALATE)/办结(RESOLVE)的待确认行动提案（不直接执行改库）。",
+      schema: loose.extend({
+        themeId: z.string().optional(),
+        action: z.string().optional(),
+        owner: z.string().optional(),
+        eta: z.string().optional(),
+        note: z.string().optional(),
+      }),
+    }
+  );
+
+  return [
+    searchTickets,
+    searchThemes,
+    getTicket,
+    getTheme,
+    regionOverview,
+    listTownships,
+    proposeThemeAction,
+  ];
 }

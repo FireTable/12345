@@ -35,6 +35,8 @@ export interface IncrementalClusterResult {
   needDeepThinkingUpgrade: boolean;
   upgradeReason?: string;
   cadence?: ThemeCadence;
+  recurredAfterClose?: boolean;
+  fakeClosureDetected?: boolean;
 }
 
 /**
@@ -106,6 +108,14 @@ export function evaluateIncrementalTicket(
     const lastThemeEventTime = safeParseDate(theme.lastOccurrence || theme.firstOccurrence);
     const hoursSinceLast = Math.abs(differenceInHours(ticketTime, lastThemeEventTime));
     const recurredAfterClose = normalizeStatusCode(theme.handlingStatus) === HANDLING_STATUS.RESOLVED;
+    const closeRefRaw = theme.closedAt || theme.handlingEta || theme.lastOccurrence || theme.firstOccurrence;
+    const closeRefTime = safeParseDate(closeRefRaw);
+    const daysSinceClose =
+      (ticketTime.getTime() - closeRefTime.getTime()) / (24 * 60 * 60 * 1000);
+    const withinFakeClosureWindow =
+      recurredAfterClose &&
+      daysSinceClose >= -1 &&
+      daysSinceClose <= RULES.fakeClosure.windowDays;
 
     newTicket.clusterId = theme.id;
     const loadedMembers = theme.tickets.length;
@@ -129,6 +139,17 @@ export function evaluateIncrementalTicket(
     if (recurredAfterClose) {
       theme.reopenCount = (theme.reopenCount || 0) + 1;
       theme.reopenTicketIds = [...(theme.reopenTicketIds || []), newTicket.id];
+    }
+    if (withinFakeClosureWindow) {
+      newTicket.isFakeClosure = true;
+      newTicket.closureStatus = "REOPENED";
+      theme.handlingStatus = HANDLING_STATUS.IN_PROGRESS;
+      theme.handlingProgress = 40;
+      theme.riskLevel = "HIGH";
+      const fakeNote = `已办结主题在 ${RULES.fakeClosure.windowDays} 天复发窗口期内再次收到同类诉求，判定疑似假闭环并自动重开升级为高风险`;
+      if (!theme.riskReason?.includes("疑似假闭环")) {
+        theme.riskReason = theme.riskReason ? `${theme.riskReason}；${fakeNote}` : fakeNote;
+      }
     }
     const cadence = describeCadence([
       theme.firstOccurrence,
@@ -173,6 +194,8 @@ export function evaluateIncrementalTicket(
       }。`,
       needDeepThinkingUpgrade,
       upgradeReason,
+      recurredAfterClose,
+      fakeClosureDetected: withinFakeClosureWindow,
     };
   }
 

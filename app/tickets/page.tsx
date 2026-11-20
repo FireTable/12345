@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -18,12 +19,20 @@ import {
   ShieldCheck,
   ShieldAlert,
   Check,
+  X,
+  Wrench,
 } from "lucide-react";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { SkTickets } from "@/app/_components/civic/skeletons";
 import { PageHeaderActions } from "@/app/_components/civic/page-header-actions";
 import { isTownLabel } from "@/lib/admin-area";
-import { normalizeStatusCode, getCategoryBadgeClass, getUrgencyLabel, categoryBadgeStyle } from "@/lib/civic-dto";
+import {
+  normalizeStatusCode,
+  getCategoryBadgeClass,
+  getUrgencyLabel,
+  categoryBadgeStyle,
+  regionLabel,
+} from "@/lib/civic-dto";
 import { AiVerdictCard, CitizenVoiceCard, TicketPropsGrid, TicketGeoMapCard } from "@/app/_components/civic/ticket-verdict-view";
 import {
   Select,
@@ -76,6 +85,22 @@ type Stats = {
   urgent: number;
   multifreq: number;
   single: number;
+  fakeClosure?: number;
+  pendingReview?: number;
+};
+
+type ReviewRow = {
+  id: string;
+  ticketId: string;
+  ticketNo?: string | null;
+  title?: string | null;
+  summarizeTitle?: string | null;
+  confidence?: number | null;
+  reason?: string | null;
+  status: string;
+  district?: string | null;
+  subdistrict?: string | null;
+  createdAt?: string | null;
 };
 
 const TABS = [
@@ -85,6 +110,8 @@ const TABS = [
   { key: "urgent", label: "紧急" },
   { key: "multifreq", label: "多频聚类" },
   { key: "single", label: "单发诉求" },
+  { key: "fake_closure", label: "疑似假闭环" },
+  { key: "review", label: "待人工复核" },
 ] as const;
 
 export default function TicketsPage() {
@@ -108,48 +135,133 @@ export default function TicketsPage() {
   }>({
     total: 0,
     data: [],
-    stats: { total: 0, today: 0, pending: 0, progress: 0, finished: 0, urgent: 0, multifreq: 0, single: 0 },
+    stats: {
+      total: 0,
+      today: 0,
+      pending: 0,
+      progress: 0,
+      finished: 0,
+      urgent: 0,
+      multifreq: 0,
+      single: 0,
+      fakeClosure: 0,
+      pendingReview: 0,
+    },
     facets: { regions: [], categories: [] },
   });
   const [ready, setReady] = useState(false);
+  const [reviewRows, setReviewRows] = useState<ReviewRow[]>([]);
+  const [reviewTotal, setReviewTotal] = useState<number | null>(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [actingReviewId, setActingReviewId] = useState<string | null>(null);
+
+  function regionHeaders(): Record<string, string> {
+    return activeRegion?.id ? { "x-region-id": activeRegion.id } : {};
+  }
 
   function load() {
     const q = new URLSearchParams({ page: String(page), size: String(size) });
     if (activeRegion?.id) q.set("regionId", activeRegion.id);
     if (keyword) q.set("keyword", keyword);
-    if (tab !== "all") q.set("tab", tab);
+    if (tab !== "all" && tab !== "review") q.set("tab", tab);
     if (region) q.set("region", region);
     if (category) q.set("category", category);
     if (cluster) q.set("cluster", cluster);
     if (time) q.set("time", time);
-    fetch(`/api/workorders?${q}`)
+    fetch(`/api/workorders?${q}`, { headers: regionHeaders() })
       .then((r) => r.json())
       .then((j) =>
-        setData({
+        setData((prev) => ({
           total: j.total || 0,
           data: j.data || [],
-          stats: j.stats || data.stats,
+          stats: j.stats || prev.stats,
           facets: {
             regions: (j.facets?.regions || []).filter((r: string) => isTownLabel(r) || r === "未知"),
             categories: j.facets?.categories || [],
           },
-        })
+        }))
       )
       .catch(() => setData((prev) => ({ ...prev, total: 0, data: [] })))
       .finally(() => setReady(true));
   }
 
+  function loadReview() {
+    if (regionLoading) return;
+    const q = new URLSearchParams({ status: "PENDING" });
+    if (activeRegion?.id) q.set("region", activeRegion.id);
+    setReviewLoading(true);
+    fetch(`/api/review?${q}`, { headers: regionHeaders() })
+      .then((r) => r.json())
+      .then((j) => {
+        if (!j?.success) throw new Error(j?.error || "复核队列加载失败");
+        const rows = Array.isArray(j.data) ? (j.data as ReviewRow[]) : [];
+        setReviewRows(rows);
+        setReviewTotal(typeof j.total === "number" ? j.total : rows.length);
+      })
+      .catch((err) => {
+        setReviewRows([]);
+        toast.error(err instanceof Error ? err.message : "复核队列加载失败");
+      })
+      .finally(() => {
+        setReviewLoading(false);
+        setReady(true);
+      });
+  }
+
+  useEffect(() => {
+    setReviewTotal(null);
+    setReviewRows([]);
+  }, [activeRegion?.id]);
+
   useEffect(() => {
     if (regionLoading) return;
+    if (tab === "review") {
+      loadReview();
+      load();
+      return;
+    }
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, size, keyword, tab, region, category, cluster, time, activeRegion?.id, regionLoading]);
 
   // WS 推送：upload 完成 / 簇生成后立即重拉工单列表
   useCivicSse(activeRegion?.id, (msg) => {
     if (msg.type === "civic-data-refresh" || msg.type === "pipeline-state-refresh") {
       load();
+      if (tab === "review") loadReview();
     }
   });
+
+  async function handleReviewAction(item: ReviewRow, action: "REVIEWED" | "DISMISSED") {
+    if (actingReviewId) return;
+    setActingReviewId(item.id);
+    try {
+      const q = activeRegion?.id ? `?region=${encodeURIComponent(activeRegion.id)}` : "";
+      const res = await fetch(`/api/review${q}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...regionHeaders(),
+        },
+        body: JSON.stringify({
+          reviewId: item.id,
+          action,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || `操作失败 (${res.status})`);
+      }
+      setReviewRows((prev) => prev.filter((r) => r.id !== item.id));
+      setReviewTotal((prev) => Math.max(0, (prev ?? reviewRows.length) - 1));
+      toast.success(action === "REVIEWED" ? "已确认该工单研判无误" : "已忽略该条复核项");
+      load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "复核提交失败");
+    } finally {
+      setActingReviewId(null);
+    }
+  }
 
   const s = data.stats;
   const pages = Math.max(1, Math.ceil(data.total / size));
@@ -173,7 +285,7 @@ export default function TicketsPage() {
       detailLoaded: false,
       detailError: false,
     });
-    fetch(`/api/workorders/${encodeURIComponent(key)}`)
+    fetch(`/api/workorders/${encodeURIComponent(key)}`, { headers: regionHeaders() })
       .then((r) => r.json())
       .then((j) => {
         if (drawerSeq.current !== seq) return;
@@ -258,7 +370,10 @@ export default function TicketsPage() {
           </div>
         </div>
         <PageHeaderActions
-          onRefresh={load}
+          onRefresh={() => {
+            load();
+            if (tab === "review") loadReview();
+          }}
           onExport={exportCsv}
         />
       </div>
@@ -331,7 +446,7 @@ export default function TicketsPage() {
                 <div className="list-card__sub">点击行查看详情</div>
               </div>
             </div>
-            <div className="filter-tabs">
+            <div className="filter-tabs flex-wrap">
               {TABS.map((t) => (
                 <button
                   key={t.key}
@@ -343,188 +458,312 @@ export default function TicketsPage() {
                   }}
                 >
                   {t.label}
-                  <span className="filter-tab__count">{tabCount(t.key, s)}</span>
+                  <span className="filter-tab__count">
+                    {tabCount(t.key, s, reviewTotal)}
+                  </span>
                 </button>
               ))}
             </div>
-            <div className="filter-bar">
-              <div className="search-input">
-                <span>⌕</span>
-                <input
-                  placeholder="搜索工单标题 / 工单号 / 内容"
-                  value={keyword}
-                  onChange={(e) => {
-                    setKeyword(e.target.value);
+            {tab === "review" ? (
+              <>
+                <div className="filter-bar">
+                  <span className="text-xs text-slate-600 font-medium">
+                    当前站点待人工复核工单（低置信度 / 异常要素抽检）
+                  </span>
+                  <span className="filter-bar__summary">
+                    共 {reviewTotal ?? reviewRows.length} 条待复核
+                  </span>
+                </div>
+                <div className="table-scroll">
+                  <table className="workorder-table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: 150, minWidth: 140 }}>工单号</th>
+                        <th>诉求标题</th>
+                        <th style={{ width: 90 }}>镇街</th>
+                        <th style={{ width: 90 }}>置信度</th>
+                        <th style={{ width: 200 }}>复核原因</th>
+                        <th style={{ width: 240, textAlign: "right" }}>复核操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reviewRows.map((item) => {
+                        const town =
+                          regionLabel(item.subdistrict, item.district) ||
+                          item.subdistrict ||
+                          item.district ||
+                          "—";
+                        const titleText =
+                          item.summarizeTitle || item.title || "市民诉求";
+                        const busy = actingReviewId === item.id;
+                        return (
+                          <tr
+                            key={item.id}
+                            onClick={() =>
+                              openDrawer({
+                                id: item.ticketNo || item.ticketId,
+                                ticketId: item.ticketId,
+                                title: titleText,
+                                category: "",
+                                region: town,
+                                urgency: "NORMAL",
+                                status: "PENDING",
+                                createdAt: item.createdAt
+                                  ? String(item.createdAt).slice(0, 10)
+                                  : "",
+                                confidence: item.confidence ?? undefined,
+                              })
+                            }
+                          >
+                            <td className="col-id">
+                              {item.ticketNo || item.ticketId}
+                            </td>
+                            <td className="col-title">
+                              <div className="col-title__text" title={titleText}>
+                                {titleText}
+                              </div>
+                            </td>
+                            <td>{town}</td>
+                            <td>
+                              <span className="badge-pill badge-pill--warning font-mono">
+                                {item.confidence != null ? `${item.confidence}%` : "—"}
+                              </span>
+                            </td>
+                            <td>
+                              <span className="text-xs text-slate-600">
+                                {formatReviewReason(item.reason)}
+                              </span>
+                            </td>
+                            <td
+                              style={{ textAlign: "right" }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <div className="inline-flex items-center justify-end gap-1.5">
+                                <button
+                                  type="button"
+                                  disabled={Boolean(actingReviewId)}
+                                  onClick={() =>
+                                    void handleReviewAction(item, "REVIEWED")
+                                  }
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 disabled:opacity-50 cursor-pointer"
+                                >
+                                  <Check className="w-3 h-3" />
+                                  <span>{busy ? "处理中" : "确认无误"}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={Boolean(actingReviewId)}
+                                  onClick={() =>
+                                    void handleReviewAction(item, "DISMISSED")
+                                  }
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 disabled:opacity-50 cursor-pointer"
+                                >
+                                  <X className="w-3 h-3" />
+                                  <span>忽略</span>
+                                </button>
+                                <Link
+                                  href={`/tickets/${encodeURIComponent(item.ticketId)}`}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"
+                                >
+                                  <Wrench className="w-3 h-3" />
+                                  <span>去纠偏</span>
+                                </Link>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {reviewLoading ? (
+                  <div className="empty-hint">正在加载待复核队列…</div>
+                ) : reviewRows.length === 0 ? (
+                  <div className="empty-hint">暂无待人工复核工单</div>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <div className="filter-bar">
+                  <div className="search-input">
+                    <span>⌕</span>
+                    <input
+                      placeholder="搜索工单标题 / 工单号 / 内容"
+                      value={keyword}
+                      onChange={(e) => {
+                        setKeyword(e.target.value);
+                        setPage(1);
+                      }}
+                    />
+                  </div>
+                  <div className="filter-bar__divider" />
+                  <Select
+                    value={region || "all"}
+                    onValueChange={(val) => {
+                      setRegion(val === "all" ? "" : val);
+                      setPage(1);
+                    }}
+                  >
+                    <SelectTrigger className="w-[130px] h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
+                      <SelectValue placeholder="镇街：全部" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">镇街：全部</SelectItem>
+                      {data.facets.regions.map((r) => (
+                        <SelectItem key={r} value={r}>
+                          {r}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Select
+                    value={category || "all"}
+                    onValueChange={(val) => {
+                      setCategory(val === "all" ? "" : val);
+                      setPage(1);
+                    }}
+                  >
+                    <SelectTrigger className="w-[140px] h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
+                      <SelectValue placeholder="类型：全部" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">类型：全部</SelectItem>
+                      {data.facets.categories.map((c) => (
+                        <SelectItem key={c} value={c}>
+                          {c}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Select
+                    value={cluster || "all"}
+                    onValueChange={(val) => {
+                      setCluster(val === "all" ? "" : val);
+                      setPage(1);
+                    }}
+                  >
+                    <SelectTrigger className="w-[155px] h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
+                      <SelectValue placeholder="聚类状态：全部" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">聚类状态：全部</SelectItem>
+                      <SelectItem value="multifreq">多频聚类工单</SelectItem>
+                      <SelectItem value="single">单发诉求 (未聚类)</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <Select
+                    value={time || "all"}
+                    onValueChange={(val) => {
+                      setTime(val === "all" ? "" : val);
+                      setPage(1);
+                    }}
+                  >
+                    <SelectTrigger className="w-[130px] h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
+                      <SelectValue placeholder="时间：全部" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">时间：全部</SelectItem>
+                      <SelectItem value="近90天">时间：近90天</SelectItem>
+                      <SelectItem value="近30天">时间：近30天</SelectItem>
+                      <SelectItem value="近7天">时间：近7天</SelectItem>
+                      <SelectItem value="今天">时间：今天</SelectItem>
+                      <SelectItem value="昨天">时间：昨天</SelectItem>
+                      <SelectItem value="本月">时间：本月</SelectItem>
+                      <SelectItem value="上月">时间：上月</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <span className="filter-bar__summary">共 {data.total} 条结果</span>
+                </div>
+                <div className="table-scroll">
+                  <table className="workorder-table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: 150, minWidth: 140 }}>工单号</th>
+                        <th>诉求标题</th>
+                        <th style={{ width: 85 }}>镇街</th>
+                        <th style={{ width: 95, minWidth: 90 }}>类型</th>
+                        <th style={{ width: 80 }}>紧急度</th>
+                        <th style={{ width: 120 }}>时间</th>
+                        <th style={{ width: 85 }}>状态</th>
+                        <th style={{ width: 75, textAlign: "right" }}>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.data.map((r) => (
+                        <tr key={r.ticketId} onClick={() => openDrawer(r)}>
+                          <td className="col-id">{r.id}</td>
+                          <td className="col-title">
+                            <div className="col-title__text flex items-center gap-1.5" title={r.title}>
+                              <span className="truncate">{r.title}</span>
+                              {r.multifreq && (
+                                <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200 shrink-0" title="已归入多频聚类群组">
+                                  多频
+                                </span>
+                              )}
+                              {r.isFakeClosure && (
+                                <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-medium bg-amber-50 text-amber-800 border border-amber-200 shrink-0" title="办结后短期内再次投诉">
+                                  假闭环
+                                </span>
+                              )}
+                            </div>
+                            <div className="col-title__desc flex items-center gap-2" style={{ marginTop: 2 }}>
+                              {r.address ? <span title={r.address}>{r.address}</span> : null}
+                              {r.canonicalSubject ? (
+                                <span className="text-[11px] text-gray-500 font-normal truncate" title={`研判主体: ${r.canonicalSubject}`}>
+                                  · 主体: {r.canonicalSubject}
+                                </span>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td>{r.region || "—"}</td>
+                          <td>
+                            {r.category ? (
+                              <span
+                                className={`badge-pill ${catPill(r.category)}`}
+                                style={categoryBadgeStyle(r.category)}
+                              >
+                                {r.category}
+                              </span>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
+                          <td>
+                            <span className={`badge-pill ${r.urgency === "URGENT" ? "badge-pill--danger" : r.urgency === "MEDIUM" ? "badge-pill--warning" : "badge-pill--default"}`}>
+                              {urgencyLabel(r.urgency)}
+                            </span>
+                          </td>
+                          <td style={{ whiteSpace: "nowrap" }}>{r.createdAt}</td>
+                          <td>
+                            <span className={`status-tag status-tag--${statusTag(r.status)}`}>
+                              {statusLabel(r.status)}
+                            </span>
+                          </td>
+                          <td style={{ textAlign: "right", color: "var(--c-brand)" }}>查看</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {data.data.length === 0 && <div className="empty-hint">暂无工单</div>}
+                <TablePager
+                  page={page}
+                  pages={pages}
+                  total={data.total}
+                  pageSize={size}
+                  pageSizeOptions={[20, 50, 100]}
+                  itemLabel="条"
+                  onPageChange={setPage}
+                  onPageSizeChange={(n) => {
+                    setSize(n);
                     setPage(1);
                   }}
                 />
-              </div>
-              <div className="filter-bar__divider" />
-              <Select
-                value={region || "all"}
-                onValueChange={(val) => {
-                  setRegion(val === "all" ? "" : val);
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger className="w-[130px] h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
-                  <SelectValue placeholder="镇街：全部" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">镇街：全部</SelectItem>
-                  {data.facets.regions.map((r) => (
-                    <SelectItem key={r} value={r}>
-                      {r}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <Select
-                value={category || "all"}
-                onValueChange={(val) => {
-                  setCategory(val === "all" ? "" : val);
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger className="w-[140px] h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
-                  <SelectValue placeholder="类型：全部" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">类型：全部</SelectItem>
-                  {data.facets.categories.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <Select
-                value={cluster || "all"}
-                onValueChange={(val) => {
-                  setCluster(val === "all" ? "" : val);
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger className="w-[155px] h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
-                  <SelectValue placeholder="聚类状态：全部" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">聚类状态：全部</SelectItem>
-                  <SelectItem value="multifreq">多频聚类工单</SelectItem>
-                  <SelectItem value="single">单发诉求 (未聚类)</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <Select
-                value={time || "all"}
-                onValueChange={(val) => {
-                  setTime(val === "all" ? "" : val);
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger className="w-[130px] h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
-                  <SelectValue placeholder="时间：全部" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">时间：全部</SelectItem>
-                  <SelectItem value="近90天">时间：近90天</SelectItem>
-                  <SelectItem value="近30天">时间：近30天</SelectItem>
-                  <SelectItem value="近7天">时间：近7天</SelectItem>
-                  <SelectItem value="今天">时间：今天</SelectItem>
-                  <SelectItem value="昨天">时间：昨天</SelectItem>
-                  <SelectItem value="本月">时间：本月</SelectItem>
-                  <SelectItem value="上月">时间：上月</SelectItem>
-                </SelectContent>
-              </Select>
-              <span className="filter-bar__summary">共 {data.total} 条结果</span>
-            </div>
-            <div className="table-scroll">
-              <table className="workorder-table">
-                <thead>
-                  <tr>
-                    <th style={{ width: 150, minWidth: 140 }}>工单号</th>
-                    <th>诉求标题</th>
-                    <th style={{ width: 85 }}>镇街</th>
-                    <th style={{ width: 95, minWidth: 90 }}>类型</th>
-                    <th style={{ width: 80 }}>紧急度</th>
-                    <th style={{ width: 120 }}>时间</th>
-                    <th style={{ width: 85 }}>状态</th>
-                    <th style={{ width: 75, textAlign: "right" }}>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.data.map((r) => (
-                    <tr key={r.ticketId} onClick={() => openDrawer(r)}>
-                      <td className="col-id">{r.id}</td>
-                      <td className="col-title">
-                        <div className="col-title__text flex items-center gap-1.5" title={r.title}>
-                          <span className="truncate">{r.title}</span>
-                          {r.multifreq && (
-                            <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200 shrink-0" title="已归入多频聚类群组">
-                              多频
-                            </span>
-                          )}
-                          {r.isFakeClosure && (
-                            <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-medium bg-amber-50 text-amber-800 border border-amber-200 shrink-0" title="办结后短期内再次投诉">
-                              假闭环
-                            </span>
-                          )}
-                        </div>
-                        <div className="col-title__desc flex items-center gap-2" style={{ marginTop: 2 }}>
-                          {r.address ? <span title={r.address}>{r.address}</span> : null}
-                          {r.canonicalSubject ? (
-                            <span className="text-[11px] text-gray-500 font-normal truncate" title={`研判主体: ${r.canonicalSubject}`}>
-                              · 主体: {r.canonicalSubject}
-                            </span>
-                          ) : null}
-                        </div>
-                      </td>
-                      <td>{r.region || "—"}</td>
-                      <td>
-                        {r.category ? (
-                          <span
-                            className={`badge-pill ${catPill(r.category)}`}
-                            style={categoryBadgeStyle(r.category)}
-                          >
-                            {r.category}
-                          </span>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td>
-                        <span className={`badge-pill ${r.urgency === "URGENT" ? "badge-pill--danger" : r.urgency === "MEDIUM" ? "badge-pill--warning" : "badge-pill--default"}`}>
-                          {urgencyLabel(r.urgency)}
-                        </span>
-                      </td>
-                      <td style={{ whiteSpace: "nowrap" }}>{r.createdAt}</td>
-                      <td>
-                        <span className={`status-tag status-tag--${statusTag(r.status)}`}>
-                          {statusLabel(r.status)}
-                        </span>
-                      </td>
-                      <td style={{ textAlign: "right", color: "var(--c-brand)" }}>查看</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {data.data.length === 0 && <div className="empty-hint">暂无工单</div>}
-            <TablePager
-              page={page}
-              pages={pages}
-              total={data.total}
-              pageSize={size}
-              pageSizeOptions={[20, 50, 100]}
-              itemLabel="条"
-              onPageChange={setPage}
-              onPageSizeChange={(n) => {
-                setSize(n);
-                setPage(1);
-              }}
-            />
+              </>
+            )}
           </div>
         </>
       )}
@@ -553,6 +792,11 @@ export default function TicketsPage() {
                   <span className={`badge-pill ${drawer.urgency === "URGENT" ? "badge-pill--danger" : "badge-pill--default"}`}>
                     {urgencyLabel(drawer.urgency)}
                   </span>
+                  {drawer.isFakeClosure && (
+                    <span className="badge-pill badge-pill--danger">
+                      疑似假闭环
+                    </span>
+                  )}
                 </div>
                 <div className="drawer__title" style={{ wordBreak: "break-word", fontSize: 16 }}>
                   {drawer.title || "市民诉求"}
@@ -634,7 +878,7 @@ export default function TicketsPage() {
   );
 }
 
-function tabCount(key: string, s: Stats) {
+function tabCount(key: string, s: Stats, reviewTotal: number | null) {
   if (key === "all") return s.total;
   if (key === "pending") return s.pending;
   if (key === "progress") return s.progress;
@@ -642,7 +886,18 @@ function tabCount(key: string, s: Stats) {
   if (key === "urgent") return s.urgent;
   if (key === "multifreq") return s.multifreq;
   if (key === "single") return s.single ?? Math.max(0, s.total - s.multifreq);
+  if (key === "fake_closure") return s.fakeClosure ?? 0;
+  if (key === "review") return reviewTotal ?? s.pendingReview ?? 0;
   return 0;
+}
+
+function formatReviewReason(reason?: string | null): string {
+  if (!reason) return "低置信度待复核";
+  const r = reason.trim();
+  if (r === "LOW_CONFIDENCE") return "AI 抽取置信度较低";
+  if (r === "MISSING_SUBJECT") return "涉事主体提取缺失";
+  if (r === "MISSING_LOCATION") return "事发地点不明确";
+  return r;
 }
 
 function urgencyLabel(u: string) {

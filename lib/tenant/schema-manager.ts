@@ -94,9 +94,11 @@ export async function createTenantTables(sql: postgres.Sql, schemaName: string) 
         closed_at TIMESTAMP WITH TIME ZONE,
         closure_status VARCHAR(32),
         is_fake_closure BOOLEAN DEFAULT false,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
       );
     `;
+    await tx`ALTER TABLE tickets ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT now();`;
     await tx`CREATE INDEX IF NOT EXISTS idx_tickets_ticket_no ON tickets (ticket_no);`;
     await tx`CREATE INDEX IF NOT EXISTS idx_tickets_subdistrict ON tickets (subdistrict);`;
     await tx`CREATE INDEX IF NOT EXISTS idx_tickets_create_time ON tickets (create_time);`;
@@ -237,6 +239,25 @@ export async function createTenantTables(sql: postgres.Sql, schemaName: string) 
       );
     `;
     await tx`CREATE INDEX IF NOT EXISTS idx_task_progress_status ON task_progress (status);`;
+
+    // 2.8 处置流转日志表 disposal_logs
+    await tx`
+      CREATE TABLE IF NOT EXISTS disposal_logs (
+        id VARCHAR(64) PRIMARY KEY,
+        target_type VARCHAR(16) NOT NULL,
+        target_id VARCHAR(64) NOT NULL,
+        action VARCHAR(32) NOT NULL,
+        from_status VARCHAR(32),
+        to_status VARCHAR(32),
+        owner VARCHAR(128),
+        operator VARCHAR(64),
+        note TEXT,
+        meta_json TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
+      );
+    `;
+    await tx`CREATE INDEX IF NOT EXISTS idx_disposal_logs_target ON disposal_logs (target_type, target_id);`;
+    await tx`CREATE INDEX IF NOT EXISTS idx_disposal_logs_created_at ON disposal_logs (created_at);`;
   });
 }
 
@@ -300,5 +321,7 @@ export async function destroyRegionTenant(sql: postgres.Sql, regionId: string) {
 
   await sql.unsafe(`DROP SCHEMA IF EXISTS "${region.schema_name}" CASCADE;`);
   await sql`DELETE FROM public.regions WHERE id = ${regionId};`;
+  const g = globalThis as { __disposalLogsEnsuredSchemas?: Set<string> };
+  g.__disposalLogsEnsuredSchemas?.delete(region.schema_name);
   return true;
 }

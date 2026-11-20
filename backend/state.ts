@@ -110,6 +110,8 @@ export interface MultiFrequencyTheme {
   handlingStatus?: string;
   handlingProgress?: number;
   handlingOwner?: string;
+  handlingEta?: string;
+  closedAt?: string;
   // System-2 慢思考思维链过程记录 (供座席与领导调阅深度研判推导)
   reasoningContent?: string;
 }

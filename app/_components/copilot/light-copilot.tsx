@@ -1,15 +1,22 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { toast } from "sonner";
 import {
   X,
   Send,
   Sparkles,
   BotMessageSquare,
   Brain,
+  CheckCircle2,
+  AlertCircle,
+  ExternalLink,
+  Play,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/app/_components/ui/button";
 import { Input } from "@/app/_components/ui/input";
@@ -17,6 +24,68 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/app/
 import { useRegion } from "@/app/_components/civic/region-context";
 import { copilotGreeting, splitCopilotStream } from "@/lib/copilot-protocol";
 import "./copilot-md.css";
+
+interface CivicActionProposal {
+  themeId: string;
+  themeTitle?: string;
+  action: "DISPATCH" | "ESCALATE" | "RESOLVE" | "REOPEN" | "ADVANCE" | string;
+  owner?: string;
+  eta?: string;
+  note?: string;
+}
+
+const COPILOT_ACTION_LABELS: Record<string, string> = {
+  DISPATCH: "采纳并派单",
+  ESCALATE: "升级督办",
+  RESOLVE: "办结归档",
+  REOPEN: "重开督办",
+  ADVANCE: "推进阶段",
+};
+
+function extractCivicActions(
+  raw: string,
+  streaming: boolean
+): {
+  cleanText: string;
+  actions: CivicActionProposal[];
+  pendingBlock: boolean;
+} {
+  const actions: CivicActionProposal[] = [];
+  let text = raw.replace(/```civic-action\s*\n([\s\S]*?)```/gi, (full, jsonBody: string) => {
+    try {
+      const parsed = JSON.parse(jsonBody.trim()) as Partial<CivicActionProposal>;
+      if (parsed && typeof parsed.themeId === "string" && typeof parsed.action === "string") {
+        actions.push({
+          themeId: parsed.themeId,
+          themeTitle: typeof parsed.themeTitle === "string" ? parsed.themeTitle : undefined,
+          action: parsed.action.toUpperCase(),
+          owner: typeof parsed.owner === "string" ? parsed.owner : undefined,
+          eta: typeof parsed.eta === "string" ? parsed.eta : undefined,
+          note: typeof parsed.note === "string" ? parsed.note : undefined,
+        });
+        return "";
+      }
+    } catch {
+      // Keep original block if JSON cannot be parsed
+    }
+    return full;
+  });
+
+  let pendingBlock = false;
+  if (streaming) {
+    const unclosedIdx = text.search(/```civic-action\b/i);
+    if (unclosedIdx !== -1) {
+      pendingBlock = true;
+      text = text.slice(0, unclosedIdx);
+    }
+  }
+
+  return {
+    cleanText: text.replace(/\n{3,}/g, "\n\n").trim(),
+    actions,
+    pendingBlock,
+  };
+}
 
 interface LightCopilotProps {
   isOpen: boolean;
@@ -58,7 +127,45 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [regionKey]);
   const [streamingId, setStreamingId] = useState<string | null>(null);
+  const [actionStates, setActionStates] = useState<
+    Record<string, { status: "idle" | "pending" | "done" | "error"; error?: string }>
+  >({});
   const listRef = useRef<HTMLDivElement>(null);
+
+  const handleExecuteAction = async (cardKey: string, proposal: CivicActionProposal) => {
+    const current = actionStates[cardKey];
+    if (current?.status === "pending" || current?.status === "done") return;
+
+    setActionStates((prev) => ({ ...prev, [cardKey]: { status: "pending" } }));
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (activeRegion?.id) headers["x-region-id"] = activeRegion.id;
+      const res = await fetch(`/api/clusters/${encodeURIComponent(proposal.themeId)}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({
+          action: proposal.action,
+          ...(proposal.owner ? { owner: proposal.owner } : {}),
+          ...(proposal.eta ? { eta: proposal.eta } : {}),
+          ...(proposal.note ? { note: proposal.note } : {}),
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || `执行失败 (${res.status})`);
+      }
+      setActionStates((prev) => ({ ...prev, [cardKey]: { status: "done" } }));
+      const label = COPILOT_ACTION_LABELS[proposal.action] || proposal.action;
+      toast.success(`已执行「${label}」：${proposal.themeTitle || proposal.themeId}`);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("civic-data-refresh"));
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "操作执行失败";
+      setActionStates((prev) => ({ ...prev, [cardKey]: { status: "error", error: msg } }));
+      toast.error(msg);
+    }
+  };
 
   function scrollToBottom() {
     const el = listRef.current;
@@ -275,6 +382,12 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
         <div ref={listRef} className="flex-1 overflow-y-auto p-4 space-y-4 overscroll-contain">
           {messages.map((m) => {
             const streaming = streamingId === m.id;
+            const parsed =
+              m.role === "assistant" && m.content
+                ? extractCivicActions(m.content, streaming)
+                : { cleanText: m.content || "", actions: [], pendingBlock: false };
+            const hasVisibleBody = Boolean(parsed.cleanText || parsed.actions.length > 0 || parsed.pendingBlock);
+
             return (
               <div
                 key={m.id}
@@ -327,7 +440,7 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
                           </details>
                         </div>
                       ) : null}
-                      {m.content || streaming ? (
+                      {hasVisibleBody || streaming ? (
                         <div className={m.role === "user" ? "copilot-md copilot-md--user" : "copilot-md"}>
                           {streaming && !m.content ? (
                             // ponytail: 答案还没产出时主气泡显示循环 loading,三个点从小到大错峰缩放。
@@ -341,8 +454,104 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
                             </span>
                           ) : (
                             <>
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content || ""}</ReactMarkdown>
-                              {streaming ? <span className="copilot-caret" aria-hidden /> : null}
+                              {parsed.cleanText ? (
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{parsed.cleanText}</ReactMarkdown>
+                              ) : null}
+                              {streaming && !parsed.pendingBlock ? <span className="copilot-caret" aria-hidden /> : null}
+                              {parsed.pendingBlock ? (
+                                <div className="mt-2 rounded-lg border border-blue-200 bg-white px-3 py-2.5 text-[11px] text-slate-500 flex items-center gap-2">
+                                  <Loader2 className="w-3.5 h-3.5 text-blue-600 animate-spin" />
+                                  <span>正在生成待确认执行操作卡片…</span>
+                                </div>
+                              ) : null}
+                              {parsed.actions.length > 0 ? (
+                                <div className="mt-2.5 space-y-2">
+                                  {parsed.actions.map((act, idx) => {
+                                    const cardKey = `${m.id}-${idx}`;
+                                    const state = actionStates[cardKey]?.status || "idle";
+                                    const errorMsg = actionStates[cardKey]?.error;
+                                    const actionLabel = COPILOT_ACTION_LABELS[act.action] || act.action;
+                                    return (
+                                      <div
+                                        key={cardKey}
+                                        className="rounded-lg border border-blue-200/90 bg-white p-3 shadow-2xs text-slate-800 space-y-2"
+                                      >
+                                        <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-slate-100">
+                                          <span className="text-[11px] font-bold text-slate-900">
+                                            待确认执行操作
+                                          </span>
+                                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                                            {actionLabel}
+                                          </span>
+                                        </div>
+                                        <div className="space-y-1 text-[11px]">
+                                          <div className="flex items-start justify-between gap-2">
+                                            <span className="text-slate-400 shrink-0">目标群组</span>
+                                            <Link
+                                              href={`/themes/${encodeURIComponent(act.themeId)}`}
+                                              onClick={onClose}
+                                              className="font-semibold text-blue-600 hover:underline text-right inline-flex items-center gap-1"
+                                            >
+                                              <span>{act.themeTitle || act.themeId}</span>
+                                              <ExternalLink className="w-3 h-3 shrink-0" />
+                                            </Link>
+                                          </div>
+                                          {act.owner && (
+                                            <div className="flex items-start justify-between gap-2">
+                                              <span className="text-slate-400 shrink-0">建议部门</span>
+                                              <span className="font-medium text-slate-800 text-right">{act.owner}</span>
+                                            </div>
+                                          )}
+                                          {act.eta && (
+                                            <div className="flex items-start justify-between gap-2">
+                                              <span className="text-slate-400 shrink-0">预计时限</span>
+                                              <span className="font-mono text-slate-700 text-right">{act.eta}</span>
+                                            </div>
+                                          )}
+                                          {act.note && (
+                                            <div className="mt-1 rounded bg-slate-50 border border-slate-200/70 px-2 py-1.5 text-[11px] text-slate-600 leading-relaxed">
+                                              {act.note}
+                                            </div>
+                                          )}
+                                        </div>
+                                        {state === "error" && errorMsg && (
+                                          <div className="flex items-center gap-1.5 text-[11px] text-rose-600 bg-rose-50 border border-rose-200 rounded px-2 py-1">
+                                            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                                            <span className="break-all">{errorMsg}</span>
+                                          </div>
+                                        )}
+                                        <div className="pt-1 flex items-center justify-end">
+                                          {state === "done" ? (
+                                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-md">
+                                              <CheckCircle2 className="w-3.5 h-3.5" />
+                                              <span>已执行落库</span>
+                                            </span>
+                                          ) : (
+                                            <button
+                                              type="button"
+                                              disabled={state === "pending" || streaming}
+                                              onClick={() => void handleExecuteAction(cardKey, act)}
+                                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                                            >
+                                              {state === "pending" ? (
+                                                <>
+                                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                                  <span>执行中…</span>
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <Play className="w-3 h-3" />
+                                                  <span>{state === "error" ? "重试执行" : "确认执行"}</span>
+                                                </>
+                                              )}
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : null}
                             </>
                           )}
                         </div>

@@ -1,5 +1,5 @@
 import { getRegionDb, type DB } from "@/db/client";
-import { ticketsTable, themesTable, ticketThemesTable } from "@/db/schema";
+import { ticketsTable, themesTable, ticketThemesTable, reviewQueueTable } from "@/db/schema";
 import { and, desc, eq, gte, isNotNull, lt, sql, type SQL } from "drizzle-orm";
 import { isTownLabel, parseAdminArea } from "@/lib/admin-area";
 import { regionLabel, toClusterDto, normalizeStatusCode, UNKNOWN_TOWN } from "@/lib/civic-dto";
@@ -204,7 +204,7 @@ export async function loadWorkorderStats(regionId?: string) {
       ? and(gte(ticketsTable.createTime, todayWin.from), lt(ticketsTable.createTime, todayWin.to))
       : undefined;
 
-  const [agg, regionRows, categoryRows] = await Promise.all([
+  const [agg, reviewPendingRows, regionRows, categoryRows] = await Promise.all([
     tenantDb
       .select({
         total: sql<number>`count(*)::int`,
@@ -213,8 +213,14 @@ export async function loadWorkorderStats(regionId?: string) {
         progress: sql<number>`count(*) filter (where upper(coalesce(${ticketsTable.status}, '')) in ('DISPATCHED','VERIFIED','IN_PROGRESS','PROCESSING'))::int`,
         urgent: sql<number>`count(*) filter (where upper(coalesce(${ticketsTable.urgency}, '')) = 'URGENT')::int`,
         multifreq: sql<number>`count(*) filter (where ${ticketsTable.primaryThemeId} is not null)::int`,
+        fakeClosure: sql<number>`count(*) filter (where ${ticketsTable.isFakeClosure} is true)::int`,
       })
       .from(ticketsTable),
+    tenantDb
+      .select({ count: sql<number>`count(*)::int` })
+      .from(reviewQueueTable)
+      .where(eq(reviewQueueTable.status, "PENDING"))
+      .catch(() => [{ count: 0 }]),
     tenantDb
       .select({
         subdistrict: ticketsTable.subdistrict,
@@ -237,10 +243,12 @@ export async function loadWorkorderStats(regionId?: string) {
     progress: 0,
     urgent: 0,
     multifreq: 0,
+    fakeClosure: 0,
   };
   const total = asInt(row.total);
   const finished = asInt(row.finished);
   const progress = asInt(row.progress);
+  const pendingReview = asInt(reviewPendingRows[0]?.count);
 
   const regionSet = new Set<string>();
   for (const r of regionRows) {
@@ -275,6 +283,8 @@ export async function loadWorkorderStats(regionId?: string) {
       urgent: asInt(row.urgent),
       multifreq: asInt(row.multifreq),
       single: Math.max(0, total - asInt(row.multifreq)),
+      fakeClosure: asInt(row.fakeClosure),
+      pendingReview,
     },
     latest,
     facets: {

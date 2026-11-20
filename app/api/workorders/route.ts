@@ -3,6 +3,7 @@ import { getRegionDb } from "@/db/client";
 import { ticketsTable } from "@/db/schema";
 import { and, desc, eq, gte, ilike, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { toWorkorderDto, UNKNOWN_TOWN } from "@/lib/civic-dto";
+import { isTownLabel } from "@/lib/admin-area";
 import { clampPage, clampSize } from "@/lib/api-bounds";
 import { cacheGetOrLoad } from "@/lib/civic-cache";
 import { loadWorkorderStats } from "@/lib/civic-queries";
@@ -17,7 +18,13 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const page = clampPage(searchParams.get("page"));
     const size = clampSize(searchParams.get("size"));
-    const region = searchParams.get("region") || "";
+    const regionQuery = searchParams.get("region") || "";
+    const region =
+      regionQuery &&
+      regionQuery !== regionId &&
+      (isTownLabel(regionQuery) || regionQuery === UNKNOWN_TOWN || regionQuery === "未知")
+        ? regionQuery
+        : "";
     const category = searchParams.get("category") || "";
     const status = searchParams.get("status") || "";
     const tab = searchParams.get("tab") || "";
@@ -69,6 +76,9 @@ export async function GET(req: NextRequest) {
 
     if (urgency === "URGENT" || tab === "urgent") {
       filters.push(eq(ticketsTable.urgency, "URGENT"));
+    }
+    if (tab === "fake_closure") {
+      filters.push(eq(ticketsTable.isFakeClosure, true));
     }
     if (cluster === "1" || cluster === "multifreq" || tab === "multifreq") {
       filters.push(isNotNull(ticketsTable.primaryThemeId));

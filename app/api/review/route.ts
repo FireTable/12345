@@ -1,130 +1,203 @@
 import { NextResponse } from "next/server";
-import { db } from "@/db/client";
+import { getRegionDb } from "@/db/client";
 import { reviewQueueTable, ticketsTable } from "@/db/schema";
-import { seedReviewQueue } from "@/lib/review-queue";
-import { eq, desc } from "drizzle-orm";
+import { listReviewQueue, seedReviewQueue } from "@/lib/review-queue";
+import { resolveRequestRegionId } from "@/lib/tenant/request-region";
+import { recordDisposalLog, resolveOperatorName } from "@/lib/disposal";
+import { invalidateCivicAggregates } from "@/lib/civic-cache";
+import { broadcastDataRefresh } from "@/lib/sse-broadcaster";
+import { eq } from "drizzle-orm";
+
+type ReviewCorrection = {
+  subdistrict?: string;
+  sourceCategory?: string;
+  canonicalSubject?: string;
+  address?: string;
+  eventType?: string;
+  urgency?: string;
+};
+
+function buildTicketCorrectionPatch(correction: ReviewCorrection | undefined) {
+  if (!correction || typeof correction !== "object") return null;
+  const patch: Record<string, unknown> = {};
+  if (typeof correction.subdistrict === "string") {
+    patch.subdistrict = correction.subdistrict.trim() || null;
+  }
+  if (typeof correction.sourceCategory === "string") {
+    patch.sourceCategory = correction.sourceCategory.trim() || null;
+  }
+  if (typeof correction.canonicalSubject === "string") {
+    patch.canonicalSubject = correction.canonicalSubject.trim().slice(0, 255) || null;
+  }
+  if (typeof correction.address === "string") {
+    patch.address = correction.address.trim().slice(0, 255) || null;
+  }
+  if (typeof correction.eventType === "string") {
+    patch.eventType = correction.eventType.trim().slice(0, 128) || null;
+  }
+  if (typeof correction.urgency === "string" && correction.urgency.trim()) {
+    const u = correction.urgency.trim().toUpperCase();
+    if (u === "NORMAL" || u === "MEDIUM" || u === "URGENT") {
+      patch.urgency = u;
+    }
+  }
+  if (Object.keys(patch).length === 0) return null;
+  patch.updatedAt = new Date();
+  return patch;
+}
 
 /**
  * GET /api/review?status=PENDING
- * 复核队列只带标题和原因。原文在 GET /api/workorders/[id]。
+ * 按当前请求租户隔离查询人工复核队列。
  */
 export async function GET(req: Request) {
   try {
+    const regionId = await resolveRequestRegionId(req);
     const { searchParams } = new URL(req.url);
     const statusParam = searchParams.get("status") || "PENDING";
-
-    const columns = {
-      id: reviewQueueTable.id,
-      ticketId: reviewQueueTable.ticketId,
-      confidence: reviewQueueTable.confidence,
-      reason: reviewQueueTable.reason,
-      status: reviewQueueTable.status,
-      operator: reviewQueueTable.operator,
-      note: reviewQueueTable.note,
-      createdAt: reviewQueueTable.createdAt,
-      reviewedAt: reviewQueueTable.reviewedAt,
-      ticketNo: ticketsTable.ticketNo,
-      title: ticketsTable.title,
-      summarizeTitle: ticketsTable.summarizeTitle,
-      district: ticketsTable.district,
-      subdistrict: ticketsTable.subdistrict,
-    };
-
-    const base = db
-      .select(columns)
-      .from(reviewQueueTable)
-      .leftJoin(ticketsTable, eq(reviewQueueTable.ticketId, ticketsTable.id))
-      .orderBy(desc(reviewQueueTable.createdAt));
-
-    const rows =
-      statusParam && statusParam.toUpperCase() !== "ALL"
-        ? await db
-            .select(columns)
-            .from(reviewQueueTable)
-            .leftJoin(ticketsTable, eq(reviewQueueTable.ticketId, ticketsTable.id))
-            .where(eq(reviewQueueTable.status, statusParam.toUpperCase()))
-            .orderBy(desc(reviewQueueTable.createdAt))
-        : await base;
+    const rows = await listReviewQueue(regionId, statusParam);
 
     return NextResponse.json({
       success: true,
+      regionId,
       data: rows,
       total: rows.length,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Failed to fetch review queue";
     console.error("GET /api/review failed:", error);
-    return NextResponse.json(
-      { success: false, error: error.message || "Failed to fetch review queue" },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
 }
 
 /**
  * POST /api/review
- * 提交人工复核结果 或 批量初始化复核项 (/api/review/seed)
+ * 提交人工复核结果（支持可选附带纠偏字段与 disposal_logs 留痕）或批量注入复核项。
  */
 export async function POST(req: Request) {
   try {
+    const regionId = await resolveRequestRegionId(req);
+    const { db: tenantDb } = await getRegionDb(regionId);
     const { pathname } = new URL(req.url);
-    const body = await req.json();
+    const body = (await req.json().catch(() => ({}))) as {
+      tickets?: Array<{ ticketId: string; confidence?: number; reason?: string }>;
+      reviewId?: string;
+      action?: string;
+      note?: string;
+      operator?: string;
+      correction?: ReviewCorrection;
+    };
 
     // 路由分支 1: 批量注入复核种子数据 (/api/review/seed 或 body.tickets)
     if (pathname.endsWith("/seed") || Array.isArray(body.tickets)) {
       const tickets = Array.isArray(body.tickets) ? body.tickets : [];
-      const result = await seedReviewQueue(tickets);
+      const result = await seedReviewQueue(tickets, regionId);
+      invalidateCivicAggregates(regionId);
+      broadcastDataRefresh(regionId);
       return NextResponse.json({
         success: true,
+        regionId,
         message: `Successfully queued ${result.inserted} items for review`,
         inserted: result.inserted,
       });
     }
 
     // 路由分支 2: 单条处理复核
-    const { reviewId, action, note, operator } = body;
+    const { reviewId, action, note, operator, correction } = body;
     if (!reviewId || !action) {
       return NextResponse.json(
-        { success: false, error: "reviewId and action ('REVIEWED' | 'DISMISSED') are required" },
+        { success: false, error: "reviewId and action ('REVIEWED' | 'DISMISSED' | 'PENDING') are required" },
         { status: 400 }
       );
     }
 
+    const nextStatus = action.trim().toUpperCase();
     const validActions = ["REVIEWED", "DISMISSED", "PENDING"];
-    if (!validActions.includes(action.toUpperCase())) {
+    if (!validActions.includes(nextStatus)) {
       return NextResponse.json(
         { success: false, error: `Invalid action. Must be one of: ${validActions.join(", ")}` },
         { status: 400 }
       );
     }
 
-    const updated = await db
-      .update(reviewQueueTable)
-      .set({
-        status: action.toUpperCase(),
-        operator: operator || "system_operator",
-        note: note || null,
-        reviewedAt: new Date(),
-      })
+    const existingRows = await tenantDb
+      .select()
+      .from(reviewQueueTable)
       .where(eq(reviewQueueTable.id, reviewId))
-      .returning();
-
-    if (!updated || updated.length === 0) {
+      .limit(1);
+    const existing = existingRows[0];
+    if (!existing) {
       return NextResponse.json(
         { success: false, error: "Review queue item not found" },
         { status: 404 }
       );
     }
 
+    const resolvedOperator =
+      typeof operator === "string" && operator.trim()
+        ? operator.trim().slice(0, 64)
+        : await resolveOperatorName(req);
+
+    const [updated] = await tenantDb
+      .update(reviewQueueTable)
+      .set({
+        status: nextStatus,
+        operator: resolvedOperator,
+        note: note ? String(note).trim() : null,
+        reviewedAt: nextStatus === "PENDING" ? null : new Date(),
+      })
+      .where(eq(reviewQueueTable.id, reviewId))
+      .returning();
+
+    const ticketPatch = buildTicketCorrectionPatch(correction);
+    if (ticketPatch && existing.ticketId) {
+      await tenantDb
+        .update(ticketsTable)
+        .set(ticketPatch)
+        .where(eq(ticketsTable.id, existing.ticketId));
+    }
+
+    if (existing.ticketId) {
+      const logAction =
+        nextStatus === "DISMISSED"
+          ? "REVIEW_DISMISS"
+          : nextStatus === "REVIEWED"
+            ? "REVIEW_APPROVE"
+            : "UPDATE_STATUS";
+      await recordDisposalLog({
+        regionId,
+        targetType: "TICKET",
+        targetId: existing.ticketId,
+        action: logAction,
+        fromStatus: existing.status,
+        toStatus: nextStatus,
+        operator: resolvedOperator,
+        note:
+          note ||
+          (nextStatus === "REVIEWED"
+            ? "人工复核确认无误"
+            : nextStatus === "DISMISSED"
+              ? "人工复核驳回/忽略"
+              : "退回待人工复核"),
+        meta: {
+          reviewId,
+          correction: ticketPatch ? correction : null,
+        },
+      });
+    }
+
+    invalidateCivicAggregates(regionId);
+    broadcastDataRefresh(regionId);
+
     return NextResponse.json({
       success: true,
-      message: `Review item ${reviewId} marked as ${action.toUpperCase()}`,
-      data: updated[0],
+      regionId,
+      message: `Review item ${reviewId} marked as ${nextStatus}`,
+      data: updated,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Failed to process review action";
     console.error("POST /api/review failed:", error);
-    return NextResponse.json(
-      { success: false, error: error.message || "Failed to process review action" },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
 }
