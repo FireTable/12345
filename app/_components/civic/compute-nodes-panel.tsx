@@ -339,13 +339,13 @@ export function ComputeNodesPanel({
   return (
     <div className="mt-6 mb-8">
       <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <Cpu className="h-4 w-4 text-blue-600" />
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Cpu className="h-4 w-4 text-blue-600 shrink-0" />
             <h2 className="text-sm font-bold text-slate-900">
               算力集群与 Colab GPU 热插拔管理
             </h2>
-            <span className="text-xs text-slate-500 font-mono">
+            <span className="text-xs text-slate-500 font-mono tabular-nums">
               ({envNodes.length} 基础 + {nodes.length} 动态挂载)
             </span>
           </div>
@@ -354,14 +354,14 @@ export function ComputeNodesPanel({
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             type="button"
             disabled={loading}
             onClick={() => void fetchNodes()}
-            className="btn btn--default h-[32px] px-3 text-xs"
+            className="btn btn--default h-[34px] sm:h-[32px] px-3 text-xs whitespace-nowrap"
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+            <RefreshCw className={`h-3.5 w-3.5 shrink-0 ${loading ? "animate-spin" : ""}`} />
             <span>刷新节点</span>
           </button>
           <button
@@ -370,9 +370,9 @@ export function ComputeNodesPanel({
               resetModal();
               setAddOpen(true);
             }}
-            className="btn btn--primary h-[32px] px-3.5 text-xs"
+            className="btn btn--primary h-[34px] sm:h-[32px] px-3.5 text-xs whitespace-nowrap"
           >
-            <Plus className="h-3.5 w-3.5" />
+            <Plus className="h-3.5 w-3.5 shrink-0" />
             <span>接入 Colab GPU / 算力节点</span>
           </button>
         </div>
@@ -380,18 +380,18 @@ export function ComputeNodesPanel({
 
       <div className="bg-white rounded-xl border border-slate-200/90 overflow-hidden shadow-2xs">
         {/* 环境变量基础节点 */}
-        <div className="px-5 py-3 bg-slate-50/80 border-b border-slate-100 flex items-center justify-between">
+        <div className="px-4 sm:px-5 py-3 bg-slate-50/80 border-b border-slate-100 flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
-            <Server className="h-3.5 w-3.5 text-slate-500" />
+            <Server className="h-3.5 w-3.5 text-slate-500 shrink-0" />
             <span>环境变量基础节点（只读）</span>
           </div>
-          <span className="text-[11px] text-slate-400 font-mono">
+          <span className="text-[11px] text-slate-400 font-mono break-all">
             SYSTEM_TWO_ENDPOINTS / EMBED_ENDPOINTS
           </span>
         </div>
 
         {envNodes.length === 0 ? (
-          <div className="px-5 py-4 text-xs text-slate-400 border-b border-slate-100">
+          <div className="px-4 sm:px-5 py-4 text-xs text-slate-400 border-b border-slate-100">
             未检测到环境变量静态配置节点
           </div>
         ) : (
@@ -401,41 +401,41 @@ export function ComputeNodesPanel({
               return (
                 <div
                   key={env.id || `${env.role}-${env.endpoint}-${idx}`}
-                  className="px-5 py-3 flex items-center justify-between gap-4 flex-wrap"
+                  className="px-4 sm:px-5 py-3 flex items-center justify-between gap-3 sm:gap-4 flex-wrap"
                 >
                   <div className="min-w-0 flex-1 space-y-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-xs font-bold text-slate-900">{env.name}</span>
-                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">
                         {ROLE_LABELS[env.role] || env.role}
                       </span>
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${p.cls}`}>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border whitespace-nowrap ${p.cls}`}>
                         {p.label}
                       </span>
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-100 text-slate-500 border border-slate-200">
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-100 text-slate-500 border border-slate-200 whitespace-nowrap">
                         只读 ENV
                       </span>
                     </div>
-                    <div className="text-[11px] font-mono text-slate-500 truncate">
+                    <div className="text-[11px] font-mono text-slate-500 min-w-0 break-all">
                       {env.endpoint}
                       {env.model ? ` · 模型: ${env.model}` : ""}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 text-[11px] shrink-0">
+                  <div className="flex items-center gap-2 flex-wrap text-[11px] w-full sm:w-auto sm:shrink-0">
                     {env.hasApiKey && (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-50 border border-slate-200 text-slate-600 font-mono">
-                        <KeyRound className="h-3 w-3 text-slate-400" />
+                        <KeyRound className="h-3 w-3 text-slate-400 shrink-0" />
                         {env.apiKeyHint || "已配置"}
                       </span>
                     )}
                     {env.lastStatus === "ONLINE" ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 font-medium">
-                        <CheckCircle2 className="h-3 w-3" />
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 font-medium tabular-nums">
+                        <CheckCircle2 className="h-3 w-3 shrink-0" />
                         在线{env.lastLatencyMs != null ? ` ${env.lastLatencyMs}ms` : ""}
                       </span>
                     ) : env.lastStatus === "OFFLINE" ? (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-50 border border-rose-200 text-rose-700 font-medium">
-                        <XCircle className="h-3 w-3" />
+                        <XCircle className="h-3 w-3 shrink-0" />
                         离线
                       </span>
                     ) : (
@@ -449,9 +449,9 @@ export function ComputeNodesPanel({
         )}
 
         {/* 动态挂载算力节点 */}
-        <div className="px-5 py-3 bg-slate-50/80 border-b border-slate-100 flex items-center justify-between">
+        <div className="px-4 sm:px-5 py-3 bg-slate-50/80 border-b border-slate-100 flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
-            <Cloud className="h-3.5 w-3.5 text-blue-600" />
+            <Cloud className="h-3.5 w-3.5 text-blue-600 shrink-0" />
             <span>动态热插拔算力池</span>
           </div>
           <span className="text-[11px] text-slate-400">
@@ -476,73 +476,73 @@ export function ComputeNodesPanel({
               return (
                 <div
                   key={node.id}
-                  className={`px-5 py-3.5 flex items-center justify-between gap-4 flex-wrap transition-colors ${
+                  className={`px-4 sm:px-5 py-3.5 flex items-center justify-between gap-3 sm:gap-4 flex-wrap transition-colors ${
                     !node.enabled ? "bg-slate-50/70 opacity-75" : ""
                   }`}
                 >
                   <div className="min-w-0 flex-1 space-y-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-xs font-bold text-slate-900">{node.name}</span>
-                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">
                         {ROLE_LABELS[node.role] || node.role}
                       </span>
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${p.cls}`}>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border whitespace-nowrap ${p.cls}`}>
                         {p.label}
                       </span>
                       {!node.enabled && (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-200 text-slate-600">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-200 text-slate-600 whitespace-nowrap">
                           已停用
                         </span>
                       )}
                       {isOnline ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          <CheckCircle2 className="h-3 w-3" />
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
+                          <CheckCircle2 className="h-3 w-3 shrink-0" />
                           在线
                         </span>
                       ) : isOffline ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">
-                          <XCircle className="h-3 w-3" />
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200 whitespace-nowrap">
+                          <XCircle className="h-3 w-3 shrink-0" />
                           离线
                         </span>
                       ) : (
-                        <span className="px-2 py-0.5 rounded text-[10px] bg-slate-100 text-slate-500 border border-slate-200">
+                        <span className="px-2 py-0.5 rounded text-[10px] bg-slate-100 text-slate-500 border border-slate-200 whitespace-nowrap">
                           待探活
                         </span>
                       )}
                       {node.lastLatencyMs != null && (
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-100 text-slate-700 border border-slate-200">
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-mono tabular-nums bg-slate-100 text-slate-700 border border-slate-200 whitespace-nowrap">
                           {node.lastLatencyMs} ms
                         </span>
                       )}
                     </div>
 
-                    <div className="text-[11px] font-mono text-slate-500 flex items-center gap-2 flex-wrap">
-                      <span className="truncate max-w-md" title={node.endpoint}>
+                    <div className="text-[11px] font-mono text-slate-500 flex items-center gap-2 flex-wrap min-w-0">
+                      <span className="min-w-0 break-all" title={node.endpoint}>
                         {node.endpoint}
                       </span>
                       {node.model && (
-                        <span className="text-slate-600">· 模型: {node.model}</span>
+                        <span className="text-slate-600 break-all">· 模型: {node.model}</span>
                       )}
-                      <span className="inline-flex items-center gap-1 text-slate-500">
-                        <KeyRound className="h-3 w-3 text-slate-400" />
+                      <span className="inline-flex items-center gap-1 text-slate-500 whitespace-nowrap">
+                        <KeyRound className="h-3 w-3 text-slate-400 shrink-0" />
                         {node.hasApiKey ? node.apiKeyHint || "已配置密钥" : "无密钥"}
                       </span>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:shrink-0">
                     <button
                       type="button"
                       disabled={togglingId === node.id}
                       onClick={() => void handleToggleEnabled(node)}
-                      className={`btn h-[30px] px-2.5 text-xs ${
+                      className={`btn h-[34px] sm:h-[30px] px-2.5 text-xs whitespace-nowrap ${
                         node.enabled
                           ? "btn--default text-emerald-700 border-emerald-200 hover:border-emerald-400"
                           : "btn--default text-slate-600"
                       }`}
                       title={node.enabled ? "点击停用此算力节点" : "点击启用此算力节点"}
                     >
-                      <Power className="h-3.5 w-3.5" />
+                      <Power className="h-3.5 w-3.5 shrink-0" />
                       <span>{node.enabled ? "已启用" : "已停用"}</span>
                     </button>
 
@@ -550,12 +550,12 @@ export function ComputeNodesPanel({
                       type="button"
                       disabled={probingId === node.id}
                       onClick={() => void handleProbeExisting(node)}
-                      className="btn btn--default h-[30px] px-2.5 text-xs text-blue-700 border-blue-200 hover:border-blue-400"
+                      className="btn btn--default h-[34px] sm:h-[30px] px-2.5 text-xs text-blue-700 border-blue-200 hover:border-blue-400 whitespace-nowrap"
                     >
                       {probingId === node.id ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
                       ) : (
-                        <Activity className="h-3.5 w-3.5" />
+                        <Activity className="h-3.5 w-3.5 shrink-0" />
                       )}
                       <span>{probingId === node.id ? "测速中" : "探活测速"}</span>
                     </button>
@@ -563,9 +563,9 @@ export function ComputeNodesPanel({
                     <button
                       type="button"
                       onClick={() => setDeletingNode(node)}
-                      className="btn h-[30px] px-2.5 text-xs text-rose-700 border border-rose-200 bg-rose-50 hover:bg-rose-100"
+                      className="btn h-[34px] sm:h-[30px] px-2.5 text-xs text-rose-700 border border-rose-200 bg-rose-50 hover:bg-rose-100 whitespace-nowrap"
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
+                      <Trash2 className="h-3.5 w-3.5 shrink-0" />
                       <span>删除</span>
                     </button>
                   </div>
@@ -584,10 +584,10 @@ export function ComputeNodesPanel({
           if (!open) resetModal();
         }}
       >
-        <DialogContent className="max-w-[500px] gap-4 border-[var(--c-border)] bg-[var(--c-surface)] p-0 shadow-xl sm:rounded-xl text-[var(--c-ink)]">
+        <DialogContent className="w-[calc(100vw-1.5rem)] max-w-[500px] max-h-[90dvh] overflow-y-auto gap-4 border-[var(--c-border)] bg-[var(--c-surface)] p-0 shadow-xl rounded-xl text-[var(--c-ink)]">
           <DialogHeader className="space-y-1.5 px-5 pt-5 text-left">
             <DialogTitle className="text-[15px] font-semibold text-[var(--c-ink)] flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-blue-600" />
+              <Sparkles className="h-4 w-4 text-blue-600 shrink-0" />
               <span>接入 Colab GPU / 远程算力节点</span>
             </DialogTitle>
             <DialogDescription className="text-[12px] text-[var(--c-ink-3)]">
@@ -609,7 +609,7 @@ export function ComputeNodesPanel({
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">
                   算力角色
@@ -662,7 +662,7 @@ export function ComputeNodesPanel({
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">
                   Bearer Token（密码输入）
@@ -699,23 +699,23 @@ export function ComputeNodesPanel({
                     : "bg-rose-50 border-rose-200 text-rose-800"
                 }`}
               >
-                <div className="flex items-center justify-between font-semibold">
+                <div className="flex items-center justify-between font-semibold gap-2 flex-wrap">
                   <span className="flex items-center gap-1.5">
                     {probeResult.online ? (
-                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
                     ) : (
-                      <XCircle className="h-3.5 w-3.5 text-rose-600" />
+                      <XCircle className="h-3.5 w-3.5 text-rose-600 shrink-0" />
                     )}
                     {probeResult.online ? "连通性探测通过" : "节点连接失败"}
                   </span>
                   {probeResult.latencyMs != null && (
-                    <span className="font-mono text-[11px]">
+                    <span className="font-mono tabular-nums text-[11px]">
                       延迟 {probeResult.latencyMs} ms
                     </span>
                   )}
                 </div>
                 {probeResult.error && (
-                  <div className="text-[11px]">{probeResult.error}</div>
+                  <div className="text-[11px] break-words">{probeResult.error}</div>
                 )}
                 {probeResult.models.length > 0 && (
                   <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
@@ -736,21 +736,21 @@ export function ComputeNodesPanel({
               </div>
             )}
 
-            <DialogFooter className="flex-row justify-between sm:justify-between gap-2 border-t border-[var(--c-border-soft)] -mx-5 px-5 py-3">
+            <DialogFooter className="flex-col-reverse sm:flex-row flex-wrap justify-between sm:justify-between gap-2 border-t border-[var(--c-border-soft)] -mx-5 px-5 py-3">
               <button
                 type="button"
                 disabled={probingModal || submitting || !formEndpoint.trim()}
                 onClick={() => void handleProbeTemp()}
-                className="btn btn--default text-xs text-blue-700 border-blue-200 hover:border-blue-400"
+                className="btn btn--default text-xs text-blue-700 border-blue-200 hover:border-blue-400 justify-center"
               >
                 {probingModal ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
                 ) : (
-                  <Activity className="h-3.5 w-3.5" />
+                  <Activity className="h-3.5 w-3.5 shrink-0" />
                 )}
                 <span>{probingModal ? "探测中…" : "先探测连通性"}</span>
               </button>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center justify-end gap-2">
                 <button
                   type="button"
                   className="btn btn--default text-xs"

@@ -258,24 +258,28 @@ export default function TicketDetailPage() {
   const clusterId = row.cluster_info?.id || row.cluster_id || "";
   const currentStatus = normalizeStatusCode(row.status);
   const logs: DisposalLogItem[] = Array.isArray(row.disposalLogs) ? row.disposalLogs : [];
-  const categoryOptions = sourceCategory && !SEVEN_CATEGORIES.includes(sourceCategory as any)
-    ? [sourceCategory, ...SEVEN_CATEGORIES]
-    : SEVEN_CATEGORIES;
+  const isEcommerce = activeRegion?.domainProfile?.domainType === "ECOMMERCE_CS";
+  const unitLabel = activeRegion?.domainProfile?.terminology?.regionUnit || "所属镇街";
+  const domainCategories = activeRegion?.domainProfile?.categories;
+  const baseCategories = domainCategories?.length ? domainCategories : SEVEN_CATEGORIES;
+  const categoryOptions = sourceCategory && !baseCategories.includes(sourceCategory as any)
+    ? [sourceCategory, ...baseCategories]
+    : baseCategories;
 
   return (
     <>
-      <div className="breadcrumb flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
-          <Link href="/tickets" className="hover:underline flex items-center gap-1">
-            <ChevronLeft className="w-3.5 h-3.5" />
+      <div className="breadcrumb flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+          <Link href="/tickets" className="hover:underline flex items-center gap-1 whitespace-nowrap">
+            <ChevronLeft className="w-3.5 h-3.5 shrink-0" />
             <span>工单中心</span>
           </Link>
           <span>/</span>
-          <span>{row.id}</span>
+          <span className="font-mono tabular-nums break-all">{row.id}</span>
         </div>
         <Link
           href="/tickets"
-          className="text-xs text-slate-500 hover:text-slate-800 transition-colors"
+          className="text-xs text-slate-500 hover:text-slate-800 transition-colors whitespace-nowrap"
         >
           返回工单列表
         </Link>
@@ -336,7 +340,7 @@ export default function TicketDetailPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         {/* 左侧主要区域：AI 研判解析与市民诉求原文 (8列) */}
-        <div className="lg:col-span-8 space-y-4">
+        <div className="lg:col-span-8 space-y-4 min-w-0">
           {/* 1. AI 智能研判解析卡片 (复用统一组件) */}
           <AiVerdictCard data={row} />
 
@@ -345,18 +349,18 @@ export default function TicketDetailPage() {
         </div>
 
         {/* 右侧边栏区域：经办属性、工单处置与人工纠偏、群组联动、处置时间轴 (4列) */}
-        <div className="lg:col-span-4 space-y-4">
+        <div className="lg:col-span-4 space-y-4 min-w-0">
           {/* 1. 经办基础属性 */}
           <TicketPropsGrid data={row} />
 
           {/* 2. 工单处置与人工纠偏卡片 */}
           <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3.5 shadow-2xs">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+            <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100">
               <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
-                <Wrench className="w-4 h-4 text-blue-600" />
+                <Wrench className="w-4 h-4 text-blue-600 shrink-0" />
                 <span>工单处置与人工纠偏</span>
               </div>
-              <span className={`status-tag status-tag--${statusTag(row.status)}`}>
+              <span className={`status-tag shrink-0 status-tag--${statusTag(row.status)}`}>
                 {statusLabel(row.status)}
               </span>
             </div>
@@ -371,27 +375,27 @@ export default function TicketDetailPage() {
                 value={statusNote}
                 onChange={(e) => setStatusNote(e.target.value)}
                 placeholder="填写本次处置说明或办结情况（可选）"
-                className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-slate-50/70 text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-blue-500"
+                className="w-full h-9 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-slate-50/70 text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-blue-500"
               />
               <div className="grid grid-cols-3 gap-1.5">
                 <button
                   type="button"
                   disabled={actionPending || currentStatus === "PENDING"}
                   onClick={() => void handleStatusChange("PENDING")}
-                  className={`btn justify-center text-xs py-1.5 px-2 ${
+                  className={`btn justify-center text-xs min-h-[38px] sm:min-h-[32px] py-1.5 px-2 min-w-0 whitespace-nowrap ${
                     currentStatus === "PENDING"
                       ? "bg-amber-50 text-amber-700 border-amber-200 cursor-default"
                       : "btn--default"
                   } disabled:opacity-60`}
                 >
-                  <Clock className="w-3.5 h-3.5" />
+                  <Clock className="w-3.5 h-3.5 shrink-0" />
                   <span>待处理</span>
                 </button>
                 <button
                   type="button"
                   disabled={actionPending || (currentStatus === "IN_PROGRESS" && !statusNote.trim())}
                   onClick={() => void handleStatusChange("IN_PROGRESS")}
-                  className={`btn justify-center text-xs py-1.5 px-2 ${
+                  className={`btn justify-center text-xs min-h-[38px] sm:min-h-[32px] py-1.5 px-2 min-w-0 whitespace-nowrap ${
                     currentStatus === "IN_PROGRESS"
                       ? "bg-blue-50 text-blue-700 border-blue-200"
                       : "btn--default"
@@ -399,7 +403,7 @@ export default function TicketDetailPage() {
                 >
                   {currentStatus === "RESOLVED" ? (
                     <>
-                      <RotateCcw className="w-3.5 h-3.5" />
+                      <RotateCcw className="w-3.5 h-3.5 shrink-0" />
                       <span>重开处理</span>
                     </>
                   ) : (
@@ -410,13 +414,13 @@ export default function TicketDetailPage() {
                   type="button"
                   disabled={actionPending || currentStatus === "RESOLVED"}
                   onClick={() => void handleStatusChange("RESOLVED")}
-                  className={`btn justify-center text-xs py-1.5 px-2 ${
+                  className={`btn justify-center text-xs min-h-[38px] sm:min-h-[32px] py-1.5 px-2 min-w-0 whitespace-nowrap ${
                     currentStatus === "RESOLVED"
                       ? "bg-emerald-50 text-emerald-700 border-emerald-200 cursor-default"
                       : "btn--primary"
                   } disabled:opacity-60`}
                 >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                   <span>一键办结</span>
                 </button>
               </div>
@@ -426,34 +430,35 @@ export default function TicketDetailPage() {
             <div className="pt-2 border-t border-slate-100">
               <button
                 type="button"
+                aria-expanded={correctionOpen}
                 onClick={() => setCorrectionOpen((prev) => !prev)}
-                className="w-full flex items-center justify-between text-xs font-semibold text-slate-700 hover:text-blue-600 py-1 cursor-pointer transition-colors"
+                className="w-full flex items-center justify-between text-xs font-semibold text-slate-700 hover:text-blue-600 py-1.5 min-h-[36px] cursor-pointer transition-colors"
               >
                 <span>人工纠偏要素与知识沉淀</span>
                 {correctionOpen ? (
-                  <ChevronUp className="w-4 h-4 text-slate-400" />
+                  <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" />
                 ) : (
-                  <ChevronDown className="w-4 h-4 text-slate-400" />
+                  <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
                 )}
               </button>
 
               {correctionOpen && (
                 <form onSubmit={handleCorrectionSubmit} className="mt-2.5 space-y-2.5">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-[11px] text-slate-500 mb-1">所属镇街</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-2">
+                    <div className="min-w-0">
+                      <label className="block text-[11px] text-slate-500 mb-1">{unitLabel}</label>
                       <input
                         type="text"
                         value={subdistrict}
                         onChange={(e) => setSubdistrict(e.target.value)}
-                        placeholder="如：大良街道"
-                        className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
+                        placeholder={isEcommerce ? "如：天猫旗舰店" : "如：大良街道"}
+                        className="w-full h-9 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
                       />
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <label className="block text-[11px] text-slate-500 mb-1">诉求分类</label>
                       <Select value={sourceCategory || undefined} onValueChange={setSourceCategory}>
-                        <SelectTrigger className="w-full h-8 bg-white border-slate-200 text-xs text-slate-900 rounded-lg">
+                        <SelectTrigger className="w-full h-9 sm:h-8 bg-white border-slate-200 text-xs text-slate-900 rounded-lg">
                           <SelectValue placeholder="选择分类" />
                         </SelectTrigger>
                         <SelectContent>
@@ -474,7 +479,7 @@ export default function TicketDetailPage() {
                       value={canonicalSubject}
                       onChange={(e) => setCanonicalSubject(e.target.value)}
                       placeholder="填写标准化涉事主体名称"
-                      className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
+                      className="w-full h-9 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
                     />
                   </div>
 
@@ -485,25 +490,25 @@ export default function TicketDetailPage() {
                       value={address}
                       onChange={(e) => setAddress(e.target.value)}
                       placeholder="填写微观事发地址"
-                      className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
+                      className="w-full h-9 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-2">
+                    <div className="min-w-0">
                       <label className="block text-[11px] text-slate-500 mb-1">细分事件类型</label>
                       <input
                         type="text"
                         value={eventType}
                         onChange={(e) => setEventType(e.target.value)}
                         placeholder="如：夜间施工噪音"
-                        className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
+                        className="w-full h-9 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
                       />
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <label className="block text-[11px] text-slate-500 mb-1">紧急程度</label>
                       <Select value={urgency} onValueChange={setUrgency}>
-                        <SelectTrigger className="w-full h-8 bg-white border-slate-200 text-xs text-slate-900 rounded-lg">
+                        <SelectTrigger className="w-full h-9 sm:h-8 bg-white border-slate-200 text-xs text-slate-900 rounded-lg">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -522,12 +527,12 @@ export default function TicketDetailPage() {
                       value={correctionNote}
                       onChange={(e) => setCorrectionNote(e.target.value)}
                       placeholder="说明人工调整原因（可选）"
-                      className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
+                      className="w-full h-9 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
                     />
                   </div>
 
                   <div className="rounded-lg border border-slate-200/80 bg-slate-50/70 p-2.5 space-y-2">
-                    <label className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer select-none">
+                    <label className="flex items-center gap-2 min-h-[28px] text-xs font-medium text-slate-700 cursor-pointer select-none">
                       <input
                         type="checkbox"
                         checked={saveAsAlias}
@@ -548,7 +553,7 @@ export default function TicketDetailPage() {
                           value={aliasType}
                           onValueChange={(v) => setAliasType(v as typeof aliasType)}
                         >
-                          <SelectTrigger className="w-full h-8 bg-white border-slate-200 text-xs text-slate-900 rounded-lg">
+                          <SelectTrigger className="w-full h-9 sm:h-8 bg-white border-slate-200 text-xs text-slate-900 rounded-lg">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -559,20 +564,20 @@ export default function TicketDetailPage() {
                             ))}
                           </SelectContent>
                         </Select>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           <input
                             type="text"
                             value={aliasText}
                             onChange={(e) => setAliasText(e.target.value)}
                             placeholder="原口语别名"
-                            className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
+                            className="w-full h-9 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
                           />
                           <input
                             type="text"
                             value={canonicalText}
                             onChange={(e) => setCanonicalText(e.target.value)}
                             placeholder="对应标准名称"
-                            className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
+                            className="w-full h-9 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
                           />
                         </div>
                       </div>
@@ -582,7 +587,7 @@ export default function TicketDetailPage() {
                   <button
                     type="submit"
                     disabled={actionPending}
-                    className="btn btn--primary w-full justify-center text-xs py-2"
+                    className="btn btn--primary w-full justify-center text-xs min-h-[38px] sm:min-h-[34px] py-2"
                   >
                     {actionPending ? "保存中…" : "保存人工纠偏"}
                   </button>
@@ -595,10 +600,10 @@ export default function TicketDetailPage() {
           {clusterId && (
             <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3 shadow-2xs">
               <div className="flex items-center gap-1.5 text-xs font-bold text-blue-900 pb-2 border-b border-slate-100">
-                <Layers className="w-4 h-4 text-blue-600" />
+                <Layers className="w-4 h-4 text-blue-600 shrink-0" />
                 <span>归属多频研判群组</span>
               </div>
-              <div className="text-sm font-bold text-slate-800 leading-snug">
+              <div className="text-sm font-bold text-slate-800 leading-snug break-words">
                 {row.cluster_info?.title || `${row.region} · ${row.category}专项`}
               </div>
               <div className="text-xs text-slate-500 leading-relaxed">
@@ -607,18 +612,18 @@ export default function TicketDetailPage() {
               <div className="space-y-2">
                 <Link
                   href={`/themes/${clusterId}?ticketId=${encodeURIComponent(row.id)}&highlight=${encodeURIComponent(row.id)}#ticket-${encodeURIComponent(row.id)}`}
-                  className="btn btn--default flex items-center justify-center gap-1.5 text-xs text-blue-700 w-full hover:bg-blue-50 py-2 font-medium"
+                  className="btn btn--default flex items-center justify-center gap-1.5 text-xs text-blue-700 w-full hover:bg-blue-50 min-h-[38px] sm:min-h-[34px] py-2 font-medium"
                 >
                   <span>前往专题视图研判定位</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
+                  <ExternalLink className="w-3.5 h-3.5 shrink-0" />
                 </Link>
                 <button
                   type="button"
                   disabled={actionPending}
                   onClick={() => setDetachConfirmOpen(true)}
-                  className="btn btn--default flex items-center justify-center gap-1.5 text-xs text-rose-600 border-rose-200 hover:border-rose-400 w-full py-2 font-medium disabled:opacity-50"
+                  className="btn btn--default flex items-center justify-center gap-1.5 text-xs text-rose-600 border-rose-200 hover:border-rose-400 w-full min-h-[38px] sm:min-h-[34px] py-2 font-medium disabled:opacity-50"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <Trash2 className="w-3.5 h-3.5 shrink-0" />
                   <span>移出当前群组</span>
                 </button>
               </div>

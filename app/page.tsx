@@ -353,7 +353,13 @@ export default function DashboardPage() {
                 </div>
                 <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>色深表示工单数量</div>
               </div>
-              <div className="card__body heatmap-scroll" style={{ padding: "8px 12px" }}>
+              <div
+                className="card__body heatmap-scroll table-wrapper"
+                tabIndex={0}
+                role="region"
+                aria-label={hasGeoMap ? "镇街与诉求类型热力矩阵" : "渠道与诉求类型热力矩阵"}
+                style={{ padding: "0 12px 12px 0" }}
+              >
                 <CivicHeatmap
                   regions={regions.map((r) => r[0])}
                   cats={cats.slice(0, 7).map((c) => c[0])}

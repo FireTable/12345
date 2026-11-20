@@ -107,7 +107,7 @@ export function mapColorByShare(count: number, max: number): string {
 export function categoryColor(name: string): string {
   const raw = (name || "").trim();
   const map: Record<string, string> = {
-    // 官方 7 大法定诉求分类（标准单一事实来源）
+    // 官方 7 大法定诉求分类（标准单一事实来源 — 100% 保留）
     城市管理: "#1677FF", // 经典政务科技蓝
     交通出行: "#FA8C16", // 交通活力橙黄
     生态环境: "#52C41A", // 生态水务清新绿
@@ -116,7 +116,34 @@ export function categoryColor(name: string): string {
     公共安全: "#F5222D", // 公共安全警示红
     社会治理: "#2F54EB", // 社会治理极客蓝
 
-    // 历史与别名拓展映射
+    // 电商 7 大标准客诉分类（高辨识度现代色盘）
+    商品质量与破损: "#2563EB",
+    物流延误与丢件: "#0891B2",
+    货不对板与宣传不符: "#7C3AED",
+    退款与价保纠纷: "#D97706",
+    假冒伪劣与欺诈: "#E11D48",
+    客服推诿与售后超时: "#4F46E5",
+    食安与合规红线: "#DC2626",
+
+    // 电商分类别名与局部词根（置于通用词前，防止“食品安全”误中“安全”）
+    商品质量: "#2563EB",
+    破损: "#2563EB",
+    物流延误: "#0891B2",
+    丢件: "#0891B2",
+    物流: "#0891B2",
+    货不对板: "#7C3AED",
+    宣传不符: "#7C3AED",
+    退款: "#D97706",
+    价保: "#D97706",
+    假冒伪劣: "#E11D48",
+    欺诈: "#E11D48",
+    客服推诿: "#4F46E5",
+    售后超时: "#4F46E5",
+    食安: "#DC2626",
+    食品安全: "#DC2626",
+    合规红线: "#DC2626",
+
+    // 历史与别名拓展映射（政务兼容）
     市容城管: "#1677FF",
     城管: "#1677FF",
     交通: "#FA8C16",
@@ -257,6 +284,7 @@ export function categoryVisual(name?: string | null): CategoryVisual {
   const raw = (name || "").trim();
   const color = categoryColor(raw);
   const palette: Record<string, { bg: string; text?: string; border?: string }> = {
+    // 原有政务 7 大分类色系（100% 保留）
     "#1677FF": { bg: "#E8F3FF", text: "#1677FF", border: "#BEDBFF" }, // 城市管理
     "#FA8C16": { bg: "#FFF7E6", text: "#D46B08", border: "#FFD591" }, // 交通出行 (温和暖橙底，暖深橙字，柔和浅橙边框)
     "#52C41A": { bg: "#E8FFEA", text: "#389E0D", border: "#B7EB8F" }, // 生态环境
@@ -265,8 +293,17 @@ export function categoryVisual(name?: string | null): CategoryVisual {
     "#F5222D": { bg: "#FFECE8", text: "#F5222D", border: "#FFA39E" }, // 公共安全
     "#2F54EB": { bg: "#F0F5FF", text: "#2F54EB", border: "#ADC6FF" }, // 社会治理
     "#EB2F96": { bg: "#FFF0F6", text: "#EB2F96", border: "#FFADD2" }, // 社区物业 (历史/兼容)
+
+    // 电商 7 大分类高对比精致色系（保证 >= 4.5:1 文本对比度）
+    "#2563EB": { bg: "#EFF6FF", text: "#1D4ED8", border: "#BFDBFE" }, // 商品质量与破损
+    "#0891B2": { bg: "#ECFEFF", text: "#0E7490", border: "#A5F3FC" }, // 物流延误与丢件
+    "#7C3AED": { bg: "#F5F3FF", text: "#6D28D9", border: "#DDD6FE" }, // 货不对板与宣传不符
+    "#D97706": { bg: "#FFFBEB", text: "#B45309", border: "#FDE68A" }, // 退款与价保纠纷
+    "#E11D48": { bg: "#FFF1F2", text: "#BE123C", border: "#FECDD3" }, // 假冒伪劣与欺诈
+    "#4F46E5": { bg: "#EEF2FF", text: "#4338CA", border: "#C7D2FE" }, // 客服推诿与售后超时
+    "#DC2626": { bg: "#FEF2F2", text: "#B91C1C", border: "#FECACA" }, // 食安与合规红线
   };
-  const item = palette[color] || { bg: "#F0F1F3", text: "#86909C", border: "#E2E8F0" };
+  const item = palette[color] || { bg: "#F1F5F9", text: "#475569", border: "#E2E8F0" };
   return {
     color: item.text || color,
     bg: item.bg,

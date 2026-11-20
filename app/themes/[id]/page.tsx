@@ -359,19 +359,19 @@ function ThemeDetailInner() {
       const coloredNodes: GraphNode[] = (raw.nodes || []).map((n) => {
         const nodeAny = n as GraphNode & { isFakeClosure?: boolean };
         const isFake = Boolean(nodeAny.isFakeClosure || nodeAny.meta?.isFakeClosure);
-        let fallbackColor = "#64748b";
+        let semanticColor = "#64748B";
         if (n.type === "THEME") {
-          fallbackColor = n.riskLevel === "HIGH" ? "#ef4444" : n.riskLevel === "MEDIUM" ? "#f59e0b" : "#1677ff";
+          semanticColor = n.riskLevel === "HIGH" ? "#E11D48" : n.riskLevel === "MEDIUM" ? "#D97706" : "#2563EB";
         } else if (n.type === "SUBJECT") {
-          fallbackColor = "#3b82f6";
+          semanticColor = "#0EA5E9";
         } else if (n.type === "LOCATION") {
-          fallbackColor = "#a855f7";
+          semanticColor = "#8B5CF6";
         } else if (n.type === "TICKET") {
-          fallbackColor = isFake ? "#e11d48" : "#64748b";
+          semanticColor = isFake ? "#F43F5E" : "#64748B";
         }
         return {
           ...n,
-          color: n.color || fallbackColor,
+          color: semanticColor,
         };
       });
       setGraphData({ nodes: coloredNodes, links: raw.links || [] });
@@ -649,10 +649,12 @@ function ThemeDetailInner() {
   }
 
   const cluster = row;
+  const isEcommerce = activeRegion?.domainProfile?.domainType === "ECOMMERCE_CS";
+  const unitLabel = isEcommerce ? "渠道/仓网" : "镇街";
 
   function memberWhy(m: Member) {
     if (m.region && cluster.region && m.region === cluster.region && m.category && m.category === cluster.type) {
-      return `同镇街「${m.region}」且诉求分类「${m.category}」`;
+      return `同${unitLabel}「${m.region}」且诉求分类「${m.category}」`;
     }
     if (m.region && cluster.region && m.region === cluster.region) return `同属${activeRegion?.name || "辖区"}「${m.region}」`;
     if (m.category && m.category === cluster.type) return `诉求分类同为「${m.category}」`;
@@ -661,12 +663,12 @@ function ThemeDetailInner() {
 
   return (
     <>
-      <div className="breadcrumb">
+      <div className="breadcrumb flex-wrap">
         <Link href="/themes">多频工单</Link>
         <span>/</span>
         <Link href="/multifreq">工单透势</Link>
         <span>/</span>
-        <span>{cluster.region} · {cluster.type}</span>
+        <span className="min-w-0 break-words">{cluster.region} · {cluster.type}</span>
       </div>
 
       {/* Hero 区域：左侧信息与指标，右侧毛玻璃 AI 处置建议卡片 */}
@@ -716,22 +718,22 @@ function ThemeDetailInner() {
               </div>
             </div>
 
-            <div className="cluster-hero__stats">
-              <div className="cluster-hero__stat">
-                <div className="cluster-hero__stat-val">{(row.count || 0).toLocaleString("zh-CN")}</div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-5 mt-1">
+              <div className="cluster-hero__stat min-w-0">
+                <div className="cluster-hero__stat-val tabular-nums">{(row.count || 0).toLocaleString("zh-CN")}</div>
                 <div className="cluster-hero__stat-label">整合工单数（件）</div>
               </div>
-              <div className="cluster-hero__stat">
-                <div className="cluster-hero__stat-val">{days}</div>
+              <div className="cluster-hero__stat min-w-0">
+                <div className="cluster-hero__stat-val tabular-nums">{days}</div>
                 <div className="cluster-hero__stat-label">持续天数（天）</div>
               </div>
-              <div className="cluster-hero__stat">
-                <div className="cluster-hero__stat-val">{row.ai_confidence == null ? "—" : `${row.ai_confidence}%`}</div>
+              <div className="cluster-hero__stat min-w-0">
+                <div className="cluster-hero__stat-val tabular-nums">{row.ai_confidence == null ? "—" : `${row.ai_confidence}%`}</div>
                 <div className="cluster-hero__stat-label">AI 聚类置信度</div>
               </div>
               {row.trend ? (
-                <div className="cluster-hero__stat">
-                  <div className="cluster-hero__stat-val">{row.trend}</div>
+                <div className="cluster-hero__stat min-w-0">
+                  <div className="cluster-hero__stat-val tabular-nums">{row.trend}</div>
                   <div className="cluster-hero__stat-label">近 7 天趋势</div>
                 </div>
               ) : null}
@@ -791,13 +793,13 @@ function ThemeDetailInner() {
 
       <div className="cluster-grid">
         {/* 左侧：成员工单明细列表 / 实体关系图谱 */}
-        <div className="card">
+        <div className="card min-w-0">
           <div className="card__header flex items-center justify-between gap-3 flex-wrap">
-            <div>
-              <div className="card__title flex items-center gap-2">
+            <div className="min-w-0">
+              <div className="card__title flex items-center gap-2 flex-wrap">
                 <span>{leftTab === "graph" ? "🕸️" : "📑"}</span>
-                {leftTab === "graph" ? "实体与工单关系图谱" : "群组成员工单明细"}
-                <span className="text-xs text-slate-500 font-normal">
+                <span>{leftTab === "graph" ? "实体与工单关系图谱" : "群组成员工单明细"}</span>
+                <span className="text-xs text-slate-500 font-normal tabular-nums whitespace-nowrap">
                   {leftTab === "graph"
                     ? graphData
                       ? `(${graphData.nodes.length} 节点 · ${graphData.links.length} 关系)`
@@ -814,34 +816,34 @@ function ThemeDetailInner() {
             <div className="flex items-center gap-2 flex-wrap">
               {targetTicketId && leftTab === "members" && (
                 <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-200 shadow-2xs">
-                  <Target className="h-3.5 w-3.5 text-blue-600 animate-spin" />
+                  <Target className="h-3.5 w-3.5 text-blue-600 shrink-0" />
                   <span>目标工单定位: #{targetTicketId}</span>
                 </div>
               )}
               {!cluster.ungrouped && (
-                <div className="inline-flex items-center rounded-lg bg-slate-100 p-0.5 border border-slate-200 text-xs">
+                <div className="inline-flex items-center rounded-lg bg-slate-100 p-0.5 border border-slate-200 text-xs max-w-full overflow-x-auto">
                   <button
                     type="button"
                     onClick={() => setLeftTab("members")}
-                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer ${
+                    className={`inline-flex items-center gap-1 px-2.5 py-1.5 sm:py-1 rounded-md font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
                       leftTab === "members"
                         ? "bg-white text-blue-600 shadow-2xs"
                         : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
-                    <FileText className="w-3.5 h-3.5" />
+                    <FileText className="w-3.5 h-3.5 shrink-0" />
                     <span>成员工单明细</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setLeftTab("graph")}
-                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer ${
+                    className={`inline-flex items-center gap-1 px-2.5 py-1.5 sm:py-1 rounded-md font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
                       leftTab === "graph"
                         ? "bg-white text-blue-600 shadow-2xs"
                         : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
-                    <Network className="w-3.5 h-3.5" />
+                    <Network className="w-3.5 h-3.5 shrink-0" />
                     <span>实体关系图谱</span>
                   </button>
                 </div>
@@ -849,7 +851,7 @@ function ThemeDetailInner() {
             </div>
           </div>
 
-          <div className="card__body" style={{ padding: leftTab === "graph" ? "8px 0 0" : "14px 18px" }}>
+          <div className="card__body min-w-0" style={{ padding: leftTab === "graph" ? "12px" : "14px 18px" }}>
             {leftTab === "graph" ? (
               graphLoading ? (
                 <div className="empty-hint">正在加载实体关系图谱…</div>
@@ -867,9 +869,7 @@ function ThemeDetailInner() {
               ) : !graphData || graphData.nodes.length === 0 ? (
                 <div className="empty-hint">暂无实体与工单关联图谱数据</div>
               ) : (
-                <div className="-mx-2">
-                  <GraphVisualizer graphData={graphData} />
-                </div>
+                <GraphVisualizer graphData={graphData} embedded={true} />
               )
             ) : (
               <>
@@ -998,19 +998,19 @@ function ThemeDetailInner() {
                   )}
 
                   <div className="member-item__why flex items-center justify-between gap-2 flex-wrap text-xs text-slate-500 pt-1.5 border-t border-slate-100/80">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span>🔎</span>
+                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                      <span className="shrink-0">🔎</span>
                       <span className="truncate">
                         归入依据：<b className="text-slate-800 font-medium">{memberWhy(m)}</b>
                       </span>
                     </div>
-                    <div className="flex items-center gap-3 shrink-0">
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0">
                       <Link
                         href={`/tickets/${encodeURIComponent(m.ticketId || m.id)}`}
                         onClick={(e) => e.stopPropagation()}
-                        className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600 hover:text-blue-600 transition-colors"
+                        className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600 hover:text-blue-600 whitespace-nowrap transition-colors"
                       >
-                        <ExternalLink className="h-3 w-3" />
+                        <ExternalLink className="h-3 w-3 shrink-0" />
                         <span>查看工单详情</span>
                       </Link>
                       {!cluster.ungrouped && (
@@ -1021,13 +1021,13 @@ function ThemeDetailInner() {
                             e.stopPropagation();
                             setDetachTarget(m);
                           }}
-                          className="inline-flex items-center gap-1 text-[11px] font-medium text-rose-600 hover:text-rose-700 disabled:opacity-50 cursor-pointer"
+                          className="inline-flex items-center gap-1 text-[11px] font-medium text-rose-600 hover:text-rose-700 whitespace-nowrap disabled:opacity-50 cursor-pointer"
                         >
-                          <Trash2 className="h-3 w-3" />
+                          <Trash2 className="h-3 w-3 shrink-0" />
                           <span>移出群组</span>
                         </button>
                       )}
-                      <div className="flex items-center gap-1 text-blue-600 font-semibold text-[11px]">
+                      <div className="flex items-center gap-1 text-blue-600 font-semibold text-[11px] whitespace-nowrap">
                         {openingId === (m.ticketId || m.id) ? (
                           <span>正在读取全文</span>
                         ) : isExpanded ? (
@@ -1068,7 +1068,7 @@ function ThemeDetailInner() {
         </div>
 
         {/* 右侧：群组基本信息、AI 研判依据、5 节点进度追踪条与操作工具栏 */}
-        <div>
+        <div className="min-w-0">
           <div className="card" style={{ marginBottom: 14 }}>
             <div className="card__header">
               <div className="card__title">📌 群组基本信息</div>
@@ -1234,35 +1234,35 @@ function ThemeDetailInner() {
           </div>
 
           {/* 底部操作工具栏：真闭环处置 + 导出报告 */}
-          <div className="action-row" style={{ marginBottom: 14 }}>
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 mb-3.5 mt-3.5">
             {!cluster.ungrouped && (
               <>
                 <button
                   type="button"
                   disabled={actionPending}
-                  className={`btn ${row.status?.code === "PENDING" || !row.status?.owner ? "btn--primary" : "btn--default"} flex items-center justify-center gap-1.5`}
+                  className={`btn ${row.status?.code === "PENDING" || !row.status?.owner ? "btn--primary" : "btn--default"} flex items-center justify-center gap-1.5 min-w-0 sm:flex-1 min-h-[38px] sm:min-h-[34px] px-2.5 text-xs whitespace-nowrap`}
                   onClick={openDispatchDialog}
                 >
-                  <Send className="h-4 w-4" />
-                  {row.status?.owner || row.status?.code !== "PENDING" ? "重新指派 / 编辑派单" : "采纳建议并派单"}
+                  <Send className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{row.status?.owner || row.status?.code !== "PENDING" ? "重新指派 / 编辑派单" : "采纳建议并派单"}</span>
                 </button>
                 <button
                   type="button"
                   disabled={actionPending}
-                  className="btn btn--default flex items-center justify-center gap-1.5 text-rose-700 border-rose-200 hover:border-rose-400"
+                  className="btn btn--default flex items-center justify-center gap-1.5 text-rose-700 border-rose-200 hover:border-rose-400 min-w-0 sm:flex-1 min-h-[38px] sm:min-h-[34px] px-2.5 text-xs whitespace-nowrap"
                   onClick={() => {
                     setEscalateNote("");
                     setEscalateOpen(true);
                   }}
                 >
-                  <ShieldAlert className="h-4 w-4" />
-                  升级督办
+                  <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
+                  <span>升级督办</span>
                 </button>
                 {row.status?.code === "RESOLVED" ? (
                   <button
                     type="button"
                     disabled={actionPending}
-                    className="btn btn--default flex items-center justify-center gap-1.5 text-amber-700 border-amber-200 hover:border-amber-400"
+                    className="btn btn--default flex items-center justify-center gap-1.5 text-amber-700 border-amber-200 hover:border-amber-400 min-w-0 sm:flex-1 min-h-[38px] sm:min-h-[34px] px-2.5 text-xs whitespace-nowrap"
                     onClick={() =>
                       void patchCluster(
                         { action: "REOPEN", note: "管理员发起重开督办" },
@@ -1270,14 +1270,14 @@ function ThemeDetailInner() {
                       )
                     }
                   >
-                    <RotateCcw className="h-4 w-4" />
-                    重开督办
+                    <RotateCcw className="h-3.5 w-3.5 shrink-0" />
+                    <span>重开督办</span>
                   </button>
                 ) : (
                   <button
                     type="button"
                     disabled={actionPending}
-                    className="btn btn--default flex items-center justify-center gap-1.5 text-emerald-700 border-emerald-200 hover:border-emerald-400"
+                    className="btn btn--default flex items-center justify-center gap-1.5 text-emerald-700 border-emerald-200 hover:border-emerald-400 min-w-0 sm:flex-1 min-h-[38px] sm:min-h-[34px] px-2.5 text-xs whitespace-nowrap"
                     onClick={() =>
                       void patchCluster(
                         { action: "RESOLVE", note: "管理员确认办结归档" },
@@ -1285,19 +1285,19 @@ function ThemeDetailInner() {
                       )
                     }
                   >
-                    <CheckCircle2 className="h-4 w-4" />
-                    办结归档
+                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                    <span>办结归档</span>
                   </button>
                 )}
               </>
             )}
             <button
               type="button"
-              className="btn btn--primary flex items-center justify-center gap-1.5"
+              className="btn btn--primary flex items-center justify-center gap-1.5 min-w-0 sm:flex-1 min-h-[38px] sm:min-h-[34px] px-2.5 text-xs whitespace-nowrap"
               onClick={exportReport}
             >
-              <Download className="h-4 w-4" />
-              {row.riskLevel === "HIGH" ? "生成重点督办单" : "生成群组报告"}
+              <Download className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{row.riskLevel === "HIGH" ? "生成重点督办单" : "生成群组报告"}</span>
             </button>
           </div>
 
@@ -1307,7 +1307,7 @@ function ThemeDetailInner() {
 
       {/* 派单确认弹窗 */}
       <Dialog open={dispatchOpen} onOpenChange={setDispatchOpen}>
-        <DialogContent className="max-w-[460px] gap-4 border-[var(--c-border)] bg-[var(--c-surface)] p-0 shadow-xl sm:rounded-xl text-[var(--c-ink)]">
+        <DialogContent className="w-[calc(100vw-1.5rem)] max-w-[460px] max-h-[90dvh] overflow-y-auto gap-4 border-[var(--c-border)] bg-[var(--c-surface)] p-0 shadow-xl rounded-xl text-[var(--c-ink)]">
           <DialogHeader className="space-y-1.5 px-5 pt-5 text-left">
             <DialogTitle className="text-[15px] font-semibold text-[var(--c-ink)]">
               {row.status?.owner || row.status?.code !== "PENDING" ? "重新指派责任部门" : "采纳建议并派单处置"}
@@ -1375,7 +1375,7 @@ function ThemeDetailInner() {
 
       {/* 升级督办弹窗 */}
       <Dialog open={escalateOpen} onOpenChange={setEscalateOpen}>
-        <DialogContent className="max-w-[440px] gap-4 border-[var(--c-border)] bg-[var(--c-surface)] p-0 shadow-xl sm:rounded-xl text-[var(--c-ink)]">
+        <DialogContent className="w-[calc(100vw-1.5rem)] max-w-[440px] max-h-[90dvh] overflow-y-auto gap-4 border-[var(--c-border)] bg-[var(--c-surface)] p-0 shadow-xl rounded-xl text-[var(--c-ink)]">
           <DialogHeader className="space-y-1.5 px-5 pt-5 text-left">
             <DialogTitle className="text-[15px] font-semibold text-[var(--c-ink)]">
               升级为重点高危督办

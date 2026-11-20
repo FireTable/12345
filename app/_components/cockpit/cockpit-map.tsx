@@ -91,6 +91,7 @@ export function CockpitMap({
     if (!mapContainerRef.current) return;
     let isMounted = true;
     let invalidateTimer: ReturnType<typeof setTimeout> | null = null;
+    let resizeObserver: ResizeObserver | null = null;
 
     async function initMap() {
       const module = await import("leaflet");
@@ -161,12 +162,30 @@ export function CockpitMap({
           map.invalidateSize();
         } catch {}
       }, 150);
+
+      resizeObserver =
+        typeof ResizeObserver !== "undefined" && mapContainerRef.current
+          ? new ResizeObserver((entries) => {
+              const rect = entries[0]?.contentRect;
+              if (!rect || rect.width <= 0 || rect.height <= 0) return;
+              const m = map as unknown as { _loaded?: boolean; _mapPane?: unknown };
+              if (!isMounted || mapRef.current !== map || !m._loaded || !m._mapPane) return;
+              try {
+                map.invalidateSize({ animate: false });
+              } catch {}
+            })
+          : null;
+      if (resizeObserver && mapContainerRef.current) {
+        resizeObserver.observe(mapContainerRef.current);
+      }
     }
 
     initMap();
 
     return () => {
       isMounted = false;
+      resizeObserver?.disconnect();
+      resizeObserver = null;
       if (invalidateTimer) {
         clearTimeout(invalidateTimer);
         invalidateTimer = null;
@@ -221,6 +240,8 @@ export function CockpitMap({
       }
 
       const isDistrictLevel = geoData.features.length === 1;
+      const containerW = mapContainerRef.current?.clientWidth || window.innerWidth || 0;
+      const isCompactMap = containerW < 1024;
 
       const getTownshipCount = (name: string) => {
         if (!name) return 0;
@@ -253,11 +274,9 @@ export function CockpitMap({
         },
         onEachFeature: (feature: any, layer: Layer) => {
           const name = feature?.properties?.name || activeRegion?.name || "本辖区";
-          const count = isDistrictLevel ? totalCount : getTownshipCount(name);
           const isSelected =
             selectedTownship &&
             (name.includes(selectedTownship) || selectedTownship.includes(name));
-          const townColor = isDistrictLevel ? "#1E5AFF" : getTownshipColor(name);
 
           layer.on("click", (e: any) => {
             L.DomEvent.stopPropagation(e);
@@ -267,28 +286,112 @@ export function CockpitMap({
               onSelectTownship(name.replace(/(街道|镇|区)$/, ""));
             }
           });
+        },
+      }).addTo(map);
 
-          // 计算几何中心添加悬浮发光微胶囊
-          let centerLatLng: any = null;
-          if (typeof (layer as any).getBounds === "function") {
-            const b = (layer as any).getBounds();
+      geojsonLayerRef.current = geoLayer;
+
+      // 先执行首次居中缩放，保证随后计算的容器投影坐标精确
+      if (hasCenteredRef.current !== regionId) {
+        try {
+          const bounds = geoLayer.getBounds();
+          if (bounds.isValid()) {
+            const containerH = mapContainerRef.current?.clientHeight || window.innerHeight || 0;
+            const isWideHud = containerW >= 1280 && containerH >= 600;
+            map.fitBounds(bounds, {
+              paddingTopLeft: isWideHud ? [420, 120] : [14, 14],
+              paddingBottomRight: isWideHud ? [420, 200] : [14, 14],
+              maxZoom: isWideHud ? 13 : 12,
+              animate: false,
+            });
+            hasCenteredRef.current = regionId;
+          }
+        } catch (e) {}
+      }
+
+      if (!isDistrictLevel) {
+        const candidates: Array<{
+          name: string;
+          count: number;
+          isSelected: boolean;
+          townColor: string;
+          centerLatLng: any;
+        }> = [];
+
+        geoLayer.eachLayer((layer: any) => {
+          const name = layer?.feature?.properties?.name || activeRegion?.name || "本辖区";
+          const count = getTownshipCount(name);
+          const isSelected = Boolean(
+            selectedTownship &&
+              (name.includes(selectedTownship) || selectedTownship.includes(name))
+          );
+          const townColor = getTownshipColor(name);
+          if (typeof layer.getBounds === "function") {
+            const b = layer.getBounds();
             if (b && b.isValid()) {
-              centerLatLng = b.getCenter();
+              candidates.push({
+                name,
+                count,
+                isSelected,
+                townColor,
+                centerLatLng: b.getCenter(),
+              });
             }
           }
+        });
 
-          if (centerLatLng && !isDistrictLevel) {
-            // 优化：去除重量级 backdrop-filter: blur() 与 transition: all，使用 GPU 纯粹图层加速，避免缩放时重排卡顿
-            const badgeHtml = `
-              <div class="cockpit-town-pill ${isSelected ? "is-selected" : ""}" style="
+        candidates.sort((a, b) => {
+          if (a.isSelected !== b.isSelected) return a.isSelected ? -1 : 1;
+          return b.count - a.count;
+        });
+
+        const placedPoints: Array<{ x: number; y: number }> = [];
+
+        for (const item of candidates) {
+          if (isCompactMap) {
+            const pt = map.latLngToContainerPoint(item.centerLatLng);
+            const collides = placedPoints.some(
+              (p) => Math.abs(pt.x - p.x) < 54 && Math.abs(pt.y - p.y) < 22
+            );
+            if (collides && !item.isSelected) continue;
+            placedPoints.push({ x: pt.x, y: pt.y });
+          }
+
+          const shortLabel = item.name.replace(/(街道|镇|区)$/, "");
+          const badgeHtml = isCompactMap
+            ? `
+              <div class="cockpit-town-pill ${item.isSelected ? "is-selected" : ""}" style="
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                background: ${item.isSelected ? item.townColor : "rgba(6, 9, 17, 0.88)"};
+                border: 1px solid ${item.isSelected ? "#FFFFFF" : item.townColor};
+                border-radius: 9999px;
+                padding: 2px 7px;
+                color: #F8FAFC;
+                font-size: 9px;
+                line-height: 1.2;
+                font-family: ui-sans-serif, system-ui, sans-serif;
+                white-space: nowrap;
+                cursor: pointer;
+                user-select: none;
+                transform: translate(-50%, -50%);
+                pointer-events: auto;
+              ">
+                <span style="width: 4px; height: 4px; border-radius: 50%; background: ${item.isSelected ? "#FFFFFF" : item.townColor};"></span>
+                <span style="font-weight: 600;">${shortLabel}</span>
+              </div>
+            `
+            : `
+              <div class="cockpit-town-pill ${item.isSelected ? "is-selected" : ""}" style="
                 display: inline-flex;
                 align-items: center;
                 gap: 6px;
-                background: ${isSelected ? townColor : "rgba(6, 17, 40, 0.94)"};
-                border: 1.5px solid ${isSelected ? "#FFFFFF" : townColor};
-                box-shadow: 0 2px 10px ${isSelected ? "rgba(255, 255, 255, 0.8)" : `${townColor}66`};
+                background: ${item.isSelected ? item.townColor : "rgba(9, 13, 24, 0.9)"};
+                border: 1px solid ${item.isSelected ? "#FFFFFF" : `${item.townColor}cc`};
+                box-shadow: 0 2px 10px rgba(0, 0, 0, 0.55);
                 border-radius: 9999px;
-                padding: 4px 10px;
+                padding: 3px 9px;
                 color: #FFFFFF;
                 font-size: 11px;
                 font-family: ui-sans-serif, system-ui, sans-serif;
@@ -297,61 +400,41 @@ export function CockpitMap({
                 user-select: none;
                 transform: translate(-50%, -50%);
                 pointer-events: auto;
-                transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+                transition: background-color 0.15s ease, border-color 0.15s ease;
               ">
                 <span style="
-                  width: 7px;
-                  height: 7px;
+                  width: 6px;
+                  height: 6px;
                   border-radius: 50%;
-                  background: ${townColor};
-                  box-shadow: 0 0 6px ${townColor};
+                  background: ${item.townColor};
                 "></span>
-                <span style="font-weight: 600;">${name.replace(/(街道|镇|区)$/, "")}</span>
-                ${count > 0 ? `<span style="color: ${isSelected ? "#FFFFFF" : "#E2E8F0"}; font-weight: 700; font-family: ui-monospace, monospace;">${count.toLocaleString()}</span>` : ""}
+                <span style="font-weight: 600;">${shortLabel}</span>
+                ${item.count > 0 ? `<span style="color: ${item.isSelected ? "#FFFFFF" : "#CBD5E1"}; font-weight: 600; font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums;">${item.count.toLocaleString()}</span>` : ""}
               </div>
             `;
 
-            const icon = L.divIcon({
-              html: badgeHtml,
-              className: "cockpit-leaflet-div-icon",
-              iconSize: [0, 0],
-            });
+          const icon = L.divIcon({
+            html: badgeHtml,
+            className: "cockpit-leaflet-div-icon",
+            iconSize: [0, 0],
+          });
 
-            const marker = L.marker(centerLatLng, {
-              icon,
-              interactive: true,
-            });
+          const marker = L.marker(item.centerLatLng, {
+            icon,
+            interactive: true,
+          });
 
-            marker.on("click", (e: any) => {
-              L.DomEvent.stopPropagation(e);
-              if (isSelected) {
-                onSelectTownship(null);
-              } else {
-                onSelectTownship(name.replace(/(街道|镇|区)$/, ""));
-              }
-            });
+          marker.on("click", (e: any) => {
+            L.DomEvent.stopPropagation(e);
+            if (item.isSelected) {
+              onSelectTownship(null);
+            } else {
+              onSelectTownship(shortLabel);
+            }
+          });
 
-            markersLayerRef.current.addLayer(marker);
-          }
-        },
-      }).addTo(map);
-
-      geojsonLayerRef.current = geoLayer;
-
-      // 仅在首次加载辖区时自动 fitBounds 居中适配，避免用户缩放后被重置打断
-      if (hasCenteredRef.current !== regionId) {
-        try {
-          const bounds = geoLayer.getBounds();
-          if (bounds.isValid()) {
-            map.fitBounds(bounds, {
-              paddingTopLeft: [420, 140],
-              paddingBottomRight: [420, 180],
-              maxZoom: 13,
-              animate: false,
-            });
-            hasCenteredRef.current = regionId;
-          }
-        } catch (e) {}
+          markersLayerRef.current.addLayer(marker);
+        }
       }
     });
 
@@ -361,7 +444,7 @@ export function CockpitMap({
   }, [mapInstance, geoData, counts, selectedTownship, onSelectTownship, activeRegion, totalCount, regionId]);
 
   return (
-    <div className={`relative w-full h-full overflow-hidden bg-[#020612] ${className}`}>
+    <div className={`relative w-full h-full overflow-hidden bg-[#060911] ${className}`}>
       {/* 科技暗夜地图专属 CSS 过滤器：GPU 硬件加速合成层 */}
       <style jsx global>{`
         .cockpit-dark-map .leaflet-tile-pane {
@@ -379,7 +462,7 @@ export function CockpitMap({
           will-change: transform;
         }
         .cockpit-dark-map {
-          background-color: #020612 !important;
+          background-color: #060911 !important;
         }
         .cockpit-leaflet-div-icon {
           background: transparent !important;
@@ -392,7 +475,7 @@ export function CockpitMap({
         className="absolute inset-0 pointer-events-none opacity-20 z-0"
         style={{
           backgroundImage:
-            "linear-gradient(to right, rgba(0, 242, 254, 0.08) 1px, transparent 1px), linear-gradient(to bottom, rgba(0, 242, 254, 0.08) 1px, transparent 1px)",
+            "linear-gradient(to right, rgba(148, 163, 184, 0.08) 1px, transparent 1px), linear-gradient(to bottom, rgba(148, 163, 184, 0.08) 1px, transparent 1px)",
           backgroundSize: "48px 48px",
         }}
       />
@@ -401,9 +484,9 @@ export function CockpitMap({
       <div ref={mapContainerRef} className="w-full h-full z-0 cockpit-dark-map" />
 
       {loading && (
-        <div className="absolute inset-0 bg-[#020612]/70 backdrop-blur-xs flex items-center justify-center z-30">
-          <div className="flex items-center gap-2.5 text-blue-300 text-xs font-mono animate-pulse">
-            <span className="w-2 h-2 rounded-full bg-[#1677FF] animate-ping inline-block" />
+        <div className="absolute inset-0 bg-[#060911]/75 backdrop-blur-xs flex items-center justify-center z-30">
+          <div className="flex items-center gap-2 text-slate-200 text-xs font-mono">
+            <MapPin size={13} aria-hidden="true" className="text-sky-400 shrink-0" />
             <span>正在加载全域地理空间孪生网格...</span>
           </div>
         </div>

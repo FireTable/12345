@@ -117,6 +117,13 @@ const TABS = [
 export default function TicketsPage() {
   const router = useRouter();
   const { activeRegion, isLoading: regionLoading } = useRegion();
+  const isEcommerce = activeRegion?.domainProfile?.domainType === "ECOMMERCE_CS";
+  const rawRegionUnit = activeRegion?.domainProfile?.terminology?.regionUnit || "镇街";
+  const regionUnit = isEcommerce
+    ? rawRegionUnit
+    : rawRegionUnit === "所属镇街"
+      ? "镇街"
+      : rawRegionUnit;
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(20);
   const [keyword, setKeyword] = useState("");
@@ -176,7 +183,9 @@ export default function TicketsPage() {
           data: j.data || [],
           stats: j.stats || prev.stats,
           facets: {
-            regions: (j.facets?.regions || []).filter((r: string) => isTownLabel(r) || r === "未知"),
+            regions: (j.facets?.regions || []).filter((r: string) =>
+              isEcommerce ? Boolean(r && r.trim()) : isTownLabel(r) || r === "未知"
+            ),
             categories: j.facets?.categories || [],
           },
         }))
@@ -336,7 +345,7 @@ export default function TicketsPage() {
   }
 
   function exportCsv() {
-    const header = ["单号", "标题", "类型", "镇街", "紧急", "状态", "日期"];
+    const header = ["单号", "标题", "类型", regionUnit, "紧急", "状态", "日期"];
     const lines = [header.join(",")].concat(
       data.data.map((r) => [
         r.id,
@@ -439,26 +448,32 @@ export default function TicketsPage() {
             />
           </StatCardGrid>
 
-          <div className="card list-card">
+          <div className="card list-card min-w-0 overflow-hidden">
             <div className="list-card__head">
               <div>
                 <div className="list-card__title">工单列表</div>
                 <div className="list-card__sub">点击行查看详情</div>
               </div>
             </div>
-            <div className="filter-tabs flex-wrap">
+            <div
+              className="filter-tabs flex items-center flex-nowrap overflow-x-auto whitespace-nowrap max-w-full"
+              role="tablist"
+              aria-label="工单筛选视图"
+            >
               {TABS.map((t) => (
                 <button
                   key={t.key}
                   type="button"
-                  className={`filter-tab${tab === t.key ? " is-active" : ""}`}
+                  role="tab"
+                  aria-selected={tab === t.key}
+                  className={`filter-tab whitespace-nowrap shrink-0${tab === t.key ? " is-active" : ""}`}
                   onClick={() => {
                     setTab(t.key);
                     setPage(1);
                   }}
                 >
                   {t.label}
-                  <span className="filter-tab__count">
+                  <span className="filter-tab__count tabular-nums">
                     {tabCount(t.key, s, reviewTotal)}
                   </span>
                 </button>
@@ -470,20 +485,25 @@ export default function TicketsPage() {
                   <span className="text-xs text-slate-600 font-medium">
                     当前站点待人工复核工单（低置信度 / 异常要素抽检）
                   </span>
-                  <span className="filter-bar__summary">
+                  <span className="filter-bar__summary tabular-nums">
                     共 {reviewTotal ?? reviewRows.length} 条待复核
                   </span>
                 </div>
-                <div className="table-scroll">
+                <div
+                  className="table-scroll overflow-x-auto max-w-full"
+                  tabIndex={0}
+                  role="region"
+                  aria-label="待人工复核工单列表"
+                >
                   <table className="workorder-table">
                     <thead>
                       <tr>
-                        <th style={{ width: 150, minWidth: 140 }}>工单号</th>
-                        <th>诉求标题</th>
-                        <th style={{ width: 90 }}>镇街</th>
-                        <th style={{ width: 90 }}>置信度</th>
-                        <th style={{ width: 200 }}>复核原因</th>
-                        <th style={{ width: 240, textAlign: "right" }}>复核操作</th>
+                        <th className="min-w-[140px] whitespace-nowrap">工单号</th>
+                        <th className="min-w-[200px]">诉求标题</th>
+                        <th className="min-w-[104px] whitespace-nowrap">{regionUnit}</th>
+                        <th className="min-w-[88px] whitespace-nowrap">置信度</th>
+                        <th className="min-w-[160px] whitespace-nowrap">复核原因</th>
+                        <th className="min-w-[240px] whitespace-nowrap text-right">复核操作</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -515,39 +535,39 @@ export default function TicketsPage() {
                               })
                             }
                           >
-                            <td className="col-id">
+                            <td className="col-id min-w-[140px] whitespace-nowrap tabular-nums">
                               {item.ticketNo || item.ticketId}
                             </td>
-                            <td className="col-title">
+                            <td className="col-title min-w-[200px]">
                               <div className="col-title__text" title={titleText}>
                                 {titleText}
                               </div>
                             </td>
-                            <td>{town}</td>
-                            <td>
-                              <span className="badge-pill badge-pill--warning font-mono">
+                            <td className="min-w-[104px] whitespace-nowrap">{town}</td>
+                            <td className="min-w-[88px] whitespace-nowrap tabular-nums">
+                              <span className="badge-pill badge-pill--warning font-mono tabular-nums whitespace-nowrap">
                                 {item.confidence != null ? `${item.confidence}%` : "—"}
                               </span>
                             </td>
-                            <td>
-                              <span className="text-xs text-slate-600">
+                            <td className="min-w-[160px] whitespace-nowrap">
+                              <span className="text-xs text-slate-600 whitespace-nowrap">
                                 {formatReviewReason(item.reason)}
                               </span>
                             </td>
                             <td
-                              style={{ textAlign: "right" }}
+                              className="min-w-[240px] whitespace-nowrap text-right"
                               onClick={(e) => e.stopPropagation()}
                             >
-                              <div className="inline-flex items-center justify-end gap-1.5">
+                              <div className="inline-flex items-center justify-end gap-1.5 whitespace-nowrap">
                                 <button
                                   type="button"
                                   disabled={Boolean(actingReviewId)}
                                   onClick={() =>
                                     void handleReviewAction(item, "REVIEWED")
                                   }
-                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 disabled:opacity-50 cursor-pointer"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 disabled:opacity-50 cursor-pointer whitespace-nowrap"
                                 >
-                                  <Check className="w-3 h-3" />
+                                  <Check className="w-3 h-3 shrink-0" />
                                   <span>{busy ? "处理中" : "确认无误"}</span>
                                 </button>
                                 <button
@@ -556,16 +576,16 @@ export default function TicketsPage() {
                                   onClick={() =>
                                     void handleReviewAction(item, "DISMISSED")
                                   }
-                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 disabled:opacity-50 cursor-pointer"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 disabled:opacity-50 cursor-pointer whitespace-nowrap"
                                 >
-                                  <X className="w-3 h-3" />
+                                  <X className="w-3 h-3 shrink-0" />
                                   <span>忽略</span>
                                 </button>
                                 <Link
                                   href={`/tickets/${encodeURIComponent(item.ticketId)}`}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 whitespace-nowrap"
                                 >
-                                  <Wrench className="w-3 h-3" />
+                                  <Wrench className="w-3 h-3 shrink-0" />
                                   <span>去纠偏</span>
                                 </Link>
                               </div>
@@ -604,11 +624,11 @@ export default function TicketsPage() {
                       setPage(1);
                     }}
                   >
-                    <SelectTrigger className="w-[130px] h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
-                      <SelectValue placeholder="镇街：全部" />
+                    <SelectTrigger className="w-full sm:w-[156px] h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
+                      <SelectValue placeholder={`${regionUnit}：全部`} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">镇街：全部</SelectItem>
+                      <SelectItem value="all">{regionUnit}：全部</SelectItem>
                       {data.facets.regions.map((r) => (
                         <SelectItem key={r} value={r}>
                           {r}
@@ -624,7 +644,7 @@ export default function TicketsPage() {
                       setPage(1);
                     }}
                   >
-                    <SelectTrigger className="w-[140px] h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
+                    <SelectTrigger className="w-full sm:w-[152px] h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
                       <SelectValue placeholder="类型：全部" />
                     </SelectTrigger>
                     <SelectContent>
@@ -644,7 +664,7 @@ export default function TicketsPage() {
                       setPage(1);
                     }}
                   >
-                    <SelectTrigger className="w-[155px] h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
+                    <SelectTrigger className="w-full sm:w-[155px] h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
                       <SelectValue placeholder="聚类状态：全部" />
                     </SelectTrigger>
                     <SelectContent>
@@ -661,7 +681,7 @@ export default function TicketsPage() {
                       setPage(1);
                     }}
                   >
-                    <SelectTrigger className="w-[130px] h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
+                    <SelectTrigger className="w-full sm:w-[130px] h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
                       <SelectValue placeholder="时间：全部" />
                     </SelectTrigger>
                     <SelectContent>
@@ -675,42 +695,47 @@ export default function TicketsPage() {
                       <SelectItem value="上月">时间：上月</SelectItem>
                     </SelectContent>
                   </Select>
-                  <span className="filter-bar__summary">共 {data.total} 条结果</span>
+                  <span className="filter-bar__summary tabular-nums">共 {data.total} 条结果</span>
                 </div>
-                <div className="table-scroll">
+                <div
+                  className="table-scroll overflow-x-auto max-w-full"
+                  tabIndex={0}
+                  role="region"
+                  aria-label="工单列表"
+                >
                   <table className="workorder-table">
                     <thead>
                       <tr>
-                        <th style={{ width: 150, minWidth: 140 }}>工单号</th>
-                        <th>诉求标题</th>
-                        <th style={{ width: 85 }}>镇街</th>
-                        <th style={{ width: 95, minWidth: 90 }}>类型</th>
-                        <th style={{ width: 80 }}>紧急度</th>
-                        <th style={{ width: 120 }}>时间</th>
-                        <th style={{ width: 85 }}>状态</th>
-                        <th style={{ width: 75, textAlign: "right" }}>操作</th>
+                        <th className="min-w-[140px] whitespace-nowrap">工单号</th>
+                        <th className="min-w-[220px]">诉求标题</th>
+                        <th className="min-w-[104px] whitespace-nowrap">{regionUnit}</th>
+                        <th className="min-w-[128px] whitespace-nowrap">类型</th>
+                        <th className="min-w-[84px] whitespace-nowrap">紧急度</th>
+                        <th className="min-w-[116px] whitespace-nowrap">时间</th>
+                        <th className="min-w-[88px] whitespace-nowrap">状态</th>
+                        <th className="min-w-[72px] whitespace-nowrap text-right">操作</th>
                       </tr>
                     </thead>
                     <tbody>
                       {data.data.map((r) => (
                         <tr key={r.ticketId} onClick={() => openDrawer(r)}>
-                          <td className="col-id">{r.id}</td>
-                          <td className="col-title">
-                            <div className="col-title__text flex items-center gap-1.5" title={r.title}>
-                              <span className="truncate">{r.title}</span>
+                          <td className="col-id min-w-[140px] whitespace-nowrap tabular-nums">{r.id}</td>
+                          <td className="col-title min-w-[220px]">
+                            <div className="col-title__text flex items-center gap-1.5 min-w-0" title={r.title}>
+                              <span className="truncate min-w-0">{r.title}</span>
                               {r.multifreq && (
-                                <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200 shrink-0" title="已归入多频聚类群组">
+                                <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200 shrink-0 whitespace-nowrap" title="已归入多频聚类群组">
                                   多频
                                 </span>
                               )}
                               {r.isFakeClosure && (
-                                <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-medium bg-amber-50 text-amber-800 border border-amber-200 shrink-0" title="办结后短期内再次投诉">
+                                <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-medium bg-amber-50 text-amber-800 border border-amber-200 shrink-0 whitespace-nowrap" title="办结后短期内再次投诉">
                                   假闭环
                                 </span>
                               )}
                             </div>
-                            <div className="col-title__desc flex items-center gap-2" style={{ marginTop: 2 }}>
-                              {r.address ? <span title={r.address}>{r.address}</span> : null}
+                            <div className="col-title__desc flex items-center gap-2 min-w-0" style={{ marginTop: 2 }}>
+                              {r.address ? <span className="truncate" title={r.address}>{r.address}</span> : null}
                               {r.canonicalSubject ? (
                                 <span className="text-[11px] text-gray-500 font-normal truncate" title={`研判主体: ${r.canonicalSubject}`}>
                                   · 主体: {r.canonicalSubject}
@@ -718,11 +743,11 @@ export default function TicketsPage() {
                               ) : null}
                             </div>
                           </td>
-                          <td>{r.region || "—"}</td>
-                          <td>
+                          <td className="min-w-[104px] whitespace-nowrap">{r.region || "—"}</td>
+                          <td className="min-w-[128px] whitespace-nowrap">
                             {r.category ? (
                               <span
-                                className={`badge-pill ${catPill(r.category)}`}
+                                className={`badge-pill whitespace-nowrap ${catPill(r.category)}`}
                                 style={categoryBadgeStyle(r.category)}
                               >
                                 {r.category}
@@ -731,18 +756,18 @@ export default function TicketsPage() {
                               "—"
                             )}
                           </td>
-                          <td>
-                            <span className={`badge-pill ${r.urgency === "URGENT" ? "badge-pill--danger" : r.urgency === "MEDIUM" ? "badge-pill--warning" : "badge-pill--default"}`}>
+                          <td className="min-w-[84px] whitespace-nowrap">
+                            <span className={`badge-pill whitespace-nowrap ${r.urgency === "URGENT" ? "badge-pill--danger" : r.urgency === "MEDIUM" ? "badge-pill--warning" : "badge-pill--default"}`}>
                               {urgencyLabel(r.urgency)}
                             </span>
                           </td>
-                          <td style={{ whiteSpace: "nowrap" }}>{r.createdAt}</td>
-                          <td>
-                            <span className={`status-tag status-tag--${statusTag(r.status)}`}>
+                          <td className="min-w-[116px] whitespace-nowrap tabular-nums">{r.createdAt}</td>
+                          <td className="min-w-[88px] whitespace-nowrap">
+                            <span className={`status-tag whitespace-nowrap status-tag--${statusTag(r.status)}`}>
                               {statusLabel(r.status)}
                             </span>
                           </td>
-                          <td style={{ textAlign: "right", color: "var(--c-brand)" }}>查看</td>
+                          <td className="min-w-[72px] whitespace-nowrap text-right" style={{ color: "var(--c-brand)" }}>查看</td>
                         </tr>
                       ))}
                     </tbody>
@@ -829,7 +854,7 @@ export default function TicketsPage() {
             </div>
 
             {/* 4. 吸底操作栏 (固定底部，z-index: 1001，绝不被任何悬浮球遮挡) */}
-            <div className="drawer__footer">
+            <div className="drawer__footer flex-wrap gap-2">
               <div>
                 {drawer.cluster_id ? (
                   <button

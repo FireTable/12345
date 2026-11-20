@@ -164,11 +164,12 @@ export function CivicNav() {
 
   return (
     <>
-      <nav className="navbar">
-        <div className="navbar__brand" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+      <nav className="navbar" aria-label="主导航">
+        <div className="navbar__brand">
           <Link
             href="/"
-            style={{ display: "flex", alignItems: "center", textDecoration: "none", color: "inherit" }}
+            className="navbar__brand-link"
+            aria-label="民声智理首页"
             title={activeRegion?.domainProfile?.domainType === "ECOMMERCE_CS" ? "民声智理 · 电商客诉 AI 智能研判系统" : "民声智理 · 12345 AI 智能研判系统"}
           >
             <div className="brand-morph-capsule">
@@ -196,7 +197,7 @@ export function CivicNav() {
               title="系统功能演示视频"
               aria-label="系统功能演示视频"
             >
-              <Film size={18} />
+              <Film size={18} aria-hidden="true" />
             </button>
 
             {/* GitHub 仓库图标链接 */}
@@ -208,7 +209,7 @@ export function CivicNav() {
               title="GitHub 源码仓库"
               aria-label="GitHub 源码仓库"
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                 <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
               </svg>
             </a>
@@ -223,9 +224,9 @@ export function CivicNav() {
               aria-label={menuOpen ? "关闭导航" : "打开导航"}
               onClick={() => setMenuOpen((v) => !v)}
             >
-              <span className="navbar__toggle-bar" />
-              <span className="navbar__toggle-bar" />
-              <span className="navbar__toggle-bar" />
+              <span className="navbar__toggle-bar" aria-hidden="true" />
+              <span className="navbar__toggle-bar" aria-hidden="true" />
+              <span className="navbar__toggle-bar" aria-hidden="true" />
             </button>
             {menuOpen ? (
               <button
@@ -245,18 +246,22 @@ export function CivicNav() {
                   ))}
                   <span data-nav-more-measure className="nav-item nav-more__trigger">
                     更多
-                    <ChevronDown size={14} />
+                    <ChevronDown size={14} aria-hidden="true" />
                   </span>
                 </div>
-                {visibleNav.map((it) => (
-                  <Link
-                    key={it.key}
-                    href={it.href}
-                    className={`nav-item${navItemActive(it.href, pathname) ? " is-active" : ""}`}
-                  >
-                    {it.label}
-                  </Link>
-                ))}
+                {visibleNav.map((it) => {
+                  const active = navItemActive(it.href, pathname);
+                  return (
+                    <Link
+                      key={it.key}
+                      href={it.href}
+                      aria-current={active ? "page" : undefined}
+                      className={`nav-item${active ? " is-active" : ""}`}
+                    >
+                      {it.label}
+                    </Link>
+                  );
+                })}
                 {overflowNav.length > 0 ? (
                   <div className="nav-more" ref={moreMenuRef}>
                     <button
@@ -268,21 +273,25 @@ export function CivicNav() {
                       onClick={() => setMoreOpen((open) => !open)}
                     >
                       更多
-                      <ChevronDown size={14} />
+                      <ChevronDown size={14} aria-hidden="true" />
                     </button>
                     {moreOpen ? (
                       <div className="nav-more__menu" role="menu">
-                        {overflowNav.map((it) => (
-                          <Link
-                            key={it.key}
-                            href={it.href}
-                            role="menuitem"
-                            className={`nav-item${navItemActive(it.href, pathname) ? " is-active" : ""}`}
-                            onClick={() => setMoreOpen(false)}
-                          >
-                            {it.label}
-                          </Link>
-                        ))}
+                        {overflowNav.map((it) => {
+                          const active = navItemActive(it.href, pathname);
+                          return (
+                            <Link
+                              key={it.key}
+                              href={it.href}
+                              role="menuitem"
+                              aria-current={active ? "page" : undefined}
+                              className={`nav-item${active ? " is-active" : ""}`}
+                              onClick={() => setMoreOpen(false)}
+                            >
+                              {it.label}
+                            </Link>
+                          );
+                        })}
                       </div>
                     ) : null}
                   </div>
@@ -314,6 +323,7 @@ export function CivicNav() {
                 >
                   <Workflow
                     size={16}
+                    aria-hidden="true"
                     className="text-white relative z-10"
                   />
                 </button>
@@ -326,7 +336,7 @@ export function CivicNav() {
                   title="系统功能演示视频"
                   aria-label="系统功能演示视频"
                 >
-                  <Film size={16} />
+                  <Film size={16} aria-hidden="true" />
                 </button>
 
                 {/* GitHub 仓库图标链接 */}
@@ -338,7 +348,7 @@ export function CivicNav() {
                   title="GitHub 源码仓库"
                   aria-label="GitHub 源码仓库"
                 >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                     <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
                   </svg>
                 </a>
@@ -351,21 +361,22 @@ export function CivicNav() {
                       title={session.user.email}
                       aria-haspopup="menu"
                       aria-expanded={userMenuOpen}
+                      aria-label="账户操作菜单"
                       onClick={() => setUserMenuOpen((open) => !open)}
                     >
-                      <User size={14} className="navbar-user-icon" />
+                      <User size={14} className="navbar-user-icon" aria-hidden="true" />
                       <span className="navbar-user-name">
                         {session.user.name || (session.user as any).username || "管理员"}
                       </span>
                       <span className="navbar-user-role">
                         {(session.user as any).role === "admin" ? "管理员" : "经办员"}
                       </span>
-                      <ChevronDown size={14} className="navbar-user-chevron" />
+                      <ChevronDown size={14} className="navbar-user-chevron" aria-hidden="true" />
                     </button>
                     {userMenuOpen ? (
                       <div className="navbar-user-pop" role="menu">
                         <button type="button" role="menuitem" className="navbar-user-pop__item" onClick={handleSignOut}>
-                          <LogOut size={14} />
+                          <LogOut size={14} aria-hidden="true" />
                           <span>退出登录</span>
                         </button>
                       </div>
@@ -396,7 +407,7 @@ export function CivicNav() {
           title="研判助手"
           onClick={openCopilot}
         >
-          <MessageCircle size={22} strokeWidth={2} />
+          <MessageCircle size={22} strokeWidth={2} aria-hidden="true" />
         </button>
       )}
     </>

@@ -36,8 +36,28 @@ interface RegionWithStats extends RegionInfo {
   ticketCount: number;
   themeCount: number;
   vocabCount: number;
+  categoryConfigJson?: string | null;
   status?: string;
   createdAt?: string;
+}
+
+function resolveIsEcommerce(
+  region: RegionWithStats,
+  contextRegions: RegionInfo[]
+): boolean {
+  if (region.domainProfile?.domainType === "ECOMMERCE_CS") return true;
+  const ctx = contextRegions.find((c) => c.id === region.id);
+  if (ctx?.domainProfile?.domainType === "ECOMMERCE_CS") return true;
+  if (region.categoryConfigJson) {
+    try {
+      const parsed = JSON.parse(region.categoryConfigJson);
+      const dt = parsed?.domainProfile?.domainType || parsed?.domainType;
+      if (dt === "ECOMMERCE_CS") return true;
+    } catch {
+      // ignore malformed json
+    }
+  }
+  return false;
 }
 
 interface McpClientRow {
@@ -73,7 +93,7 @@ interface AiScoutResult {
 }
 
 export default function AdminRegionsPage() {
-  const { activeRegion, switchRegion } = useRegion();
+  const { activeRegion, regions: contextRegions, switchRegion } = useRegion();
   const [regions, setRegions] = useState<RegionWithStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [mcpClients, setMcpClients] = useState<McpClientRow[]>([]);
@@ -389,19 +409,217 @@ export default function AdminRegionsPage() {
     }
   };
 
-  // 计算多租户汇总指标
-  const totalTickets = regions.reduce((acc, r) => acc + (r.ticketCount || 0), 0);
-  const totalThemes = regions.reduce((acc, r) => acc + (r.themeCount || 0), 0);
-  const totalVocab = regions.reduce((acc, r) => acc + (r.vocabCount || 0), 0);
+  // 拆分政务 12345 站点与跨行业示范站点（电商客诉不混入政务 12345 站点数与研判总量）
+  const govRegions = regions.filter((r) => !resolveIsEcommerce(r, contextRegions));
+  const ecomRegions = regions.filter((r) => resolveIsEcommerce(r, contextRegions));
+
+  const govTickets = govRegions.reduce((acc, r) => acc + (r.ticketCount || 0), 0);
+  const govThemes = govRegions.reduce((acc, r) => acc + (r.themeCount || 0), 0);
+  const govVocab = govRegions.reduce((acc, r) => acc + (r.vocabCount || 0), 0);
+
+  const ecomTickets = ecomRegions.reduce((acc, r) => acc + (r.ticketCount || 0), 0);
+
+  const renderRegionCard = (r: RegionWithStats, isEcom: boolean) => {
+    const isActive = activeRegion?.id === r.id;
+    return (
+      <div
+        key={r.id}
+        className={`bg-white rounded-xl border p-4 sm:p-5 transition-all shadow-2xs relative flex flex-col justify-between min-w-0 ${
+          isActive
+            ? isEcom
+              ? "border-amber-500 ring-2 ring-amber-500/15"
+              : "border-blue-500 ring-2 ring-blue-500/10"
+            : "border-slate-200/90 hover:border-slate-300"
+        }`}
+      >
+        <div className="min-w-0">
+          {/* 卡片头部 */}
+          <div className="flex items-start justify-between gap-2 mb-3">
+            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+              <div
+                className={`w-9 h-9 rounded-lg flex items-center justify-center font-bold text-sm shrink-0 ${
+                  isActive
+                    ? isEcom
+                      ? "bg-amber-600 text-white"
+                      : "bg-blue-600 text-white"
+                    : isEcom
+                      ? "bg-amber-50 text-amber-700 border border-amber-200"
+                      : "bg-slate-100 text-slate-700"
+                }`}
+              >
+                {r.name.slice(0, 2)}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <h3 className="text-sm font-bold text-slate-900 break-words">
+                    {r.city} · {r.name}
+                  </h3>
+                  {isEcom && (
+                    <span className="inline-flex items-center rounded-full bg-amber-50 border border-amber-200/80 px-1.5 py-0.2 text-[10px] font-semibold text-amber-800 whitespace-nowrap">
+                      电商客诉
+                    </span>
+                  )}
+                  {r.isDefault && (
+                    <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-50 border border-amber-200/80 px-1.5 py-0.2 text-[10px] font-medium text-amber-700 whitespace-nowrap">
+                      <Star className="h-2.5 w-2.5 fill-amber-500 shrink-0" />
+                      默认
+                    </span>
+                  )}
+                  {isActive && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200/80 px-2 py-0.2 text-[10px] font-medium text-emerald-700 whitespace-nowrap">
+                      <CheckCircle2 className="h-2.5 w-2.5 text-emerald-600 shrink-0" />
+                      当前工作区
+                    </span>
+                  )}
+                </div>
+                <div className="text-[11px] text-slate-400 font-mono mt-0.5 truncate">
+                  Schema: {r.schemaName}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1 shrink-0">
+              {!r.isDefault && (
+                <button
+                  type="button"
+                  onClick={() => handleSetDefault(r)}
+                  aria-label={`将 ${r.name} 设为系统默认站点`}
+                  className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-md transition-colors cursor-pointer"
+                  title="设为系统默认站点"
+                >
+                  <Star className="h-3.5 w-3.5" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setDeletingRegion(r)}
+                aria-label={`释放 ${r.name} 物理 Schema`}
+                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
+                title="释放站点物理 Schema"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* 数据统计网格 */}
+          <div className="grid grid-cols-3 gap-2 py-3 px-2.5 sm:px-3 my-3 rounded-lg bg-slate-50/80 border border-slate-100 text-center">
+            <div className="min-w-0">
+              <div className="text-[10px] text-slate-500 truncate">
+                {isEcom ? "已汇聚客诉" : "已汇聚工单"}
+              </div>
+              <div className="text-sm font-bold text-slate-800 font-mono tabular-nums">
+                {r.ticketCount.toLocaleString()}
+              </div>
+            </div>
+            <div className="border-x border-slate-200/60 min-w-0">
+              <div className="text-[10px] text-slate-500 truncate">
+                {isEcom ? "多频案卷" : "多频主题"}
+              </div>
+              <div className="text-sm font-bold text-blue-600 font-mono tabular-nums">
+                {r.themeCount.toLocaleString()}
+              </div>
+            </div>
+            <div className="min-w-0">
+              <div className="text-[10px] text-slate-500 truncate">
+                {isEcom ? "行业词典" : "标准字典词汇"}
+              </div>
+              <div className="text-sm font-bold text-slate-800 font-mono tabular-nums">
+                {r.vocabCount.toLocaleString()}
+              </div>
+            </div>
+          </div>
+
+          {/* 状态指示器 */}
+          <div className="flex items-center justify-between gap-2 flex-wrap text-xs py-1 text-slate-500 mb-4">
+            <span className="inline-flex items-center gap-1 whitespace-nowrap">
+              <ShieldCheck className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+              PostgreSQL 物理隔离
+            </span>
+            {isEcom ? (
+              <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                <Layers className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                <span className="text-amber-700 font-medium">行业场景包 · 渠道/仓网矩阵</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                <Map className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                <span className="text-emerald-600 font-medium">天地图 GIS 行政区划</span>
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* 底部操作按钮 */}
+        <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {!isEcom && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleFetchBoundary(r)}
+                  disabled={fetchingBoundaryId === r.id}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100/80 rounded-md transition-colors border border-blue-200/60 whitespace-nowrap cursor-pointer"
+                  title="从官方权威测绘源在线拉取区县级高精边界并存放在站点中"
+                >
+                  {fetchingBoundaryId === r.id ? (
+                    <Loader2 className="h-3 w-3 animate-spin text-blue-600 shrink-0" />
+                  ) : (
+                    <Compass className="h-3 w-3 text-blue-600 shrink-0" />
+                  )}
+                  <span>{fetchingBoundaryId === r.id ? "拉取中…" : "高精边界"}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUploadModalRegion(r)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200/80 rounded-md transition-colors whitespace-nowrap cursor-pointer"
+                  title="上传或更换该区域的矢量地图"
+                >
+                  <Upload className="h-3 w-3 shrink-0" />
+                  <span>地图</span>
+                </button>
+              </>
+            )}
+            <Link
+              href="/dict"
+              onClick={() => {
+                if (!isActive) switchRegion(r.id);
+              }}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200/80 rounded-md transition-colors whitespace-nowrap"
+              title={isEcom ? "查看并维护该行业场景的标准字典" : "查看并维护该站点的标准字典"}
+            >
+              <BookOpen className="h-3 w-3 shrink-0" />
+              <span>{isEcom ? "行业词典" : "字典"}</span>
+            </Link>
+          </div>
+
+          {isActive ? (
+            <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 px-3 py-1 bg-emerald-50 rounded-md whitespace-nowrap">
+              <Check className="h-3.5 w-3.5 shrink-0" />
+              已激活
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => switchRegion(r.id)}
+              className="btn btn--primary text-xs py-1 px-3 h-7 whitespace-nowrap"
+            >
+              进入工作区
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <>
       {/* 头部导航与操作栏 */}
       <div className="page-hero">
-        <div>
-          <div className="page-hero__title flex items-center gap-2">
+        <div className="min-w-0">
+          <div className="page-hero__title flex items-center gap-2 flex-wrap">
             <span>12345 站点纳管与多租户控制台</span>
-            <span className="rounded-full bg-blue-50 border border-blue-200/80 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
+            <span className="rounded-full bg-blue-50 border border-blue-200/80 px-2 py-0.5 text-[11px] font-semibold text-blue-700 whitespace-nowrap">
               SuperAdmin 物理 Schema 隔离
             </span>
           </div>
@@ -415,10 +633,11 @@ export default function AdminRegionsPage() {
         <PageHeaderActions
           onRefresh={fetchRegions}
           refreshing={loading}
+          className="flex-wrap"
         >
           <button
             type="button"
-            className="btn btn--primary h-[34px] px-3.5 text-xs font-medium inline-flex items-center gap-1.5"
+            className="btn btn--primary h-[34px] px-3.5 text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap"
             onClick={() => {
               setScoutStep(1);
               setShowScoutModal(true);
@@ -430,35 +649,48 @@ export default function AdminRegionsPage() {
         </PageHeaderActions>
       </div>
 
-      {/* 统一指标卡片体系 */}
+      {/* 统一指标卡片体系（政务 12345 口径与跨行业示范口径严格拆分） */}
       <StatCardGrid columns={4}>
         <StatCard
           icon={Building2}
           tone="blue"
           label="已纳管 12345 站点"
-          value={regions.length}
-          sub="支持跨省市区县无上限扩展"
+          value={govRegions.length}
+          sub={
+            ecomRegions.length > 0
+              ? `另含 ${ecomRegions.length} 个跨行业示范站`
+              : "支持跨省市区县无上限扩展"
+          }
         />
         <StatCard
           icon={Database}
           tone="green"
           label="物理隔离 Schema"
           value={regions.length}
-          sub="PostgreSQL 原生租户隔离"
+          sub={
+            ecomRegions.length > 0
+              ? `政务 ${govRegions.length} + 跨行业示范 ${ecomRegions.length}`
+              : "PostgreSQL 原生租户隔离"
+          }
         />
         <StatCard
           icon={MapPin}
           tone="purple"
           label="当前活动工作区"
           value={activeRegion ? `${activeRegion.city} · ${activeRegion.name}` : "--"}
+          valueClassName="text-base sm:text-[20px] truncate"
           sub={`物理空间: ${activeRegion?.schemaName || "未选择"}`}
         />
         <StatCard
           icon={Layers}
           tone="orange"
-          label="全平台研判总量"
-          value={totalTickets}
-          sub={`${totalThemes} 个治理主题 / ${totalVocab} 条词典`}
+          label="政务 12345 研判总量"
+          value={govTickets}
+          sub={
+            ecomTickets > 0
+              ? `${govThemes} 主题 · 示范站 ${ecomTickets.toLocaleString()} 单`
+              : `${govThemes} 个治理主题 / ${govVocab} 条词典`
+          }
         />
       </StatCardGrid>
 
@@ -466,11 +698,11 @@ export default function AdminRegionsPage() {
       <ComputeNodesPanel onSummaryChange={setComputeSummary} />
 
       <div className="mt-6 mb-8">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between gap-2 flex-wrap mb-4">
           <div className="flex items-center gap-2">
-            <KeyRound className="h-4 w-4 text-slate-500" />
+            <KeyRound className="h-4 w-4 text-slate-500 shrink-0" />
             <h2 className="text-sm font-bold text-slate-900">已接入的 Agent</h2>
-            <span className="text-xs text-slate-500 font-mono">({mcpClients.length})</span>
+            <span className="text-xs text-slate-500 font-mono tabular-nums">({mcpClients.length})</span>
           </div>
           <span className="text-xs text-slate-400">
             MCP 地址 /api/mcp · 已登录后打开 /mcp/authorize 签发 access key
@@ -481,8 +713,8 @@ export default function AdminRegionsPage() {
             <div className="px-5 py-6 text-sm text-slate-500">还没有接入的 Agent。</div>
           ) : (
             mcpClients.map((client) => (
-              <div key={client.id} className="flex items-center justify-between gap-4 px-5 py-3">
-                <div className="min-w-0">
+              <div key={client.id} className="flex items-center justify-between gap-3 flex-wrap px-5 py-3">
+                <div className="min-w-0 flex-1">
                   <div className="text-sm font-semibold text-slate-900 truncate">{client.name}</div>
                   <div className="text-xs text-slate-500 truncate">
                     {client.userName || client.username || client.userId}
@@ -491,7 +723,7 @@ export default function AdminRegionsPage() {
                 </div>
                 <button
                   type="button"
-                  className="btn h-[30px] px-3 text-xs font-medium text-rose-700 border border-rose-200 bg-rose-50"
+                  className="btn h-[30px] px-3 text-xs font-medium text-rose-700 border border-rose-200 bg-rose-50 shrink-0"
                   onClick={() => revokeClient(client.id)}
                   disabled={revokingClientId === client.id}
                 >
@@ -503,196 +735,61 @@ export default function AdminRegionsPage() {
         </div>
       </div>
 
-      {/* 站点卡片矩阵 */}
+      {/* 站点清单分区 1：政务 12345 辖区站点 */}
       <div className="mt-6 mb-8">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <h2 className="text-sm font-bold text-slate-900">纳管地区站点清单</h2>
-            <span className="text-xs text-slate-500 font-mono">
-              ({regions.length} 个独立 PostgreSQL Schema)
+        <div className="flex items-center justify-between gap-2 flex-wrap mb-4">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className="text-sm font-bold text-slate-900">政务 12345 辖区站点</h2>
+            <span className="text-xs text-slate-500 font-mono tabular-nums">
+              ({govRegions.length} 个独立 PostgreSQL Schema)
             </span>
           </div>
           <span className="text-xs text-slate-400">
-            各站点具有独立的工单库、多频聚类库、网格字典与权限配置
+            各政务区县具有独立的工单库、多频聚类库、镇街网格字典与 GIS 地图配置
           </span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {regions.map((r) => {
-            const isActive = activeRegion?.id === r.id;
-            return (
-              <div
-                key={r.id}
-                className={`bg-white rounded-xl border p-5 transition-all shadow-2xs relative flex flex-col justify-between ${isActive
-                  ? "border-blue-500 ring-2 ring-blue-500/10"
-                  : "border-slate-200/90 hover:border-slate-300"
-                  }`}
-              >
-                <div>
-                  {/* 卡片头部 */}
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-2.5">
-                      <div
-                        className={`w-9 h-9 rounded-lg flex items-center justify-center font-bold text-sm ${isActive
-                          ? "bg-blue-600 text-white"
-                          : "bg-slate-100 text-slate-700"
-                          }`}
-                      >
-                        {r.name.slice(0, 2)}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <h3 className="text-sm font-bold text-slate-900">
-                            {r.city} · {r.name}
-                          </h3>
-                          {r.isDefault && (
-                            <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-50 border border-amber-200/80 px-1.5 py-0.2 text-[10px] font-medium text-amber-700">
-                              <Star className="h-2.5 w-2.5 fill-amber-500" />
-                              默认
-                            </span>
-                          )}
-                          {isActive && (
-                            <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-50 border border-emerald-200/80 px-2 py-0.2 text-[10px] font-medium text-emerald-700">
-                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                              当前工作区
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[11px] text-slate-400 font-mono mt-0.5">
-                          Schema: {r.schemaName}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1">
-                      {!r.isDefault && (
-                        <button
-                          type="button"
-                          onClick={() => handleSetDefault(r)}
-                          className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-md transition-colors"
-                          title="设为系统默认站点"
-                        >
-                          <Star className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => setDeletingRegion(r)}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors"
-                        title="释放站点物理 Schema"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* 数据统计网格 */}
-                  <div className="grid grid-cols-3 gap-2 py-3 px-3 my-3 rounded-lg bg-slate-50/80 border border-slate-100 text-center">
-                    <div>
-                      <div className="text-[10px] text-slate-500">已汇聚工单</div>
-                      <div className="text-sm font-bold text-slate-800 font-mono">
-                        {r.ticketCount.toLocaleString()}
-                      </div>
-                    </div>
-                    <div className="border-x border-slate-200/60">
-                      <div className="text-[10px] text-slate-500">多频主题</div>
-                      <div className="text-sm font-bold text-blue-600 font-mono">
-                        {r.themeCount.toLocaleString()}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] text-slate-500">标准字典词汇</div>
-                      <div className="text-sm font-bold text-slate-800 font-mono">
-                        {r.vocabCount.toLocaleString()}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 状态指示器 */}
-                  <div className="flex items-center justify-between text-xs py-1 text-slate-500 mb-4">
-                    <span className="flex items-center gap-1">
-                      <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
-                      PostgreSQL 物理隔离
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Map className="h-3.5 w-3.5 text-blue-600" />
-                      <span className="text-emerald-600 font-medium">天地图 GIS 行政区划</span>
-                    </span>
-                  </div>
-                </div>
-
-                {/* 底部操作按钮 */}
-                <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => handleFetchBoundary(r)}
-                      disabled={fetchingBoundaryId === r.id}
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100/80 rounded-md transition-colors border border-blue-200/60"
-                      title="从官方权威测绘源在线拉取区县级高精边界并存放在站点中"
-                    >
-                      {fetchingBoundaryId === r.id ? (
-                        <Loader2 className="h-3 w-3 animate-spin text-blue-600" />
-                      ) : (
-                        <Compass className="h-3 w-3 text-blue-600" />
-                      )}
-                      <span>{fetchingBoundaryId === r.id ? "拉取中…" : "高精边界"}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setUploadModalRegion(r)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200/80 rounded-md transition-colors"
-                      title="上传或更换该区域的矢量地图"
-                    >
-                      <Upload className="h-3 w-3" />
-                      地图
-                    </button>
-                    <Link
-                      href="/dict"
-                      onClick={() => {
-                        if (!isActive) switchRegion(r.id);
-                      }}
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200/80 rounded-md transition-colors"
-                      title="查看并维护该站点的标准字典"
-                    >
-                      <BookOpen className="h-3 w-3" />
-                      字典
-                    </Link>
-                  </div>
-
-                  {isActive ? (
-                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 px-3 py-1 bg-emerald-50 rounded-md">
-                      <Check className="h-3.5 w-3.5" />
-                      已激活
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => switchRegion(r.id)}
-                      className="btn btn--primary text-xs py-1 px-3 h-7"
-                    >
-                      进入工作区
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+          {govRegions.map((r) => renderRegionCard(r, false))}
         </div>
       </div>
 
+      {/* 站点清单分区 2：跨行业能力验证 · 电商客诉示范 */}
+      {ecomRegions.length > 0 && (
+        <div className="mt-6 mb-8">
+          <div className="flex items-center justify-between gap-2 flex-wrap mb-4">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-sm font-bold text-slate-900">跨行业能力验证 · 电商客诉示范</h2>
+              <span className="rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-semibold text-amber-800 whitespace-nowrap">
+                DomainProfile 行业包
+              </span>
+              <span className="text-xs text-slate-500 font-mono tabular-nums">
+                ({ecomRegions.length} 个独立行业 Schema)
+              </span>
+            </div>
+            <span className="text-xs text-slate-400">
+              复用平台多租户 Schema、PII 脱敏、假闭环与多频聚类引擎，独立口径不计入政务 12345 总量
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {ecomRegions.map((r) => renderRegionCard(r, true))}
+          </div>
+        </div>
+      )}
+
       {/* AI Scout 智能建站向导 Modal */}
       {showScoutModal && (
-        <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
-          <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-150 flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-3 sm:p-4">
+          <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-150 flex flex-col max-h-[90dvh]">
             {/* Modal 头部 */}
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-blue-50/50 to-indigo-50/50">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs">
+            <div className="px-4 sm:px-6 py-4 border-b border-slate-100 flex items-center justify-between gap-2 bg-gradient-to-r from-blue-50/50 to-indigo-50/50">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs shrink-0">
                   <Sparkles className="h-4 w-4" />
                 </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900">
+                <div className="min-w-0">
+                  <h3 className="text-sm sm:text-base font-bold text-slate-900">
                     SuperAgent AI 智能新建 12345 站点向导
                   </h3>
                   <p className="text-xs text-slate-500">
@@ -702,20 +799,21 @@ export default function AdminRegionsPage() {
               </div>
               <button
                 type="button"
+                aria-label="关闭向导弹窗"
                 onClick={() => {
                   setShowScoutModal(false);
                   setScoutStep(1);
                   setScoutResult(null);
                 }}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-md"
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-md shrink-0 cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
             {/* 步骤条 */}
-            <div className="px-6 py-2.5 bg-slate-50/80 border-b border-slate-100 flex items-center justify-between text-xs font-medium">
-              <div className="flex items-center gap-6">
+            <div className="px-4 sm:px-6 py-2.5 bg-slate-50/80 border-b border-slate-100 flex items-center justify-between text-xs font-medium overflow-x-auto">
+              <div className="flex items-center gap-3 sm:gap-6 whitespace-nowrap">
                 <div className={`flex items-center gap-1.5 ${scoutStep === 1 ? "text-blue-600 font-bold" : "text-slate-500"}`}>
                   <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${scoutStep === 1 ? "bg-blue-600 text-white" : "bg-slate-200 text-slate-700"}`}>
                     1
@@ -871,11 +969,11 @@ export default function AdminRegionsPage() {
                   </div>
 
                   {/* 预览 Tab */}
-                  <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+                  <div className="flex items-center gap-2 border-b border-slate-200 pb-2 overflow-x-auto whitespace-nowrap">
                     <button
                       type="button"
                       onClick={() => setScoutActiveTab("townships")}
-                      className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${scoutActiveTab === "townships"
+                      className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors shrink-0 ${scoutActiveTab === "townships"
                         ? "bg-blue-600 text-white"
                         : "text-slate-600 hover:bg-slate-100"
                         }`}
@@ -885,7 +983,7 @@ export default function AdminRegionsPage() {
                     <button
                       type="button"
                       onClick={() => setScoutActiveTab("departments")}
-                      className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${scoutActiveTab === "departments"
+                      className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors shrink-0 ${scoutActiveTab === "departments"
                         ? "bg-blue-600 text-white"
                         : "text-slate-600 hover:bg-slate-100"
                         }`}
@@ -895,7 +993,7 @@ export default function AdminRegionsPage() {
                     <button
                       type="button"
                       onClick={() => setScoutActiveTab("categories")}
-                      className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${scoutActiveTab === "categories"
+                      className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors shrink-0 ${scoutActiveTab === "categories"
                         ? "bg-blue-600 text-white"
                         : "text-slate-600 hover:bg-slate-100"
                         }`}
@@ -1001,7 +1099,7 @@ export default function AdminRegionsPage() {
             </div>
 
             {/* Modal 底部操作栏 */}
-            <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between bg-slate-50/60">
+            <div className="px-4 sm:px-6 py-4 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap bg-slate-50/60">
               <button
                 type="button"
                 className="btn btn--default"
@@ -1061,8 +1159,8 @@ export default function AdminRegionsPage() {
 
       {/* SVG 矢量地图上传弹窗 */}
       {uploadModalRegion && (
-        <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl animate-in fade-in zoom-in duration-150">
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-3 sm:p-4">
+          <div className="w-full max-w-lg max-h-[90dvh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-2xl animate-in fade-in zoom-in duration-150">
             <h3 className="text-base font-bold text-slate-900 mb-1">
               上传【{uploadModalRegion.name}】矢量行政地图 (SVG)
             </h3>
