@@ -177,6 +177,63 @@ function isValidPhoneIfPresent(value: string): boolean {
   return /^(1[3-9]\d{9}|0\d{2,3}-?\d{7,8})$/.test(trimmed);
 }
 
+function SlotStatusTag({
+  filled,
+  pendingLabel = "待补充",
+}: {
+  filled: boolean;
+  pendingLabel?: string;
+}) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium border whitespace-nowrap ${
+        filled
+          ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+          : "bg-amber-50 text-amber-800 border-amber-200"
+      }`}
+    >
+      {filled ? (
+        <>
+          <CheckCircle2 size={11} aria-hidden="true" />
+          <span>已识别</span>
+        </>
+      ) : (
+        <span>{pendingLabel}</span>
+      )}
+    </span>
+  );
+}
+
+async function scrollIntoViewAsync(
+  element: HTMLElement,
+  behavior: ScrollBehavior
+): Promise<void> {
+  const maybePromise: unknown = element.scrollIntoView({
+    behavior,
+    block: "start",
+  });
+  if (maybePromise instanceof Promise) {
+    await maybePromise;
+    return;
+  }
+  await new Promise<void>((resolve) => {
+    let timeoutId: ReturnType<typeof setTimeout>;
+    const finish = () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener("scrollend", finish);
+      window.removeEventListener("scroll", onScroll);
+      resolve();
+    };
+    const onScroll = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(finish, 100);
+    };
+    window.addEventListener("scrollend", finish, { once: true });
+    window.addEventListener("scroll", onScroll, { passive: true });
+    timeoutId = setTimeout(finish, 120);
+  });
+}
+
 export default function SubmitPage() {
   const { activeRegion, appDomain } = useRegion();
   const datalistId = useId();
@@ -336,6 +393,9 @@ export default function SubmitPage() {
   const [reopenTargetId, setReopenTargetId] = useState<string | null>(null);
   const [reopenReason, setReopenReason] = useState<string>("");
   const [reopeningId, setReopeningId] = useState<string | null>(null);
+  const historyDetailsRef = useRef<HTMLDetailsElement>(null);
+  const historySummaryRef = useRef<HTMLElement>(null);
+  const progressScrollSeqRef = useRef(0);
 
   const regionQuery = activeRegion?.id ? `?region=${encodeURIComponent(activeRegion.id)}` : "";
 
@@ -622,12 +682,29 @@ export default function SubmitPage() {
   // ----------------- Mode Tabs 键盘交互 -----------------
   const switchMode = (next: SubmitMode, focusTab = false) => {
     setMode(next);
-    if (focusTab) {
-      requestAnimationFrame(() => {
-        if (next === "form") formTabRef.current?.focus();
-        else voiceTabRef.current?.focus();
-      });
-    }
+    requestAnimationFrame(() => {
+      const targetTab = next === "form" ? formTabRef.current : voiceTabRef.current;
+      if (targetTab) {
+        targetTab.scrollIntoView({ block: "nearest", inline: "nearest" });
+        if (focusTab) targetTab.focus();
+      }
+    });
+  };
+
+  const handleViewProgress = async () => {
+    const scrollSeq = ++progressScrollSeqRef.current;
+    setHistoryOpen(true);
+    const detailsEl = historyDetailsRef.current;
+    if (!detailsEl) return;
+    detailsEl.open = true;
+
+    const prefersReduced =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    await scrollIntoViewAsync(detailsEl, prefersReduced ? "auto" : "smooth");
+
+    if (progressScrollSeqRef.current !== scrollSeq) return;
+    historySummaryRef.current?.focus({ preventScroll: true });
   };
 
   const handleTabListKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -667,6 +744,16 @@ export default function SubmitPage() {
         },
       ];
 
+  const hasDraftCategory = Boolean(voiceDraft.category.trim());
+  const hasDraftSubdistrict = Boolean(voiceDraft.subdistrict.trim());
+  const hasDraftContent = voiceDraft.content.trim().length >= 6;
+  const missingRequiredLabels = [
+    !hasDraftCategory ? "所属分类" : "",
+    !hasDraftSubdistrict ? regionUnitLabel : "",
+    !hasDraftContent ? "诉求内容（至少 6 字）" : "",
+  ].filter(Boolean);
+  const isVoiceDraftReady = missingRequiredLabels.length === 0;
+
   return (
     <div className="submit-shell">
       {/* 页面级单一礼貌播报区 */}
@@ -698,7 +785,7 @@ export default function SubmitPage() {
           aria-label="受理回执"
           className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50/80 p-4 text-slate-900"
         >
-          <div className="flex items-start justify-between gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
             <div className="flex items-start gap-2.5 min-w-0">
               <CheckCircle2 size={20} className="text-emerald-600 shrink-0 mt-0.5" aria-hidden="true" />
               <div className="min-w-0">
@@ -716,19 +803,29 @@ export default function SubmitPage() {
                   ) : null}
                 </div>
                 {receipt.maskedPreview ? (
-                  <p className="mt-1.5 text-xs text-slate-700 bg-white/80 rounded-md px-2.5 py-1.5 border border-emerald-200/70">
+                  <p className="mt-1.5 text-xs text-slate-700 bg-white/80 rounded-md px-2.5 py-1.5 border border-emerald-200/70 break-words">
                     隐私脱敏摘要：{receipt.maskedPreview}
                   </p>
                 ) : null}
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => setReceipt(null)}
-              className="shrink-0 rounded-md border border-emerald-300 bg-white px-2.5 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100 cursor-pointer"
-            >
-              继续提交
-            </button>
+            <div className="flex items-center gap-2 flex-wrap shrink-0">
+              <button
+                type="button"
+                onClick={() => void handleViewProgress()}
+                className="inline-flex min-h-12 sm:min-h-10 items-center gap-1 rounded-md border border-emerald-600 bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 cursor-pointer"
+              >
+                <ChevronDown size={14} aria-hidden="true" />
+                <span>查看下方进度</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setReceipt(null)}
+                className="inline-flex min-h-12 sm:min-h-10 items-center rounded-md border border-emerald-300 bg-white px-3 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100 cursor-pointer"
+              >
+                继续提交
+              </button>
+            </div>
           </div>
         </section>
       ) : null}
@@ -751,8 +848,11 @@ export default function SubmitPage() {
             onClick={() => switchMode("form")}
             className="submit-tab"
           >
-            <FileText size={16} aria-hidden="true" />
-            <span>基础表单填报</span>
+            <span className="submit-tab__title">
+              <FileText size={16} aria-hidden="true" className="shrink-0" />
+              <span>基础表单填报</span>
+            </span>
+            <span className="submit-tab__sub">自主填写要素</span>
           </button>
 
           <button
@@ -765,8 +865,11 @@ export default function SubmitPage() {
             onClick={() => switchMode("voice")}
             className="submit-tab"
           >
-            <Sparkles size={16} aria-hidden="true" />
-            <span>Agent 语音受理（小蠢）</span>
+            <span className="submit-tab__title">
+              <Sparkles size={16} aria-hidden="true" className="shrink-0" />
+              <span>Agent 语音受理（小蠢）</span>
+            </span>
+            <span className="submit-tab__sub">说话口述，自动填单</span>
           </button>
         </div>
 
@@ -1220,16 +1323,16 @@ export default function SubmitPage() {
             {/* 实时抽取投诉草稿摘要 */}
             <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50/80 p-4">
               <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                <div>
+                <div className="min-w-0">
                   <h2 className="text-sm font-semibold text-slate-900">
                     实时抽取的投诉草稿摘要
                   </h2>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    {readyToSubmit
-                      ? "核心要素已齐全，可直接确认提交。"
-                      : missingFields.length > 0
-                        ? `待补充要素：${missingFields.join("、")}`
-                        : "开始语音或文字描述后，系统将自动提取关键信息。"}
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    {isVoiceDraftReady
+                      ? readyToSubmit || missingFields.length === 0
+                        ? "3 项必填要素已齐全，可直接点击「一键确认提交投诉」。"
+                        : `必填要素已齐全，可直接点击「一键确认提交投诉」（建议可补：${missingFields.join("、")}）。`
+                      : `还需补充：${missingRequiredLabels.join("、")}，齐备即可「一键确认提交投诉」。`}
                   </p>
                 </div>
                 <button
@@ -1247,40 +1350,69 @@ export default function SubmitPage() {
                     switchMode("form", true);
                     toast.info("已将草稿同步至表单，可进一步细化修改");
                   }}
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 cursor-pointer"
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 cursor-pointer min-h-9"
                 >
                   同步到表单微调
                 </button>
               </div>
 
               <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                <div className="rounded-lg bg-white border border-slate-200/80 p-2.5">
-                  <dt className="text-slate-500">所属分类</dt>
-                  <dd className="mt-1 font-medium text-slate-900">
-                    {voiceDraft.category || "待识别"}
+                <div className="rounded-lg bg-white border border-slate-200/80 p-2.5 min-w-0">
+                  <dt className="flex items-center justify-between gap-2 text-slate-500">
+                    <span>
+                      所属分类 <span className="text-red-600" aria-hidden="true">*</span>
+                    </span>
+                    <SlotStatusTag filled={hasDraftCategory} />
+                  </dt>
+                  <dd className="mt-1 font-medium text-slate-900 break-words">
+                    {voiceDraft.category || "待识别（可继续描述或切表单选择）"}
                   </dd>
                 </div>
-                <div className="rounded-lg bg-white border border-slate-200/80 p-2.5">
-                  <dt className="text-slate-500">{regionUnitLabel}</dt>
-                  <dd className="mt-1 font-medium text-slate-900">
-                    {voiceDraft.subdistrict || "待识别"}
+                <div className="rounded-lg bg-white border border-slate-200/80 p-2.5 min-w-0">
+                  <dt className="flex items-center justify-between gap-2 text-slate-500">
+                    <span>
+                      {regionUnitLabel} <span className="text-red-600" aria-hidden="true">*</span>
+                    </span>
+                    <SlotStatusTag filled={hasDraftSubdistrict} />
+                  </dt>
+                  <dd className="mt-1 font-medium text-slate-900 break-words">
+                    {voiceDraft.subdistrict ||
+                      (isEcommerce ? "待识别（如店铺/仓网）" : "待识别（如街道名称）")}
                   </dd>
                 </div>
-                <div className="rounded-lg bg-white border border-slate-200/80 p-2.5">
-                  <dt className="text-slate-500">{subjectLabel}</dt>
-                  <dd className="mt-1 font-medium text-slate-900">
+                <div className="rounded-lg bg-white border border-slate-200/80 p-2.5 min-w-0">
+                  <dt className="flex items-center justify-between gap-2 text-slate-500">
+                    <span>{subjectLabel}</span>
+                    <span className="text-[11px] text-slate-400">选填</span>
+                  </dt>
+                  <dd className="mt-1 font-medium text-slate-900 break-words">
                     {voiceDraft.subject || "未提及"}
                   </dd>
                 </div>
-                <div className="rounded-lg bg-white border border-slate-200/80 p-2.5">
-                  <dt className="text-slate-500">{addressLabel}</dt>
-                  <dd className="mt-1 font-medium text-slate-900">
+                <div className="rounded-lg bg-white border border-slate-200/80 p-2.5 min-w-0">
+                  <dt className="flex items-center justify-between gap-2 text-slate-500">
+                    <span>{addressLabel}</span>
+                    <span className="text-[11px] text-slate-400">选填</span>
+                  </dt>
+                  <dd className="mt-1 font-medium text-slate-900 break-words">
                     {voiceDraft.address || "未提及"}
                   </dd>
                 </div>
-                <div className="rounded-lg bg-white border border-slate-200/80 p-2.5 sm:col-span-2">
-                  <dt className="text-slate-500">诉求内容摘要</dt>
-                  <dd className="mt-1 font-medium text-slate-900 whitespace-pre-wrap">
+                <div className="rounded-lg bg-white border border-slate-200/80 p-2.5 sm:col-span-2 min-w-0">
+                  <dt className="flex items-center justify-between gap-2 text-slate-500">
+                    <span>
+                      诉求内容 <span className="text-red-600" aria-hidden="true">*</span>
+                    </span>
+                    <SlotStatusTag
+                      filled={hasDraftContent}
+                      pendingLabel={
+                        voiceDraft.content.trim().length > 0
+                          ? "待补充（需至少 6 字）"
+                          : "待补充"
+                      }
+                    />
+                  </dt>
+                  <dd className="mt-1 font-medium text-slate-900 whitespace-pre-wrap break-words">
                     {voiceDraft.content || "等待语音或文字输入..."}
                   </dd>
                 </div>
@@ -1304,11 +1436,12 @@ export default function SubmitPage() {
 
       {/* 底部轻量化折叠「我的投诉进度」 */}
       <details
+        ref={historyDetailsRef}
         className="submit-history-details"
         open={historyOpen}
         onToggle={(e) => setHistoryOpen(e.currentTarget.open)}
       >
-        <summary className="submit-history-summary">
+        <summary ref={historySummaryRef} className="submit-history-summary">
           <span className="inline-flex items-center gap-2">
             <span>我的投诉进度</span>
             <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700 tabular-nums">

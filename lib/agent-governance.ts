@@ -137,7 +137,8 @@ const REDLINE_KEYWORDS_RE =
   /群体|上访|聚集|堵路|罢工|跳楼|轻生|伤亡|人身伤害|食物中毒|腹泻|呕吐|12315|市监局|黑猫投诉|媒体曝光|热搜|集体维权|维稳/;
 const GENERIC_SUBJECT_RE = /^(?:涉事方|相关主体|未知|不详|无|空|null)$/i;
 const PHONE_RE = /(?<!\d)(?:(?:\+|00)86)?(1[3-9]\d{9})(?!\d)|\b(0\d{2,3}-?\d{7,8})\b/;
-const SKU_RE = /\b(SKU[-_]?[A-Za-z0-9]{2,}(?:[-_][A-Za-z0-9]+)*)\b/i;
+const SKU_RE = /(?:^|[^A-Za-z0-9])(SKU[-_][A-Za-z0-9]{2,}(?:[-_][A-Za-z0-9]+)*|SKU[A-Za-z0-9]{3,})(?![A-Za-z0-9])/i;
+const LABELED_SKU_RE = /(?:SKU编号|SKU|货号|商品编号)\s*(?:是|为|[：:])\s*([A-Za-z0-9][A-Za-z0-9_-]{3,28})/i;
 const NEGATIVE_CALLBACK_RE =
   /没解决|未解决|没有解决|复发|敷衍|假办结|还是吵|还在吵|照样吵|依然|仍然|没收到退款|没退款|拒退|没整改|没处理|没人联系|还是坏|还是漏|不满意|推诿|踢皮球/;
 const POSITIVE_CALLBACK_RE =
@@ -524,6 +525,17 @@ export async function loadIntakeOptions(regionId: string): Promise<IntakeOptions
   };
 }
 
+const ECOM_CHANNEL_ALIASES: Array<{ pattern: RegExp; matchHint: string }> = [
+  { pattern: /天猫|淘宝|tmall/i, matchHint: "天猫" },
+  { pattern: /抖音|直播间|douyin/i, matchHint: "抖音" },
+  { pattern: /京东|\bjd\b/i, matchHint: "京东" },
+  { pattern: /拼多多|pdd/i, matchHint: "拼多多" },
+  { pattern: /华南冷链|华南仓|冷链仓/i, matchHint: "华南冷链" },
+  { pattern: /华东中心|华东仓/i, matchHint: "华东" },
+  { pattern: /华北分拨|华北仓/i, matchHint: "华北" },
+  { pattern: /保税仓|跨境仓/i, matchHint: "保税" },
+];
+
 function matchChannelOrSubdistrict(
   text: string,
   candidates: string[],
@@ -540,9 +552,29 @@ function matchChannelOrSubdistrict(
     if (short.length >= 2 && cleaned.includes(short)) return cand;
   }
 
+  if (domainType === "ECOMMERCE_CS") {
+    for (const rule of ECOM_CHANNEL_ALIASES) {
+      if (rule.pattern.test(cleaned)) {
+        const hit = sorted.find((cand) => cand.includes(rule.matchHint));
+        if (hit) return hit;
+      }
+    }
+    return "";
+  }
+
   if (domainType === "GOV_12345") {
     const preset = loadPresetVocabulary(regionId);
+    const candidateSet = new Set(candidates);
+    const regionMatchesPreset =
+      preset.regionId === regionId ||
+      regionId === "shunde" ||
+      regionId === "fs_shunde" ||
+      regionId === "gz_tianhe";
     for (const town of preset.townships) {
+      const targetName = town.fullName || town.name;
+      if (!regionMatchesPreset && !candidateSet.has(targetName) && !candidateSet.has(town.name)) {
+        continue;
+      }
       const labels = [
         town.fullName,
         town.name,
@@ -552,7 +584,7 @@ function matchChannelOrSubdistrict(
       ];
       for (const lbl of labels) {
         if (lbl && lbl.length >= 2 && cleaned.includes(lbl)) {
-          return town.fullName || town.name;
+          return targetName;
         }
       }
     }
@@ -578,9 +610,13 @@ function inferGovCategory(text: string, allowed: string[]): string {
 function extractAddressSlot(text: string, domainType: DomainType): string {
   const compact = text.replace(/\s+/g, "");
   if (domainType === "ECOMMERCE_CS") {
-    const orderMatch = compact.match(/(?:订单号?|单号)[：:#]*([A-Za-z0-9-]{6,32})/);
+    const orderMatch = compact.match(
+      /(?:订单编号|快递单号|物流单号|运单号|订单号?|单号)(?:是|为|[：:#])*([A-Za-z0-9][A-Za-z0-9-]{5,31})/
+    );
     if (orderMatch?.[1]) return `订单 ${orderMatch[1]}`;
-    const warehouseMatch = compact.match(/([\u4e00-\u9fff]{2,8}(?:冷链仓|中心仓|分拨仓|保税仓|配送站|网点))/);
+    const warehouseMatch = compact.match(
+      /([\u4e00-\u9fff]{2,8}(?:冷链仓|中心仓|分拨仓|保税仓|配送站|网点|分拣中心))/
+    );
     if (warehouseMatch?.[1]) return warehouseMatch[1];
     return "";
   }
@@ -602,6 +638,13 @@ function extractAddressSlot(text: string, domainType: DomainType): string {
       return val.slice(0, 120);
     }
   }
+  const labeledAddr = compact.match(/(?:具体地址|详细地址|事发地址|地址|位置|地点)(?:是|为|[：:])([^，,。；;\n]{3,40})/);
+  if (labeledAddr?.[1]) {
+    const val = labeledAddr[1].trim();
+    if (val.length >= 3 && !/(?:街道|镇)$/.test(val)) {
+      return val.slice(0, 120);
+    }
+  }
   return "";
 }
 
@@ -610,23 +653,85 @@ function extractSubjectSlot(text: string, domainType: DomainType): string {
   if (skuMatch?.[1]) {
     return skuMatch[1].toUpperCase();
   }
+  const labeledSku = text.match(LABELED_SKU_RE);
+  if (labeledSku?.[1]) {
+    const code = labeledSku[1].toUpperCase();
+    return code.startsWith("SKU") ? code : `SKU-${code}`;
+  }
+
   const compact = text.replace(/\s+/g, "");
   if (domainType === "ECOMMERCE_CS") {
-    const prodMatch = compact.match(
-      /([\u4e00-\u9fffA-Za-z0-9]{2,20}(?:礼盒|生鲜|海鲜|牛肉|洗面奶|护肤品|空气炸锅|加湿器|纸巾|耳机|奶粉|保健品|店铺|旗舰店|快递|承运商))/
+    const labeledEcom = compact.match(
+      /(?:涉事店铺|店铺名称?|商家|品牌|商品名称?|购买商品)(?:是|为|叫|[：:])([^，,。；;\n]{2,24})/
     );
-    if (prodMatch?.[1]) return prodMatch[1];
+    if (labeledEcom?.[1]) {
+      const cleaned = labeledEcom[1].replace(/^(?:我?在|我?从|买的|购买的)+/, "").trim();
+      if (cleaned.length >= 2 && !GENERIC_SUBJECT_RE.test(cleaned)) {
+        return cleaned.slice(0, 120);
+      }
+    }
+
+    const productMatch = compact.match(
+      /([\u4e00-\u9fffA-Za-z0-9]{2,18}(?:礼盒|生鲜|海鲜|牛肉|牛排|水果|奶粉|保健品|护肤品|洗面奶|面霜|精华|耳机|空气炸锅|加湿器|破壁机|咖啡机|纸巾|猫粮|狗粮|羽绒服|家电|手机))/
+    );
+    if (productMatch?.[1]) {
+      const stripped = productMatch[1]
+        .replace(/^.*?(?:买的|购买的|下单的|收到|寄来的|损坏的|变质的)/, "")
+        .trim();
+      const val = stripped.length >= 2 ? stripped : productMatch[1];
+      if (!GENERIC_SUBJECT_RE.test(val)) return val.slice(0, 120);
+    }
+
+    const shopOrCarrierMatch = compact.match(
+      /([\u4e00-\u9fffA-Za-z0-9]{2,16}(?:旗舰店|官方店|自营店|专营店|直播间|店铺|快递|冷链|承运商))/
+    );
+    if (shopOrCarrierMatch?.[1]) {
+      const stripped = shopOrCarrierMatch[1]
+        .replace(/^(?:我?在|我?从|承运商是?|快递是?|店铺是?|关于|投诉)+/, "")
+        .trim();
+      if (stripped.length >= 2 && !GENERIC_SUBJECT_RE.test(stripped)) {
+        return stripped.slice(0, 120);
+      }
+    }
   }
+
   const govSubjMatch = compact.match(
-    /(?:店名|招牌|商家|单位名称)[：:]\s*([^，,。；;\n]{2,30})|(?:号|门口|楼下|旁边|附近|在|位于)?([\u4e00-\u9fffA-Za-z·]{2,16}(?:烧烤档|烧烤摊|烧烤店|大排档|餐厅|餐馆|饭店|清吧|酒吧|KTV|ktv|工地|电子厂|工厂|物业公司|物业|有限公司|公司|药店|超市))/
+    /(?:店名|招牌|商家|涉事单位|单位名称)(?:是|为|叫|[：:])\s*([^，,。；;\n]{2,30})|(?:号|门口|楼下|旁边|附近|在|位于)?([\u4e00-\u9fffA-Za-z·]{2,16}(?:烧烤档|烧烤摊|烧烤店|大排档|餐厅|餐馆|饭店|清吧|酒吧|KTV|ktv|工地|电子厂|工厂|物业公司|物业|有限公司|公司|药店|超市|夜市|小吃店|奶茶店))/
   );
   const candidateRaw = (govSubjMatch?.[1] || govSubjMatch?.[2] || "").trim();
-  const candidateParts = candidateRaw.split(/(?:门口|楼下|旁边|附近|在|位于)/);
+  const candidateParts = candidateRaw.split(/(?:街道|镇|大道|路|巷|街|门口|楼下|旁边|附近|在|位于)/);
   const candidate = (candidateParts[candidateParts.length - 1] || candidateRaw).trim();
   if (candidate && candidate.length >= 2 && !GENERIC_SUBJECT_RE.test(candidate)) {
     return candidate.slice(0, 120);
   }
   return "";
+}
+
+function mergeUniqueUserContent(draftContent: string | undefined, userTexts: string[]): string {
+  let acc = (draftContent || "").trim();
+  for (const part of userTexts) {
+    const clean = part.trim();
+    if (!clean) continue;
+    if (!acc) {
+      acc = clean;
+    } else if (!acc.includes(clean)) {
+      acc = `${acc}；${clean}`;
+    }
+  }
+  return acc;
+}
+
+function replyAddressesMissingFields(reply: string, missingFields: string[]): boolean {
+  if (!reply) return false;
+  return missingFields.some((field) => {
+    if (reply.includes(field.slice(0, 2))) return true;
+    if (field.includes("镇街") || field.includes("渠道")) return /镇街|街道|渠道|仓网|店铺/.test(reply);
+    if (field.includes("地址") || field.includes("门牌")) return /地址|路名|门牌|地点|位置/.test(reply);
+    if (field.includes("SKU") || field.includes("商品")) return /SKU|sku|商品|店铺|品牌/.test(reply);
+    if (field.includes("分类")) return /分类|类型/.test(reply);
+    if (field.includes("描述")) return /描述|详情|经过|问题/.test(reply);
+    return false;
+  });
 }
 
 function buildConciseTitle(draft: IntakeDraft, domainType: DomainType): string {
@@ -687,26 +792,31 @@ export async function processIntakeChat(input: {
     .map((m) => m.content.trim());
   const latestUserText = userTexts[userTexts.length - 1] || "";
 
-  // 汇总全部用户陈述（去重）
-  const combinedParts = uniqueNonEmpty([
-    ...(input.draft?.content ? [input.draft.content] : []),
-    ...userTexts,
-  ]);
-  const combinedRaw = combinedParts.join("；");
+  // 汇总全部用户陈述（跨轮次去重，不重复拼接历史句）
+  const combinedRaw = mergeUniqueUserContent(input.draft?.content, userTexts);
+
+  // 保留既有已填槽位，绝不在后续轮次无意覆盖已确认的槽位
+  const existingTitle = clampStr(input.draft?.title, 48);
+  const existingSubdistrict = clampStr(input.draft?.subdistrict, 64);
+  const existingCategory = clampStr(input.draft?.category, 64);
+  const existingAddress = clampStr(input.draft?.address, 120);
+  const rawExistingSubject = clampStr(input.draft?.subject, 120);
+  const existingSubject = GENERIC_SUBJECT_RE.test(rawExistingSubject) ? "" : rawExistingSubject;
+  const existingPhone = clampStr(input.draft?.contactPhone, 32);
 
   // 1. 确定性中文规则抽取（永远保底可用）
-  const phoneMatch = combinedRaw.match(PHONE_RE);
-  const extractedPhone = (input.draft?.contactPhone || "").trim() || (phoneMatch?.[0] ?? "");
+  const phoneMatch = latestUserText.match(PHONE_RE) || combinedRaw.match(PHONE_RE);
+  const extractedPhone = existingPhone || (phoneMatch?.[0] ?? "");
 
   const ruleSubdistrict =
+    existingSubdistrict ||
     matchChannelOrSubdistrict(latestUserText, options.subdistricts, domainType, input.regionId) ||
-    (input.draft?.subdistrict || "").trim() ||
     matchChannelOrSubdistrict(combinedRaw, options.subdistricts, domainType, input.regionId);
 
   const ruleCategoryRaw =
-    (input.draft?.category || "").trim() ||
+    existingCategory ||
     (domainType === "ECOMMERCE_CS"
-      ? combinedRaw.length >= 6
+      ? combinedRaw.length >= 4
         ? evaluateEcommerceTicket({ content: combinedRaw, subdistrict: ruleSubdistrict }).category
         : ""
       : inferGovCategory(combinedRaw, options.categories));
@@ -715,13 +825,13 @@ export async function processIntakeChat(input: {
     : canonicalizeCategory(ruleCategoryRaw) || ruleCategoryRaw;
 
   const ruleAddress =
+    existingAddress ||
     extractAddressSlot(latestUserText, domainType) ||
-    (input.draft?.address || "").trim() ||
     extractAddressSlot(combinedRaw, domainType);
 
   const ruleSubject =
+    existingSubject ||
     extractSubjectSlot(latestUserText, domainType) ||
-    (input.draft?.subject || "").trim() ||
     extractSubjectSlot(combinedRaw, domainType);
 
   // 2. 脱敏后再尝试 System-2 增强（12s 超时 + 严格 JSON 解析）
@@ -759,18 +869,19 @@ export async function processIntakeChat(input: {
       llmReply = clampStr(restored.reply, 220);
       const validSub = options.subdistricts.includes(subText) ? subText : "";
       const validCat = options.categories.includes(catText) ? catText : "";
+      const llmSubj = clampStr(restored.subject, 120);
       llmPatch = {
         title: clampStr(restored.title, 48),
         subdistrict: validSub,
         category: validCat,
-        subject: clampStr(restored.subject, 120),
+        subject: GENERIC_SUBJECT_RE.test(llmSubj) ? "" : llmSubj,
         address: clampStr(restored.address, 120),
       };
     }
   }
 
   const mergedDraft: IntakeDraft = {
-    title: clampStr(input.draft?.title || llmPatch.title, 48),
+    title: existingTitle || llmPatch.title || "",
     content: clampStr(combinedRaw, 2000),
     subdistrict: ruleSubdistrict || llmPatch.subdistrict || "",
     category: ruleCategory || llmPatch.category || "",
@@ -791,7 +902,7 @@ export async function processIntakeChat(input: {
     missingFields.length === 0;
 
   let reply = llmReply;
-  if (!reply || (!readyToSubmit && !missingFields.some((f) => reply.includes(f.slice(0, 2))))) {
+  if (!reply || (!readyToSubmit && !replyAddressesMissingFields(reply, missingFields))) {
     if (readyToSubmit) {
       reply =
         domainType === "ECOMMERCE_CS"
@@ -1310,30 +1421,62 @@ export async function runAgentPatrol(regionId: string): Promise<{
   summary: AgentTasksSummary;
   tasks: AgentTaskDto[];
 }> {
-  const schemaName = await ensureAgentGovernanceTables(regionId);
-  const profile = await getRegionDomainProfile(regionId);
+  const [schemaName, profile] = await Promise.all([
+    ensureAgentGovernanceTables(regionId),
+    getRegionDomainProfile(regionId),
+  ]);
   const isEcommerce = profile.domainType === "ECOMMERCE_CS";
 
-  const existingRows = await sql.unsafe(
-    `SELECT target_type, target_id, task_type, status FROM "${schemaName}".agent_tasks`
-  );
+  const missingCondition = isEcommerce
+    ? `(address IS NULL OR address = '' OR address = subdistrict OR char_length(coalesce(address, '')) <= 6 OR canonical_subject IS NULL OR canonical_subject = '' OR canonical_subject IN ('涉事方', '相关主体') OR confidence IS NULL OR confidence < 70)`
+    : `(address IS NULL OR address = '' OR canonical_subject IS NULL OR canonical_subject = '' OR canonical_subject IN ('涉事方', '相关主体') OR confidence IS NULL OR confidence < 70)`;
+
+  const [existingRows, stabilityRows, missingRowsRaw, overdueThemeRowsRaw, resolvedThemeRows] =
+    await Promise.all([
+      sql.unsafe(
+        `SELECT target_type, target_id, task_type FROM "${schemaName}".agent_tasks WHERE status <> 'REJECTED'`
+      ),
+      sql.unsafe(`
+        SELECT id, ticket_no, title, summarize_title, content, masked_content,
+               citizen_phone, subdistrict, address, canonical_subject, confidence, stability_risk
+        FROM "${schemaName}".tickets
+        WHERE status IN ('PENDING', 'IN_PROGRESS', 'REOPENED')
+          AND stability_risk = true
+        LIMIT 24
+      `),
+      sql.unsafe(`
+        SELECT id, ticket_no, title, summarize_title, content, masked_content,
+               citizen_phone, subdistrict, source_category, address, canonical_subject, confidence, stability_risk
+        FROM "${schemaName}".tickets
+        WHERE status = 'PENDING'
+          AND coalesce(stability_risk, false) = false
+          AND ${missingCondition}
+        LIMIT 30
+      `),
+      sql.unsafe(`
+        SELECT id, title, category, risk_level, ticket_count, time_span_hours,
+               handling_owner, recommended_action, canonical_location
+        FROM "${schemaName}".themes
+        WHERE handling_status = 'PENDING'
+          AND ticket_count >= 5
+        ORDER BY ticket_count DESC
+        LIMIT 24
+      `),
+      sql.unsafe(`
+        SELECT id, title, category, ticket_count, handling_owner, recommended_action, canonical_location
+        FROM "${schemaName}".themes
+        WHERE upper(coalesce(handling_status, '')) IN ('RESOLVED', '已办结')
+        ORDER BY last_at DESC NULLS LAST, ticket_count DESC
+        LIMIT 12
+      `),
+    ]);
+
   const activeOrDoneKeys = new Set<string>();
   for (const row of existingRows) {
-    const status = String(row.status || "");
-    if (status !== "REJECTED") {
-      activeOrDoneKeys.add(`${row.target_type}:${row.target_id}:${row.task_type}`);
-    }
+    activeOrDoneKeys.add(`${row.target_type}:${row.target_id}:${row.task_type}`);
   }
 
   // 1. 扫描涉稳/合规红线工单 -> L3_BLOCKED (REDLINE_BLOCK)
-  const stabilityRows = await sql.unsafe(`
-    SELECT id, ticket_no, title, summarize_title, content, masked_content,
-           citizen_phone, subdistrict, address, canonical_subject, confidence, stability_risk
-    FROM "${schemaName}".tickets
-    WHERE status IN ('PENDING', 'IN_PROGRESS', 'REOPENED')
-      AND stability_risk = true
-    LIMIT 24
-  `);
   const redlineRows =
     stabilityRows.length >= 4
       ? stabilityRows
@@ -1393,19 +1536,6 @@ export async function runAgentPatrol(regionId: string): Promise<{
   }
 
   // 2. 扫描要素缺失/低置信度待处置工单 -> MISSING_INFO (政务 L2_APPROVAL / 电商 L1_AUTO)
-  const missingCondition = isEcommerce
-    ? `(address IS NULL OR address = '' OR address = subdistrict OR char_length(coalesce(address, '')) <= 6 OR canonical_subject IS NULL OR canonical_subject = '' OR canonical_subject IN ('涉事方', '相关主体') OR confidence IS NULL OR confidence < 70)`
-    : `(address IS NULL OR address = '' OR canonical_subject IS NULL OR canonical_subject = '' OR canonical_subject IN ('涉事方', '相关主体') OR confidence IS NULL OR confidence < 70)`;
-
-  const missingRowsRaw = await sql.unsafe(`
-    SELECT id, ticket_no, title, summarize_title, content, masked_content,
-           citizen_phone, subdistrict, source_category, address, canonical_subject, confidence, stability_risk
-    FROM "${schemaName}".tickets
-    WHERE status = 'PENDING'
-      AND coalesce(stability_risk, false) = false
-      AND ${missingCondition}
-    LIMIT 30
-  `);
   const missingRows = [...missingRowsRaw].sort((a, b) => {
     const aMiss = !a.address || !a.canonical_subject ? 0 : 1;
     const bMiss = !b.address || !b.canonical_subject ? 0 : 1;
@@ -1459,15 +1589,6 @@ export async function runAgentPatrol(regionId: string): Promise<{
   }
 
   // 3. 扫描高聚集且处于 PENDING 的主题 -> SLA_OVERDUE (L1_AUTO)
-  const overdueThemeRowsRaw = await sql.unsafe(`
-    SELECT id, title, category, risk_level, ticket_count, time_span_hours,
-           handling_owner, recommended_action, canonical_location
-    FROM "${schemaName}".themes
-    WHERE handling_status = 'PENDING'
-      AND ticket_count >= 5
-    ORDER BY ticket_count DESC
-    LIMIT 24
-  `);
   const riskRank = (lvl: unknown) => {
     const s = String(lvl || "").toUpperCase();
     return s === "HIGH" ? 0 : s === "MEDIUM" ? 1 : 2;
@@ -1507,14 +1628,6 @@ export async function runAgentPatrol(regionId: string): Promise<{
   }
 
   // 4. 扫描 RESOLVED 已办结主题 -> REOPEN_CALLBACK (L2_APPROVAL)
-  const resolvedThemeRows = await sql.unsafe(`
-    SELECT id, title, category, ticket_count, handling_owner, recommended_action, canonical_location
-    FROM "${schemaName}".themes
-    WHERE upper(coalesce(handling_status, '')) IN ('RESOLVED', '已办结')
-    ORDER BY last_at DESC NULLS LAST, ticket_count DESC
-    LIMIT 12
-  `);
-
   const callbackCandidates: PatrolCandidate[] = [];
   for (const th of resolvedThemeRows) {
     const id = String(th.id);
@@ -1599,46 +1712,48 @@ export async function runAgentPatrol(regionId: string): Promise<{
     if (!progressed) break;
   }
 
-  let createdCount = 0;
-  const now = new Date();
-  for (const item of selected) {
-    const taskId = `at-${Date.now()}-${randomUUID().slice(0, 6)}`;
-    await sql.unsafe(
-      `
-      INSERT INTO "${schemaName}".agent_tasks (
-        id, task_type, autonomy_level, status, target_type, target_id, target_title,
-        channel, masked_contact, missing_slots_json, draft_message, suggested_owner,
-        reason, result_summary, created_at, updated_at
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7,
-        $8, $9, $10, $11, $12,
-        $13, NULL, $14, $14
-      )
-      `,
-      [
-        taskId,
-        item.taskType,
-        item.autonomyLevel,
-        item.status,
-        item.targetType,
-        item.targetId,
-        item.targetTitle,
-        item.channel,
-        item.maskedContact,
-        JSON.stringify(item.missingSlots),
-        item.draftMessage,
-        item.suggestedOwner,
-        item.reason,
-        now.toISOString(),
-      ]
+  const nowIso = new Date().toISOString();
+  if (selected.length > 0) {
+    await Promise.all(
+      selected.map((item) => {
+        const taskId = `at-${Date.now()}-${randomUUID().slice(0, 8)}`;
+        return sql.unsafe(
+          `
+          INSERT INTO "${schemaName}".agent_tasks (
+            id, task_type, autonomy_level, status, target_type, target_id, target_title,
+            channel, masked_contact, missing_slots_json, draft_message, suggested_owner,
+            reason, result_summary, created_at, updated_at
+          ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7,
+            $8, $9, $10, $11, $12,
+            $13, NULL, $14, $14
+          )
+          `,
+          [
+            taskId,
+            item.taskType,
+            item.autonomyLevel,
+            item.status,
+            item.targetType,
+            item.targetId,
+            item.targetTitle,
+            item.channel,
+            item.maskedContact,
+            JSON.stringify(item.missingSlots),
+            item.draftMessage,
+            item.suggestedOwner,
+            item.reason,
+            nowIso,
+          ]
+        );
+      })
     );
-    createdCount += 1;
   }
 
   const latest = await listAgentTasks(regionId);
   return {
     domainType: latest.domainType,
-    createdCount,
+    createdCount: selected.length,
     summary: latest.summary,
     tasks: latest.tasks,
   };
@@ -2159,64 +2274,73 @@ export async function generateAgentReport(regionId: string): Promise<{
   reports: AgentReportDto[];
   webhookSent: boolean;
 }> {
-  const schemaName = await ensureAgentGovernanceTables(regionId);
-  const profile = await getRegionDomainProfile(regionId);
+  const [schemaName, profile, { region }] = await Promise.all([
+    ensureAgentGovernanceTables(regionId),
+    getRegionDomainProfile(regionId),
+    getRegionDb(regionId),
+  ]);
   const isEcommerce = profile.domainType === "ECOMMERCE_CS";
-  const { region } = await getRegionDb(regionId);
 
-  const [ticketAgg] = await sql.unsafe(`
-    SELECT
-      count(*)::int AS total,
-      count(*) FILTER (WHERE upper(coalesce(status, 'PENDING')) = 'PENDING')::int AS pending,
-      count(*) FILTER (WHERE upper(coalesce(status, '')) = 'IN_PROGRESS')::int AS in_progress,
-      count(*) FILTER (WHERE upper(coalesce(status, '')) = 'RESOLVED' OR closure_status = 'RESOLVED')::int AS resolved,
-      count(*) FILTER (WHERE is_fake_closure = true)::int AS fake_closure,
-      count(*) FILTER (WHERE stability_risk = true)::int AS stability_risk
-    FROM "${schemaName}".tickets
-  `);
+  const [
+    ticketAggRows,
+    themeAggRows,
+    topThemes,
+    overdueThemes,
+    fakeClosureItems,
+    taskStatusRows,
+  ] = await Promise.all([
+    sql.unsafe(`
+      SELECT
+        count(*)::int AS total,
+        count(*) FILTER (WHERE upper(coalesce(status, 'PENDING')) = 'PENDING')::int AS pending,
+        count(*) FILTER (WHERE upper(coalesce(status, '')) = 'IN_PROGRESS')::int AS in_progress,
+        count(*) FILTER (WHERE upper(coalesce(status, '')) = 'RESOLVED' OR closure_status = 'RESOLVED')::int AS resolved,
+        count(*) FILTER (WHERE is_fake_closure = true)::int AS fake_closure,
+        count(*) FILTER (WHERE stability_risk = true)::int AS stability_risk
+      FROM "${schemaName}".tickets
+    `),
+    sql.unsafe(`
+      SELECT
+        count(*)::int AS total_themes,
+        count(*) FILTER (WHERE upper(coalesce(risk_level, '')) = 'HIGH')::int AS high_risk_themes,
+        count(*) FILTER (WHERE upper(coalesce(handling_status, 'PENDING')) = 'PENDING' AND ticket_count >= 5)::int AS overdue_themes,
+        count(*) FILTER (WHERE upper(coalesce(handling_status, '')) = 'REOPENED')::int AS reopened_themes
+      FROM "${schemaName}".themes
+    `),
+    sql.unsafe(`
+      SELECT id, title, category, risk_level, ticket_count, handling_status, handling_owner, canonical_location
+      FROM "${schemaName}".themes
+      ORDER BY
+        CASE upper(coalesce(risk_level, ''))
+          WHEN 'HIGH' THEN 0
+          WHEN 'MEDIUM' THEN 1
+          ELSE 2
+        END,
+        ticket_count DESC
+      LIMIT 5
+    `),
+    sql.unsafe(`
+      SELECT id, title, ticket_count, risk_level, handling_owner, recommended_action
+      FROM "${schemaName}".themes
+      WHERE handling_status = 'PENDING' AND ticket_count >= 5
+      ORDER BY ticket_count DESC
+      LIMIT 5
+    `),
+    sql.unsafe(`
+      SELECT id, ticket_no, title, subdistrict, status
+      FROM "${schemaName}".tickets
+      WHERE is_fake_closure = true OR status = 'REOPENED'
+      LIMIT 5
+    `),
+    sql.unsafe(`
+      SELECT autonomy_level, status, count(*)::int AS c
+      FROM "${schemaName}".agent_tasks
+      GROUP BY autonomy_level, status
+    `),
+  ]);
 
-  const [themeAgg] = await sql.unsafe(`
-    SELECT
-      count(*)::int AS total_themes,
-      count(*) FILTER (WHERE upper(coalesce(risk_level, '')) = 'HIGH')::int AS high_risk_themes,
-      count(*) FILTER (WHERE upper(coalesce(handling_status, 'PENDING')) = 'PENDING' AND ticket_count >= 5)::int AS overdue_themes,
-      count(*) FILTER (WHERE upper(coalesce(handling_status, '')) = 'REOPENED')::int AS reopened_themes
-    FROM "${schemaName}".themes
-  `);
-
-  const topThemesRaw = await sql.unsafe(`
-    SELECT id, title, category, risk_level, ticket_count, handling_status, handling_owner, canonical_location
-    FROM "${schemaName}".themes
-    ORDER BY ticket_count DESC
-    LIMIT 30
-  `);
-  const topThemes = [...topThemesRaw]
-    .sort((a, b) => {
-      const rank = (r: unknown) => (String(r || "").toUpperCase() === "HIGH" ? 0 : String(r || "").toUpperCase() === "MEDIUM" ? 1 : 2);
-      return rank(a.risk_level) - rank(b.risk_level) || Number(b.ticket_count || 0) - Number(a.ticket_count || 0);
-    })
-    .slice(0, 5);
-
-  const overdueThemes = await sql.unsafe(`
-    SELECT id, title, ticket_count, risk_level, handling_owner, recommended_action
-    FROM "${schemaName}".themes
-    WHERE handling_status = 'PENDING' AND ticket_count >= 5
-    ORDER BY ticket_count DESC
-    LIMIT 5
-  `);
-
-  const fakeClosureItems = await sql.unsafe(`
-    SELECT id, ticket_no, title, subdistrict, status
-    FROM "${schemaName}".tickets
-    WHERE is_fake_closure = true OR status = 'REOPENED'
-    LIMIT 5
-  `);
-
-  const taskStatusRows = await sql.unsafe(`
-    SELECT autonomy_level, status, count(*)::int AS c
-    FROM "${schemaName}".agent_tasks
-    GROUP BY autonomy_level, status
-  `);
+  const ticketAgg = ticketAggRows[0];
+  const themeAgg = themeAggRows[0];
 
   const reportDate = shanghaiDateStr();
   const regionLabel = region?.name || profile.displayName;
@@ -2359,17 +2483,18 @@ ${fakeMd}
   );
 
   const report = toReportDto((inserted[0] as Record<string, unknown>) || {});
-  const webhookSent = await sendWebhookIfConfigured({
-    type: "DAILY_AGENT_REPORT",
-    regionId,
-    reportId: report.id,
-    reportDate,
-    title,
-    stats,
-    markdownPreview: markdown.slice(0, 800),
-  });
   logSmtpAdapterIfConfigured(title, markdown.slice(0, 200));
-
-  const reports = await listAgentReports(regionId);
+  const [webhookSent, reports] = await Promise.all([
+    sendWebhookIfConfigured({
+      type: "DAILY_AGENT_REPORT",
+      regionId,
+      reportId: report.id,
+      reportDate,
+      title,
+      stats,
+      markdownPreview: markdown.slice(0, 800),
+    }),
+    listAgentReports(regionId),
+  ]);
   return { report, reports, webhookSent };
 }

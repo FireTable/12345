@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getRegionDb } from "@/db/client";
 import { streamCopilot, type CopilotTurnInput } from "@/backend/agent/copilot-agent";
 import { formatCopilotStatus } from "@/lib/copilot-protocol";
+import { getRegionDomainProfile } from "@/lib/domain-profile";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 import { guardAgentRequest } from "@/lib/security/agent-guard";
 
@@ -38,15 +39,22 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "empty prompt" }, { status: 400 });
     }
 
-    const { region } = await getRegionDb(regionId);
+    const [{ region }, domainProfile] = await Promise.all([
+      getRegionDb(regionId),
+      getRegionDomainProfile(regionId),
+    ]);
+    const domainType = domainProfile.domainType;
     const regionLabel = region ? `${region.city} · ${region.name}` : regionId;
     const encoder = new TextEncoder();
     const { readable, writable } = new TransformStream();
     const writer = writable.getWriter();
     void (async () => {
       try {
-        for await (const event of streamCopilot({ regionId, regionLabel, turns })) {
-          const text = event.type === "status" ? formatCopilotStatus(event.tool) : event.text;
+        for await (const event of streamCopilot({ regionId, regionLabel, domainType, turns })) {
+          const text =
+            event.type === "status"
+              ? formatCopilotStatus(event.tool, event.domainType ?? domainType)
+              : event.text;
           if (text) await writer.write(encoder.encode(text));
         }
       } catch (error) {

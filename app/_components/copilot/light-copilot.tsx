@@ -20,6 +20,7 @@ import {
   Mic,
   MicOff,
   Volume2,
+  RotateCcw,
 } from "lucide-react";
 import { Button } from "@/app/_components/ui/button";
 import { Input } from "@/app/_components/ui/input";
@@ -122,7 +123,17 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
   const [stageCaption, setStageCaption] = useState("");
   const stageRef = useRef<XiaochunStageHandle>(null);
   const lastSpokenIdRef = useRef<string | null>(null);
-  const regionKey = `${activeRegion?.id || ""}|${activeRegion?.city || ""}|${activeRegion?.name || ""}`;
+  const isEcommerce = activeRegion?.domainProfile?.domainType === "ECOMMERCE_CS";
+  const regionKey = `${activeRegion?.id || ""}|${activeRegion?.city || ""}|${activeRegion?.name || ""}|${activeRegion?.domainProfile?.domainType || ""}`;
+
+  const createGreetingMessage = (): Message => ({
+    id: "m-init",
+    role: "assistant",
+    content: activeRegion
+      ? copilotGreeting(activeRegion)
+      : "尚未确定当前工作区。请先在顶栏选择站点，再提问。",
+    timestamp: new Date().toLocaleTimeString(),
+  });
 
   const asr = useStreamAsr({
     onFinalResult: (text) => {
@@ -133,17 +144,10 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
   });
 
   useEffect(() => {
-    setMessages([
-      {
-        id: "m-init",
-        role: "assistant",
-        content: activeRegion
-          ? copilotGreeting(activeRegion)
-          : "尚未确定当前辖区。请先在顶栏选择区，再提问。",
-        timestamp: new Date().toLocaleTimeString(),
-      },
-    ]);
-    // regionKey 已经覆盖 id / 城市 / 区名。不要把 activeRegion 对象放进依赖，避免同区重绘清空对话。
+    setMessages([createGreetingMessage()]);
+    setActionStates({});
+    lastSpokenIdRef.current = "m-init";
+    // regionKey 已经覆盖 id / 城市 / 区名 / 业务域。不要把 activeRegion 对象放进依赖，避免同区重绘清空对话。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [regionKey]);
   const [streamingId, setStreamingId] = useState<string | null>(null);
@@ -236,6 +240,17 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
     void stageRef.current?.say(spoken).catch(() => {});
   }, [isOpen, showStage, isTyping, streamingId, messages]);
 
+  const handleClearChat = () => {
+    if (isTyping) return;
+    asr.stop();
+    stageRef.current?.stop();
+    lastSpokenIdRef.current = "m-init";
+    setActionStates({});
+    setInput("");
+    setStageCaption("");
+    setMessages([createGreetingMessage()]);
+  };
+
   const handleSend = async (customText?: string) => {
     const text = customText || input;
     if (!text.trim()) return;
@@ -268,9 +283,11 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
         .filter((item) => item.content.trim())
         .slice(-8)
         .map((item) => ({ role: item.role, content: item.content }));
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (activeRegion?.id) headers["x-region-id"] = activeRegion.id;
       const res = await fetch("/api/copilot", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ messages: history }),
       });
 
@@ -381,27 +398,40 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
           transition={{ duration: 0.28, ease: [0.32, 0.72, 0.18, 1] }}
         >
         {/* Header */}
-        <div className="p-4 border-b border-slate-200 flex items-center justify-between gap-2 bg-slate-50">
-          <div className="flex items-center gap-2.5 min-w-0">
+        <div className="p-3 sm:p-4 border-b border-slate-200 flex items-center justify-between gap-2 bg-slate-50">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
             <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs shrink-0">
-              <BotMessageSquare className="w-4 h-4" />
+              <BotMessageSquare className="w-4 h-4" aria-hidden="true" />
             </div>
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <h2 className="text-xs font-bold text-slate-900">
-                  AI 智能研判副驾驶
+              <div className="flex items-center gap-1.5 min-w-0">
+                <h2 className="text-xs font-bold text-slate-900 truncate">
+                  {isEcommerce ? "AI 客诉研判副驾驶" : "AI 智能研判副驾驶"}
                 </h2>
-                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-blue-50 text-blue-700 border border-blue-200 font-medium">
-                  本区检索
+                <span className="hidden sm:inline-flex text-[10px] font-mono px-1.5 py-0.2 rounded bg-blue-50 text-blue-700 border border-blue-200 font-medium shrink-0">
+                  {isEcommerce ? "本站检索" : "本区检索"}
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 truncate">
-                {activeRegion ? `当前辖区 · ${activeRegion.city} · ${activeRegion.name}` : "正在确认当前辖区"}
+                {activeRegion
+                  ? `${isEcommerce ? "当前电商站点" : "当前辖区"} · ${activeRegion.city} · ${activeRegion.name}`
+                  : "正在确认当前工作站点"}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              disabled={isTyping || (messages.length <= 1 && !input.trim())}
+              onClick={handleClearChat}
+              aria-label="清空对话"
+              title="清空当前对话并重新提问"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-45 disabled:cursor-not-allowed transition-colors cursor-pointer whitespace-nowrap min-h-7"
+            >
+              <RotateCcw className="w-3 h-3 shrink-0" aria-hidden="true" />
+              <span>清空对话</span>
+            </button>
             <button
               type="button"
               aria-expanded={showStage}
@@ -415,46 +445,92 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
                   return next;
                 });
               }}
-              className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border transition-colors cursor-pointer whitespace-nowrap ${
+              className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border transition-colors cursor-pointer whitespace-nowrap min-h-7 ${
                 showStage
                   ? "bg-blue-50 text-blue-700 border-blue-200"
                   : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
               }`}
             >
-              <Volume2 className="w-3.5 h-3.5 shrink-0" />
+              <Volume2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
               <span>3D 语音助手</span>
             </button>
             <button
               type="button"
               aria-label="关闭 AI 研判副驾驶"
               onClick={onClose}
-              className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+              className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer min-h-7 min-w-7 inline-flex items-center justify-center"
             >
-              <X className="w-5 h-5" />
+              <X className="w-5 h-5" aria-hidden="true" />
             </button>
           </div>
         </div>
 
         {/* Preset Prompt Pills */}
-        <div className="px-4 py-2 bg-white border-b border-slate-100 flex items-center gap-2 overflow-x-auto text-xs shrink-0">
-          <button
-            onClick={() => handleSend("生成今日多频工单研判日报")}
-            className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 hover:bg-blue-50 hover:text-blue-700 border border-slate-200 whitespace-nowrap text-[11px] cursor-pointer transition-colors"
-          >
-            📋 生成研判简报
-          </button>
-          <button
-            onClick={() => handleSend("分析当前有哪些高危紧急督办事项？")}
-            className="px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 whitespace-nowrap text-[11px] cursor-pointer transition-colors"
-          >
-            🔴 高危多频预警
-          </button>
-          <button
-            onClick={() => handleSend("梳理重点镇街的主体投诉分布")}
-            className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 whitespace-nowrap text-[11px] cursor-pointer transition-colors"
-          >
-            🏢 重点主体分布
-          </button>
+        <div className="px-3 sm:px-4 py-2 bg-white border-b border-slate-100 flex items-center gap-2 overflow-x-auto text-xs shrink-0">
+          {(isEcommerce
+            ? [
+                {
+                  label: "生成客诉简报",
+                  prompt: "生成今日电商客诉研判简报，汇总客诉总量、高危专题与挽回建议",
+                  toneClass:
+                    "bg-slate-100 text-slate-700 hover:bg-blue-50 hover:text-blue-700 border-slate-200",
+                },
+                {
+                  label: "食安与12315红线预警",
+                  prompt: "排查当前有哪些食品安全、12315投诉或人身伤害红线预警客诉？",
+                  toneClass:
+                    "bg-rose-50 text-rose-700 hover:bg-rose-100 border-rose-200",
+                },
+                {
+                  label: "渠道与SKU分布",
+                  prompt: "梳理各购买渠道/仓网及重点涉事商品 SKU 的客诉分布",
+                  toneClass:
+                    "bg-amber-50 text-amber-800 hover:bg-amber-100 border-amber-200",
+                },
+                {
+                  label: "待办与假闭环排查",
+                  prompt: "查询当前主动待办任务、待回访工单与假闭环重开排查情况",
+                  toneClass:
+                    "bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200",
+                },
+              ]
+            : [
+                {
+                  label: "生成研判简报",
+                  prompt: "生成今日多频工单研判简报，汇总总量、高危主题与处置建议",
+                  toneClass:
+                    "bg-slate-100 text-slate-700 hover:bg-blue-50 hover:text-blue-700 border-slate-200",
+                },
+                {
+                  label: "高危多频预警",
+                  prompt: "分析当前有哪些高危多频预警与紧急督办事项？",
+                  toneClass:
+                    "bg-rose-50 text-rose-700 hover:bg-rose-100 border-rose-200",
+                },
+                {
+                  label: "重点镇街分布",
+                  prompt: "梳理重点镇街的诉求分布、待处置量与突出问题",
+                  toneClass:
+                    "bg-amber-50 text-amber-800 hover:bg-amber-100 border-amber-200",
+                },
+                {
+                  label: "待办与红线核查",
+                  prompt: "查询当前主动待办任务与 L3 红线拦截核查情况",
+                  toneClass:
+                    "bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200",
+                },
+              ]
+          ).map((chip) => (
+            <button
+              key={chip.label}
+              type="button"
+              disabled={isTyping}
+              onClick={() => void handleSend(chip.prompt)}
+              className={`px-2.5 py-1 rounded-full border whitespace-nowrap shrink-0 text-[11px] font-medium cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${chip.toneClass}`}
+            >
+              {chip.label}
+            </button>
+          ))}
         </div>
 
         {/* 按需展开的紧凑 3D 语音助手 */}
@@ -469,7 +545,7 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
               lazy={false}
               muted={stageMuted}
               onMuteChange={setStageMuted}
-              title="AI 研判助手 · 小蠢"
+              title={isEcommerce ? "AI 客诉助手 · 小蠢" : "AI 研判助手 · 小蠢"}
               caption={stageCaption}
             />
           </div>
@@ -675,8 +751,12 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
 
           {isTyping && !streamingId && (
             <div className="flex items-center gap-2 text-slate-500 text-xs py-2">
-              <Sparkles className="w-3.5 h-3.5 text-blue-600 animate-spin" />
-              <span>Agent 正在遍历图谱进行归因研判...</span>
+              <Sparkles className="w-3.5 h-3.5 text-blue-600 animate-spin" aria-hidden="true" />
+              <span>
+                {isEcommerce
+                  ? "正在检索当前电商站点客诉与专题并研判..."
+                  : "正在检索当前辖区工单与专题并研判..."}
+              </span>
             </div>
           )}
         </div>
@@ -748,7 +828,11 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
                   }
                 }
               }}
-              placeholder="向 AI 副驾驶提问多频工单态势、归因或处置建议..."
+              placeholder={
+                isEcommerce
+                  ? "询问客诉态势、SKU/渠道分布、假闭环或 12315 红线..."
+                  : "询问多频工单态势、镇街分布、归因或处置建议..."
+              }
               className="text-xs h-9 bg-slate-50 border-slate-200 text-slate-900 placeholder:text-slate-400 focus-visible:ring-blue-500"
             />
             <Button

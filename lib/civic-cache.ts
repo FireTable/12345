@@ -1,8 +1,18 @@
 type Entry = { value: unknown; expiresAt: number };
 
 const store = new Map<string, Entry>();
+const inFlight = new Map<string, Promise<unknown>>();
 
 export const CIVIC_CACHE_TTL_MS = 60_000;
+export const MAX_CACHE_ENTRIES = 500;
+
+function pruneExpired(now = Date.now()): void {
+  for (const [key, entry] of store.entries()) {
+    if (entry.expiresAt <= now) {
+      store.delete(key);
+    }
+  }
+}
 
 export function cacheGet<T>(key: string): T | undefined {
   const hit = store.get(key);
@@ -11,17 +21,36 @@ export function cacheGet<T>(key: string): T | undefined {
     store.delete(key);
     return undefined;
   }
+  // 刷新 LRU 访问顺序
+  store.delete(key);
+  store.set(key, hit);
   return hit.value as T;
 }
 
 export function cacheSet<T>(key: string, value: T, ttlMs = CIVIC_CACHE_TTL_MS): void {
-  store.set(key, { value, expiresAt: Date.now() + ttlMs });
+  if (ttlMs <= 0) {
+    store.delete(key);
+    return;
+  }
+  const now = Date.now();
+  if (store.has(key)) {
+    store.delete(key);
+  } else if (store.size >= MAX_CACHE_ENTRIES) {
+    pruneExpired(now);
+    while (store.size >= MAX_CACHE_ENTRIES) {
+      const oldest = store.keys().next().value;
+      if (oldest === undefined) break;
+      store.delete(oldest);
+    }
+  }
+  store.set(key, { value, expiresAt: now + ttlMs });
 }
 
 export function cacheInvalidate(prefix?: string): number {
   if (!prefix) {
     const n = store.size;
     store.clear();
+    inFlight.clear();
     return n;
   }
   let n = 0;
@@ -29,6 +58,28 @@ export function cacheInvalidate(prefix?: string): number {
     if (key.startsWith(prefix)) {
       store.delete(key);
       n += 1;
+    }
+  }
+  for (const key of [...inFlight.keys()]) {
+    if (key.startsWith(prefix)) {
+      inFlight.delete(key);
+    }
+  }
+  return n;
+}
+
+function invalidateKeyOrScopedPrefix(base: string): number {
+  const colonPrefix = `${base}:`;
+  let n = 0;
+  for (const key of [...store.keys()]) {
+    if (key === base || key.startsWith(colonPrefix)) {
+      store.delete(key);
+      n += 1;
+    }
+  }
+  for (const key of [...inFlight.keys()]) {
+    if (key === base || key.startsWith(colonPrefix)) {
+      inFlight.delete(key);
     }
   }
   return n;
@@ -41,20 +92,53 @@ export async function cacheGetOrLoad<T>(
 ): Promise<{ value: T; hit: boolean }> {
   const existing = cacheGet<T>(key);
   if (existing !== undefined) return { value: existing, hit: true };
-  const value = await loader();
-  cacheSet(key, value, ttlMs);
+
+  const pending = inFlight.get(key) as Promise<T> | undefined;
+  if (pending) {
+    const value = await pending;
+    return { value, hit: true };
+  }
+
+  let flight: Promise<T> | undefined;
+  flight = (async () => {
+    try {
+      const value = await loader();
+      if (inFlight.get(key) === flight) {
+        cacheSet(key, value, ttlMs);
+      }
+      return value;
+    } finally {
+      if (inFlight.get(key) === flight) {
+        inFlight.delete(key);
+      }
+    }
+  })();
+
+  inFlight.set(key, flight);
+  const value = await flight;
   return { value, hit: false };
 }
 
 export function invalidateCivicAggregates(regionId?: string): void {
-  if (regionId) {
-    cacheInvalidate(`overview:${regionId}`);
-    cacheInvalidate(`trends:${regionId}`);
-    cacheInvalidate(`workorders:stats:${regionId}`);
-    cacheInvalidate(`clusters:${regionId}`);
+  const trimmed = regionId?.trim();
+  if (trimmed) {
+    invalidateKeyOrScopedPrefix(`overview:${trimmed}`);
+    invalidateKeyOrScopedPrefix(`trends:${trimmed}`);
+    invalidateKeyOrScopedPrefix(`workorders:stats:${trimmed}`);
+    invalidateKeyOrScopedPrefix(`clusters:bundle:v2:${trimmed}`);
+    invalidateKeyOrScopedPrefix(`clusters:json:v2:${trimmed}`);
+    invalidateKeyOrScopedPrefix(`clusters:${trimmed}`);
+    invalidateKeyOrScopedPrefix(`themes:${trimmed}`);
+    invalidateKeyOrScopedPrefix(`cockpit:snapshot:${trimmed}`);
+    invalidateKeyOrScopedPrefix(`cockpit:${trimmed}`);
+    invalidateKeyOrScopedPrefix(`stats:${trimmed}`);
+    return;
   }
   cacheInvalidate("overview:");
   cacheInvalidate("trends:");
   cacheInvalidate("workorders:");
   cacheInvalidate("clusters:");
+  cacheInvalidate("themes:");
+  cacheInvalidate("cockpit:");
+  cacheInvalidate("stats:");
 }

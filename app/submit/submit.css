@@ -71,19 +71,35 @@
   position: relative;
   flex: 1 0 auto;
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  min-block-size: 50px;
-  padding: 12px 18px;
+  gap: 2px;
+  min-block-size: 56px;
+  padding: 10px 14px;
   border: 0;
   background: transparent;
   color: var(--c-ink-2);
   font-size: 15px;
-  font-weight: 500;
+  font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
   transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
+}
+
+.submit-tab__title {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  line-height: 1.3;
+}
+
+.submit-tab__sub {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--c-ink-3);
+  line-height: 1.25;
 }
 
 .submit-tab:hover {
@@ -99,7 +115,18 @@
 .submit-tab[aria-selected="true"] {
   color: var(--c-brand-dark);
   background: var(--c-surface);
-  font-weight: 600;
+}
+
+.submit-tab[aria-selected="true"] .submit-tab__sub {
+  color: var(--c-brand-text);
+}
+
+@media (max-width: 480px) {
+  .submit-tab {
+    padding: 9px 10px;
+    font-size: 13.5px;
+    min-block-size: 54px;
+  }
 }
 
 .submit-tab[aria-selected="true"]::after {

@@ -355,7 +355,7 @@ function LoginForm() {
             <button
               type="button"
               onClick={handleQuickFillAdmin}
-              className="flex min-h-11 flex-col items-start justify-center rounded-lg border border-blue-200 bg-white px-3 py-2 text-left transition hover:border-blue-400 hover:bg-blue-50 cursor-pointer"
+              className="flex min-h-12 flex-col items-start justify-center rounded-lg border border-blue-200 bg-white px-3 py-2.5 text-left transition hover:border-blue-400 hover:bg-blue-50 cursor-pointer"
             >
               <span className="text-xs font-semibold text-slate-900">
                 管理员工作台
@@ -363,17 +363,23 @@ function LoginForm() {
               <span className="mt-0.5 text-[11px] font-mono text-blue-700">
                 admin / admin
               </span>
+              <span className="mt-1 text-[11px] leading-snug text-slate-500">
+                研判大盘 · 智能治理中心
+              </span>
             </button>
             <button
               type="button"
               onClick={handleQuickFillCitizen}
-              className="flex min-h-11 flex-col items-start justify-center rounded-lg border border-emerald-200 bg-white px-3 py-2 text-left transition hover:border-emerald-400 hover:bg-emerald-50 cursor-pointer"
+              className="flex min-h-12 flex-col items-start justify-center rounded-lg border border-emerald-200 bg-white px-3 py-2.5 text-left transition hover:border-emerald-400 hover:bg-emerald-50 cursor-pointer"
             >
               <span className="text-xs font-semibold text-slate-900">
                 {isEcommerce ? "普通买家投诉端" : "普通市民投诉端"}
               </span>
               <span className="mt-0.5 text-[11px] font-mono text-emerald-700">
                 citizen / citizen123
+              </span>
+              <span className="mt-1 text-[11px] leading-snug text-slate-500">
+                极简表单 · 语音投诉受理台
               </span>
             </button>
           </div>

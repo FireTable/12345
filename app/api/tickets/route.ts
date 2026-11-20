@@ -12,9 +12,10 @@ import { triggerClusterJobAuto } from "@/lib/cluster-runner";
 import { memberLastAt } from "@/backend/embed-policy";
 import { loadThemeMemberVectors } from "@/lib/ticket-embeddings";
 import { cacheGetOrLoad, invalidateCivicAggregates } from "@/lib/civic-cache";
-import { loadWorkorderStats } from "@/lib/civic-queries";
+import { loadWorkorderStats, resolveSiteRegionId } from "@/lib/civic-queries";
 import { clampPage, clampSize } from "@/lib/api-bounds";
 import { isTownLabel } from "@/lib/admin-area";
+import { parseDomainProfile } from "@/lib/domain-profile";
 import { recordDisposalLog } from "@/lib/disposal";
 import { broadcastDataRefresh } from "@/lib/sse-broadcaster";
 import { requireAdmin } from "@/lib/auth/rbac";
@@ -24,19 +25,24 @@ export async function GET(req: Request) {
     const auth = await requireAdmin(req);
     if ("response" in auth) return auth.response;
 
-    const regionId = await resolveRequestRegionId(req);
-    const { db: tenantDb } = await getRegionDb(regionId);
+    const regionId = await resolveSiteRegionId(req);
+    const { db: tenantDb, region: tenantRegion } = await getRegionDb(regionId);
+    const domainProfile = parseDomainProfile(tenantRegion?.categoryConfigJson);
+    const isEcommerce = domainProfile.domainType === "ECOMMERCE_CS";
+
     const { searchParams } = new URL(req.url);
     const tab = searchParams.get("tab") || "";
     const status = searchParams.get("status") || "";
     const urgency = searchParams.get("urgency") || "";
-    const regionQuery = searchParams.get("region") || "";
-    const region =
-      regionQuery &&
+    const regionQuery = (searchParams.get("region") || "").trim();
+    const regionAllowedDirect =
+      Boolean(regionQuery) &&
       regionQuery !== regionId &&
-      (isTownLabel(regionQuery) || regionQuery === UNKNOWN_TOWN || regionQuery === "未知")
-        ? regionQuery
-        : "";
+      (isEcommerce ||
+        domainProfile.channels.includes(regionQuery) ||
+        isTownLabel(regionQuery) ||
+        regionQuery === UNKNOWN_TOWN ||
+        regionQuery === "未知");
     const category = searchParams.get("category") || "";
     const keyword = searchParams.get("keyword") || "";
     const pageParam = searchParams.get("page");
@@ -44,71 +50,72 @@ export async function GET(req: Request) {
     const page = pageParam ? clampPage(pageParam) : 1;
     const size = sizeParam ? clampSize(sizeParam) : 500;
 
-    const { value: snap } = await cacheGetOrLoad(
-      `workorders:stats:${regionId}`,
-      () => loadWorkorderStats(regionId)
-    );
+    const buildWhere = (regionFilter: string) => {
+      const filters = [];
+      if (regionFilter) {
+        if (regionFilter === UNKNOWN_TOWN || regionFilter === "未知") {
+          filters.push(
+            or(
+              isNull(ticketsTable.subdistrict),
+              eq(ticketsTable.subdistrict, ""),
+              eq(ticketsTable.subdistrict, "未知"),
+              eq(ticketsTable.subdistrict, "未指定")
+            )
+          );
+        } else {
+          filters.push(
+            or(
+              ilike(ticketsTable.subdistrict, `%${regionFilter}%`),
+              ilike(ticketsTable.district, `%${regionFilter}%`)
+            )
+          );
+        }
+      }
+      if (category) {
+        filters.push(eq(ticketsTable.sourceCategory, category));
+      }
 
-    const filters = [];
-    if (region) {
-      if (region === UNKNOWN_TOWN || region === "未知") {
+      const effectiveStatus = status || (tab === "pending" || tab === "progress" || tab === "finished" ? tab : "");
+      if (effectiveStatus === "RESOLVED" || effectiveStatus === "finished") {
+        filters.push(or(eq(ticketsTable.status, "RESOLVED"), eq(ticketsTable.status, "FINISHED")));
+      } else if (effectiveStatus === "IN_PROGRESS" || effectiveStatus === "progress") {
         filters.push(
           or(
-            isNull(ticketsTable.subdistrict),
-            eq(ticketsTable.subdistrict, ""),
-            eq(ticketsTable.subdistrict, "未知"),
-            eq(ticketsTable.subdistrict, "未指定")
+            eq(ticketsTable.status, "DISPATCHED"),
+            eq(ticketsTable.status, "VERIFIED"),
+            eq(ticketsTable.status, "IN_PROGRESS"),
+            eq(ticketsTable.status, "PROCESSING")
           )
         );
-      } else {
+      } else if (effectiveStatus === "PENDING" || effectiveStatus === "pending") {
+        filters.push(eq(ticketsTable.status, "PENDING"));
+      }
+
+      if (urgency === "URGENT" || tab === "urgent") {
+        filters.push(eq(ticketsTable.urgency, "URGENT"));
+      }
+      if (tab === "fake_closure") {
+        filters.push(eq(ticketsTable.isFakeClosure, true));
+      }
+      if (tab === "multifreq") {
+        filters.push(isNotNull(ticketsTable.primaryThemeId));
+      } else if (tab === "single" || tab === "unclustered") {
+        filters.push(isNull(ticketsTable.primaryThemeId));
+      }
+      if (keyword) {
         filters.push(
-          or(ilike(ticketsTable.subdistrict, `%${region}%`), ilike(ticketsTable.district, `%${region}%`))
+          or(
+            ilike(ticketsTable.title, `%${keyword}%`),
+            ilike(ticketsTable.content, `%${keyword}%`),
+            ilike(ticketsTable.ticketNo, `%${keyword}%`),
+            ilike(ticketsTable.summarizeTitle, `%${keyword}%`)
+          )
         );
       }
-    }
-    if (category) {
-      filters.push(eq(ticketsTable.sourceCategory, category));
-    }
 
-    const effectiveStatus = status || (tab === "pending" || tab === "progress" || tab === "finished" ? tab : "");
-    if (effectiveStatus === "RESOLVED" || effectiveStatus === "finished") {
-      filters.push(or(eq(ticketsTable.status, "RESOLVED"), eq(ticketsTable.status, "FINISHED")));
-    } else if (effectiveStatus === "IN_PROGRESS" || effectiveStatus === "progress") {
-      filters.push(
-        or(
-          eq(ticketsTable.status, "DISPATCHED"),
-          eq(ticketsTable.status, "VERIFIED"),
-          eq(ticketsTable.status, "IN_PROGRESS"),
-          eq(ticketsTable.status, "PROCESSING")
-        )
-      );
-    } else if (effectiveStatus === "PENDING" || effectiveStatus === "pending") {
-      filters.push(eq(ticketsTable.status, "PENDING"));
-    }
+      return filters.length ? and(...filters) : undefined;
+    };
 
-    if (urgency === "URGENT" || tab === "urgent") {
-      filters.push(eq(ticketsTable.urgency, "URGENT"));
-    }
-    if (tab === "fake_closure") {
-      filters.push(eq(ticketsTable.isFakeClosure, true));
-    }
-    if (tab === "multifreq") {
-      filters.push(isNotNull(ticketsTable.primaryThemeId));
-    } else if (tab === "single" || tab === "unclustered") {
-      filters.push(isNull(ticketsTable.primaryThemeId));
-    }
-    if (keyword) {
-      filters.push(
-        or(
-          ilike(ticketsTable.title, `%${keyword}%`),
-          ilike(ticketsTable.content, `%${keyword}%`),
-          ilike(ticketsTable.ticketNo, `%${keyword}%`),
-          ilike(ticketsTable.summarizeTitle, `%${keyword}%`)
-        )
-      );
-    }
-
-    const where = filters.length ? and(...filters) : undefined;
     const countQ = tenantDb.select({ count: sql<number>`count(*)::int` }).from(ticketsTable);
     const listQ = tenantDb
       .select({
@@ -134,12 +141,37 @@ export async function GET(req: Request) {
       .limit(size)
       .offset((page - 1) * size);
 
-    const [countRows, dbRows] = await Promise.all([
-      where ? countQ.where(where) : Promise.resolve([{ count: snap.stats.total }]),
-      where ? listQ.where(where) : listQ,
-    ]);
+    const snapPromise = cacheGetOrLoad(`workorders:stats:${regionId}`, () => loadWorkorderStats(regionId));
 
-    const filteredTotal = Number(countRows[0]?.count || 0);
+    let snap: Awaited<typeof snapPromise>["value"];
+    let countRows: Array<{ count: number }> | null;
+    let dbRows: Awaited<typeof listQ>;
+
+    if (!regionQuery || regionAllowedDirect) {
+      const where = buildWhere(regionAllowedDirect ? regionQuery : "");
+      const [snapRes, cRows, lRows] = await Promise.all([
+        snapPromise,
+        where ? countQ.where(where) : Promise.resolve(null),
+        where ? listQ.where(where) : listQ,
+      ]);
+      snap = snapRes.value;
+      countRows = cRows;
+      dbRows = lRows;
+    } else {
+      const snapRes = await snapPromise;
+      snap = snapRes.value;
+      const facetMatch =
+        regionQuery !== regionId && snap.facets.regions.includes(regionQuery) ? regionQuery : "";
+      const where = buildWhere(facetMatch);
+      const [cRows, lRows] = await Promise.all([
+        where ? countQ.where(where) : Promise.resolve(null),
+        where ? listQ.where(where) : listQ,
+      ]);
+      countRows = cRows;
+      dbRows = lRows;
+    }
+
+    const filteredTotal = countRows ? Number(countRows[0]?.count || 0) : snap.stats.total;
     const tickets: Array<
       RawTicket & {
         ticketId: string;

@@ -422,7 +422,7 @@ export function CivicNav() {
                       <div className="navbar-user-card" title={user.email}>
                         <User size={14} className="navbar-user-icon" aria-hidden="true" />
                         <span className="navbar-user-name">
-                          {user.name || user.username || "市民用户"}
+                          {user.name || user.username || (isEcommerce ? "买家用户" : "市民用户")}
                         </span>
                         <span className="navbar-user-role">
                           {isEcommerce ? "消费者" : "市民"}
@@ -465,7 +465,7 @@ export function CivicNav() {
                             onClick={() => setUserMenuOpen(false)}
                           >
                             <MessageSquarePlus size={14} aria-hidden="true" />
-                            <span>市民投诉端预览</span>
+                            <span>{isEcommerce ? "买家投诉端预览" : "市民投诉端预览"}</span>
                           </Link>
                           <button
                             type="button"

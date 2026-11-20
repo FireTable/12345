@@ -133,7 +133,10 @@ export async function loadThemeMemberPage(
     ? asRows(await db.select(listColumns).from(ticketsTable).where(inArray(ticketsTable.id, ids)))
     : [];
   const byId = new Map(details.map((row) => [row.id, row]));
-  const members = ids.map((id) => byId.get(id)).filter((row) => row != null).map((row) => toListItem(row));
+  const members = ids
+    .map((id) => byId.get(id))
+    .filter((row): row is NonNullable<typeof row> => row != null)
+    .map((row) => toListItem(row));
   const last = page[page.length - 1];
   const next = hasMore && last ? { time: cursorTime(last.createTime), id: last.id } : null;
   return { members, next };

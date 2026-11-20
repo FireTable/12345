@@ -24,6 +24,29 @@ function normalizeMessages(raw: unknown): IntakeChatMessage[] {
   return out.slice(-20);
 }
 
+function normalizeDraft(raw: unknown): Partial<IntakeDraft> | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const rec = raw as Record<string, unknown>;
+  const out: Partial<IntakeDraft> = {};
+  const keys: Array<keyof IntakeDraft> = [
+    "title",
+    "content",
+    "subdistrict",
+    "category",
+    "subject",
+    "address",
+    "contactPhone",
+  ];
+  for (const key of keys) {
+    const val = rec[key];
+    if (typeof val === "string") {
+      const trimmed = val.trim();
+      if (trimmed) out[key] = trimmed;
+    }
+  }
+  return out;
+}
+
 export async function POST(req: Request) {
   try {
     const guard = await guardAgentRequest(req, {
@@ -34,7 +57,7 @@ export async function POST(req: Request) {
 
     const body = (await req.json().catch(() => null)) as {
       messages?: unknown;
-      draft?: Partial<IntakeDraft>;
+      draft?: unknown;
       regionId?: unknown;
     } | null;
 
@@ -50,7 +73,7 @@ export async function POST(req: Request) {
       typeof body.regionId === "string" ? body.regionId : undefined
     );
     const messages = normalizeMessages(body.messages);
-    const draft = body.draft && typeof body.draft === "object" ? body.draft : undefined;
+    const draft = normalizeDraft(body.draft);
 
     const result = await processIntakeChat({
       regionId,

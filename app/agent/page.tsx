@@ -49,6 +49,30 @@ interface AgentReportItem {
   createdAt: string;
 }
 
+type AutonomyFilter = "ALL" | "L1_AUTO" | "L2_APPROVAL" | "L3_BLOCKED";
+
+const AUTONOMY_FILTER_LABELS: Record<Exclude<AutonomyFilter, "ALL">, string> = {
+  L1_AUTO: "L1 自动执行",
+  L2_APPROVAL: "L2 人工审批",
+  L3_BLOCKED: "L3 红线熔断",
+};
+
+function getTaskAutonomyBucket(
+  task: AgentTaskItem
+): Exclude<AutonomyFilter, "ALL"> {
+  if (
+    task.autonomyLevel === "L3_BLOCKED" ||
+    task.taskType === "REDLINE_BLOCK" ||
+    task.status === "BLOCKED"
+  ) {
+    return "L3_BLOCKED";
+  }
+  if (task.autonomyLevel === "L1_AUTO") {
+    return "L1_AUTO";
+  }
+  return "L2_APPROVAL";
+}
+
 const EMPTY_SUMMARY: AgentSummary = {
   total: 0,
   pending: 0,
@@ -150,6 +174,7 @@ export default function AgentCenterPage() {
   const [patrolling, setPatrolling] = useState(false);
   const [busyTaskId, setBusyTaskId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<"ALL" | "ACTIVE" | "DONE">("ALL");
+  const [autonomyFilter, setAutonomyFilter] = useState<AutonomyFilter>("ALL");
 
   const [reports, setReports] = useState<AgentReportItem[]>([]);
   const [selectedReportId, setSelectedReportId] = useState<string>("");
@@ -338,17 +363,40 @@ export default function AgentCenterPage() {
     }
   };
 
+  const selectAutonomyFilter = (level: Exclude<AutonomyFilter, "ALL">) => {
+    setAutonomyFilter((prev) => {
+      const next = prev === level ? "ALL" : level;
+      if (next !== "ALL") {
+        setActiveTab("queue");
+        if (statusFilter === "DONE") {
+          setStatusFilter("ALL");
+        }
+      }
+      return next;
+    });
+  };
+
   const filteredTasks = useMemo(() => {
-    if (statusFilter === "ACTIVE") {
-      return tasks.filter(
-        (t) => t.status === "PENDING" || t.status === "APPROVED" || t.status === "BLOCKED"
-      );
-    }
-    if (statusFilter === "DONE") {
-      return tasks.filter((t) => t.status === "EXECUTED" || t.status === "REJECTED");
-    }
-    return tasks;
-  }, [tasks, statusFilter]);
+    return tasks.filter((t) => {
+      if (statusFilter === "ACTIVE") {
+        if (
+          t.status !== "PENDING" &&
+          t.status !== "APPROVED" &&
+          t.status !== "BLOCKED"
+        ) {
+          return false;
+        }
+      } else if (statusFilter === "DONE") {
+        if (t.status !== "EXECUTED" && t.status !== "REJECTED") {
+          return false;
+        }
+      }
+      if (autonomyFilter !== "ALL") {
+        return getTaskAutonomyBucket(t) === autonomyFilter;
+      }
+      return true;
+    });
+  }, [tasks, statusFilter, autonomyFilter]);
 
   const selectedReport = useMemo(() => {
     if (!reports.length) return null;
@@ -516,55 +564,97 @@ export default function AgentCenterPage() {
         </PageHeaderActions>
       </div>
 
-      {/* 3 个精简状态摘要指标 */}
+      {/* 3 个可交互分层筛选摘要卡片 */}
       <section
         aria-label="主动治理分层摘要"
         className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5"
       >
-        <div className="bg-white rounded-xl border border-slate-200/90 px-4 py-3.5 shadow-2xs flex items-center justify-between gap-3 min-w-0">
-          <div className="min-w-0">
-            <div className="text-xs font-medium text-slate-500">L1 自动执行</div>
-            <div className="text-xl font-bold text-emerald-700 tabular-nums mt-0.5">
-              {summary.l1Count}
-            </div>
-            <div className="text-[11px] text-slate-400 truncate mt-0.5">
-              {isEcommerce ? "补全提醒与超期催办" : "内部催办与常规提醒"}
-            </div>
-          </div>
-          <div className="w-9 h-9 rounded-lg bg-emerald-50 border border-emerald-200/80 text-emerald-600 flex items-center justify-center shrink-0">
-            <ShieldCheck className="w-4 h-4" />
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl border border-slate-200/90 px-4 py-3.5 shadow-2xs flex items-center justify-between gap-3 min-w-0">
-          <div className="min-w-0">
-            <div className="text-xs font-medium text-slate-500">L2 人工审批</div>
-            <div className="text-xl font-bold text-blue-700 tabular-nums mt-0.5">
-              {summary.l2Count}
-            </div>
-            <div className="text-[11px] text-slate-400 truncate mt-0.5">
-              语音外呼核实与 48h 回访
-            </div>
-          </div>
-          <div className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-200/80 text-blue-600 flex items-center justify-center shrink-0">
-            <PhoneCall className="w-4 h-4" />
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl border border-slate-200/90 px-4 py-3.5 shadow-2xs flex items-center justify-between gap-3 min-w-0">
-          <div className="min-w-0">
-            <div className="text-xs font-medium text-slate-500">L3 红线熔断</div>
-            <div className="text-xl font-bold text-rose-700 tabular-nums mt-0.5">
-              {summary.l3Count}
-            </div>
-            <div className="text-[11px] text-slate-400 truncate mt-0.5">
-              禁用自动外联 · 强制人工接管
-            </div>
-          </div>
-          <div className="w-9 h-9 rounded-lg bg-rose-50 border border-rose-200/80 text-rose-600 flex items-center justify-center shrink-0">
-            <AlertTriangle className="w-4 h-4" />
-          </div>
-        </div>
+        {(
+          [
+            {
+              level: "L1_AUTO" as const,
+              title: "L1 自动执行",
+              count: summary.l1Count,
+              guidance: isEcommerce
+                ? "点「一键催办执行」发送补全/催办"
+                : "点「一键催办执行」完成内部催办",
+              Icon: ShieldCheck,
+              valueClass: "text-emerald-700",
+              iconWrapClass: "bg-emerald-50 border-emerald-200/80 text-emerald-600",
+              activeCardClass:
+                "border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50/35",
+              activeTagClass:
+                "bg-emerald-100 text-emerald-800 border-emerald-200",
+            },
+            {
+              level: "L2_APPROVAL" as const,
+              title: "L2 人工审批",
+              count: summary.l2Count,
+              guidance: "点「发起 AI 语音外呼」完成核实",
+              Icon: PhoneCall,
+              valueClass: "text-blue-700",
+              iconWrapClass: "bg-blue-50 border-blue-200/80 text-blue-600",
+              activeCardClass:
+                "border-blue-500 ring-2 ring-blue-500/20 bg-blue-50/35",
+              activeTagClass: "bg-blue-100 text-blue-800 border-blue-200",
+            },
+            {
+              level: "L3_BLOCKED" as const,
+              title: "L3 红线熔断",
+              count: summary.l3Count,
+              guidance: "点「人工核查接管」转入人工处置",
+              Icon: AlertTriangle,
+              valueClass: "text-rose-700",
+              iconWrapClass: "bg-rose-50 border-rose-200/80 text-rose-600",
+              activeCardClass:
+                "border-rose-500 ring-2 ring-rose-500/20 bg-rose-50/35",
+              activeTagClass: "bg-rose-100 text-rose-800 border-rose-200",
+            },
+          ] as const
+        ).map((card) => {
+          const isSelected = autonomyFilter === card.level;
+          const Icon = card.Icon;
+          return (
+            <button
+              key={card.level}
+              type="button"
+              aria-pressed={isSelected}
+              onClick={() => selectAutonomyFilter(card.level)}
+              className={`w-full text-left rounded-xl border px-4 py-3.5 shadow-2xs flex items-center justify-between gap-3 min-w-0 max-w-full cursor-pointer transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 ${
+                isSelected
+                  ? card.activeCardClass
+                  : "bg-white border-slate-200/90 hover:border-slate-300 hover:bg-slate-50/50"
+              }`}
+            >
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                  <span className="text-xs font-semibold text-slate-700">
+                    {card.title}
+                  </span>
+                  {isSelected ? (
+                    <span
+                      className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold border whitespace-nowrap ${card.activeTagClass}`}
+                    >
+                      筛选中
+                    </span>
+                  ) : null}
+                </div>
+                <div className={`text-xl font-bold tabular-nums mt-0.5 ${card.valueClass}`}>
+                  {card.count}
+                </div>
+                <div className="text-[11px] text-slate-500 leading-snug mt-1 break-words">
+                  {card.guidance}
+                </div>
+              </div>
+              <div
+                className={`w-9 h-9 rounded-lg border flex items-center justify-center shrink-0 ${card.iconWrapClass}`}
+                aria-hidden="true"
+              >
+                <Icon className="w-4 h-4" />
+              </div>
+            </button>
+          );
+        })}
       </section>
 
       {/* 无障碍单行 Tabs */}
@@ -620,8 +710,8 @@ export default function AgentCenterPage() {
       >
         <div className="space-y-3">
           {/* 队列筛选头 */}
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="flex items-center justify-between gap-2 flex-wrap min-w-0">
+            <div className="flex items-center gap-1.5 flex-wrap min-w-0 max-w-full">
               {(
                 [
                   { key: "ALL", label: "全部待办" },
@@ -632,6 +722,7 @@ export default function AgentCenterPage() {
                 <button
                   key={opt.key}
                   type="button"
+                  aria-pressed={statusFilter === opt.key}
                   onClick={() => setStatusFilter(opt.key)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer min-h-[34px] ${
                     statusFilter === opt.key
@@ -642,8 +733,24 @@ export default function AgentCenterPage() {
                   {opt.label}
                 </button>
               ))}
+
+              {autonomyFilter !== "ALL" && (
+                <div className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50/80 px-2.5 py-1 text-xs text-blue-800 max-w-full min-h-[34px]">
+                  <span className="font-semibold whitespace-nowrap">
+                    分层：{AUTONOMY_FILTER_LABELS[autonomyFilter]}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setAutonomyFilter("ALL")}
+                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-semibold text-blue-700 hover:bg-blue-100 cursor-pointer whitespace-nowrap min-h-[24px]"
+                  >
+                    <XCircle className="w-3 h-3 shrink-0" aria-hidden="true" />
+                    <span>清除筛选</span>
+                  </button>
+                </div>
+              )}
             </div>
-            <span className="text-xs text-slate-500 tabular-nums">
+            <span className="text-xs text-slate-500 tabular-nums shrink-0">
               当前显示 {filteredTasks.length} 条任务
             </span>
           </div>
@@ -660,20 +767,38 @@ export default function AgentCenterPage() {
           ) : filteredTasks.length === 0 ? (
             <div className="bg-white rounded-xl border border-slate-200 p-8 text-center space-y-3">
               <div className="text-sm font-semibold text-slate-800">
-                暂无主动治理待办任务
+                {tasks.length > 0
+                  ? "当前筛选条件下暂无匹配任务"
+                  : "暂无主动治理待办任务"}
               </div>
               <p className="text-xs text-slate-500">
-                点击右上角「立即巡检」，AI 将扫描当前工作区的缺失要素工单、超期高危专题与待回访已办结事项。
+                {tasks.length > 0
+                  ? "可清除当前分层或状态筛选查看全部待办，或重新巡检同步最新状态。"
+                  : "点击右上角「立即巡检」，AI 将扫描当前工作区的缺失要素工单、超期高危专题与待回访已办结事项。"}
               </p>
-              <button
-                type="button"
-                disabled={patrolling}
-                onClick={() => void handlePatrol()}
-                className="btn btn--primary text-xs min-h-[36px]"
-              >
-                <Radar className="w-3.5 h-3.5 shrink-0" />
-                <span>立即执行首次巡检</span>
-              </button>
+              {tasks.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAutonomyFilter("ALL");
+                    setStatusFilter("ALL");
+                  }}
+                  className="btn btn--default text-xs min-h-[36px]"
+                >
+                  <XCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                  <span>清除筛选查看全部</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={patrolling}
+                  onClick={() => void handlePatrol()}
+                  className="btn btn--primary text-xs min-h-[36px]"
+                >
+                  <Radar className="w-3.5 h-3.5 shrink-0" />
+                  <span>立即执行首次巡检</span>
+                </button>
+              )}
             </div>
           ) : (
             <div className="space-y-3">
