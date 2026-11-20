@@ -93,11 +93,12 @@ export function CivicMap({
   // 2. 初始化天地图 GIS 实景底图
   useEffect(() => {
     let isMounted = true;
+    let invalidateTimer: ReturnType<typeof setTimeout> | null = null;
 
     async function initMap() {
       if (!mapContainerRef.current || mapRef.current) return;
       const L = (await import("leaflet")).default;
-      if (!isMounted || !mapContainerRef.current) return;
+      if (!isMounted || !mapContainerRef.current || mapRef.current) return;
 
       const isTianhe =
         activeRegion?.id?.includes("tianhe") ||
@@ -130,8 +131,12 @@ export function CivicMap({
       setMapInstance(map);
       setLoading(false);
 
-      setTimeout(() => {
-        map.invalidateSize();
+      invalidateTimer = setTimeout(() => {
+        const m = map as unknown as { _loaded?: boolean; _mapPane?: unknown };
+        if (!isMounted || mapRef.current !== map || !m._loaded || !m._mapPane) return;
+        try {
+          map.invalidateSize();
+        } catch {}
       }, 200);
     }
 
@@ -139,8 +144,14 @@ export function CivicMap({
 
     return () => {
       isMounted = false;
+      if (invalidateTimer) {
+        clearTimeout(invalidateTimer);
+        invalidateTimer = null;
+      }
       if (mapRef.current) {
-        mapRef.current.remove();
+        try {
+          mapRef.current.remove();
+        } catch {}
         mapRef.current = null;
       }
       setMapInstance(null);
@@ -153,7 +164,8 @@ export function CivicMap({
 
     let isMounted = true;
     import("leaflet").then((module) => {
-      if (!isMounted || !mapInstance) return;
+      const m = mapInstance as unknown as { _loaded?: boolean; _mapPane?: unknown };
+      if (!isMounted || !mapInstance || mapRef.current !== mapInstance || !m._loaded || !m._mapPane) return;
       const L = module.default;
       const map = mapInstance;
 

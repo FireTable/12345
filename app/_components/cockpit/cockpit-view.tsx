@@ -21,14 +21,16 @@ interface CockpitViewProps {
 }
 
 export function CockpitView({ onClose }: CockpitViewProps) {
-  const { activeRegion, regions, switchRegion } = useRegion();
+  const { activeRegion, regions, switchRegion, isLoading: regionLoading } = useRegion();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [escWarning, setEscWarning] = useState(false);
   const escTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const currentRegion = activeRegion || (regions.length > 0 ? regions[0] : null);
   const regionId = currentRegion?.id || "gz_tianhe";
-  const hasGeoMap = currentRegion?.domainProfile?.hasGeoMap !== false;
+  const hasResolvedRegion = !regionLoading && Boolean(currentRegion);
+  const hasGeoMap = hasResolvedRegion && currentRegion?.domainProfile?.hasGeoMap !== false;
+  const showEcomMatrix = hasResolvedRegion && currentRegion?.domainProfile?.hasGeoMap === false;
   const cockpit = useCockpitData(regionId);
 
   // 监听浏览器全屏状态
@@ -153,10 +155,10 @@ export function CockpitView({ onClose }: CockpitViewProps) {
           {/* 中间开阔视区：政务模式留空透出 GIS 底图，无地理区划模式展示渠道/仓网热度矩阵；底部贯通悬浮时序走势与 24h 波峰 */}
           <div
             className={`flex-1 h-full flex flex-col pointer-events-none pb-0.5 min-w-0 ${
-              hasGeoMap ? "justify-end" : "justify-between gap-2.5"
+              showEcomMatrix ? "justify-between gap-2.5" : "justify-end"
             }`}
           >
-            {!hasGeoMap && (
+            {showEcomMatrix && (
               <div className="flex-1 min-h-0 pointer-events-auto">
                 <DomainChannelMatrix
                   variant="dark"

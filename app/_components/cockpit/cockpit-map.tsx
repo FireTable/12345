@@ -90,6 +90,7 @@ export function CockpitMap({
   useEffect(() => {
     if (!mapContainerRef.current) return;
     let isMounted = true;
+    let invalidateTimer: ReturnType<typeof setTimeout> | null = null;
 
     async function initMap() {
       const module = await import("leaflet");
@@ -97,7 +98,9 @@ export function CockpitMap({
       const L = module.default;
 
       if (mapRef.current) {
-        mapRef.current.remove();
+        try {
+          mapRef.current.remove();
+        } catch {}
         mapRef.current = null;
       }
 
@@ -151,8 +154,12 @@ export function CockpitMap({
       mapRef.current = map;
       setMapInstance(map);
 
-      setTimeout(() => {
-        map.invalidateSize();
+      invalidateTimer = setTimeout(() => {
+        const m = map as unknown as { _loaded?: boolean; _mapPane?: unknown };
+        if (!isMounted || mapRef.current !== map || !m._loaded || !m._mapPane) return;
+        try {
+          map.invalidateSize();
+        } catch {}
       }, 150);
     }
 
@@ -160,6 +167,10 @@ export function CockpitMap({
 
     return () => {
       isMounted = false;
+      if (invalidateTimer) {
+        clearTimeout(invalidateTimer);
+        invalidateTimer = null;
+      }
       if (markersLayerRef.current) {
         try {
           markersLayerRef.current.clearLayers();
@@ -174,7 +185,9 @@ export function CockpitMap({
         geojsonLayerRef.current = null;
       }
       if (mapRef.current) {
-        mapRef.current.remove();
+        try {
+          mapRef.current.remove();
+        } catch (e) {}
         mapRef.current = null;
       }
       setMapInstance(null);
@@ -187,13 +200,16 @@ export function CockpitMap({
     let isMounted = true;
 
     import("leaflet").then((module) => {
-      if (!isMounted || !mapInstance) return;
+      const m = mapInstance as unknown as { _loaded?: boolean; _mapPane?: unknown };
+      if (!isMounted || !mapInstance || mapRef.current !== mapInstance || !m._loaded || !m._mapPane) return;
       const L = module.default;
       const map = mapInstance;
 
       // 及时清理旧 GeoJSON 图层
       if (geojsonLayerRef.current) {
-        geojsonLayerRef.current.remove();
+        try {
+          geojsonLayerRef.current.remove();
+        } catch {}
         geojsonLayerRef.current = null;
       }
 
