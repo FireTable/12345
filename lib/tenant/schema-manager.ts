@@ -48,6 +48,30 @@ export async function ensurePublicRegionsTable(sql: postgres.Sql) {
 }
 
 /**
+ * 确保 public.compute_nodes 表存在
+ */
+export async function ensurePublicComputeNodesTable(sql: postgres.Sql) {
+  await sql`
+    CREATE TABLE IF NOT EXISTS public.compute_nodes (
+      id VARCHAR(64) PRIMARY KEY,
+      name VARCHAR(128) NOT NULL,
+      role VARCHAR(32) NOT NULL DEFAULT 'SYSTEM_TWO',
+      provider VARCHAR(32) NOT NULL DEFAULT 'COLAB',
+      endpoint VARCHAR(512) NOT NULL,
+      api_key VARCHAR(255),
+      model VARCHAR(128),
+      enabled BOOLEAN NOT NULL DEFAULT true,
+      last_status VARCHAR(32),
+      last_latency_ms INTEGER,
+      last_checked_at TIMESTAMP WITH TIME ZONE,
+      created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+      updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+    );
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS idx_compute_nodes_role_enabled ON public.compute_nodes (role, enabled);`;
+}
+
+/**
  * 在目标 Schema 中构建所有标准业务数据表及索引
  */
 export async function createTenantTables(sql: postgres.Sql, schemaName: string) {

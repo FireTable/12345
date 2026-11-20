@@ -1,6 +1,8 @@
 import {
   CivicChatCompletion,
   CivicChatCompletionParams,
+  ClusterNodeObjectSpec,
+  ClusterNodeSpec,
   SystemTwoConfig,
 } from '../types';
 import { ISystemTwoAdapter } from './types';
@@ -10,10 +12,30 @@ import { NodeMetric, getNodeMetric, getAllNodeMetrics } from '../metrics';
 interface ClusterNode {
   adapter: LocalMetalAdapter;
   endpoint: string;
+  apiKey?: string;
+  model?: string;
+  provider?: string;
+  name?: string;
   inFlight: number;
   isHealthy: boolean;
   lastChecked: number;
   consecutiveFailures: number;
+}
+
+function normalizeNodeSpec(spec: ClusterNodeSpec): ClusterNodeObjectSpec | null {
+  if (typeof spec === 'string') {
+    const endpoint = spec.trim().replace(/\/+$/, '');
+    return endpoint ? { endpoint } : null;
+  }
+  const endpoint = (spec?.endpoint || '').trim().replace(/\/+$/, '');
+  if (!endpoint) return null;
+  return {
+    endpoint,
+    apiKey: spec.apiKey?.trim() || undefined,
+    model: spec.model?.trim() || undefined,
+    provider: spec.provider?.trim() || undefined,
+    name: spec.name?.trim() || undefined,
+  };
 }
 
 /**
@@ -22,25 +44,94 @@ interface ClusterNode {
  * 1. Least-Connections (最小在途请求优先) 动态负载均衡调度
  * 2. 自动健康心跳探测与故障隔离 (Circuit Breaker)
  * 3. 故障自动转移 (Auto Failover)
+ * 4. 支持热插拔 syncNodes (保留已有节点在途计数)
  */
 export class PooledMetalAdapter implements ISystemTwoAdapter {
   readonly name = 'PooledMetalAdapter (Multi-Node LLM Cluster)';
   private nodes: ClusterNode[] = [];
   private config: SystemTwoConfig;
 
-  constructor(endpoints: string[], config: SystemTwoConfig = {}) {
+  constructor(specs: ClusterNodeSpec[], config: SystemTwoConfig = {}) {
     this.config = config;
-    const cleanList = Array.from(
-      new Set(endpoints.map((e) => (e || '').trim().replace(/\/+$/, '')).filter(Boolean))
-    );
+    this.syncNodes(specs);
+  }
 
-    this.nodes = cleanList.map((endpoint) => ({
-      adapter: new LocalMetalAdapter({ ...config, endpoint }),
-      endpoint,
-      inFlight: 0,
-      isHealthy: true,
-      lastChecked: 0,
-      consecutiveFailures: 0,
+  /**
+   * 平滑同步算力节点列表，保留未删除节点的 inFlight 与健康状态
+   */
+  syncNodes(specs: ClusterNodeSpec[]): void {
+    const deduped = new Map<string, ClusterNodeObjectSpec>();
+    for (const raw of specs) {
+      const normalized = normalizeNodeSpec(raw);
+      if (!normalized) continue;
+      deduped.set(normalized.endpoint, normalized);
+    }
+
+    const existingByEndpoint = new Map(this.nodes.map((n) => [n.endpoint, n]));
+    const nextNodes: ClusterNode[] = [];
+
+    for (const [endpoint, spec] of deduped.entries()) {
+      const existing = existingByEndpoint.get(endpoint);
+      if (existing) {
+        const configChanged =
+          existing.apiKey !== spec.apiKey ||
+          existing.model !== spec.model;
+        if (configChanged) {
+          existing.adapter = new LocalMetalAdapter({
+            ...this.config,
+            endpoint,
+            apiKey: spec.apiKey ?? this.config.apiKey,
+            model: spec.model ?? this.config.model,
+            provider: spec.provider ?? this.config.provider,
+          });
+          existing.apiKey = spec.apiKey;
+          existing.model = spec.model;
+          existing.isHealthy = true;
+          existing.consecutiveFailures = 0;
+        }
+        existing.provider = spec.provider;
+        existing.name = spec.name;
+        nextNodes.push(existing);
+      } else {
+        nextNodes.push({
+          adapter: new LocalMetalAdapter({
+            ...this.config,
+            endpoint,
+            apiKey: spec.apiKey ?? this.config.apiKey,
+            model: spec.model ?? this.config.model,
+            provider: spec.provider ?? this.config.provider,
+          }),
+          endpoint,
+          apiKey: spec.apiKey,
+          model: spec.model,
+          provider: spec.provider,
+          name: spec.name,
+          inFlight: 0,
+          isHealthy: true,
+          lastChecked: 0,
+          consecutiveFailures: 0,
+        });
+      }
+    }
+
+    this.nodes = nextNodes;
+  }
+
+  getNodeMetas(): Array<{
+    endpoint: string;
+    provider?: string;
+    model?: string;
+    name?: string;
+    isHealthy: boolean;
+    inFlight: number;
+  }> {
+    return this.nodes.map((n) => ({
+      endpoint: n.endpoint,
+      provider: n.provider,
+      model: n.model,
+      name: n.name,
+      isHealthy: n.isHealthy,
+      inFlight: n.inFlight,
     }));
   }
 
@@ -103,6 +194,10 @@ export class PooledMetalAdapter implements ISystemTwoAdapter {
    * 挑选最佳节点并执行推理，支持透明重试与故障转移
    */
   async chatCompletions(params: CivicChatCompletionParams): Promise<CivicChatCompletion> {
+    if (this.nodes.length === 0) {
+      throw new Error('[SystemTwoCluster] 算力集群中没有配置任何可用节点');
+    }
+
     // 0. 自动重试探活：对当前被标记为不健康的节点，若距离上次检查超过 3 秒，尝试探活复位
     for (const node of this.nodes) {
       if (!node.isHealthy && Date.now() - node.lastChecked > 3000) {
@@ -157,12 +252,14 @@ export class PooledMetalAdapter implements ISystemTwoAdapter {
         node.consecutiveFailures++;
         lastError = err;
 
-        // 如果是网络连接失败或超时，临时标记为不健康并切换至下一个节点
+        // 如果是网络连接失败、超时或上游鉴权/服务异常，临时标记为不健康并切换至下一个节点
         if (
           err.name === 'AbortError' ||
           err.message?.includes('fetch failed') ||
           err.message?.includes('ECONNREFUSED') ||
-          err.message?.includes('ETIMEDOUT')
+          err.message?.includes('ETIMEDOUT') ||
+          err.message?.includes('HTTP 401') ||
+          err.message?.includes('HTTP 5')
         ) {
           node.isHealthy = false;
           console.warn(

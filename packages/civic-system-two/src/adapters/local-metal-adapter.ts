@@ -12,45 +12,62 @@ export class LocalMetalAdapter implements ISystemTwoAdapter {
   private endpoint: string;
   private model: string;
   private apiKey?: string;
+  private provider?: string;
   private timeoutMs: number;
   private defaultEnableThinking: boolean;
 
   constructor(config: SystemTwoConfig = {}) {
     this.endpoint = (config.endpoint || 'http://127.0.0.1:8132/v1').replace(/\/+$/, '');
     this.model = config.model || 'bonsai-2-27b';
-    this.apiKey = config.apiKey || 'local-token';
+    this.apiKey = config.apiKey?.trim() || undefined;
+    this.provider = config.provider?.trim();
     this.timeoutMs = config.timeoutMs ?? 600000; // 默认 10 分钟充足慢思考预算
     this.defaultEnableThinking = config.enableThinkingDefault ?? true;
   }
 
-  async isAvailable(): Promise<boolean> {
-    try {
-      const baseUrl = this.endpoint.replace(/\/v1$/, '');
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 2000);
+  private authHeaders(extra?: Record<string, string>): Record<string, string> {
+    const headers: Record<string, string> = { ...(extra || {}) };
+    if (this.apiKey) {
+      headers.Authorization = `Bearer ${this.apiKey}`;
+    }
+    return headers;
+  }
 
-      // llama-server 提供了 /health 和 /v1/models
-      const res = await fetch(`${baseUrl}/health`, {
+  async isAvailable(): Promise<boolean> {
+    const isRemote =
+      this.provider === 'COLAB' ||
+      !/localhost|127\.0\.0\.1|0\.0\.0\.0|::1|192\.168\.|10\.|172\.(?:1[6-9]|2\d|3[01])\./i.test(
+        this.endpoint
+      );
+    const probeTimeout = isRemote ? 2500 : 1200;
+
+    try {
+      // 有 apiKey 或远程 OpenAI 兼容节点时优先走 /v1/models 校验鉴权与可用性
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), probeTimeout);
+      const resModels = await fetch(`${this.endpoint}/models`, {
+        headers: this.authHeaders(),
         signal: controller.signal,
       }).catch(() => null);
-
       clearTimeout(timer);
-      if (res && res.ok) {
-        return true;
+
+      if (resModels) {
+        if (resModels.ok) return true;
+        if (resModels.status === 401 || resModels.status === 403) return false;
       }
 
-      // 如果没有 /health，尝试请求 /v1/models
-      const controller2 = new AbortController();
-      const timer2 = setTimeout(() => controller2.abort(), 2000);
-      const res2 = await fetch(`${this.endpoint}/models`, {
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-        },
-        signal: controller2.signal,
-      }).catch(() => null);
+      if (!this.apiKey) {
+        const baseUrl = this.endpoint.replace(/\/v1$/, '');
+        const controller2 = new AbortController();
+        const timer2 = setTimeout(() => controller2.abort(), probeTimeout);
+        const resHealth = await fetch(`${baseUrl}/health`, {
+          signal: controller2.signal,
+        }).catch(() => null);
+        clearTimeout(timer2);
+        return !!(resHealth && resHealth.ok);
+      }
 
-      clearTimeout(timer2);
-      return !!(res2 && res2.ok);
+      return false;
     } catch {
       return false;
     }
@@ -86,10 +103,7 @@ export class LocalMetalAdapter implements ISystemTwoAdapter {
     try {
       const res = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.apiKey}`,
-        },
+        headers: this.authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(payload),
         signal: controller.signal,
       });

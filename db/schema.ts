@@ -330,5 +330,33 @@ export const disposalLogsTable = pgTable(
 export type DisposalLogRecord = typeof disposalLogsTable.$inferSelect;
 export type NewDisposalLogRecord = typeof disposalLogsTable.$inferInsert;
 
+/**
+ * 9. 动态算力节点花名册表 (Compute Nodes Registry Table, in public schema)
+ */
+export const computeNodesTable = pgTable(
+  "compute_nodes",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    name: varchar("name", { length: 128 }).notNull(),
+    role: varchar("role", { length: 32 }).default("SYSTEM_TWO").notNull(), // SYSTEM_TWO | EMBEDDING
+    provider: varchar("provider", { length: 32 }).default("COLAB").notNull(), // LOCAL | COLAB | CLOUD
+    endpoint: varchar("endpoint", { length: 512 }).notNull(),
+    apiKey: varchar("api_key", { length: 255 }),
+    model: varchar("model", { length: 128 }),
+    enabled: boolean("enabled").default(true).notNull(),
+    lastStatus: varchar("last_status", { length: 32 }), // ONLINE | OFFLINE
+    lastLatencyMs: integer("last_latency_ms"),
+    lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_compute_nodes_role_enabled").on(table.role, table.enabled),
+  ]
+);
+
+export type ComputeNodeRecord = typeof computeNodesTable.$inferSelect;
+export type NewComputeNodeRecord = typeof computeNodesTable.$inferInsert;
+
 export * from "@/lib/auth/schema";
 

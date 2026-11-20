@@ -143,6 +143,8 @@ export type PipelineStateResponse = {
     isLocal: boolean;
     isOnline?: boolean;
     lastDurationMs?: number | null;
+    provider?: string;
+    tokensPerSecond?: number | null;
   }>;
   recentExtractedTickets?: Array<{
     id: string;
@@ -306,6 +308,8 @@ function InnerPipelineCanvas({
               isLocal: n.isLocal,
               isOnline: n.isOnline,
               lastDurationMs: n.lastDurationMs ?? null,
+              provider: n.provider,
+              tokensPerSecond: n.tokensPerSecond ?? null,
               recentTickets: [],
             };
           }
@@ -334,6 +338,8 @@ function InnerPipelineCanvas({
             isLocal: n.isLocal,
             isOnline: n.isOnline,
             lastDurationMs: n.lastDurationMs ?? null,
+            provider: n.provider,
+            tokensPerSecond: n.tokensPerSecond ?? null,
             recentTickets: myTickets.map((t) => ({
               id: t.id,
               ticketNo: t.ticketNo,

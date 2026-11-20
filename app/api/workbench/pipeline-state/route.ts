@@ -8,33 +8,52 @@ import { apiSuccess, apiError, ApiCode } from "@/lib/api-codes";
 import { regionLabel, UNKNOWN_TOWN } from "@/lib/civic-dto";
 import { getSystemTwoEndpoints } from "@/backend/model";
 import { getNodeMetric } from "@/lib/node-metrics";
+import {
+  buildModelsUrl,
+  isLocalEndpoint,
+  listEnabledComputeNodes,
+  normalizeProvider,
+  type ComputeNodeProvider,
+} from "@/lib/compute-nodes";
 
 export const dynamic = "force-dynamic";
 
 const nodeHealthCache = new Map<string, { isOnline: boolean; lastChecked: number }>();
-const PROBE_TIMEOUT_MS = 400;
+const LOCAL_PROBE_TIMEOUT_MS = 500;
+const REMOTE_PROBE_TIMEOUT_MS = 2500;
 const ONLINE_TTL_MS = 3000;
 const OFFLINE_TTL_MS = 30_000;
 
-async function probeEndpointOnline(endpoint: string): Promise<boolean> {
-  const cached = nodeHealthCache.get(endpoint);
+async function probeEndpointOnline(
+  endpoint: string,
+  apiKey?: string | null,
+  provider?: ComputeNodeProvider
+): Promise<boolean> {
+  const cacheKey = `${endpoint}|${apiKey || ""}`;
+  const cached = nodeHealthCache.get(cacheKey);
   if (cached) {
     const ttl = cached.isOnline ? ONLINE_TTL_MS : OFFLINE_TTL_MS;
     if (Date.now() - cached.lastChecked < ttl) return cached.isOnline;
   }
+  const isLocal = isLocalEndpoint(endpoint) && provider !== "COLAB";
+  const timeoutMs = isLocal ? LOCAL_PROBE_TIMEOUT_MS : REMOTE_PROBE_TIMEOUT_MS;
   let online = false;
   try {
-    const base = endpoint.replace(/\/+$/, "");
-    const url = base.endsWith("/v1") ? `${base}/models` : `${base}/v1/models`;
+    const url = buildModelsUrl(endpoint);
+    const headers: Record<string, string> = {};
+    if (apiKey?.trim()) {
+      headers.Authorization = `Bearer ${apiKey.trim()}`;
+    }
     const res = await fetch(url, {
       method: "GET",
-      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+      headers,
+      signal: AbortSignal.timeout(timeoutMs),
     });
-    online = res.status < 500;
+    online = res.ok;
   } catch {
     online = false;
   }
-  nodeHealthCache.set(endpoint, { isOnline: online, lastChecked: Date.now() });
+  nodeHealthCache.set(cacheKey, { isOnline: online, lastChecked: Date.now() });
   return online;
 }
 
@@ -163,19 +182,56 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 3.4 解析 SYSTEM_TWO_ENDPOINTS 集群算力节点配置并并发探测健康状态
+    // 3.4 解析 SYSTEM_TWO_ENDPOINTS 环境变量节点 + 数据库动态启用节点，并发探测健康状态
     const rawEndpoints = getSystemTwoEndpoints();
-    const endpointsList = rawEndpoints.length > 0 ? rawEndpoints : ["http://127.0.0.1:8132/v1"];
+    const envList = rawEndpoints.length > 0 ? rawEndpoints : ["http://127.0.0.1:8132/v1"];
     const chineseNumbers = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
 
+    const nodeEntries = new Map<
+      string,
+      {
+        id?: string;
+        name?: string;
+        endpoint: string;
+        apiKey?: string | null;
+        provider: ComputeNodeProvider;
+      }
+    >();
+    for (const rawEp of envList) {
+      const ep = rawEp.trim().replace(/\/+$/, "");
+      if (!ep) continue;
+      nodeEntries.set(ep, {
+        endpoint: ep,
+        provider: isLocalEndpoint(ep) ? "LOCAL" : "CLOUD",
+      });
+    }
+    try {
+      const dbNodes = await listEnabledComputeNodes("SYSTEM_TWO");
+      for (const dbNode of dbNodes) {
+        const ep = (dbNode.endpoint || "").trim().replace(/\/+$/, "");
+        if (!ep) continue;
+        nodeEntries.set(ep, {
+          id: dbNode.id,
+          name: dbNode.name,
+          endpoint: ep,
+          apiKey: dbNode.apiKey,
+          provider: normalizeProvider(dbNode.provider, ep),
+        });
+      }
+    } catch {
+      // ignore DB errors if compute_nodes not initialized yet
+    }
+
+    const mergedNodes = Array.from(nodeEntries.values());
     const onlineStatuses = await Promise.all(
-      endpointsList.map((ep) => probeEndpointOnline(ep))
+      mergedNodes.map((n) => probeEndpointOnline(n.endpoint, n.apiKey, n.provider))
     );
 
-    const systemTwoNodes = endpointsList.map((ep, idx) => {
-      const isLocal = /127\.0\.0\.1|localhost|0\.0\.0\.0/.test(ep);
+    const systemTwoNodes = mergedNodes.map((item, idx) => {
+      const ep = item.endpoint;
+      const isLocal = isLocalEndpoint(ep) && item.provider !== "COLAB";
       const hostMatch = ep.match(/https?:\/\/([^/:]+)(?::(\d+))?/);
-      const hostStr = hostMatch ? `${hostMatch[1]}:${hostMatch[2] || "80"}` : ep;
+      const hostStr = hostMatch ? `${hostMatch[1]}:${hostMatch[2] || (ep.startsWith("https") ? "443" : "80")}` : ep;
       const chineseNum = chineseNumbers[idx] || String(idx + 1);
       const metric = getNodeMetric(ep);
       const isOnline = onlineStatuses[idx] ?? false;
@@ -188,12 +244,14 @@ export async function GET(req: NextRequest) {
         : null;
 
       return {
-        id: `node-${idx + 1}`,
-        name: `研判节点${chineseNum}`,
+        id: item.id || `node-${idx + 1}`,
+        name: item.name || `研判节点${chineseNum}`,
         host: hostStr,
         isLocal,
         isOnline,
         lastDurationMs: effectiveDuration,
+        provider: item.provider,
+        tokensPerSecond: isOnline ? (metric?.tokensPerSecond ?? null) : null,
       };
     });
 

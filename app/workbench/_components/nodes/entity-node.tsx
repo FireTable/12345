@@ -40,6 +40,8 @@ export type ClusterNodeDisplay = {
   isLocal?: boolean;
   isOnline?: boolean;
   lastDurationMs?: number | null;
+  provider?: string;
+  tokensPerSecond?: number | null;
   recentTickets: ProcessedTicketPreview[];
 };
 
@@ -128,14 +130,41 @@ export function EntityNode({ data }: NodeProps<EntityNodeType>) {
                 : ""
                 }`}
             >
-              {/* 卡片头部：研判节点名称 + 最新工单耗时 + 实时指示 (不展示 IP 地址) */}
-              <div className="pipeline-snippet-title">
+              {/* 卡片头部：研判节点名称 + 来源徽标 + 吞吐/耗时 + 实时指示 (不展示 IP 地址) */}
+              <div className="pipeline-snippet-title flex-wrap gap-1.5">
                 <span className={`flex items-center gap-1.5 font-semibold whitespace-nowrap ${isNodeOnline ? "text-purple-700" : "text-slate-500"
                   }`}>
                   <Sparkles size={11} className={`shrink-0 ${isNodeOnline ? "text-purple-500" : "text-slate-400"}`} />
                   {node.name}
+                  {(() => {
+                    const p = (node.provider || (node.isLocal === false ? "CLOUD" : "LOCAL")).toUpperCase();
+                    if (p === "COLAB") {
+                      return (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                          COLAB GPU
+                        </span>
+                      );
+                    }
+                    if (p === "CLOUD") {
+                      return (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-sky-50 text-sky-700 border border-sky-200">
+                          CLOUD
+                        </span>
+                      );
+                    }
+                    return (
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                        LOCAL
+                      </span>
+                    );
+                  })()}
+                  {isNodeOnline && typeof node.tokensPerSecond === "number" && node.tokensPerSecond > 0 && (
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+                      {node.tokensPerSecond.toFixed(1)} tok/s
+                    </span>
+                  )}
                   {isNodeOnline && node.lastDurationMs != null && node.lastDurationMs > 0 && (
-                    <span className="ml-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-purple-50 text-purple-700 border border-purple-200/70 shadow-2xs">
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-purple-50 text-purple-700 border border-purple-200/70 shadow-2xs">
                       <Clock size={10} className="shrink-0 text-purple-500" />
                       {`${(node.lastDurationMs / 1000).toFixed(2)}s`}
                     </span>

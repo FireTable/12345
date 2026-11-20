@@ -84,6 +84,16 @@ export interface CloudFallbackConfig {
   model: string;
 }
 
+export interface ClusterNodeObjectSpec {
+  endpoint: string;
+  apiKey?: string;
+  model?: string;
+  provider?: string;
+  name?: string;
+}
+
+export type ClusterNodeSpec = string | ClusterNodeObjectSpec;
+
 export interface SystemTwoConfig {
   /**
    * llama-server 本地端点，默认为 http://127.0.0.1:8132/v1
@@ -94,6 +104,10 @@ export interface SystemTwoConfig {
    */
   endpoints?: string[];
   /**
+   * 多节点算力集群详细节点规格（支持按节点绑定独立 apiKey / model / provider）
+   */
+  nodes?: ClusterNodeSpec[];
+  /**
    * 模型别名，默认 bonsai-2-27b
    */
   model?: string;
@@ -101,6 +115,10 @@ export interface SystemTwoConfig {
    * 鉴权密钥（本地 llama-server 默认为空或任意字符）
    */
   apiKey?: string;
+  /**
+   * 节点来源标记 (LOCAL / COLAB / CLOUD)
+   */
+  provider?: string;
   /**
    * 超时时间（毫秒），默认为 180,000ms (3分钟)
    */

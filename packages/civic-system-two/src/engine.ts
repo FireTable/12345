@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   CivicChatCompletion,
   CivicChatCompletionParams,
+  ClusterNodeSpec,
   SystemTwoConfig,
 } from './types';
 import { ISystemTwoAdapter } from './adapters/types';
@@ -76,15 +77,17 @@ export class SystemTwoEngine {
    * 初始化并探测可用后端 (优先 Local Metal 集群池 -> 其次 Cloud -> 最后 Fallback)
    */
   static async create(config: SystemTwoConfig = {}): Promise<SystemTwoEngine> {
-    const rawEndpoints =
-      config.endpoints && config.endpoints.length > 0
-        ? config.endpoints
-        : (config.endpoint || 'http://127.0.0.1:8132/v1')
-            .split(',')
-            .map((s) => s.trim())
-            .filter(Boolean);
+    const rawSpecs: ClusterNodeSpec[] =
+      config.nodes && config.nodes.length > 0
+        ? config.nodes
+        : config.endpoints && config.endpoints.length > 0
+          ? config.endpoints
+          : (config.endpoint || 'http://127.0.0.1:8132/v1')
+              .split(',')
+              .map((s) => s.trim())
+              .filter(Boolean);
 
-    const clusterAdapter = new PooledMetalAdapter(rawEndpoints, config);
+    const clusterAdapter = new PooledMetalAdapter(rawSpecs, config);
     const cloudAdapter = config.cloudFallback
       ? new CloudOpenAIAdapter(config.cloudFallback, config.timeoutMs)
       : undefined;
@@ -158,6 +161,23 @@ export class SystemTwoEngine {
       this.activeAdapter = this.fallbackAdapter;
     }
     return this.activeAdapter.name;
+  }
+
+  /**
+   * 热插拔重载算力集群节点；若之前处于兜底状态且新节点探测可用，则自动切换至集群池
+   */
+  async reloadClusterNodes(specs: ClusterNodeSpec[]): Promise<{
+    activeBackend: string;
+    activeNodes: number;
+    endpoints: string[];
+  }> {
+    this.clusterAdapter.syncNodes(specs);
+    await this.refreshBackend();
+    return {
+      activeBackend: this.activeAdapter.name,
+      activeNodes: this.clusterAdapter.getActiveNodeCount(),
+      endpoints: this.clusterAdapter.getAllEndpoints(),
+    };
   }
 
   /**

@@ -28,6 +28,7 @@ import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { useRegion, RegionInfo } from "@/app/_components/civic/region-context";
 import { ConfirmDialog } from "@/app/_components/ui/confirm-dialog";
 import { PageHeaderActions } from "@/app/_components/civic/page-header-actions";
+import { ComputeNodesPanel } from "@/app/_components/civic/compute-nodes-panel";
 import { toast } from "sonner";
 import { resolveApiError } from "@/lib/api-codes";
 
@@ -102,6 +103,13 @@ export default function AdminRegionsPage() {
   // 删除站点确认弹窗
   const [deletingRegion, setDeletingRegion] = useState<RegionWithStats | null>(null);
   const [deletePending, setDeletePending] = useState(false);
+
+  // 算力集群概览计数
+  const [computeSummary, setComputeSummary] = useState<{
+    envCount: number;
+    dynamicCount: number;
+    onlineCount: number;
+  } | null>(null);
 
   const fetchRegions = async () => {
     try {
@@ -398,7 +406,10 @@ export default function AdminRegionsPage() {
             </span>
           </div>
           <div className="page-hero__desc">
-            支持全国省市县区 12345 站点动态纳管 · PostgreSQL Schema 物理隔离 · SuperAgent AI 智能梳理镇街字典 · 矢量行政地图绑定
+            支持全国省市县区 12345 站点动态纳管 · PostgreSQL Schema 物理隔离 · SuperAgent AI 智能梳理镇街字典 · Colab GPU 算力热插拔
+            {computeSummary
+              ? `（算力池：${computeSummary.envCount + computeSummary.dynamicCount} 节点 / ${computeSummary.onlineCount} 在线）`
+              : ""}
           </div>
         </div>
         <PageHeaderActions
@@ -450,6 +461,9 @@ export default function AdminRegionsPage() {
           sub={`${totalThemes} 个治理主题 / ${totalVocab} 条词典`}
         />
       </StatCardGrid>
+
+      {/* 算力集群与 Colab GPU 热插拔控制台 */}
+      <ComputeNodesPanel onSummaryChange={setComputeSummary} />
 
       <div className="mt-6 mb-8">
         <div className="flex items-center justify-between mb-4">
