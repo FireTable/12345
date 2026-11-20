@@ -113,6 +113,7 @@ export default function SandboxXrayPage() {
   const [persisting, setPersisting] = useState(false);
   const [persistedOk, setPersistedOk] = useState(false);
 
+  const isEcommerce = activeRegion?.domainProfile?.domainType === "ECOMMERCE_CS";
   const isTianhe = Boolean(
     activeRegion?.id?.includes("tianhe") || activeRegion?.name?.includes("天河")
   );
@@ -141,7 +142,13 @@ export default function SandboxXrayPage() {
   function applyPreset1() {
     setPresetHint(null);
     setPersistedOk(false);
-    if (isTianhe) {
+    if (isEcommerce) {
+      setTitle("华南冷链仓 SKU-GD2026-881 礼盒化冻发臭，拒赔将向 12315 举报");
+      setSubdistrict("华南冷链仓");
+      setContent(
+        "本人张某（13800138999）在天猫旗舰店下单的 SKU-GD2026-881 冻干生鲜礼盒由华南冷链仓发货，到货全程化冻发酸，食用后出现轻微腹泻，客服推诿仅退 20 元优惠券，要求全额退款并按食安法赔付，否则立即向 12315 市场监管举报！"
+      );
+    } else if (isTianhe) {
       setTitle("天河南一路商圈货车夜间占道违停");
       setSubdistrict("天河南街道");
       setContent(
@@ -166,7 +173,13 @@ export default function SandboxXrayPage() {
   function applyPreset2() {
     setPresetHint(null);
     setPersistedOk(false);
-    if (isTianhe) {
+    if (isEcommerce) {
+      setTitle("抖音直播间下单羽绒服充绒严重缩水与宣传不符");
+      setSubdistrict("抖音直播间");
+      setContent(
+        "在抖音官方直播间下单的 SKU-WJ-2026 鹅绒服，由华东中心仓发出（运单 SF1498827711220），收货吊牌充绒量与直播间主播口头承诺严重不符且外箱破损淋湿，联系旗舰店客服两日无人处理。"
+      );
+    } else if (isTianhe) {
       setTitle("岗顶电脑城后街夜宵油烟直排扰民");
       setSubdistrict("石牌街道");
       setContent(
@@ -352,14 +365,14 @@ export default function SandboxXrayPage() {
               onClick={applyPreset1}
               className="btn btn--default text-xs py-1.5 px-2.5"
             >
-              ① 主体违停精确对齐
+              {isEcommerce ? "① 冷链食安红线归因" : "① 主体违停精确对齐"}
             </button>
             <button
               type="button"
               onClick={applyPreset2}
               className="btn btn--default text-xs py-1.5 px-2.5"
             >
-              ② 口语俗称别名归一
+              {isEcommerce ? "② 虚假宣传与物流履约" : "② 口语俗称别名归一"}
             </button>
             <button
               type="button"
@@ -400,20 +413,32 @@ export default function SandboxXrayPage() {
                   type="text"
                   value={subdistrict}
                   onChange={(e) => setSubdistrict(e.target.value)}
-                  placeholder={isTianhe ? "如：天河南街道" : isShunde ? "如：大良街道" : "如：镇街 / 渠道名称"}
+                  placeholder={
+                    isEcommerce
+                      ? "如：天猫旗舰店 / 华南冷链仓"
+                      : isTianhe
+                        ? "如：天河南街道"
+                        : isShunde
+                          ? "如：大良街道"
+                          : "如：镇街名称"
+                  }
                   className="w-full min-h-[38px] px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
                 />
               </div>
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">
-                市民诉求正文（必填）
+                {isEcommerce ? "客诉工单正文（必填）" : "市民诉求正文（必填）"}
               </label>
               <textarea
                 rows={4}
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
-                placeholder="输入市民热线诉求原文（可包含电话、门牌、车牌或口语地标俗称，系统将演示可逆脱敏与全链路研判）…"
+                placeholder={
+                  isEcommerce
+                    ? "输入电商客诉原文（可包含手机号、SKU、渠道仓网或运单号，系统将演示可逆脱敏与全链路研判）…"
+                    : "输入市民热线诉求原文（可包含电话、门牌、车牌或口语地标俗称，系统将演示可逆脱敏与全链路研判）…"
+                }
                 className="w-full p-3 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 leading-relaxed focus:outline-none focus:border-blue-500 resize-y"
               />
             </div>

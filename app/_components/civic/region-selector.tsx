@@ -135,7 +135,7 @@ export function RegionSelector() {
             {ecomRegions.length > 0 && (
               <div>
                 <div className="px-3 py-1.5 text-[11px] font-semibold text-amber-700 bg-amber-50/60 flex items-center justify-between">
-                  <span>跨行业示范 · 电商客诉</span>
+                  <span>{govRegions.length > 0 ? "跨行业示范 · 电商客诉" : "电商客诉站点"}</span>
                   <span className="font-mono tabular-nums text-[10px] text-amber-600">
                     {ecomRegions.length}
                   </span>

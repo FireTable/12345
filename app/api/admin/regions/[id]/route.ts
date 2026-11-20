@@ -3,6 +3,13 @@ import { sql, getRegionDb, getAllRegions } from "@/db/client";
 import { destroyRegionTenant } from "@/lib/tenant/schema-manager";
 import { invalidateVocabCache } from "@/lib/vocabulary";
 import { ApiCode, apiSuccess, apiError } from "@/lib/api-codes";
+import {
+  filterRegionsByAppDomain,
+  getAppDomainMode,
+  isRegionAllowedInAppDomain,
+} from "@/lib/domain-profile";
+
+export const dynamic = "force-dynamic";
 
 /**
  * GET /api/admin/regions/[id]
@@ -14,8 +21,9 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    const mode = getAppDomainMode();
     const { region } = await getRegionDb(id);
-    if (!region) {
+    if (!region || !isRegionAllowedInAppDomain(region, mode)) {
       return apiError(ApiCode.REGION_NOT_FOUND, undefined, 404);
     }
     return apiSuccess({ region });
@@ -34,10 +42,16 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const all = await getAllRegions();
+    const mode = getAppDomainMode();
+    const allowed = filterRegionsByAppDomain(await getAllRegions(), mode);
+    const target = allowed.find((r) => r.id === id);
 
-    if (all.length <= 1) {
-      return apiError(ApiCode.FORBIDDEN, "系统至少需保留一个地区站点", 400);
+    if (!target) {
+      return apiError(ApiCode.REGION_NOT_FOUND, undefined, 404);
+    }
+
+    if (allowed.length <= 1) {
+      return apiError(ApiCode.FORBIDDEN, "当前业务域至少需保留一个站点", 400);
     }
 
     const ok = await destroyRegionTenant(sql, id);
@@ -64,11 +78,25 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
+    const mode = getAppDomainMode();
+    const all = await getAllRegions();
+    const target = all.find((r) => r.id === id);
+    if (!target || !isRegionAllowedInAppDomain(target, mode)) {
+      return apiError(ApiCode.REGION_NOT_FOUND, undefined, 404);
+    }
+
     const body = await req.json();
     const { name, city, province, svgMapPath, isDefault, status } = body;
 
     if (isDefault) {
-      await sql`UPDATE public.regions SET is_default = false WHERE is_default = true;`;
+      const sameDomainIds = filterRegionsByAppDomain(all, mode).map((r) => r.id);
+      if (sameDomainIds.length > 0) {
+        await sql`
+          UPDATE public.regions
+          SET is_default = false
+          WHERE is_default = true AND id = ANY(${sameDomainIds});
+        `;
+      }
     }
 
     await sql`

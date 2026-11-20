@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useCallback, useContext, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { UploadDialog } from "@/app/_components/dashboard/upload-dialog";
 import { LightCopilot } from "@/app/_components/copilot/light-copilot";
@@ -32,6 +32,7 @@ export function useCivicWorkflow() {
 }
 
 export function CivicWorkflowProvider({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const router = useRouter();
   const { activeRegion } = useRegion();
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -81,7 +82,7 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
    * SSE 推送：每帧 task-progress 直接驱动 taskProgress / analyzing 状态。
    * 完全替代原先每 3s / 12s 的 HTTP 轮询。
    */
-  useCivicSse(activeRegion?.id, (msg) => {
+  useCivicSse(pathname === "/login" ? undefined : activeRegion?.id, (msg) => {
     if (msg.type === "task-progress") {
       const data = msg.taskProgress as TaskProgress | null;
       if (!data) return;

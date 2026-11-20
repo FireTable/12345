@@ -334,7 +334,7 @@ export function CockpitHeader({
                   {ecomRegions.length > 0 && (
                     <div className={govRegions.length > 0 ? "border-t border-white/[0.08] mt-1 pt-1" : ""}>
                       <div className="px-3 py-1.5 text-[10px] text-amber-300/90 tracking-wider font-mono border-b border-white/[0.06] flex items-center justify-between">
-                        <span>跨行业示范 · 电商客诉</span>
+                        <span>{govRegions.length > 0 ? "跨行业示范 · 电商客诉" : "电商客诉站点"}</span>
                         <span className="tabular-nums">{ecomRegions.length}</span>
                       </div>
                       <div className="py-1">

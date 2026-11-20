@@ -3,7 +3,9 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
+import type { AppDomainMode } from "@/lib/app-domain";
 
+export type { AppDomainMode };
 export type DomainType = "GOV_12345" | "ECOMMERCE_CS";
 
 export interface DomainTerminology {
@@ -42,6 +44,7 @@ export interface RegionInfo {
 }
 
 interface RegionContextValue {
+  appDomain: AppDomainMode;
   activeRegion: RegionInfo | null;
   regions: RegionInfo[];
   isLoading: boolean;
@@ -51,7 +54,14 @@ interface RegionContextValue {
 
 const RegionContext = createContext<RegionContextValue | undefined>(undefined);
 
-export function RegionProvider({ children }: { children: React.ReactNode }) {
+export function RegionProvider({
+  children,
+  initialAppDomain = "GOV_12345",
+}: {
+  children: React.ReactNode;
+  initialAppDomain?: AppDomainMode;
+}) {
+  const [appDomain, setAppDomain] = useState<AppDomainMode>(initialAppDomain);
   const [regions, setRegions] = useState<RegionInfo[]>([]);
   const [activeRegion, setActiveRegion] = useState<RegionInfo | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -61,7 +71,6 @@ export function RegionProvider({ children }: { children: React.ReactNode }) {
   const refreshedCookie = useRef(false);
 
   const fetchRegions = useCallback(async () => {
-    // 登录页不触发，等登录成功后再拉取
     if (pathname === "/login") {
       setIsLoading(false);
       return;
@@ -69,7 +78,7 @@ export function RegionProvider({ children }: { children: React.ReactNode }) {
 
     try {
       setIsLoading(true);
-      const res = await fetch("/api/regions");
+      const res = await fetch("/api/regions", { cache: "no-store" });
       if (res.status === 401) {
         if (typeof window !== "undefined" && window.location.pathname !== "/login") {
           window.location.href = `/login?from=${encodeURIComponent(window.location.pathname)}`;
@@ -77,10 +86,13 @@ export function RegionProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       const json = await res.json();
-      if (json.success && Array.isArray(json.regions)) {
+      if (json.appDomain === "GOV_12345" || json.appDomain === "ECOMMERCE_CS" || json.appDomain === "ALL") {
+        setAppDomain(json.appDomain);
+      }
+
+      if (Array.isArray(json.regions)) {
         setRegions(json.regions);
 
-        // 新键只记用户这次主动切换。旧的 active_region_id 不再沿用，避免浏览器里留下的顺德盖住广州默认站。
         const savedRegionId = localStorage.getItem("civic_active_region");
         const matched =
           json.regions.find((r: RegionInfo) => r.id === savedRegionId) ||
@@ -90,10 +102,17 @@ export function RegionProvider({ children }: { children: React.ReactNode }) {
 
         setActiveRegion(matched);
         if (matched) {
+          if (
+            savedRegionId &&
+            savedRegionId !== matched.id &&
+            !json.regions.some((r: RegionInfo) => r.id === savedRegionId)
+          ) {
+            localStorage.setItem("civic_active_region", matched.id);
+          }
           const prev = document.cookie.match(/(?:^|; )active_region=([^;]*)/)?.[1] || "";
           const prevId = prev ? decodeURIComponent(prev) : "";
           document.cookie = `active_region=${matched.id}; path=/; max-age=31536000; SameSite=Lax`;
-          if (prevId && prevId !== matched.id && !refreshedCookie.current) {
+          if (pathname !== "/login" && prevId && prevId !== matched.id && !refreshedCookie.current) {
             refreshedCookie.current = true;
             router.refresh();
           }
@@ -106,7 +125,6 @@ export function RegionProvider({ children }: { children: React.ReactNode }) {
     }
   }, [pathname, router]);
 
-  // 初次加载与路由切换监控：一旦离开 /login 且无站点数据，立即重新拉取
   useEffect(() => {
     if (pathname !== "/login") {
       fetchRegions();
@@ -120,7 +138,12 @@ export function RegionProvider({ children }: { children: React.ReactNode }) {
     setActiveRegion(target);
     localStorage.setItem("civic_active_region", target.id);
     document.cookie = `active_region=${target.id}; path=/; max-age=31536000; SameSite=Lax`;
-    toast.success(`已切换至【${target.city} · ${target.name} 12345 站点】`);
+    const isEcom = target.domainProfile?.domainType === "ECOMMERCE_CS";
+    toast.success(
+      isEcom
+        ? `已切换至【${target.city} · ${target.name}】`
+        : `已切换至【${target.city} · ${target.name} 12345 站点】`
+    );
 
     // 用 router.refresh() 重新拉服务端组件（带新 cookie），避免整页 reload
     // 引起的双 fetch + 闪烁。客户端组件状态（抽屉、画布位置等）会保留。
@@ -130,6 +153,7 @@ export function RegionProvider({ children }: { children: React.ReactNode }) {
   return (
     <RegionContext.Provider
       value={{
+        appDomain,
         activeRegion,
         regions,
         isLoading,

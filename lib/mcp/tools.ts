@@ -4,6 +4,7 @@ import { themesTable, ticketsTable } from "@/db/schema";
 import { loadOverview } from "@/lib/civic-queries";
 import { buildRecordsFromRows, insertRecordsBatch } from "@/lib/ticket-ingest";
 import { triggerClusterJobAuto } from "@/lib/cluster-runner";
+import { filterRegionsByAppDomain } from "@/lib/app-domain";
 
 export const MCP_TOOLS = [
   {
@@ -59,8 +60,12 @@ function textResult(value: unknown, isError = false): ToolResult {
   };
 }
 
+async function getScopedRegions() {
+  return filterRegionsByAppDomain(await getAllRegions());
+}
+
 async function listRegions() {
-  const regions = await getAllRegions();
+  const regions = await getScopedRegions();
   return regions.map((region) => ({
     id: region.id,
     name: region.name,
@@ -79,7 +84,7 @@ async function pushTicket(args: Record<string, unknown>) {
     return textResult({ error: "一次只接收一条工单" }, true);
   }
 
-  const regions = await getAllRegions();
+  const regions = await getScopedRegions();
   const region = regions.find((item) => item.id === regionId);
   if (!region) return textResult({ error: `没有这个地区: ${regionId}` }, true);
 
@@ -115,7 +120,7 @@ async function pushTicket(args: Record<string, unknown>) {
 async function regionOverview(args: Record<string, unknown>) {
   const regionId = String(args.regionId || "").trim();
   if (!regionId) return textResult({ error: "缺少 regionId" }, true);
-  const regions = await getAllRegions();
+  const regions = await getScopedRegions();
   if (!regions.some((region) => region.id === regionId)) {
     return textResult({ error: `没有这个地区: ${regionId}` }, true);
   }

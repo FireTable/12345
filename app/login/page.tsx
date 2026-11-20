@@ -16,8 +16,11 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth/client";
+import { useRegion } from "@/app/_components/civic/region-context";
 
 function LoginForm() {
+  const { appDomain } = useRegion();
+  const isEcommerce = appDomain === "ECOMMERCE_CS";
   const router = useRouter();
   const searchParams = useSearchParams();
   const from = searchParams.get("from") || "/";
@@ -90,15 +93,17 @@ function LoginForm() {
           <div className="login-brand-badge">
             <Building2 className="login-brand-icon" size={15} />
             <span className="login-brand-text">
-              <span>12345 政务热线智能研判平台</span>
+              <span>{isEcommerce ? "全渠道电商客诉智能研判平台" : "12345 政务热线智能研判平台"}</span>
               <span>V2 双引擎架构</span>
             </span>
           </div>
-          <h1 className="login-title">民声智理 · 智能研判系统</h1>
+          <h1 className="login-title">
+            {isEcommerce ? "民声智理 · 电商客诉中枢" : "民声智理 · 智能研判系统"}
+          </h1>
           <p className="login-subtitle">
             <span>基于快慢思考双引擎协同</span>
-            <span>微观时空实体对齐</span>
-            <span>多频诉求全自动研判流水线</span>
+            <span>{isEcommerce ? "SKU / 仓网实体对齐" : "微观时空实体对齐"}</span>
+            <span>{isEcommerce ? "多频客诉全自动督办流水线" : "多频诉求全自动研判流水线"}</span>
           </p>
           <div className="login-features-row">
             <span className="login-feature-pill">
@@ -107,11 +112,11 @@ function LoginForm() {
             </span>
             <span className="login-feature-pill">
               <Layers size={11} style={{ color: "#2563eb" }} />
-              微观时空基底
+              {isEcommerce ? "渠道仓网矩阵" : "微观时空基底"}
             </span>
             <span className="login-feature-pill">
               <Activity size={11} style={{ color: "#16a34a" }} />
-              全自动研判闭环
+              {isEcommerce ? "售后假闭环督办" : "全自动研判闭环"}
             </span>
           </div>
         </div>
@@ -208,7 +213,7 @@ function LoginForm() {
           <div className="security-tag">
             <ShieldCheck size={14} />
             <span className="security-tag__text">
-              <span>政务信创适配</span>
+              <span>{isEcommerce ? "企业级合规适配" : "政务信创适配"}</span>
               <span>端侧纯离线推理</span>
               <span>隐私气隙脱敏</span>
               <span>多租户 Schema 物理隔离</span>

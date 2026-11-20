@@ -1,6 +1,23 @@
 import { eq } from "drizzle-orm";
 import { db, getRegionDb } from "@/db/client";
 import { regionsTable } from "@/db/schema";
+import {
+  type AppDomainMode,
+  getAppDomainMode,
+  isDomainAllowed,
+  isRegionAllowedInAppDomain,
+  filterRegionsByAppDomain,
+  getFallbackRegionIdForDomain,
+} from "./app-domain";
+
+export type { AppDomainMode };
+export {
+  getAppDomainMode,
+  isDomainAllowed,
+  isRegionAllowedInAppDomain,
+  filterRegionsByAppDomain,
+  getFallbackRegionIdForDomain,
+};
 
 export type DomainType = "GOV_12345" | "ECOMMERCE_CS";
 

@@ -91,6 +91,8 @@ async function readEcomSnapshot(schemaName = "region_ecom_demo") {
 }
 
 async function main() {
+  const prevAppDomain = process.env.APP_DOMAIN;
+  process.env.APP_DOMAIN = "ALL";
   await assertBaselineUnchanged("前置");
   const initialEcom = await readEcomSnapshot();
   assert(
@@ -400,6 +402,11 @@ async function main() {
       `[清理后] ecom_demo 数据无污染还原 (tickets=${afterCleanupEcom.tickets}/${initialEcom.tickets}, themes=${afterCleanupEcom.themes}/${initialEcom.themes}, logs=${afterCleanupEcom.disposalLogs}/${initialEcom.disposalLogs})`
     );
     await assertBaselineUnchanged("清理后");
+    if (prevAppDomain === undefined) {
+      delete process.env.APP_DOMAIN;
+    } else {
+      process.env.APP_DOMAIN = prevAppDomain;
+    }
   }
 
   // 显式确保 regionsTable 引用不被裁掉（校验未篡改 schema）

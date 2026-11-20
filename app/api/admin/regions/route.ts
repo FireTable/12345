@@ -3,17 +3,28 @@ import { sql, getAllRegions } from "@/db/client";
 import { registerRegion } from "@/lib/tenant/schema-manager";
 import { invalidateVocabCache } from "@/lib/vocabulary";
 import { ApiCode, apiSuccess, apiError } from "@/lib/api-codes";
+import {
+  ECOMMERCE_CS_PROFILE,
+  filterRegionsByAppDomain,
+  getAppDomainMode,
+  isDomainAllowed,
+  parseDomainProfile,
+} from "@/lib/domain-profile";
+
+export const dynamic = "force-dynamic";
 
 /**
  * GET /api/admin/regions
- * 超管查看全量地区站点及各 Schema 的数据统计（工单数、多频主题数、字典数）
+ * 超管查看当前 APP_DOMAIN 下纳管站点及各 Schema 的数据统计（工单数、多频主题数、字典数）
  */
 export async function GET() {
   try {
-    const regions = await getAllRegions();
+    const appDomain = getAppDomainMode();
+    const regions = filterRegionsByAppDomain(await getAllRegions(), appDomain);
 
     const statsList = await Promise.all(
       regions.map(async (r) => {
+        const domainProfile = parseDomainProfile(r.categoryConfigJson);
         try {
           const [tRow] = await sql.unsafe(
             `SELECT count(*)::int as count FROM "${r.schemaName}".tickets;`
@@ -27,13 +38,15 @@ export async function GET() {
 
           return {
             ...r,
+            domainProfile,
             ticketCount: tRow?.count || 0,
             themeCount: thRow?.count || 0,
             vocabCount: vRow?.count || 0,
           };
-        } catch (e) {
+        } catch {
           return {
             ...r,
+            domainProfile,
             ticketCount: 0,
             themeCount: 0,
             vocabCount: 0,
@@ -46,8 +59,9 @@ export async function GET() {
       success: true,
       code: ApiCode.OK,
       message: "操作成功",
+      appDomain,
       regions: statsList,
-      data: { regions: statsList },
+      data: { appDomain, regions: statsList },
     });
   } catch (error: any) {
     console.error("[admin/regions] GET failed:", error);
@@ -57,13 +71,13 @@ export async function GET() {
 
 /**
  * POST /api/admin/regions
- * 超级管理员创建新地区 12345 站点
- * 自动在 PostgreSQL 物理创建 Schema 命名空间与 7 张标准数据表
+ * 超级管理员创建新站点，自动在 PostgreSQL 物理创建 Schema 命名空间与标准数据表
  */
 export async function POST(req: NextRequest) {
   try {
+    const appDomain = getAppDomainMode();
     const body = await req.json();
-    const { id, name, city, province, svgMapPath, description, isDefault } = body;
+    const { id, name, city, province, svgMapPath, description, isDefault, domainType } = body;
 
     if (!id || !name || !city) {
       return apiError(ApiCode.INVALID_PARAMS, "缺少必要参数: id, name, city 为必填项", 400);
@@ -72,6 +86,9 @@ export async function POST(req: NextRequest) {
     // 格式化标识符
     const cleanId = id.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_");
     const schemaName = `region_${cleanId}`;
+    const shouldTagEcommerce =
+      appDomain === "ECOMMERCE_CS" ||
+      (domainType === "ECOMMERCE_CS" && isDomainAllowed("ECOMMERCE_CS", appDomain));
 
     await registerRegion(sql, {
       id: cleanId,
@@ -80,6 +97,9 @@ export async function POST(req: NextRequest) {
       province: (province || "广东省").trim(),
       schemaName,
       svgMapPath: svgMapPath?.trim() || null,
+      categoryConfigJson: shouldTagEcommerce
+        ? JSON.stringify({ domainProfile: ECOMMERCE_CS_PROFILE })
+        : undefined,
       description: description?.trim() || null,
       isDefault: Boolean(isDefault),
     });

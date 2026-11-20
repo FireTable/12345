@@ -93,7 +93,7 @@ interface AiScoutResult {
 }
 
 export default function AdminRegionsPage() {
-  const { activeRegion, regions: contextRegions, switchRegion } = useRegion();
+  const { appDomain, activeRegion, regions: contextRegions, switchRegion } = useRegion();
   const [regions, setRegions] = useState<RegionWithStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [mcpClients, setMcpClients] = useState<McpClientRow[]>([]);
@@ -412,12 +412,17 @@ export default function AdminRegionsPage() {
   // 拆分政务 12345 站点与跨行业示范站点（电商客诉不混入政务 12345 站点数与研判总量）
   const govRegions = regions.filter((r) => !resolveIsEcommerce(r, contextRegions));
   const ecomRegions = regions.filter((r) => resolveIsEcommerce(r, contextRegions));
+  const isEcommerceOnly =
+    appDomain === "ECOMMERCE_CS" ||
+    (regions.length > 0 && govRegions.length === 0 && ecomRegions.length > 0);
 
   const govTickets = govRegions.reduce((acc, r) => acc + (r.ticketCount || 0), 0);
   const govThemes = govRegions.reduce((acc, r) => acc + (r.themeCount || 0), 0);
   const govVocab = govRegions.reduce((acc, r) => acc + (r.vocabCount || 0), 0);
 
   const ecomTickets = ecomRegions.reduce((acc, r) => acc + (r.ticketCount || 0), 0);
+  const ecomThemes = ecomRegions.reduce((acc, r) => acc + (r.themeCount || 0), 0);
+  const ecomVocab = ecomRegions.reduce((acc, r) => acc + (r.vocabCount || 0), 0);
 
   const renderRegionCard = (r: RegionWithStats, isEcom: boolean) => {
     const isActive = activeRegion?.id === r.id;
@@ -618,13 +623,15 @@ export default function AdminRegionsPage() {
       <div className="page-hero">
         <div className="min-w-0">
           <div className="page-hero__title flex items-center gap-2 flex-wrap">
-            <span>12345 站点纳管与多租户控制台</span>
+            <span>{isEcommerceOnly ? "电商客诉多租户与算力控制台" : "12345 站点纳管与多租户控制台"}</span>
             <span className="rounded-full bg-blue-50 border border-blue-200/80 px-2 py-0.5 text-[11px] font-semibold text-blue-700 whitespace-nowrap">
               SuperAdmin 物理 Schema 隔离
             </span>
           </div>
           <div className="page-hero__desc">
-            支持全国省市县区 12345 站点动态纳管 · PostgreSQL Schema 物理隔离 · SuperAgent AI 智能梳理镇街字典 · Colab GPU 算力热插拔
+            {isEcommerceOnly
+              ? "全渠道电商客诉租户纳管 · PostgreSQL Schema 物理隔离 · 渠道仓网词典与 Colab GPU 算力热插拔"
+              : "支持全国省市县区 12345 站点动态纳管 · PostgreSQL Schema 物理隔离 · SuperAgent AI 智能梳理镇街字典 · Colab GPU 算力热插拔"}
             {computeSummary
               ? `（算力池：${computeSummary.envCount + computeSummary.dynamicCount} 节点 / ${computeSummary.onlineCount} 在线）`
               : ""}
@@ -635,17 +642,19 @@ export default function AdminRegionsPage() {
           refreshing={loading}
           className="flex-wrap"
         >
-          <button
-            type="button"
-            className="btn btn--primary h-[34px] px-3.5 text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap"
-            onClick={() => {
-              setScoutStep(1);
-              setShowScoutModal(true);
-            }}
-          >
-            <Sparkles className="h-3.5 w-3.5 text-amber-300 shrink-0" />
-            <span>AI 智能新建 12345 站点</span>
-          </button>
+          {!isEcommerceOnly && (
+            <button
+              type="button"
+              className="btn btn--primary h-[34px] px-3.5 text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap"
+              onClick={() => {
+                setScoutStep(1);
+                setShowScoutModal(true);
+              }}
+            >
+              <Sparkles className="h-3.5 w-3.5 text-amber-300 shrink-0" />
+              <span>AI 智能新建 12345 站点</span>
+            </button>
+          )}
         </PageHeaderActions>
       </div>
 
@@ -654,12 +663,14 @@ export default function AdminRegionsPage() {
         <StatCard
           icon={Building2}
           tone="blue"
-          label="已纳管 12345 站点"
-          value={govRegions.length}
+          label={isEcommerceOnly ? "已纳管电商客诉站点" : "已纳管 12345 站点"}
+          value={isEcommerceOnly ? ecomRegions.length : govRegions.length}
           sub={
-            ecomRegions.length > 0
-              ? `另含 ${ecomRegions.length} 个跨行业示范站`
-              : "支持跨省市区县无上限扩展"
+            isEcommerceOnly
+              ? "支持多品牌与全渠道租户隔离"
+              : ecomRegions.length > 0
+                ? `另含 ${ecomRegions.length} 个跨行业示范站`
+                : "支持跨省市区县无上限扩展"
           }
         />
         <StatCard
@@ -668,9 +679,11 @@ export default function AdminRegionsPage() {
           label="物理隔离 Schema"
           value={regions.length}
           sub={
-            ecomRegions.length > 0
-              ? `政务 ${govRegions.length} + 跨行业示范 ${ecomRegions.length}`
-              : "PostgreSQL 原生租户隔离"
+            isEcommerceOnly
+              ? "PostgreSQL 原生电商租户隔离"
+              : ecomRegions.length > 0
+                ? `政务 ${govRegions.length} + 跨行业示范 ${ecomRegions.length}`
+                : "PostgreSQL 原生租户隔离"
           }
         />
         <StatCard
@@ -684,12 +697,14 @@ export default function AdminRegionsPage() {
         <StatCard
           icon={Layers}
           tone="orange"
-          label="政务 12345 研判总量"
-          value={govTickets}
+          label={isEcommerceOnly ? "电商客诉研判总量" : "政务 12345 研判总量"}
+          value={isEcommerceOnly ? ecomTickets : govTickets}
           sub={
-            ecomTickets > 0
-              ? `${govThemes} 主题 · 示范站 ${ecomTickets.toLocaleString()} 单`
-              : `${govThemes} 个治理主题 / ${govVocab} 条词典`
+            isEcommerceOnly
+              ? `${ecomThemes} 个客诉案卷 / ${ecomVocab} 条行业词典`
+              : ecomTickets > 0
+                ? `${govThemes} 主题 · 示范站 ${ecomTickets.toLocaleString()} 单`
+                : `${govThemes} 个治理主题 / ${govVocab} 条词典`
           }
         />
       </StatCardGrid>
@@ -736,30 +751,34 @@ export default function AdminRegionsPage() {
       </div>
 
       {/* 站点清单分区 1：政务 12345 辖区站点 */}
-      <div className="mt-6 mb-8">
-        <div className="flex items-center justify-between gap-2 flex-wrap mb-4">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h2 className="text-sm font-bold text-slate-900">政务 12345 辖区站点</h2>
-            <span className="text-xs text-slate-500 font-mono tabular-nums">
-              ({govRegions.length} 个独立 PostgreSQL Schema)
+      {govRegions.length > 0 && (
+        <div className="mt-6 mb-8">
+          <div className="flex items-center justify-between gap-2 flex-wrap mb-4">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-sm font-bold text-slate-900">政务 12345 辖区站点</h2>
+              <span className="text-xs text-slate-500 font-mono tabular-nums">
+                ({govRegions.length} 个独立 PostgreSQL Schema)
+              </span>
+            </div>
+            <span className="text-xs text-slate-400">
+              各政务区县具有独立的工单库、多频聚类库、镇街网格字典与 GIS 地图配置
             </span>
           </div>
-          <span className="text-xs text-slate-400">
-            各政务区县具有独立的工单库、多频聚类库、镇街网格字典与 GIS 地图配置
-          </span>
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {govRegions.map((r) => renderRegionCard(r, false))}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {govRegions.map((r) => renderRegionCard(r, false))}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* 站点清单分区 2：跨行业能力验证 · 电商客诉示范 */}
+      {/* 站点清单分区 2：电商客诉租户站点 */}
       {ecomRegions.length > 0 && (
         <div className="mt-6 mb-8">
           <div className="flex items-center justify-between gap-2 flex-wrap mb-4">
             <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-sm font-bold text-slate-900">跨行业能力验证 · 电商客诉示范</h2>
+              <h2 className="text-sm font-bold text-slate-900">
+                {govRegions.length > 0 ? "跨行业能力验证 · 电商客诉示范" : "电商客诉租户站点"}
+              </h2>
               <span className="rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-semibold text-amber-800 whitespace-nowrap">
                 DomainProfile 行业包
               </span>
@@ -768,7 +787,9 @@ export default function AdminRegionsPage() {
               </span>
             </div>
             <span className="text-xs text-slate-400">
-              复用平台多租户 Schema、PII 脱敏、假闭环与多频聚类引擎，独立口径不计入政务 12345 总量
+              {govRegions.length > 0
+                ? "复用平台多租户 Schema、PII 脱敏、假闭环与多频聚类引擎，独立口径不计入政务 12345 总量"
+                : "各电商客诉租户具有独立的工单库、多频案卷库与全渠道仓网词典"}
             </span>
           </div>
 

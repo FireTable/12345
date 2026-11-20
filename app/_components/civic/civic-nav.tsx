@@ -73,7 +73,10 @@ export function CivicNav() {
   const pathname = usePathname();
   const router = useRouter();
   const { openCopilot, copilotOpen, pipelineDrawerOpen, togglePipelineDrawer, analyzing, taskProgress } = useCivicWorkflow();
-  const { activeRegion } = useRegion();
+  const { activeRegion, appDomain } = useRegion();
+  const isEcommerce =
+    activeRegion?.domainProfile?.domainType === "ECOMMERCE_CS" ||
+    (!activeRegion && appDomain === "ECOMMERCE_CS");
   const [menuOpen, setMenuOpen] = useState(false);
   const [videoModalOpen, setVideoModalOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -122,11 +125,10 @@ export function CivicNav() {
       else title = "智能研判中心";
     }
     const regionPrefix = activeRegion ? `${activeRegion.name} · ` : "";
-    const isEcommerce = activeRegion?.domainProfile?.domainType === "ECOMMERCE_CS";
     document.title = isEcommerce
-      ? `${regionPrefix}${title} | 民声智理`
+      ? `${regionPrefix}${title} | 民声智理 · 电商客诉`
       : `${regionPrefix}${title} | 民声智理 12345`;
-  }, [pathname, activeRegion?.name, activeRegion?.domainProfile?.domainType]);
+  }, [pathname, activeRegion?.name, isEcommerce]);
 
   useEffect(() => {
     if (!menuOpen && !userMenuOpen && !moreOpen) return;
@@ -170,14 +172,14 @@ export function CivicNav() {
             href="/"
             className="navbar__brand-link"
             aria-label="民声智理首页"
-            title={activeRegion?.domainProfile?.domainType === "ECOMMERCE_CS" ? "民声智理 · 电商客诉 AI 智能研判系统" : "民声智理 · 12345 AI 智能研判系统"}
+            title={isEcommerce ? "民声智理 · 电商客诉 AI 智能研判系统" : "民声智理 · 12345 AI 智能研判系统"}
           >
             <div className="brand-morph-capsule">
               <div className="brand-morph-viewport">
                 <div className="brand-morph-roller">
                   <div className="brand-morph-item">民声智理</div>
                   <div className="brand-morph-item brand-morph-item--sub">
-                    {activeRegion?.domainProfile?.domainType === "ECOMMERCE_CS" ? "电商 AI 研判" : "12345 AI 研判"}
+                    {isEcommerce ? "电商 AI 研判" : "12345 AI 研判"}
                   </div>
                   <div className="brand-morph-item">民声智理</div>
                 </div>

@@ -2,6 +2,9 @@ import { NextRequest } from "next/server";
 import { sql, getRegionDb } from "@/db/client";
 import { fetchDistrictBoundary } from "@/lib/map/boundary-service";
 import { apiSuccess, apiError, ApiCode } from "@/lib/api-codes";
+import { isRegionAllowedInAppDomain } from "@/lib/domain-profile";
+
+export const dynamic = "force-dynamic";
 
 /**
  * GET /api/regions/[id]/boundary?level=district|subdistricts
@@ -16,7 +19,7 @@ export async function GET(
   try {
     const { id } = await params;
     const { region } = await getRegionDb(id);
-    if (!region) {
+    if (!region || !isRegionAllowedInAppDomain(region)) {
       return apiError(ApiCode.REGION_NOT_FOUND, "目标站点不存在", 404);
     }
 

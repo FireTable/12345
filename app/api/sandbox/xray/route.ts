@@ -235,8 +235,7 @@ export async function POST(req: NextRequest) {
     const rawTitle = typeof body?.title === "string" ? body.title.trim() : "";
     const rawSubdistrict = typeof body?.subdistrict === "string" ? body.subdistrict.trim() : "";
     const persist = body?.persist === true;
-    const regionId =
-      normalizeInputRegionId(body?.regionId) || (await resolveRequestRegionId(req));
+    const regionId = await resolveRequestRegionId(req, normalizeInputRegionId(body?.regionId));
     const domainProfile = await getRegionDomainProfile(regionId);
     const isEcommerce = domainProfile.domainType === "ECOMMERCE_CS";
 
