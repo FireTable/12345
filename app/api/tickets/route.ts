@@ -17,9 +17,13 @@ import { clampPage, clampSize } from "@/lib/api-bounds";
 import { isTownLabel } from "@/lib/admin-area";
 import { recordDisposalLog } from "@/lib/disposal";
 import { broadcastDataRefresh } from "@/lib/sse-broadcaster";
+import { requireAdmin } from "@/lib/auth/rbac";
 
 export async function GET(req: Request) {
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const regionId = await resolveRequestRegionId(req);
     const { db: tenantDb } = await getRegionDb(regionId);
     const { searchParams } = new URL(req.url);
@@ -187,6 +191,9 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const startTime = Date.now();
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const body = await req.json();
     const newTickets = Array.isArray(body) ? body : [body];
 

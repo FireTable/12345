@@ -7,6 +7,7 @@
  */
 
 import { NextRequest } from "next/server";
+import { withAuthHeaders } from "./_auth-helper";
 import { and, eq } from "drizzle-orm";
 import { getRegionDb, sql } from "../db/client";
 import {
@@ -62,18 +63,21 @@ async function assertBaselineUnchanged(stage: string) {
   );
 }
 
-function makeRequest(
+async function makeRequest(
   pathWithQuery: string,
   init?: { method?: string; body?: unknown; headers?: Record<string, string>; regionId?: string }
 ) {
   const regionId = init?.regionId ?? "ecom_demo";
   const sep = pathWithQuery.includes("?") ? "&" : "?";
-  const url = `http://civic.test${pathWithQuery}${sep}region=${encodeURIComponent(regionId)}`;
-  const headers = new Headers({
-    "x-region-id": regionId,
-    ...(init?.body !== undefined ? { "content-type": "application/json" } : {}),
-    ...(init?.headers ?? {}),
-  });
+  const url = `http://localhost:3000${pathWithQuery}${sep}region=${encodeURIComponent(regionId)}`;
+  const headers = await withAuthHeaders(
+    {
+      "x-region-id": regionId,
+      ...(init?.body !== undefined ? { "content-type": "application/json" } : {}),
+      ...(init?.headers ?? {}),
+    },
+    "admin"
+  );
   return new NextRequest(url, {
     method: init?.method ?? "GET",
     headers,
@@ -149,7 +153,7 @@ async function main() {
     assert(dbDefaultCount === 1, `public.regions 仅 1 个默认租户 (count=${dbDefaultCount})`);
 
     // 2. 验证 /api/overview & /api/cockpit 电商域数据读出且渠道无“未知”污染
-    const overviewRes = await overviewGet(makeRequest("/api/overview", { regionId: "ecom_demo" }));
+    const overviewRes = await overviewGet(await makeRequest("/api/overview", { regionId: "ecom_demo" }));
     const overviewJson = await overviewRes.json();
     const distKeys = Object.keys(overviewJson.regionDistribution || {});
     assert(
@@ -160,7 +164,7 @@ async function main() {
       `ecom_demo /api/overview 总量=${overviewJson.totalWorkorders}, 含天猫旗舰店且无"未知" (${distKeys.length} 个渠道)`
     );
 
-    const cockpitRes = await cockpitGet(makeRequest("/api/cockpit", { regionId: "ecom_demo" }));
+    const cockpitRes = await cockpitGet(await makeRequest("/api/cockpit", { regionId: "ecom_demo" }));
     const cockpitJson = await cockpitRes.json();
     assert(cockpitRes.status === 200 && cockpitJson.success !== false, "ecom_demo /api/cockpit 返回 200");
 
@@ -170,7 +174,7 @@ async function main() {
 
     // 亮点 1：SKU-GD2026-881 高频批次爆发
     const th1EcomRes = await clusterGet(
-      makeRequest("/api/clusters/ECOM-TH-001", { regionId: "ecom_demo" }),
+      await makeRequest("/api/clusters/ECOM-TH-001", { regionId: "ecom_demo" }),
       { params: Promise.resolve({ id: "ECOM-TH-001" }) }
     );
     const th1EcomJson = await th1EcomRes.json();
@@ -185,7 +189,7 @@ async function main() {
 
     // 跨租户隔离：天河库不可见电商主题
     const th1TianheRes = await clusterGet(
-      makeRequest("/api/clusters/ECOM-TH-001", { regionId: "gz_tianhe" }),
+      await makeRequest("/api/clusters/ECOM-TH-001", { regionId: "gz_tianhe" }),
       { params: Promise.resolve({ id: "ECOM-TH-001" }) }
     );
     assert(th1TianheRes.status === 404, `跨租户隔离: gz_tianhe 访问 ECOM-TH-001 返回 ${th1TianheRes.status}`);
@@ -197,7 +201,7 @@ async function main() {
       .where(and(eq(ticketsTable.primaryThemeId, "ECOM-TH-002"), eq(ticketsTable.isFakeClosure, true)));
     assert(th2Tickets.length >= 1, `亮点案例2 ECOM-TH-002 含假闭环重开工单 (${th2Tickets.length} 条)`);
 
-    const fakeTabRes = await ticketsGet(makeRequest("/api/tickets?tab=fake_closure&size=20", { regionId: "ecom_demo" }));
+    const fakeTabRes = await ticketsGet(await makeRequest("/api/tickets?tab=fake_closure&size=20", { regionId: "ecom_demo" }));
     const fakeTabJson = await fakeTabRes.json();
     assert(
       fakeTabRes.status === 200 &&
@@ -227,7 +231,7 @@ async function main() {
 
     // 4. 验证 POST /api/sandbox/xray (persist=false) 双域分流与零写库
     const ecomXrayRes = await xrayPost(
-      makeRequest("/api/sandbox/xray", {
+      await makeRequest("/api/sandbox/xray", {
         method: "POST",
         regionId: "ecom_demo",
         body: {
@@ -274,7 +278,7 @@ async function main() {
 
     // 对照验证 gz_tianhe X-Ray 仍保持政务路由与零写库
     const tianheXrayRes = await xrayPost(
-      makeRequest("/api/sandbox/xray", {
+      await makeRequest("/api/sandbox/xray", {
         method: "POST",
         regionId: "gz_tianhe",
         body: {
@@ -346,7 +350,7 @@ async function main() {
       });
 
       const dRes = await clusterPatch(
-        makeRequest(`/api/clusters/${tempThemeId}`, {
+        await makeRequest(`/api/clusters/${tempThemeId}`, {
           regionId: "ecom_demo",
           method: "PATCH",
           body: { action: "DISPATCH", owner: "品控质检组", note: "E2E临时派单" },
@@ -363,7 +367,7 @@ async function main() {
       );
 
       const rRes = await clusterPatch(
-        makeRequest(`/api/clusters/${tempThemeId}`, {
+        await makeRequest(`/api/clusters/${tempThemeId}`, {
           regionId: "ecom_demo",
           method: "PATCH",
           body: { action: "RESOLVE", owner: "品控质检组", note: "E2E临时办结" },

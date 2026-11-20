@@ -16,6 +16,7 @@ import {
   RotateCcw,
   Wrench,
   AlertTriangle,
+  ShieldAlert,
   Trash2,
 } from "lucide-react";
 import { SkTicketDetail } from "@/app/_components/civic/skeletons";
@@ -29,6 +30,7 @@ import { CIVIC_CATEGORIES } from "@/lib/civic-cluster";
 import { AiVerdictCard, CitizenVoiceCard, TicketPropsGrid } from "@/app/_components/civic/ticket-verdict-view";
 import { DisposalTimeline, type DisposalLogItem } from "@/app/_components/civic/disposal-timeline";
 import { useRegion } from "@/app/_components/civic/region-context";
+import { useAuthRole } from "@/lib/auth/use-role";
 import { ConfirmDialog } from "@/app/_components/ui/confirm-dialog";
 import {
   Select,
@@ -63,6 +65,7 @@ const ALIAS_TYPE_OPTIONS = [
 
 export default function TicketDetailPage() {
   const { activeRegion } = useRegion();
+  const { isAdmin, isPending: isRolePending } = useAuthRole();
   const params = useParams<{ id: string }>();
   const [row, setRow] = useState<any>(null);
   const [load, setLoad] = useState<DetailLoadStatus>("pending");
@@ -138,6 +141,10 @@ export default function TicketDetailPage() {
     },
     successMsg: string
   ): Promise<boolean> {
+    if (!isAdmin) {
+      toast.error("需管理员权限可执行工单处置");
+      return false;
+    }
     if (!row || actionPending) return false;
     setActionPending(true);
     try {
@@ -360,10 +367,24 @@ export default function TicketDetailPage() {
                 <Wrench className="w-4 h-4 text-blue-600 shrink-0" />
                 <span>工单处置与人工纠偏</span>
               </div>
-              <span className={`status-tag shrink-0 status-tag--${statusTag(row.status)}`}>
-                {statusLabel(row.status)}
-              </span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {!isRolePending && !isAdmin && (
+                  <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                    只读受限
+                  </span>
+                )}
+                <span className={`status-tag shrink-0 status-tag--${statusTag(row.status)}`}>
+                  {statusLabel(row.status)}
+                </span>
+              </div>
             </div>
+
+            {!isRolePending && !isAdmin && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50/80 px-2.5 py-2 text-[11px] text-amber-800 flex items-center gap-1.5">
+                <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
+                <span>需管理员权限可执行状态流转、实体纠偏与移出群组处置</span>
+              </div>
+            )}
 
             {/* 状态流转区 */}
             <div className="space-y-2">
@@ -373,33 +394,36 @@ export default function TicketDetailPage() {
               <input
                 type="text"
                 value={statusNote}
+                disabled={!isAdmin || actionPending}
                 onChange={(e) => setStatusNote(e.target.value)}
-                placeholder="填写本次处置说明或办结情况（可选）"
-                className="w-full h-9 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-slate-50/70 text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-blue-500"
+                placeholder={isAdmin ? "填写本次处置说明或办结情况（可选）" : "需管理员权限可填写处置备注"}
+                className="w-full h-9 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-slate-50/70 text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-blue-500 disabled:opacity-60 disabled:cursor-not-allowed"
               />
               <div className="grid grid-cols-3 gap-1.5">
                 <button
                   type="button"
-                  disabled={actionPending || currentStatus === "PENDING"}
+                  disabled={!isAdmin || actionPending || currentStatus === "PENDING"}
+                  title={!isAdmin ? "需管理员权限可执行处置" : undefined}
                   onClick={() => void handleStatusChange("PENDING")}
                   className={`btn justify-center text-xs min-h-[38px] sm:min-h-[32px] py-1.5 px-2 min-w-0 whitespace-nowrap ${
                     currentStatus === "PENDING"
                       ? "bg-amber-50 text-amber-700 border-amber-200 cursor-default"
                       : "btn--default"
-                  } disabled:opacity-60`}
+                  } disabled:opacity-60 disabled:cursor-not-allowed`}
                 >
                   <Clock className="w-3.5 h-3.5 shrink-0" />
                   <span>待处理</span>
                 </button>
                 <button
                   type="button"
-                  disabled={actionPending || (currentStatus === "IN_PROGRESS" && !statusNote.trim())}
+                  disabled={!isAdmin || actionPending || (currentStatus === "IN_PROGRESS" && !statusNote.trim())}
+                  title={!isAdmin ? "需管理员权限可执行处置" : undefined}
                   onClick={() => void handleStatusChange("IN_PROGRESS")}
                   className={`btn justify-center text-xs min-h-[38px] sm:min-h-[32px] py-1.5 px-2 min-w-0 whitespace-nowrap ${
                     currentStatus === "IN_PROGRESS"
                       ? "bg-blue-50 text-blue-700 border-blue-200"
                       : "btn--default"
-                  } disabled:opacity-60`}
+                  } disabled:opacity-60 disabled:cursor-not-allowed`}
                 >
                   {currentStatus === "RESOLVED" ? (
                     <>
@@ -412,13 +436,14 @@ export default function TicketDetailPage() {
                 </button>
                 <button
                   type="button"
-                  disabled={actionPending || currentStatus === "RESOLVED"}
+                  disabled={!isAdmin || actionPending || currentStatus === "RESOLVED"}
+                  title={!isAdmin ? "需管理员权限可执行处置" : undefined}
                   onClick={() => void handleStatusChange("RESOLVED")}
                   className={`btn justify-center text-xs min-h-[38px] sm:min-h-[32px] py-1.5 px-2 min-w-0 whitespace-nowrap ${
                     currentStatus === "RESOLVED"
                       ? "bg-emerald-50 text-emerald-700 border-emerald-200 cursor-default"
                       : "btn--primary"
-                  } disabled:opacity-60`}
+                  } disabled:opacity-60 disabled:cursor-not-allowed`}
                 >
                   <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                   <span>一键办结</span>
@@ -450,14 +475,19 @@ export default function TicketDetailPage() {
                       <input
                         type="text"
                         value={subdistrict}
+                        disabled={!isAdmin || actionPending}
                         onChange={(e) => setSubdistrict(e.target.value)}
                         placeholder={isEcommerce ? "如：天猫旗舰店" : "如：大良街道"}
-                        className="w-full h-9 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
+                        className="w-full h-9 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:opacity-60"
                       />
                     </div>
                     <div className="min-w-0">
                       <label className="block text-[11px] text-slate-500 mb-1">诉求分类</label>
-                      <Select value={sourceCategory || undefined} onValueChange={setSourceCategory}>
+                      <Select
+                        value={sourceCategory || undefined}
+                        onValueChange={setSourceCategory}
+                        disabled={!isAdmin || actionPending}
+                      >
                         <SelectTrigger className="w-full h-9 sm:h-8 bg-white border-slate-200 text-xs text-slate-900 rounded-lg">
                           <SelectValue placeholder="选择分类" />
                         </SelectTrigger>
@@ -477,9 +507,10 @@ export default function TicketDetailPage() {
                     <input
                       type="text"
                       value={canonicalSubject}
+                      disabled={!isAdmin || actionPending}
                       onChange={(e) => setCanonicalSubject(e.target.value)}
                       placeholder="填写标准化涉事主体名称"
-                      className="w-full h-9 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
+                      className="w-full h-9 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:opacity-60"
                     />
                   </div>
 
@@ -488,9 +519,10 @@ export default function TicketDetailPage() {
                     <input
                       type="text"
                       value={address}
+                      disabled={!isAdmin || actionPending}
                       onChange={(e) => setAddress(e.target.value)}
                       placeholder="填写微观事发地址"
-                      className="w-full h-9 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
+                      className="w-full h-9 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:opacity-60"
                     />
                   </div>
 
@@ -500,14 +532,19 @@ export default function TicketDetailPage() {
                       <input
                         type="text"
                         value={eventType}
+                        disabled={!isAdmin || actionPending}
                         onChange={(e) => setEventType(e.target.value)}
                         placeholder="如：夜间施工噪音"
-                        className="w-full h-9 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
+                        className="w-full h-9 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:opacity-60"
                       />
                     </div>
                     <div className="min-w-0">
                       <label className="block text-[11px] text-slate-500 mb-1">紧急程度</label>
-                      <Select value={urgency} onValueChange={setUrgency}>
+                      <Select
+                        value={urgency}
+                        onValueChange={setUrgency}
+                        disabled={!isAdmin || actionPending}
+                      >
                         <SelectTrigger className="w-full h-9 sm:h-8 bg-white border-slate-200 text-xs text-slate-900 rounded-lg">
                           <SelectValue />
                         </SelectTrigger>
@@ -525,9 +562,10 @@ export default function TicketDetailPage() {
                     <input
                       type="text"
                       value={correctionNote}
+                      disabled={!isAdmin || actionPending}
                       onChange={(e) => setCorrectionNote(e.target.value)}
                       placeholder="说明人工调整原因（可选）"
-                      className="w-full h-9 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
+                      className="w-full h-9 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:opacity-60"
                     />
                   </div>
 
@@ -536,6 +574,7 @@ export default function TicketDetailPage() {
                       <input
                         type="checkbox"
                         checked={saveAsAlias}
+                        disabled={!isAdmin || actionPending}
                         onChange={(e) => {
                           const checked = e.target.checked;
                           setSaveAsAlias(checked);
@@ -543,7 +582,7 @@ export default function TicketDetailPage() {
                             setCanonicalText(canonicalSubject || address || subdistrict || "");
                           }
                         }}
-                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
                       />
                       <span>同步沉淀为标准别名知识库</span>
                     </label>
@@ -552,6 +591,7 @@ export default function TicketDetailPage() {
                         <Select
                           value={aliasType}
                           onValueChange={(v) => setAliasType(v as typeof aliasType)}
+                          disabled={!isAdmin || actionPending}
                         >
                           <SelectTrigger className="w-full h-9 sm:h-8 bg-white border-slate-200 text-xs text-slate-900 rounded-lg">
                             <SelectValue />
@@ -568,16 +608,18 @@ export default function TicketDetailPage() {
                           <input
                             type="text"
                             value={aliasText}
+                            disabled={!isAdmin || actionPending}
                             onChange={(e) => setAliasText(e.target.value)}
                             placeholder="原口语别名"
-                            className="w-full h-9 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
+                            className="w-full h-9 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:opacity-60"
                           />
                           <input
                             type="text"
                             value={canonicalText}
+                            disabled={!isAdmin || actionPending}
                             onChange={(e) => setCanonicalText(e.target.value)}
                             placeholder="对应标准名称"
-                            className="w-full h-9 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
+                            className="w-full h-9 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:opacity-60"
                           />
                         </div>
                       </div>
@@ -586,10 +628,15 @@ export default function TicketDetailPage() {
 
                   <button
                     type="submit"
-                    disabled={actionPending}
-                    className="btn btn--primary w-full justify-center text-xs min-h-[38px] sm:min-h-[34px] py-2"
+                    disabled={!isAdmin || actionPending}
+                    title={!isAdmin ? "需管理员权限可执行处置" : undefined}
+                    className="btn btn--primary w-full justify-center text-xs min-h-[38px] sm:min-h-[34px] py-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {actionPending ? "保存中…" : "保存人工纠偏"}
+                    {!isAdmin
+                      ? "需管理员权限可执行处置"
+                      : actionPending
+                      ? "保存中…"
+                      : "保存人工纠偏"}
                   </button>
                 </form>
               )}
@@ -619,9 +666,10 @@ export default function TicketDetailPage() {
                 </Link>
                 <button
                   type="button"
-                  disabled={actionPending}
+                  disabled={!isAdmin || actionPending}
+                  title={!isAdmin ? "需管理员权限可执行处置" : undefined}
                   onClick={() => setDetachConfirmOpen(true)}
-                  className="btn btn--default flex items-center justify-center gap-1.5 text-xs text-rose-600 border-rose-200 hover:border-rose-400 w-full min-h-[38px] sm:min-h-[34px] py-2 font-medium disabled:opacity-50"
+                  className="btn btn--default flex items-center justify-center gap-1.5 text-xs text-rose-600 border-rose-200 hover:border-rose-400 w-full min-h-[38px] sm:min-h-[34px] py-2 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Trash2 className="w-3.5 h-3.5 shrink-0" />
                   <span>移出当前群组</span>

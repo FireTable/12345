@@ -15,6 +15,7 @@ import {
   normalizeProvider,
   type ComputeNodeProvider,
 } from "@/lib/compute-nodes";
+import { requireAdmin } from "@/lib/auth/rbac";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +60,9 @@ async function probeEndpointOnline(
 
 export async function GET(req: NextRequest) {
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const regionId = await resolveRequestRegionId(req);
     const { db: tenantDb, region } = await getRegionDb(regionId);
 

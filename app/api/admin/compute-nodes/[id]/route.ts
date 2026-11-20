@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { deleteComputeNode, updateComputeNode } from "@/lib/compute-nodes";
+import { requireAdmin } from "@/lib/auth/rbac";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const { id } = await params;
     const body = (await req.json().catch(() => null)) as {
       name?: string;
@@ -46,10 +50,13 @@ export async function PATCH(
  * 移除动态算力节点并热重载 System-2 集群池。
  */
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const { id } = await params;
     const deleted = await deleteComputeNode(id);
     if (!deleted) {

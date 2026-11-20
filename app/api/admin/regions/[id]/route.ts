@@ -3,6 +3,7 @@ import { sql, getRegionDb, getAllRegions } from "@/db/client";
 import { destroyRegionTenant } from "@/lib/tenant/schema-manager";
 import { invalidateVocabCache } from "@/lib/vocabulary";
 import { ApiCode, apiSuccess, apiError } from "@/lib/api-codes";
+import { requireAdmin } from "@/lib/auth/rbac";
 import {
   filterRegionsByAppDomain,
   getAppDomainMode,
@@ -20,6 +21,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const { id } = await params;
     const mode = getAppDomainMode();
     const { region } = await getRegionDb(id);
@@ -41,6 +45,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const { id } = await params;
     const mode = getAppDomainMode();
     const allowed = filterRegionsByAppDomain(await getAllRegions(), mode);
@@ -77,6 +84,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const { id } = await params;
     const mode = getAppDomainMode();
     const all = await getAllRegions();

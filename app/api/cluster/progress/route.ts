@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getTaskProgress, getLatestTaskProgress, type TaskProgress } from "@/lib/task-progress";
 import { invalidateCivicAggregates } from "@/lib/civic-cache";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
+import { requireAdmin } from "@/lib/auth/rbac";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,9 @@ function jsonProgress(data: TaskProgress) {
 }
 
 export async function GET(req: Request) {
+  const auth = await requireAdmin(req);
+  if ("response" in auth) return auth.response;
+
   const { searchParams } = new URL(req.url);
   const taskId = searchParams.get("taskId");
   const regionId = await resolveRequestRegionId(req as any);

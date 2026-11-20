@@ -4,6 +4,7 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   // Standalone build → minimal runtime image (see Dockerfile)
   output: "standalone",
+  transpilePackages: ["@firetable/project-xiaochun", "@firetable/stream-asr"],
   // Support server external packages if needed
   serverExternalPackages: [
     "@langchain/langgraph",

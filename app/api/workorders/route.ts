@@ -9,9 +9,13 @@ import { cacheGetOrLoad } from "@/lib/civic-cache";
 import { loadWorkorderStats } from "@/lib/civic-queries";
 import { clampTimeRef, timeWindow } from "@/lib/civic-time";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
+import { requireAdmin } from "@/lib/auth/rbac";
 
 export async function GET(req: NextRequest) {
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const regionId = await resolveRequestRegionId(req);
     const { db: tenantDb } = await getRegionDb(regionId);
 

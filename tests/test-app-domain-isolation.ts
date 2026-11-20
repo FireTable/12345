@@ -8,6 +8,7 @@
  */
 
 import { NextRequest } from "next/server";
+import { withAuthHeaders } from "./_auth-helper";
 import { sql } from "../db/client";
 import { GET as regionsGet } from "../app/api/regions/route";
 import { GET as adminRegionsGet } from "../app/api/admin/regions/route";
@@ -52,19 +53,22 @@ async function assertBaselineUnchanged(stage: string) {
   }
 }
 
-function makeRequest(
+async function makeRequest(
   pathWithQuery: string,
   init?: { method?: string; body?: unknown; headers?: Record<string, string>; regionId?: string }
 ) {
   const sep = pathWithQuery.includes("?") ? "&" : "?";
   const url = init?.regionId
-    ? `http://civic.test${pathWithQuery}${sep}region=${encodeURIComponent(init.regionId)}`
-    : `http://civic.test${pathWithQuery}`;
-  const headers = new Headers({
-    ...(init?.regionId ? { "x-region-id": init.regionId } : {}),
-    ...(init?.body !== undefined ? { "content-type": "application/json" } : {}),
-    ...(init?.headers ?? {}),
-  });
+    ? `http://localhost:3000${pathWithQuery}${sep}region=${encodeURIComponent(init.regionId)}`
+    : `http://localhost:3000${pathWithQuery}`;
+  const headers = await withAuthHeaders(
+    {
+      ...(init?.regionId ? { "x-region-id": init.regionId } : {}),
+      ...(init?.body !== undefined ? { "content-type": "application/json" } : {}),
+      ...(init?.headers ?? {}),
+    },
+    "admin"
+  );
   return new NextRequest(url, {
     method: init?.method ?? "GET",
     headers,
@@ -88,7 +92,7 @@ async function verifyGovOnlyMode(label: string) {
     `[${label}] GET /api/regions 仅含政务站点 (${ids.join(",")}), defaultRegionId=${regionsJson.defaultRegionId}`
   );
 
-  const adminRes = await adminRegionsGet();
+  const adminRes = await adminRegionsGet(await makeRequest("/api/admin/regions"));
   const adminJson = await adminRes.json();
   const adminIds = (adminJson.regions || []).map((r: { id: string }) => r.id);
   assert(
@@ -101,7 +105,7 @@ async function verifyGovOnlyMode(label: string) {
   );
 
   const ecomDetailRes = await adminRegionDetailGet(
-    makeRequest("/api/admin/regions/ecom_demo"),
+    await makeRequest("/api/admin/regions/ecom_demo"),
     { params: Promise.resolve({ id: "ecom_demo" }) }
   );
   assert(
@@ -110,11 +114,11 @@ async function verifyGovOnlyMode(label: string) {
   );
 
   const resolvedQuery = await resolveRequestRegionId(
-    makeRequest("/api/overview", { regionId: "ecom_demo" })
+    await makeRequest("/api/overview", { regionId: "ecom_demo" })
   );
   const resolvedExplicit = await resolveRequestRegionId(null, "ecom_demo");
   const resolvedCookie = await resolveRequestRegionId(
-    makeRequest("/api/overview", { headers: { "x-region-id": "ecom_demo" } })
+    await makeRequest("/api/overview", { headers: { "x-region-id": "ecom_demo" } })
   );
   assert(
     resolvedQuery === "gz_tianhe" &&
@@ -124,7 +128,7 @@ async function verifyGovOnlyMode(label: string) {
   );
 
   const xrayRes = await xrayPost(
-    makeRequest("/api/sandbox/xray", {
+    await makeRequest("/api/sandbox/xray", {
       method: "POST",
       regionId: "ecom_demo",
       body: {
@@ -141,7 +145,7 @@ async function verifyGovOnlyMode(label: string) {
     `[${label}] POST /api/sandbox/xray 带 ecom_demo 参数被安全隔离回 GOV_12345 (${xrayJson.domainType})`
   );
 
-  const pubRes = await publicOverviewGet(makeRequest("/api/public/overview"));
+  const pubRes = await publicOverviewGet(await makeRequest("/api/public/overview"));
   const pubJson = await pubRes.json();
   assert(
     pubRes.status === 200 && pubJson.totalWorkorders === BASELINE.gz_tianhe.tickets,
@@ -172,7 +176,7 @@ async function verifyEcommerceOnlyMode() {
     `[ECOMMERCE_CS] GET /api/regions 仅暴露 ecom_demo, defaultRegionId=${regionsJson.defaultRegionId}`
   );
 
-  const adminRes = await adminRegionsGet();
+  const adminRes = await adminRegionsGet(await makeRequest("/api/admin/regions"));
   const adminJson = await adminRes.json();
   const adminIds = (adminJson.regions || []).map((r: { id: string }) => r.id);
   assert(
@@ -184,7 +188,7 @@ async function verifyEcommerceOnlyMode() {
   );
 
   const govDetailRes = await adminRegionDetailGet(
-    makeRequest("/api/admin/regions/gz_tianhe"),
+    await makeRequest("/api/admin/regions/gz_tianhe"),
     { params: Promise.resolve({ id: "gz_tianhe" }) }
   );
   assert(
@@ -193,15 +197,15 @@ async function verifyEcommerceOnlyMode() {
   );
 
   const resolvedGov = await resolveRequestRegionId(
-    makeRequest("/api/overview", { regionId: "gz_tianhe" })
+    await makeRequest("/api/overview", { regionId: "gz_tianhe" })
   );
-  const resolvedDefault = await resolveRequestRegionId(makeRequest("/api/overview"));
+  const resolvedDefault = await resolveRequestRegionId(await makeRequest("/api/overview"));
   assert(
     resolvedGov === "ecom_demo" && resolvedDefault === "ecom_demo",
     `[ECOMMERCE_CS] resolveRequestRegionId 阻断 gz_tianhe 并默认回退 ecom_demo (${resolvedGov}/${resolvedDefault})`
   );
 
-  const pubRes = await publicOverviewGet(makeRequest("/api/public/overview"));
+  const pubRes = await publicOverviewGet(await makeRequest("/api/public/overview"));
   const pubJson = await pubRes.json();
   assert(
     pubRes.status === 200 && pubJson.totalWorkorders === BASELINE.ecom_demo.tickets,
@@ -209,7 +213,7 @@ async function verifyEcommerceOnlyMode() {
   );
 
   const xrayRes = await xrayPost(
-    makeRequest("/api/sandbox/xray", {
+    await makeRequest("/api/sandbox/xray", {
       method: "POST",
       body: {
         persist: false,
@@ -250,10 +254,10 @@ async function verifyAllMode() {
   );
 
   const resolvedEcom = await resolveRequestRegionId(
-    makeRequest("/api/overview", { regionId: "ecom_demo" })
+    await makeRequest("/api/overview", { regionId: "ecom_demo" })
   );
   const resolvedGov = await resolveRequestRegionId(
-    makeRequest("/api/overview", { regionId: "gz_tianhe" })
+    await makeRequest("/api/overview", { regionId: "gz_tianhe" })
   );
   assert(
     resolvedEcom === "ecom_demo" && resolvedGov === "gz_tianhe",

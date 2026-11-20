@@ -8,6 +8,7 @@
  */
 
 import { NextRequest } from "next/server";
+import { withAuthHeaders } from "./_auth-helper";
 import { eq } from "drizzle-orm";
 import { sql, getRegionDb } from "../db/client";
 import {
@@ -74,18 +75,21 @@ async function assertBaselineUnchanged(stage: string) {
   );
 }
 
-function makeRequest(
+async function makeRequest(
   pathWithQuery: string,
   init?: { method?: string; body?: unknown; headers?: Record<string, string>; regionId?: string }
 ) {
   const regionId = init?.regionId ?? TEST_REGION_ID;
   const sep = pathWithQuery.includes("?") ? "&" : "?";
-  const url = `http://civic.test${pathWithQuery}${sep}region=${encodeURIComponent(regionId)}`;
-  const headers = new Headers({
-    "x-region-id": regionId,
-    ...(init?.body !== undefined ? { "content-type": "application/json" } : {}),
-    ...(init?.headers ?? {}),
-  });
+  const url = `http://localhost:3000${pathWithQuery}${sep}region=${encodeURIComponent(regionId)}`;
+  const headers = await withAuthHeaders(
+    {
+      "x-region-id": regionId,
+      ...(init?.body !== undefined ? { "content-type": "application/json" } : {}),
+      ...(init?.headers ?? {}),
+    },
+    "admin"
+  );
   return new NextRequest(url, {
     method: init?.method ?? "GET",
     headers,
@@ -263,7 +267,7 @@ async function main() {
 
     // 3. 验证 /api/clusters/[id] PATCH: DISPATCH -> ADVANCE(step 3/4) -> ESCALATE -> RESOLVE
     const dispatchRes = await clusterPatch(
-      makeRequest("/api/clusters/THEME-V1", { method: "PATCH", body: { action: "DISPATCH" } }),
+      await makeRequest("/api/clusters/THEME-V1", { method: "PATCH", body: { action: "DISPATCH" } }),
       { params: Promise.resolve({ id: "THEME-V1" }) }
     );
     const dispatchJson = await dispatchRes.json();
@@ -279,21 +283,21 @@ async function main() {
     assert(tkV1AfterDispatch?.status === "IN_PROGRESS", "DISPATCH 联动成员工单进入 IN_PROGRESS");
 
     const adv3Res = await clusterPatch(
-      makeRequest("/api/clusters/THEME-V1", { method: "PATCH", body: { action: "ADVANCE", step: 3 } }),
+      await makeRequest("/api/clusters/THEME-V1", { method: "PATCH", body: { action: "ADVANCE", step: 3 } }),
       { params: Promise.resolve({ id: "THEME-V1" }) }
     );
     const adv3Json = await adv3Res.json();
     assert(adv3Json.status?.code === "IN_PROGRESS" && adv3Json.status?.progress === 60, "ADVANCE step=3 推进至 60%");
 
     const adv4Res = await clusterPatch(
-      makeRequest("/api/clusters/THEME-V1", { method: "PATCH", body: { action: "ADVANCE", step: 4 } }),
+      await makeRequest("/api/clusters/THEME-V1", { method: "PATCH", body: { action: "ADVANCE", step: 4 } }),
       { params: Promise.resolve({ id: "THEME-V1" }) }
     );
     const adv4Json = await adv4Res.json();
     assert(adv4Json.status?.code === "IN_PROGRESS" && adv4Json.status?.progress === 80, "ADVANCE step=4 推进至 80%");
 
     const escRes = await clusterPatch(
-      makeRequest("/api/clusters/THEME-V1", { method: "PATCH", body: { action: "ESCALATE", note: "群众停水影响范围扩大，重点督办" } }),
+      await makeRequest("/api/clusters/THEME-V1", { method: "PATCH", body: { action: "ESCALATE", note: "群众停水影响范围扩大，重点督办" } }),
       { params: Promise.resolve({ id: "THEME-V1" }) }
     );
     const escJson = await escRes.json();
@@ -303,7 +307,7 @@ async function main() {
     );
 
     const resolveRes = await clusterPatch(
-      makeRequest("/api/clusters/THEME-V1", { method: "PATCH", body: { action: "RESOLVE", note: "供水主管道已抢修通水" } }),
+      await makeRequest("/api/clusters/THEME-V1", { method: "PATCH", body: { action: "RESOLVE", note: "供水主管道已抢修通水" } }),
       { params: Promise.resolve({ id: "THEME-V1" }) }
     );
     const resolveJson = await resolveRes.json();
@@ -435,7 +439,7 @@ async function main() {
     );
 
     const clusterV2Res = await clusterGet(
-      makeRequest("/api/clusters/THEME-V2"),
+      await makeRequest("/api/clusters/THEME-V2"),
       { params: Promise.resolve({ id: "THEME-V2" }) }
     );
     const clusterV2Json = await clusterV2Res.json();
@@ -449,7 +453,7 @@ async function main() {
     );
 
     const membersV2Res = await clusterMembersGet(
-      makeRequest("/api/clusters/THEME-V2/members"),
+      await makeRequest("/api/clusters/THEME-V2/members"),
       { params: Promise.resolve({ id: "THEME-V2" }) }
     );
     const membersV2Json = await membersV2Res.json();
@@ -458,7 +462,7 @@ async function main() {
 
     // 5. 验证 /api/clusters/[id] PATCH DETACH_TICKET 重算 ticketCount 与 REOPEN
     const detachRes = await clusterPatch(
-      makeRequest("/api/clusters/THEME-V1", { method: "PATCH", body: { action: "DETACH_TICKET", ticketId: "TK-V2" } }),
+      await makeRequest("/api/clusters/THEME-V1", { method: "PATCH", body: { action: "DETACH_TICKET", ticketId: "TK-V2" } }),
       { params: Promise.resolve({ id: "THEME-V1" }) }
     );
     const detachJson = await detachRes.json();
@@ -467,7 +471,7 @@ async function main() {
     assert(tkV2Detached?.primaryThemeId === null, "DETACH_TICKET 将 TK-V2.primaryThemeId 置 null");
 
     const reopenRes = await clusterPatch(
-      makeRequest("/api/clusters/THEME-V1", { method: "PATCH", body: { action: "REOPEN", note: "测试管理员重开" } }),
+      await makeRequest("/api/clusters/THEME-V1", { method: "PATCH", body: { action: "REOPEN", note: "测试管理员重开" } }),
       { params: Promise.resolve({ id: "THEME-V1" }) }
     );
     const reopenJson = await reopenRes.json();
@@ -483,7 +487,7 @@ async function main() {
 
     // 6. 验证 /api/workorders/[id] GET & PATCH: UPDATE_STATUS & CORRECT_ENTITY + saveAlias & DETACH_THEME
     const woGetRes = await workorderGet(
-      makeRequest("/api/workorders/TK-V3"),
+      await makeRequest("/api/workorders/TK-V3"),
       { params: Promise.resolve({ id: "TK-V3" }) }
     );
     const woGetJson = await woGetRes.json();
@@ -496,7 +500,7 @@ async function main() {
     );
 
     const woResolveRes = await workorderPatch(
-      makeRequest("/api/workorders/TK-V3", {
+      await makeRequest("/api/workorders/TK-V3", {
         method: "PATCH",
         body: { action: "UPDATE_STATUS", status: "RESOLVED", note: "现场疏通完毕" },
       }),
@@ -511,7 +515,7 @@ async function main() {
     );
 
     const woReopenRes = await workorderPatch(
-      makeRequest("/api/workorders/TK-V3", {
+      await makeRequest("/api/workorders/TK-V3", {
         method: "PATCH",
         body: { action: "UPDATE_STATUS", status: "IN_PROGRESS", note: "市民反馈仍积水" },
       }),
@@ -524,7 +528,7 @@ async function main() {
     );
 
     const woCorrectRes = await workorderPatch(
-      makeRequest("/api/workorders/TK-V3", {
+      await makeRequest("/api/workorders/TK-V3", {
         method: "PATCH",
         body: {
           action: "CORRECT_ENTITY",
@@ -556,7 +560,7 @@ async function main() {
 
     // 再次调用相同 alias 验证幂等 upsert usageCount +1
     await workorderPatch(
-      makeRequest("/api/workorders/TK-V3", {
+      await makeRequest("/api/workorders/TK-V3", {
         method: "PATCH",
         body: {
           action: "CORRECT_ENTITY",
@@ -583,7 +587,7 @@ async function main() {
 
     // 验证单工单侧 DETACH_THEME
     const woDetachRes = await workorderPatch(
-      makeRequest("/api/workorders/TK-V1", { method: "PATCH", body: { action: "DETACH_THEME" } }),
+      await makeRequest("/api/workorders/TK-V1", { method: "PATCH", body: { action: "DETACH_THEME" } }),
       { params: Promise.resolve({ id: "TK-V1" }) }
     );
     const woDetachJson = await woDetachRes.json();
@@ -593,7 +597,7 @@ async function main() {
 
     // 7. 验证 /api/review GET & POST 多租户隔离
     const seedRevRes = await reviewPost(
-      makeRequest("/api/review/seed", {
+      await makeRequest("/api/review/seed", {
         method: "POST",
         body: {
           tickets: [
@@ -606,7 +610,7 @@ async function main() {
     const seedRevJson = await seedRevRes.json();
     assert(seedRevRes.status === 200 && seedRevJson.inserted === 2, `POST /api/review/seed 插入 2 条复核项 (${seedRevJson.inserted})`);
 
-    const revGetVerify = await reviewGet(makeRequest("/api/review?status=PENDING"));
+    const revGetVerify = await reviewGet(await makeRequest("/api/review?status=PENDING"));
     const revGetVerifyJson = await revGetVerify.json();
     const verifyRevIds = (revGetVerifyJson.data || []).map((r: { ticketId: string }) => r.ticketId);
     assert(
@@ -619,7 +623,7 @@ async function main() {
     );
 
     // 只读核验 gz_tianhe 与 fs_shunde 不会读到 verify_closed_loop 的复核项
-    const revGetTianhe = await reviewGet(makeRequest("/api/review?status=PENDING", { regionId: "gz_tianhe" }));
+    const revGetTianhe = await reviewGet(await makeRequest("/api/review?status=PENDING", { regionId: "gz_tianhe" }));
     const revGetTianheJson = await revGetTianhe.json();
     const tianheTicketIds = new Set((revGetTianheJson.data || []).map((r: { ticketId: string }) => r.ticketId));
     assert(
@@ -631,7 +635,7 @@ async function main() {
     const revItemV2 = (revGetVerifyJson.data as Array<{ id: string; ticketId: string }>).find((r) => r.ticketId === "TK-V2")!;
 
     const revApproveRes = await reviewPost(
-      makeRequest("/api/review", {
+      await makeRequest("/api/review", {
         method: "POST",
         body: {
           reviewId: revItemV3.id,
@@ -647,7 +651,7 @@ async function main() {
     assert(tkV3AfterReview?.eventType === "路面雨后积水", "POST /api/review 附带 correction 同步修正工单字段");
 
     const revDismissRes = await reviewPost(
-      makeRequest("/api/review", {
+      await makeRequest("/api/review", {
         method: "POST",
         body: { reviewId: revItemV2.id, action: "DISMISSED", note: "忽略误报" },
       })
@@ -666,7 +670,7 @@ async function main() {
     );
 
     // 8. 验证 /api/tickets?tab=fake_closure 与 /api/workorders?tab=fake_closure 及 stats
-    const ticketsFakeRes = await ticketsGet(makeRequest("/api/tickets?tab=fake_closure"));
+    const ticketsFakeRes = await ticketsGet(await makeRequest("/api/tickets?tab=fake_closure"));
     const ticketsFakeJson = await ticketsFakeRes.json();
     const fakeTicketIds = (ticketsFakeJson.data || []).map((t: { id: string }) => t.id);
     assert(
@@ -678,7 +682,7 @@ async function main() {
       `GET /api/tickets?tab=fake_closure 返回正确 (${fakeTicketIds.join(",")}) 且 stats 含 fakeClosure/pendingReview`
     );
 
-    const woFakeRes = await workordersGet(makeRequest("/api/workorders?tab=fake_closure"));
+    const woFakeRes = await workordersGet(await makeRequest("/api/workorders?tab=fake_closure"));
     const woFakeJson = await woFakeRes.json();
     const woFakeIds = (woFakeJson.data || []).map((t: { ticketId: string }) => t.ticketId);
     assert(

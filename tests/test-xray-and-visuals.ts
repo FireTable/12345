@@ -10,6 +10,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { NextRequest } from "next/server";
+import { withAuthHeaders } from "./_auth-helper";
 import { sql, getRegionDb } from "../db/client";
 import { registerRegion, destroyRegionTenant } from "../lib/tenant/schema-manager";
 import {
@@ -67,18 +68,21 @@ async function assertBaselineUnchanged(stage: string) {
   );
 }
 
-function makeRequest(
+async function makeRequest(
   pathWithQuery: string,
   init?: { method?: string; body?: unknown; headers?: Record<string, string>; regionId?: string }
 ) {
   const regionId = init?.regionId ?? TEST_REGION_ID;
   const sep = pathWithQuery.includes("?") ? "&" : "?";
-  const url = `http://civic.test${pathWithQuery}${sep}region=${encodeURIComponent(regionId)}`;
-  const headers = new Headers({
-    "x-region-id": regionId,
-    ...(init?.body !== undefined ? { "content-type": "application/json" } : {}),
-    ...(init?.headers ?? {}),
-  });
+  const url = `http://localhost:3000${pathWithQuery}${sep}region=${encodeURIComponent(regionId)}`;
+  const headers = await withAuthHeaders(
+    {
+      "x-region-id": regionId,
+      ...(init?.body !== undefined ? { "content-type": "application/json" } : {}),
+      ...(init?.headers ?? {}),
+    },
+    "admin"
+  );
   return new NextRequest(url, {
     method: init?.method ?? "GET",
     headers,
@@ -280,7 +284,7 @@ async function main() {
     // 3. 校验 POST /api/sandbox/xray (persist: false) 全 6 阶段与零写入
     const countsBeforeXray = await readRegionCounts(TEST_SCHEMA_NAME);
     const xrayRes = await xrayPost(
-      makeRequest("/api/sandbox/xray", {
+      await makeRequest("/api/sandbox/xray", {
         method: "POST",
         body: {
           title: "老菜市路口烧烤油烟再次直排",
@@ -345,7 +349,7 @@ async function main() {
     );
 
     // 4. 校验 GET /api/graph?themeId=THEME-X1 与全局图谱
-    const themeGraphRes = await graphGet(makeRequest("/api/graph?themeId=THEME-X1"));
+    const themeGraphRes = await graphGet(await makeRequest("/api/graph?themeId=THEME-X1"));
     const themeGraphJson = await themeGraphRes.json();
     const gNodes = (themeGraphJson.data?.nodes || []) as Array<{ id: string; type: string; isFakeClosure?: boolean }>;
     const gLinks = (themeGraphJson.data?.links || []) as Array<{ source: string; target: string; relation: string; isFakeClosure?: boolean }>;
@@ -360,7 +364,7 @@ async function main() {
       `GET /api/graph?themeId=THEME-X1 返回主题/主体/地点/工单节点与假闭环连边 (nodes=${gNodes.length}, links=${gLinks.length})`
     );
 
-    const globalGraphRes = await graphGet(makeRequest("/api/graph"));
+    const globalGraphRes = await graphGet(await makeRequest("/api/graph"));
     const globalGraphJson = await globalGraphRes.json();
     assert(
       globalGraphRes.status === 200 && (globalGraphJson.data?.nodes || []).length >= 3,
@@ -368,7 +372,7 @@ async function main() {
     );
 
     // 5. 校验 GET /api/workbench/pipeline-state 返回 disposalMetrics
-    const pipeRes = await pipelineStateGet(makeRequest("/api/workbench/pipeline-state"));
+    const pipeRes = await pipelineStateGet(await makeRequest("/api/workbench/pipeline-state"));
     const pipeJson = await pipeRes.json();
     const dm = pipeJson.data?.disposalMetrics;
     assert(
@@ -383,7 +387,7 @@ async function main() {
     );
 
     // 6. 校验 /api/cockpit 与 loadCockpitSnapshot 返回 closureFunnel 与 24 桶 hourlyDistribution
-    const cockpitRes = await cockpitGet(makeRequest("/api/cockpit"));
+    const cockpitRes = await cockpitGet(await makeRequest("/api/cockpit"));
     const cockpitJson = await cockpitRes.json();
     const snap = await loadCockpitSnapshot(TEST_REGION_ID);
     const funnel = cockpitJson.closureFunnel;

@@ -11,6 +11,7 @@ import { spanDays, categoryBadgeStyle } from "@/lib/civic-cluster";
 import { CivicEChart, radarOption } from "@/app/_components/civic/civic-charts";
 import { SkThemeDetail } from "@/app/_components/civic/skeletons";
 import { useRegion } from "@/app/_components/civic/region-context";
+import { useAuthRole } from "@/lib/auth/use-role";
 import { GraphVisualizer } from "@/app/_components/graph/graph-visualizer";
 import { ConfirmDialog } from "@/app/_components/ui/confirm-dialog";
 import {
@@ -170,6 +171,7 @@ function checkIsTarget(m: Member, target: string): boolean {
 
 function ThemeDetailInner() {
   const { activeRegion } = useRegion();
+  const { isAdmin, isPending: isRolePending } = useAuthRole();
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -486,6 +488,10 @@ function ThemeDetailInner() {
     },
     successMessage?: string
   ): Promise<boolean> {
+    if (!isAdmin) {
+      toast.error("需管理员权限可执行群组处置");
+      return false;
+    }
     if (!row || row.ungrouped || actionPending) return false;
     setActionPending(true);
     try {
@@ -1016,12 +1022,14 @@ function ThemeDetailInner() {
                       {!cluster.ungrouped && (
                         <button
                           type="button"
-                          disabled={actionPending}
+                          disabled={!isAdmin || actionPending}
+                          title={!isAdmin ? "需管理员权限可执行处置" : undefined}
                           onClick={(e) => {
                             e.stopPropagation();
+                            if (!isAdmin) return;
                             setDetachTarget(m);
                           }}
-                          className="inline-flex items-center gap-1 text-[11px] font-medium text-rose-600 hover:text-rose-700 whitespace-nowrap disabled:opacity-50 cursor-pointer"
+                          className="inline-flex items-center gap-1 text-[11px] font-medium text-rose-600 hover:text-rose-700 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                         >
                           <Trash2 className="h-3 w-3 shrink-0" />
                           <span>移出群组</span>
@@ -1161,7 +1169,7 @@ function ThemeDetailInner() {
 
           {/* 5 阶段处置进度可视化卡片（完全采用同事的原生进度条设计） */}
           <div className="card" style={{ marginBottom: 14 }}>
-            <div className="card__header">
+            <div className="card__header flex items-center justify-between gap-2 flex-wrap">
               <div className="card__title">
                 ⏱ 群组处理进度
                 <span
@@ -1177,6 +1185,11 @@ function ThemeDetailInner() {
                   {row.status?.label || "未处理"}
                 </span>
               </div>
+              {!isRolePending && !isAdmin && (
+                <span className="text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded whitespace-nowrap">
+                  只读受限态
+                </span>
+              )}
             </div>
             <div className="card__body" style={{ padding: "8px 18px 14px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
@@ -1197,7 +1210,7 @@ function ThemeDetailInner() {
                 <button
                   key={s.key}
                   type="button"
-                  disabled={actionPending || cluster.ungrouped}
+                  disabled={!isAdmin || actionPending || cluster.ungrouped}
                   onClick={() =>
                     void patchCluster(
                       { action: "ADVANCE", step: i + 1 },
@@ -1205,7 +1218,13 @@ function ThemeDetailInner() {
                     )
                   }
                   className="progress-step w-full text-left rounded-lg px-2 -mx-2 hover:bg-slate-50 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
-                  title={cluster.ungrouped ? "未聚类分组不可推进" : `点击推进至第 ${i + 1} 阶段：${s.name}`}
+                  title={
+                    !isAdmin
+                      ? "需管理员权限可执行处置"
+                      : cluster.ungrouped
+                      ? "未聚类分组不可推进"
+                      : `点击推进至第 ${i + 1} 阶段：${s.name}`
+                  }
                 >
                   <span
                     className={`progress-step__dot${
@@ -1234,13 +1253,20 @@ function ThemeDetailInner() {
           </div>
 
           {/* 底部操作工具栏：真闭环处置 + 导出报告 */}
+          {!isRolePending && !isAdmin && !cluster.ungrouped && (
+            <div className="mt-3.5 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-800 flex items-center gap-1.5">
+              <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
+              <span>需管理员权限可执行派单、推进、升级、办结、重开或移出工单处置</span>
+            </div>
+          )}
           <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 mb-3.5 mt-3.5">
             {!cluster.ungrouped && (
               <>
                 <button
                   type="button"
-                  disabled={actionPending}
-                  className={`btn ${row.status?.code === "PENDING" || !row.status?.owner ? "btn--primary" : "btn--default"} flex items-center justify-center gap-1.5 min-w-0 sm:flex-1 min-h-[38px] sm:min-h-[34px] px-2.5 text-xs whitespace-nowrap`}
+                  disabled={!isAdmin || actionPending}
+                  title={!isAdmin ? "需管理员权限可执行处置" : undefined}
+                  className={`btn ${row.status?.code === "PENDING" || !row.status?.owner ? "btn--primary" : "btn--default"} flex items-center justify-center gap-1.5 min-w-0 sm:flex-1 min-h-[38px] sm:min-h-[34px] px-2.5 text-xs whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed`}
                   onClick={openDispatchDialog}
                 >
                   <Send className="h-3.5 w-3.5 shrink-0" />
@@ -1248,8 +1274,9 @@ function ThemeDetailInner() {
                 </button>
                 <button
                   type="button"
-                  disabled={actionPending}
-                  className="btn btn--default flex items-center justify-center gap-1.5 text-rose-700 border-rose-200 hover:border-rose-400 min-w-0 sm:flex-1 min-h-[38px] sm:min-h-[34px] px-2.5 text-xs whitespace-nowrap"
+                  disabled={!isAdmin || actionPending}
+                  title={!isAdmin ? "需管理员权限可执行处置" : undefined}
+                  className="btn btn--default flex items-center justify-center gap-1.5 text-rose-700 border-rose-200 hover:border-rose-400 min-w-0 sm:flex-1 min-h-[38px] sm:min-h-[34px] px-2.5 text-xs whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
                   onClick={() => {
                     setEscalateNote("");
                     setEscalateOpen(true);
@@ -1261,8 +1288,9 @@ function ThemeDetailInner() {
                 {row.status?.code === "RESOLVED" ? (
                   <button
                     type="button"
-                    disabled={actionPending}
-                    className="btn btn--default flex items-center justify-center gap-1.5 text-amber-700 border-amber-200 hover:border-amber-400 min-w-0 sm:flex-1 min-h-[38px] sm:min-h-[34px] px-2.5 text-xs whitespace-nowrap"
+                    disabled={!isAdmin || actionPending}
+                    title={!isAdmin ? "需管理员权限可执行处置" : undefined}
+                    className="btn btn--default flex items-center justify-center gap-1.5 text-amber-700 border-amber-200 hover:border-amber-400 min-w-0 sm:flex-1 min-h-[38px] sm:min-h-[34px] px-2.5 text-xs whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
                     onClick={() =>
                       void patchCluster(
                         { action: "REOPEN", note: "管理员发起重开督办" },
@@ -1276,8 +1304,9 @@ function ThemeDetailInner() {
                 ) : (
                   <button
                     type="button"
-                    disabled={actionPending}
-                    className="btn btn--default flex items-center justify-center gap-1.5 text-emerald-700 border-emerald-200 hover:border-emerald-400 min-w-0 sm:flex-1 min-h-[38px] sm:min-h-[34px] px-2.5 text-xs whitespace-nowrap"
+                    disabled={!isAdmin || actionPending}
+                    title={!isAdmin ? "需管理员权限可执行处置" : undefined}
+                    className="btn btn--default flex items-center justify-center gap-1.5 text-emerald-700 border-emerald-200 hover:border-emerald-400 min-w-0 sm:flex-1 min-h-[38px] sm:min-h-[34px] px-2.5 text-xs whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
                     onClick={() =>
                       void patchCluster(
                         { action: "RESOLVE", note: "管理员确认办结归档" },
@@ -1364,7 +1393,7 @@ function ThemeDetailInner() {
               <button
                 type="submit"
                 className="btn btn--primary"
-                disabled={actionPending}
+                disabled={!isAdmin || actionPending}
               >
                 {actionPending ? "提交中…" : "确认派单"}
               </button>
@@ -1410,7 +1439,7 @@ function ThemeDetailInner() {
                 type="submit"
                 className="btn btn--primary"
                 style={{ background: "#F53F3F", borderColor: "#F53F3F" }}
-                disabled={actionPending}
+                disabled={!isAdmin || actionPending}
               >
                 {actionPending ? "提交中…" : "确认升级督办"}
               </button>

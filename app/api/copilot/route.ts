@@ -3,6 +3,7 @@ import { getRegionDb } from "@/db/client";
 import { streamCopilot, type CopilotTurnInput } from "@/backend/agent/copilot-agent";
 import { formatCopilotStatus } from "@/lib/copilot-protocol";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
+import { guardAgentRequest } from "@/lib/security/agent-guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,6 +28,9 @@ function readTurns(body: { prompt?: unknown; messages?: unknown }): CopilotTurnI
 
 export async function POST(req: Request) {
   try {
+    const guard = await guardAgentRequest(req, { role: "admin", scope: "copilot" });
+    if ("response" in guard) return guard.response;
+
     const regionId = await resolveRequestRegionId(req);
     const body = (await req.json().catch(() => ({}))) as { prompt?: unknown; messages?: unknown };
     const turns = readTurns(body);

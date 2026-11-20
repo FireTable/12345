@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { sql, getRegionDb } from "@/db/client";
 import { fetchDistrictBoundary } from "@/lib/map/boundary-service";
 import { apiSuccess, apiError, ApiCode } from "@/lib/api-codes";
+import { requireAdmin } from "@/lib/auth/rbac";
 
 /**
  * POST /api/admin/regions/[id]/fetch-boundary
@@ -12,6 +13,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const { id } = await params;
     const { region } = await getRegionDb(id);
     if (!region) {

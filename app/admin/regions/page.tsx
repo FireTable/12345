@@ -14,6 +14,7 @@ import {
   Check,
   Trash2,
   Map,
+  ShieldAlert,
   ShieldCheck,
   Layers,
   ExternalLink,
@@ -25,7 +26,9 @@ import {
   KeyRound,
 } from "lucide-react";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
+import { SkBone, SkCard, SkStatCards } from "@/app/_components/civic/skeletons";
 import { useRegion, RegionInfo } from "@/app/_components/civic/region-context";
+import { useAuthRole } from "@/lib/auth/use-role";
 import { ConfirmDialog } from "@/app/_components/ui/confirm-dialog";
 import { PageHeaderActions } from "@/app/_components/civic/page-header-actions";
 import { ComputeNodesPanel } from "@/app/_components/civic/compute-nodes-panel";
@@ -93,6 +96,7 @@ interface AiScoutResult {
 }
 
 export default function AdminRegionsPage() {
+  const { isAdmin, isPending: isRolePending } = useAuthRole();
   const { appDomain, activeRegion, regions: contextRegions, switchRegion } = useRegion();
   const [regions, setRegions] = useState<RegionWithStats[]>([]);
   const [loading, setLoading] = useState(true);
@@ -181,9 +185,10 @@ export default function AdminRegionsPage() {
   };
 
   useEffect(() => {
+    if (isRolePending || !isAdmin) return;
     fetchRegions();
     fetchMcpClients();
-  }, []);
+  }, [isRolePending, isAdmin]);
 
   // 监听城市区县变化自动推荐英文 ID（全动态生成，无任何城市区县死逻辑写死）
   const handleDistrictChange = (district: string) => {
@@ -616,6 +621,54 @@ export default function AdminRegionsPage() {
       </div>
     );
   };
+
+  if (isRolePending) {
+    return (
+      <div className="sk-page space-y-4" aria-busy="true" aria-label="校验管理员权限">
+        <div className="page-hero">
+          <div className="space-y-2 flex-1">
+            <SkBone w="260px" h={24} />
+            <SkBone w="380px" h={14} />
+          </div>
+          <div className="flex items-center gap-2">
+            <SkBone w={120} h={34} />
+          </div>
+        </div>
+        <SkStatCards />
+        <SkCard height={220}>
+          <div className="space-y-3">
+            <SkBone w="60%" h={16} />
+            <SkBone w="85%" h={14} />
+          </div>
+        </SkCard>
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="max-w-xl mx-auto py-8 sm:py-14">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 sm:p-8 text-center space-y-4">
+          <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center mx-auto">
+            <ShieldAlert className="w-6 h-6" />
+          </div>
+          <div className="space-y-1.5">
+            <h1 className="text-lg font-bold text-slate-900">
+              仅限管理员操作 · 多租户与算力控制台受限
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-500 leading-relaxed">
+              当前账号不具备管理员权限。站点纳管、物理 Schema 配置、算力节点与接入 Agent 管理仅对管理员开放。
+            </p>
+          </div>
+          <div className="pt-2 flex items-center justify-center gap-3 flex-wrap">
+            <Link href="/submit" className="btn btn--primary min-h-[40px] text-xs px-4">
+              <span>前往市民/买家投诉端 (/submit)</span>
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>

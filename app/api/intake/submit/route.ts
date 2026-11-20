@@ -1,0 +1,100 @@
+import { NextResponse } from "next/server";
+import { guardAgentRequest } from "@/lib/security/agent-guard";
+import { resolveRequestRegionId } from "@/lib/tenant/request-region";
+import { submitCitizenTicket } from "@/lib/agent-governance";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+export async function POST(req: Request) {
+  try {
+    const guard = await guardAgentRequest(req, {
+      role: "any",
+      scope: "intake-submit",
+    });
+    if ("response" in guard) return guard.response;
+
+    const body = (await req.json().catch(() => null)) as {
+      title?: unknown;
+      content?: unknown;
+      subdistrict?: unknown;
+      category?: unknown;
+      subject?: unknown;
+      address?: unknown;
+      contactPhone?: unknown;
+      source?: unknown;
+      skipAutoCluster?: unknown;
+      regionId?: unknown;
+    } | null;
+
+    if (!body || typeof body !== "object") {
+      return NextResponse.json(
+        { success: false, code: "BAD_REQUEST", error: "无效的请求体" },
+        { status: 400 }
+      );
+    }
+
+    const content = typeof body.content === "string" ? body.content.trim() : "";
+    const subdistrict = typeof body.subdistrict === "string" ? body.subdistrict.trim() : "";
+    const category = typeof body.category === "string" ? body.category.trim() : "";
+
+    if (content.length < 6) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "INVALID_PARAMS",
+          error: "诉求内容至少需要 6 个字，请补充完整描述",
+        },
+        { status: 400 }
+      );
+    }
+    if (!subdistrict) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "INVALID_PARAMS",
+          error: "请选择所属镇街或渠道/仓网",
+        },
+        { status: 400 }
+      );
+    }
+    if (!category) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "INVALID_PARAMS",
+          error: "请选择诉求或客诉分类",
+        },
+        { status: 400 }
+      );
+    }
+
+    const regionId = await resolveRequestRegionId(
+      req,
+      typeof body.regionId === "string" ? body.regionId : undefined
+    );
+
+    const result = await submitCitizenTicket({
+      regionId,
+      userId: guard.session.user.id,
+      userName: guard.session.user.name || guard.session.user.username || "市民用户",
+      title: typeof body.title === "string" ? body.title : undefined,
+      content,
+      subdistrict,
+      category,
+      subject: typeof body.subject === "string" ? body.subject : undefined,
+      address: typeof body.address === "string" ? body.address : undefined,
+      contactPhone: typeof body.contactPhone === "string" ? body.contactPhone : undefined,
+      source: body.source === "AGENT_VOICE" ? "AGENT_VOICE" : "FORM",
+      skipAutoCluster: body.skipAutoCluster === true,
+    });
+
+    return NextResponse.json({
+      success: true,
+      ...result,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to submit ticket";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}

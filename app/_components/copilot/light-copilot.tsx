@@ -17,11 +17,17 @@ import {
   ExternalLink,
   Play,
   Loader2,
+  Mic,
+  MicOff,
+  Volume2,
 } from "lucide-react";
 import { Button } from "@/app/_components/ui/button";
 import { Input } from "@/app/_components/ui/input";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/app/_components/ui/tooltip";
 import { useRegion } from "@/app/_components/civic/region-context";
+import { useAuthRole } from "@/lib/auth/use-role";
+import { useStreamAsr } from "@/app/_hooks/use-stream-asr";
+import { XiaochunStage, type XiaochunStageHandle } from "@/app/_components/agent/xiaochun-stage";
 import { copilotGreeting, splitCopilotStream } from "@/lib/copilot-protocol";
 import "./copilot-md.css";
 
@@ -107,10 +113,24 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
   onClose,
 }) => {
   const { activeRegion } = useRegion();
+  const { isAdmin } = useAuthRole();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [showStage, setShowStage] = useState(false);
+  const [stageMuted, setStageMuted] = useState(false);
+  const [stageCaption, setStageCaption] = useState("");
+  const stageRef = useRef<XiaochunStageHandle>(null);
+  const lastSpokenIdRef = useRef<string | null>(null);
   const regionKey = `${activeRegion?.id || ""}|${activeRegion?.city || ""}|${activeRegion?.name || ""}`;
+
+  const asr = useStreamAsr({
+    onFinalResult: (text) => {
+      const clean = text.trim();
+      if (!clean) return;
+      setInput((prev) => (prev.trim() ? `${prev.trim()} ${clean}` : clean));
+    },
+  });
 
   useEffect(() => {
     setMessages([
@@ -133,6 +153,10 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
   const listRef = useRef<HTMLDivElement>(null);
 
   const handleExecuteAction = async (cardKey: string, proposal: CivicActionProposal) => {
+    if (!isAdmin) {
+      toast.error("仅管理员可执行主题处置操作");
+      return;
+    }
     const current = actionStates[cardKey];
     if (current?.status === "pending" || current?.status === "done") return;
 
@@ -180,8 +204,37 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
       return () => {
         document.body.style.overflow = originalOverflow;
       };
+    } else {
+      asr.stop();
+      stageRef.current?.stop();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
+
+  // 折叠展开 3D 语音助手时，自动播报最新 AI 回复
+  useEffect(() => {
+    if (!isOpen || !showStage) {
+      stageRef.current?.stop();
+      return;
+    }
+    if (isTyping || streamingId) return;
+    const latestAssistant = [...messages]
+      .reverse()
+      .find((m) => m.role === "assistant" && m.content.trim());
+    if (!latestAssistant || latestAssistant.id === lastSpokenIdRef.current) return;
+
+    const spoken = extractCivicActions(latestAssistant.content, false)
+      .cleanText.replace(/[#*`>_~|[\]]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 180);
+    if (!spoken) return;
+
+    lastSpokenIdRef.current = latestAssistant.id;
+    setStageCaption(spoken);
+    stageRef.current?.activate();
+    void stageRef.current?.say(spoken).catch(() => {});
+  }, [isOpen, showStage, isTyping, streamingId, messages]);
 
   const handleSend = async (customText?: string) => {
     const text = customText || input;
@@ -348,16 +401,42 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              aria-expanded={showStage}
+              aria-label={showStage ? "收起 3D 语音助手" : "展开 3D 语音助手"}
+              onClick={() => {
+                setShowStage((prev) => {
+                  const next = !prev;
+                  if (next) {
+                    lastSpokenIdRef.current = null;
+                  }
+                  return next;
+                });
+              }}
+              className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border transition-colors cursor-pointer whitespace-nowrap ${
+                showStage
+                  ? "bg-blue-50 text-blue-700 border-blue-200"
+                  : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
+              }`}
+            >
+              <Volume2 className="w-3.5 h-3.5 shrink-0" />
+              <span>3D 语音助手</span>
+            </button>
+            <button
+              type="button"
+              aria-label="关闭 AI 研判副驾驶"
+              onClick={onClose}
+              className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Preset Prompt Pills */}
-        <div className="px-4 py-2 bg-white border-b border-slate-100 flex items-center gap-2 overflow-x-auto text-xs">
+        <div className="px-4 py-2 bg-white border-b border-slate-100 flex items-center gap-2 overflow-x-auto text-xs shrink-0">
           <button
             onClick={() => handleSend("生成今日多频工单研判日报")}
             className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 hover:bg-blue-50 hover:text-blue-700 border border-slate-200 whitespace-nowrap text-[11px] cursor-pointer transition-colors"
@@ -377,6 +456,24 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
             🏢 重点主体分布
           </button>
         </div>
+
+        {/* 按需展开的紧凑 3D 语音助手 */}
+        {showStage && (
+          <div className="px-4 py-2.5 bg-slate-50/90 border-b border-slate-200 flex items-center justify-center shrink-0">
+            <XiaochunStage
+              ref={stageRef}
+              width={180}
+              height={210}
+              outfit="xiaochun_office_lady"
+              scene="light"
+              lazy={false}
+              muted={stageMuted}
+              onMuteChange={setStageMuted}
+              title="AI 研判助手 · 小蠢"
+              caption={stageCaption}
+            />
+          </div>
+        )}
 
         {/* Message History */}
         <div ref={listRef} className="flex-1 overflow-y-auto p-4 space-y-4 overscroll-contain">
@@ -520,7 +617,14 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
                                             <span className="break-all">{errorMsg}</span>
                                           </div>
                                         )}
-                                        <div className="pt-1 flex items-center justify-end">
+                                        <div className="pt-1 flex items-center justify-between gap-2">
+                                          {!isAdmin ? (
+                                            <span className="text-[11px] text-amber-700 font-medium">
+                                              仅管理员可处置
+                                            </span>
+                                          ) : (
+                                            <span />
+                                          )}
                                           {state === "done" ? (
                                             <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-md">
                                               <CheckCircle2 className="w-3.5 h-3.5" />
@@ -529,7 +633,8 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
                                           ) : (
                                             <button
                                               type="button"
-                                              disabled={state === "pending" || streaming}
+                                              disabled={!isAdmin || state === "pending" || streaming}
+                                              title={!isAdmin ? "仅管理员可执行处置" : undefined}
                                               onClick={() => void handleExecuteAction(cardKey, act)}
                                               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
                                             >
@@ -577,7 +682,23 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
         </div>
 
         {/* Input Bar */}
-        <div className="p-3 border-t border-slate-200 bg-white">
+        <div className="p-3 border-t border-slate-200 bg-white space-y-1.5 shrink-0">
+          {(asr.isRecording || asr.status === "downloading" || asr.error) && (
+            <div className="flex items-center justify-between gap-2 px-1 text-[11px] text-slate-500">
+              <span className={`truncate ${asr.error ? "text-amber-700" : "text-blue-700"}`}>
+                {asr.error
+                  ? `语音提示：${asr.error}`
+                  : asr.interimText
+                  ? `识别中：${asr.interimText}`
+                  : asr.statusHint || "语音识别就绪"}
+              </span>
+              {asr.status === "downloading" && (
+                <span className="font-mono tabular-nums shrink-0 text-blue-600">
+                  {Math.round(asr.downloadPercent)}%
+                </span>
+              )}
+            </div>
+          )}
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -585,15 +706,55 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
             }}
             className="flex items-center gap-2"
           >
+            <Button
+              type="button"
+              size="icon"
+              variant="outline"
+              disabled={isTyping}
+              aria-label={asr.isRecording ? "停止语音输入" : "开始语音输入"}
+              aria-pressed={asr.isRecording}
+              onClick={() => {
+                if (asr.isRecording) {
+                  asr.stop();
+                } else {
+                  void asr.start();
+                }
+              }}
+              className={`h-9 w-9 shrink-0 ${
+                asr.isRecording
+                  ? "bg-rose-50 border-rose-300 text-rose-600 hover:bg-rose-100"
+                  : "bg-slate-50 border-slate-200 text-slate-600 hover:text-blue-600"
+              }`}
+            >
+              {asr.isRecording ? (
+                <MicOff className="w-4 h-4" />
+              ) : (
+                <Mic className="w-4 h-4" />
+              )}
+            </Button>
             <Input
+              aria-label="输入研判提问"
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  if (e.nativeEvent.isComposing || e.keyCode === 229) {
+                    e.preventDefault();
+                    return;
+                  }
+                  e.preventDefault();
+                  if (!isTyping && input.trim()) {
+                    void handleSend();
+                  }
+                }
+              }}
               placeholder="向 AI 副驾驶提问多频工单态势、归因或处置建议..."
               className="text-xs h-9 bg-slate-50 border-slate-200 text-slate-900 placeholder:text-slate-400 focus-visible:ring-blue-500"
             />
             <Button
               type="submit"
               size="sm"
+              aria-label="发送提问"
               disabled={isTyping || !input.trim()}
               className="h-9 px-3 bg-blue-600 text-white hover:bg-blue-700 shrink-0 shadow-xs"
             >

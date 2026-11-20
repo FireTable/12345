@@ -10,10 +10,16 @@ importers:
     dependencies:
       '@better-auth-ui/core':
         specifier: ^1.7.6
-        version: 1.7.6(i7ivbwmbbw7ddktf5esqhvkw4q)
+        version: 1.7.6(9a2225393fea26da575f80ba8f1e7186)
       '@better-auth-ui/react':
         specifier: ^1.7.6
-        version: 1.7.6(olu4oydpzxo5osz2urzmcbrhdm)
+        version: 1.7.6(d637bd81568bcea5cb0f3f86223726a8)
+      '@firetable/project-xiaochun':
+        specifier: ^0.2.15
+        version: 0.2.15(react@19.2.8)
+      '@firetable/stream-asr':
+        specifier: ^0.1.2
+        version: 0.1.2
       '@langchain/core':
         specifier: ^0.3.40
         version: 0.3.80(openai@4.104.0(ws@8.22.0)(zod@3.25.76))
@@ -809,6 +815,18 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@firetable/project-xiaochun@0.2.15':
+    resolution: {integrity: sha512-T3i4SyBraRYG61H17cQaC1xxd+KMdUVeLv7yREFOiwEyQkJlx/2FtAd/NwWzk+PfeL8SsHmrBdIi5Kjwe0YtzA==}
+    peerDependencies:
+      react: '>=18'
+    peerDependenciesMeta:
+      react:
+        optional: true
+
+  '@firetable/stream-asr@0.1.2':
+    resolution: {integrity: sha512-8jIwCz2n8R8CEJnvtEJOxkF4y33T+05078ge60rJdp9Gfp9lFcQMbqVsYaCuWfLsHfJgu8cKZWzTsPsjE9Dt6w==}
+    engines: {node: '>=18.0.0'}
 
   '@floating-ui/core@1.8.0':
     resolution: {integrity: sha512-0CIZ5itps/8x7BG8dEIhs53BvCUH2PCoogtakwRTut+Arm58sJooJ0AuZhLw2HJYIR5cMLNPBSS728sPho2khQ==}
@@ -3237,7 +3255,7 @@ snapshots:
 
   '@alloc/quick-lru@5.2.0': {}
 
-  '@better-auth-ui/core@1.7.6(i7ivbwmbbw7ddktf5esqhvkw4q)':
+  '@better-auth-ui/core@1.7.6(9a2225393fea26da575f80ba8f1e7186)':
     dependencies:
       '@better-auth/agent-auth': 0.6.2(@better-auth/core@1.7.1(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-call@1.4.0(zod@4.4.3))(jose@6.2.9)(kysely@0.29.5)(nanostores@1.5.2))(better-auth@1.7.1(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(kysely@0.29.5)(postgres@3.4.9))(next@15.5.23(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8))
       '@mikkelscheike/email-provider-links': 5.2.2
@@ -3249,9 +3267,9 @@ snapshots:
       '@better-auth/api-key': 1.7.1(@better-auth/core@1.7.1(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-call@1.4.0(zod@4.4.3))(jose@6.2.9)(kysely@0.29.5)(nanostores@1.5.2))(@better-auth/utils@0.4.2)(better-auth@1.7.1(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(kysely@0.29.5)(postgres@3.4.9))(next@15.5.23(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(better-call@1.4.0(zod@3.25.76))
       '@better-auth/passkey': 1.7.1(@better-auth/core@1.7.1(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-call@1.4.0(zod@4.4.3))(jose@6.2.9)(kysely@0.29.5)(nanostores@1.5.2))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-auth@1.7.1(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(kysely@0.29.5)(postgres@3.4.9))(next@15.5.23(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(better-call@1.4.0(zod@3.25.76))(nanostores@1.5.2)
 
-  '@better-auth-ui/react@1.7.6(olu4oydpzxo5osz2urzmcbrhdm)':
+  '@better-auth-ui/react@1.7.6(d637bd81568bcea5cb0f3f86223726a8)':
     dependencies:
-      '@better-auth-ui/core': 1.7.6(i7ivbwmbbw7ddktf5esqhvkw4q)
+      '@better-auth-ui/core': 1.7.6(9a2225393fea26da575f80ba8f1e7186)
       '@better-auth/api-key': 1.7.1(@better-auth/core@1.7.1(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-call@1.4.0(zod@4.4.3))(jose@6.2.9)(kysely@0.29.5)(nanostores@1.5.2))(@better-auth/utils@0.4.2)(better-auth@1.7.1(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(kysely@0.29.5)(postgres@3.4.9))(next@15.5.23(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(better-call@1.4.0(zod@3.25.76))
       '@better-auth/passkey': 1.7.1(@better-auth/core@1.7.1(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-call@1.4.0(zod@4.4.3))(jose@6.2.9)(kysely@0.29.5)(nanostores@1.5.2))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-auth@1.7.1(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(kysely@0.29.5)(postgres@3.4.9))(next@15.5.23(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(better-call@1.4.0(zod@3.25.76))(nanostores@1.5.2)
       '@tanstack/query-core': 5.101.4
@@ -3592,6 +3610,12 @@ snapshots:
 
   '@esbuild/win32-x64@0.28.2':
     optional: true
+
+  '@firetable/project-xiaochun@0.2.15(react@19.2.8)':
+    optionalDependencies:
+      react: 19.2.8
+
+  '@firetable/stream-asr@0.1.2': {}
 
   '@floating-ui/core@1.8.0':
     dependencies:

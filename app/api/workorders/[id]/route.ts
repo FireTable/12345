@@ -9,6 +9,7 @@ import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 import { listDisposalLogs, recordDisposalLog, resolveOperatorName } from "@/lib/disposal";
 import { invalidateCivicAggregates } from "@/lib/civic-cache";
 import { broadcastDataRefresh } from "@/lib/sse-broadcaster";
+import { requireAdmin } from "@/lib/auth/rbac";
 
 type WorkorderPatchBody = {
   action?: string;
@@ -82,6 +83,9 @@ async function loadWorkorderDetailPayload(tenantDb: DB, regionId: string, key: s
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const { id } = await params;
     const regionId = await resolveRequestRegionId(req);
     const { db: tenantDb } = await getRegionDb(regionId);
@@ -98,6 +102,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const { id } = await params;
     const regionId = await resolveRequestRegionId(req);
     const { db: tenantDb } = await getRegionDb(regionId);

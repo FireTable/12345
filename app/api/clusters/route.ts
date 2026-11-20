@@ -4,9 +4,13 @@ import { cacheGetOrLoad } from "@/lib/civic-cache";
 import { filterClusterDtos, loadClusterBundle } from "@/lib/civic-queries";
 import { clampTimeRef, formatYmd } from "@/lib/civic-time";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
+import { requireAdmin } from "@/lib/auth/rbac";
 
 export async function GET(req: Request) {
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const regionId = await resolveRequestRegionId(req);
     const { searchParams } = new URL(req.url);
     const mode = searchParams.get("mode") || "";

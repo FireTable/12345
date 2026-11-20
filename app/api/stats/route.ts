@@ -3,9 +3,13 @@ import { getRegionDb } from "@/db/client";
 import { ticketsTable, themesTable } from "@/db/schema";
 import { desc, sql } from "drizzle-orm";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
+import { requireAdmin } from "@/lib/auth/rbac";
 
 export async function GET(req: Request) {
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const regionId = await resolveRequestRegionId(req);
     const { db: tenantDb } = await getRegionDb(regionId);
 

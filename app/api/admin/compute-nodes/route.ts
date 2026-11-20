@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createComputeNode, listComputeNodesForAdmin } from "@/lib/compute-nodes";
+import { requireAdmin } from "@/lib/auth/rbac";
 
 export const dynamic = "force-dynamic";
 
@@ -7,8 +8,11 @@ export const dynamic = "force-dynamic";
  * GET /api/admin/compute-nodes
  * 返回环境变量只读基础节点与动态挂载算力节点列表（严禁返回明文 apiKey）。
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const data = await listComputeNodesForAdmin();
     return NextResponse.json({ success: true, data });
   } catch (err: unknown) {
@@ -23,6 +27,9 @@ export async function GET() {
  */
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const body = (await req.json().catch(() => null)) as {
       name?: string;
       role?: string;

@@ -32,6 +32,7 @@ import { invalidateCivicAggregates } from "@/lib/civic-cache";
 import { broadcastDataRefresh } from "@/lib/sse-broadcaster";
 import { getRegionDomainProfile } from "@/lib/domain-profile";
 import { evaluateEcommerceTicket } from "@/lib/ecommerce-triage";
+import { guardAgentRequest } from "@/lib/security/agent-guard";
 import type { EnrichedTicket, MultiFrequencyTheme, RawTicket, RiskLevel } from "@/backend/state";
 
 export const dynamic = "force-dynamic";
@@ -219,6 +220,9 @@ function asRisk(v?: string | null): RiskLevel {
 
 export async function POST(req: NextRequest) {
   try {
+    const guard = await guardAgentRequest(req, { role: "admin", scope: "xray" });
+    if ("response" in guard) return guard.response;
+
     const body = (await req.json().catch(() => null)) as {
       title?: string;
       content?: string;

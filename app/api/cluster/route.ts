@@ -6,9 +6,13 @@ import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 import { enqueueClusterJob } from "@/lib/cluster-queue";
 import { apiSuccess, apiError, ApiCode } from "@/lib/api-codes";
 import { triggerClusterJobAuto } from "@/lib/cluster-runner";
+import { requireAdmin } from "@/lib/auth/rbac";
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     let body: { taskId?: string; threadId?: string } = {};
     try {
       body = await req.json();
@@ -45,6 +49,9 @@ export async function POST(req: NextRequest) {
   }
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const auth = await requireAdmin(req);
+  if ("response" in auth) return auth.response;
+
   return apiError(ApiCode.BAD_REQUEST, "研判只能 POST /api/cluster 入队；进度请 GET /api/cluster/progress", 405);
 }

@@ -4,6 +4,7 @@ import { getRegionDb } from "@/db/client";
 import { themesTable, ticketThemesTable, ticketsTable } from "@/db/schema";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 import { desc, eq, or, sql } from "drizzle-orm";
+import { requireAdmin } from "@/lib/auth/rbac";
 
 const THEME_CAP = 60;
 const THEME_TICKET_CAP = 30;
@@ -36,6 +37,9 @@ function themeNodeColor(risk?: RiskLevel): string {
  */
 export async function GET(req: Request) {
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const regionId = await resolveRequestRegionId(req);
     const { db: tenantDb } = await getRegionDb(regionId);
     const { searchParams } = new URL(req.url);

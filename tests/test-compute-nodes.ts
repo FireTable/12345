@@ -9,6 +9,7 @@
 
 import http from "node:http";
 import { NextRequest } from "next/server";
+import { withAuthHeaders } from "./_auth-helper";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { sql, db } from "../db/client";
@@ -58,15 +59,18 @@ async function assertBaselineUnchanged(stage: string) {
   );
 }
 
-function makeRequest(
+async function makeRequest(
   pathWithQuery: string,
   init?: { method?: string; body?: unknown; headers?: Record<string, string> }
 ) {
-  const url = `http://civic.test${pathWithQuery}`;
-  const headers = new Headers({
-    ...(init?.body !== undefined ? { "content-type": "application/json" } : {}),
-    ...(init?.headers ?? {}),
-  });
+  const url = `http://localhost:3000${pathWithQuery}`;
+  const headers = await withAuthHeaders(
+    {
+      ...(init?.body !== undefined ? { "content-type": "application/json" } : {}),
+      ...(init?.headers ?? {}),
+    },
+    "admin"
+  );
   return new NextRequest(url, {
     method: init?.method ?? "GET",
     headers,
@@ -144,7 +148,7 @@ async function main() {
 
     // 1. 错误 Token 探活拦截 (401)
     const badProbeRes = await computeNodeProbe(
-      makeRequest("/api/admin/compute-nodes/probe", {
+      await makeRequest("/api/admin/compute-nodes/probe", {
         method: "POST",
         body: { endpoint: mockEndpoint, apiKey: "wrong-token", role: "SYSTEM_TWO", provider: "COLAB" },
       })
@@ -160,7 +164,7 @@ async function main() {
 
     // 2. 正确 Token 探活（验证 600ms 延迟下仍判 ONLINE 且 >= 500ms）
     const goodProbeRes = await computeNodeProbe(
-      makeRequest("/api/admin/compute-nodes/probe", {
+      await makeRequest("/api/admin/compute-nodes/probe", {
         method: "POST",
         body: { endpoint: mockEndpoint, apiKey: mockToken, role: "SYSTEM_TWO", provider: "COLAB" },
       })
@@ -177,7 +181,7 @@ async function main() {
 
     // 3. POST /api/admin/compute-nodes 新增 COLAB SYSTEM_TWO 节点
     const createRes = await computeNodesPost(
-      makeRequest("/api/admin/compute-nodes", {
+      await makeRequest("/api/admin/compute-nodes", {
         method: "POST",
         body: {
           name: "Colab L4 测试节点",
@@ -205,7 +209,7 @@ async function main() {
     );
 
     // 4. GET /api/admin/compute-nodes 严禁包含明文 apiKey
-    const listRes = await computeNodesGet();
+    const listRes = await computeNodesGet(await makeRequest("/api/admin/compute-nodes"));
     const listJson = await listRes.json();
     const listText = JSON.stringify(listJson);
     const foundNode = (listJson.data?.nodes || []).find((n: { id: string }) => n.id === createdId);
@@ -244,7 +248,7 @@ async function main() {
 
     // 6. PATCH 禁用后再启用，验证热重载隔离
     const disableRes = await computeNodePatch(
-      makeRequest(`/api/admin/compute-nodes/${createdId}`, {
+      await makeRequest(`/api/admin/compute-nodes/${createdId}`, {
         method: "PATCH",
         body: { enabled: false },
       }),
@@ -261,7 +265,7 @@ async function main() {
 
     // 7. 测试 EMBEDDING 角色节点合并到 resolveActiveEmbedEndpoints()
     const embCreateRes = await computeNodesPost(
-      makeRequest("/api/admin/compute-nodes", {
+      await makeRequest("/api/admin/compute-nodes", {
         method: "POST",
         body: {
           name: "Colab BGE-M3 向量节点",
@@ -286,7 +290,7 @@ async function main() {
     // 8. DELETE 删除测试节点并再次 reloadSystemTwoPool()
     for (const delId of [...createdIds]) {
       const delRes = await computeNodeDelete(
-        makeRequest(`/api/admin/compute-nodes/${delId}`, { method: "DELETE" }),
+        await makeRequest(`/api/admin/compute-nodes/${delId}`, { method: "DELETE" }),
         { params: Promise.resolve({ id: delId }) }
       );
       assert(delRes.status === 200, `DELETE /api/admin/compute-nodes/${delId} 成功`);

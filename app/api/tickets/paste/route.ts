@@ -4,6 +4,7 @@ import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 import { getRegionVocabulary } from "@/lib/vocabulary";
 import { apiSuccess, apiError, ApiCode } from "@/lib/api-codes";
 import { triggerClusterJobAuto } from "@/lib/cluster-runner";
+import { requireAdmin } from "@/lib/auth/rbac";
 
 const MAX_LINES = 2000;
 const MAX_LINE_CHARS = 4000;
@@ -12,6 +13,9 @@ export async function POST(req: NextRequest) {
   const startTime = Date.now();
 
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const regionId = await resolveRequestRegionId(req);
     const body = await req.json().catch(() => null) as { texts?: unknown } | null;
     const rawTexts = Array.isArray(body?.texts) ? body!.texts : null;

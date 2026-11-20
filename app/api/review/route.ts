@@ -7,6 +7,7 @@ import { recordDisposalLog, resolveOperatorName } from "@/lib/disposal";
 import { invalidateCivicAggregates } from "@/lib/civic-cache";
 import { broadcastDataRefresh } from "@/lib/sse-broadcaster";
 import { eq } from "drizzle-orm";
+import { requireAdmin } from "@/lib/auth/rbac";
 
 type ReviewCorrection = {
   subdistrict?: string;
@@ -52,6 +53,9 @@ function buildTicketCorrectionPatch(correction: ReviewCorrection | undefined) {
  */
 export async function GET(req: Request) {
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const regionId = await resolveRequestRegionId(req);
     const { searchParams } = new URL(req.url);
     const statusParam = searchParams.get("status") || "PENDING";
@@ -76,6 +80,9 @@ export async function GET(req: Request) {
  */
 export async function POST(req: Request) {
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const regionId = await resolveRequestRegionId(req);
     const { db: tenantDb } = await getRegionDb(regionId);
     const { pathname } = new URL(req.url);

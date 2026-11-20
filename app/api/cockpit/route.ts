@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { loadCockpitRead } from "@/lib/cockpit-read";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
+import { requireAdmin } from "@/lib/auth/rbac";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const regionId = await resolveRequestRegionId(req);
     const payload = await loadCockpitRead(regionId);
     return NextResponse.json(payload);

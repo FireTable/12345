@@ -8,6 +8,7 @@ import { LightCopilot } from "@/app/_components/copilot/light-copilot";
 import type { TaskProgress } from "@/lib/task-progress";
 import { useCivicSse } from "@/app/_hooks/use-civic-sse";
 import { useRegion } from "./region-context";
+import { useAuthRole } from "@/lib/auth/use-role";
 
 type CivicWorkflow = {
   analyzing: boolean;
@@ -35,12 +36,28 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
   const pathname = usePathname();
   const router = useRouter();
   const { activeRegion } = useRegion();
+  const { isAdmin } = useAuthRole();
+
   const [uploadOpen, setUploadOpen] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
-  const [pipelineDrawerOpen, setPipelineDrawerOpen] = useState(false);
+  const [pipelineDrawerOpen, setPipelineDrawerOpenState] = useState(false);
+
+  const setPipelineDrawerOpen: React.Dispatch<React.SetStateAction<boolean>> = useCallback(
+    (action) => {
+      if (!isAdmin) {
+        setPipelineDrawerOpenState(false);
+        return;
+      }
+      setPipelineDrawerOpenState(action);
+    },
+    [isAdmin]
+  );
+
   const togglePipelineDrawer = useCallback(() => {
-    setPipelineDrawerOpen((prev) => !prev);
-  }, []);
+    if (!isAdmin) return;
+    setPipelineDrawerOpenState((prev) => !prev);
+  }, [isAdmin]);
+
   const [analyzing, setAnalyzing] = useState(false);
   const [ticketStatus, setTicketStatus] = useState<{
     total: number;
@@ -62,6 +79,7 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
         });
         return;
       }
+      if (!isAdmin) return;
       const res = await fetch("/api/overview");
       const data = await res.json();
       if (data.success) {
@@ -74,7 +92,7 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
     } catch {
       // silent
     }
-  }, []);
+  }, [isAdmin]);
 
   const [taskProgress, setTaskProgress] = useState<TaskProgress | null>(null);
 
@@ -82,7 +100,7 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
    * SSE 推送：每帧 task-progress 直接驱动 taskProgress / analyzing 状态。
    * 完全替代原先每 3s / 12s 的 HTTP 轮询。
    */
-  useCivicSse(pathname === "/login" ? undefined : activeRegion?.id, (msg) => {
+  useCivicSse(pathname === "/login" || !isAdmin ? undefined : activeRegion?.id, (msg) => {
     if (msg.type === "task-progress") {
       const data = msg.taskProgress as TaskProgress | null;
       if (!data) return;
@@ -95,15 +113,20 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
       return;
     }
     if (msg.type === "civic-data-refresh") {
-      // 兜底：数据大屏写入触发，但 taskProgress 不需要再拉
       loadTicketStatus();
       return;
     }
-    // pipeline-state-refresh 由 pipeline-* 组件自己订阅处理
   });
 
   React.useEffect(() => {
-    // 切区时立刻清掉旧 taskProgress，等 WS 推新区第一帧
+    if (!isAdmin) {
+      setUploadOpen(false);
+      setCopilotOpen(false);
+      setPipelineDrawerOpenState(false);
+    }
+  }, [isAdmin]);
+
+  React.useEffect(() => {
     setTaskProgress(null);
     loadTicketStatus();
     const handleRefresh = () => {
@@ -130,29 +153,29 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
   const refreshPages = useCallback(() => {
     router.refresh();
     loadTicketStatus();
-    // taskProgress 不再需要单独 HTTP 拉，WS 会推；此处保留 router.refresh
-    // 让 server component（如 /themes、/tickets）服务端重渲
     if (typeof window !== "undefined") {
       window.dispatchEvent(new Event("civic-data-refresh"));
     }
   }, [router, loadTicketStatus]);
 
   const openUpload = useCallback(() => {
+    if (!isAdmin) return;
     setUploadOpen(true);
-  }, []);
+  }, [isAdmin]);
 
   const runCluster = useCallback(() => {
+    if (!isAdmin) return;
     if (isAllAnalyzed) {
       toast.info(`当前 ${ticketStatus.total} 条工单已全部研判完毕，无需重复执行`);
       return;
     }
-    // 唤醒侧拉研判控制台（不再跳转独立页面）
-    setPipelineDrawerOpen(true);
-  }, [isAllAnalyzed, ticketStatus.total]);
+    setPipelineDrawerOpenState(true);
+  }, [isAdmin, isAllAnalyzed, ticketStatus.total]);
 
   const openCopilot = useCallback(() => {
+    if (!isAdmin) return;
     setCopilotOpen(true);
-  }, []);
+  }, [isAdmin]);
 
   return (
     <CivicWorkflowContext.Provider
@@ -164,25 +187,26 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
         runCluster,
         isAllAnalyzed,
         disabledReason,
-        copilotOpen,
-        pipelineDrawerOpen,
+        copilotOpen: isAdmin ? copilotOpen : false,
+        pipelineDrawerOpen: isAdmin ? pipelineDrawerOpen : false,
         setPipelineDrawerOpen,
         togglePipelineDrawer,
       }}
     >
       {children}
-      {/* 工单数据录入弹窗 (复用经典的 upload-dialog 样式，仅保留完成按钮) */}
-      <UploadDialog
-        isOpen={uploadOpen}
-        onClose={() => setUploadOpen(false)}
-        onDatabaseUpdated={refreshPages}
-      />
-
-      {/* 进度展示已迁移到 navbar 研判图标上的进度环；底部浮动胶囊下线 */}
-      <LightCopilot
-        isOpen={copilotOpen}
-        onClose={() => setCopilotOpen(false)}
-      />
+      {isAdmin ? (
+        <>
+          <UploadDialog
+            isOpen={uploadOpen}
+            onClose={() => setUploadOpen(false)}
+            onDatabaseUpdated={refreshPages}
+          />
+          <LightCopilot
+            isOpen={copilotOpen}
+            onClose={() => setCopilotOpen(false)}
+          />
+        </>
+      ) : null}
     </CivicWorkflowContext.Provider>
   );
 }

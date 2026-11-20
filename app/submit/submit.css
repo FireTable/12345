@@ -1,0 +1,413 @@
+/* ==================================================================
+   /submit — 消费级极简市民/买家投诉工作台样式
+   严格遵循 /modern-web-guidance (forms / tabs / validate-input-after-interaction)
+   ================================================================== */
+
+.submit-shell {
+  max-width: 780px;
+  margin-inline: auto;
+  padding-block: 8px 40px;
+  min-width: 0;
+}
+
+.submit-header {
+  margin-block-end: 20px;
+}
+
+.submit-header__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--c-brand-dark);
+  background: var(--c-brand-soft);
+  border: 1px solid rgba(22, 119, 255, 0.2);
+  border-radius: 999px;
+  padding: 4px 12px;
+  margin-block-end: 10px;
+}
+
+.submit-header__title {
+  font-size: clamp(1.375rem, 1.15rem + 0.8vw, 1.75rem);
+  font-weight: 700;
+  color: var(--c-ink);
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  margin: 0 0 6px;
+}
+
+.submit-header__sub {
+  font-size: 14px;
+  color: var(--c-ink-3);
+  margin: 0;
+  line-height: 1.55;
+}
+
+.submit-card {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border-card);
+  border-radius: var(--r-xl);
+  box-shadow: var(--sh-1);
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* Single-row accessible tablist */
+.submit-tablist {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  border-block-end: 1px solid var(--c-border-soft);
+  background: var(--c-surface-2);
+  scrollbar-width: none;
+}
+
+.submit-tablist::-webkit-scrollbar {
+  display: none;
+}
+
+.submit-tab {
+  position: relative;
+  flex: 1 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-block-size: 50px;
+  padding: 12px 18px;
+  border: 0;
+  background: transparent;
+  color: var(--c-ink-2);
+  font-size: 15px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
+}
+
+.submit-tab:hover {
+  color: var(--c-ink);
+  background: rgba(22, 119, 255, 0.04);
+}
+
+.submit-tab:focus-visible {
+  outline: 3px solid var(--c-brand);
+  outline-offset: -3px;
+}
+
+.submit-tab[aria-selected="true"] {
+  color: var(--c-brand-dark);
+  background: var(--c-surface);
+  font-weight: 600;
+}
+
+.submit-tab[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  border-block-end: 3px solid var(--c-brand);
+}
+
+/* Keep styling on inner wrapper so [hidden] leaves zero empty strip */
+.submit-panel-body {
+  padding: 24px;
+}
+
+@media (max-width: 640px) {
+  .submit-panel-body {
+    padding: 16px;
+  }
+}
+
+/* Form fields: Gestalt proximity + rule hints above controls + >=48px targets */
+.submit-form {
+  display: flex;
+  flex-direction: column;
+}
+
+.submit-field {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.35rem;
+  margin-block-end: 1.25rem;
+  min-width: 0;
+}
+
+.submit-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--c-ink);
+  line-height: 1.4;
+  padding: 6px 0;
+  margin: -6px 0;
+}
+
+.submit-required-mark {
+  color: #dc2626;
+}
+
+.submit-hint {
+  display: block;
+  font-size: 13px;
+  color: var(--c-ink-3);
+  line-height: 1.45;
+}
+
+.submit-control {
+  font: inherit;
+  font-size: max(1rem, 1em);
+  line-height: 1.5;
+  color: var(--c-ink);
+  background: var(--c-surface);
+  border: 1.5px solid #94a3b8;
+  border-radius: 10px;
+  padding: 0.75rem 0.875rem;
+  min-block-size: 48px;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+@media (pointer: coarse) {
+  .submit-control {
+    min-block-size: 52px;
+  }
+}
+
+.submit-control:focus-visible {
+  outline: 3px solid var(--c-brand);
+  outline-offset: 2px;
+  border-color: var(--c-brand);
+}
+
+.submit-control--textarea {
+  min-block-size: 120px;
+  resize: vertical;
+}
+
+/* Validation only after interaction / submit attempt */
+.submit-control:is(:user-invalid, .user-invalid-fallback) {
+  border-color: #dc2626;
+  background-color: #fef2f2;
+}
+
+.submit-field:has(.submit-control:is(:user-invalid, .user-invalid-fallback)) .submit-hint {
+  color: #b91c1c;
+}
+
+.submit-error {
+  display: none;
+  align-items: flex-start;
+  gap: 6px;
+  margin-block-start: 2px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #b91c1c;
+  line-height: 1.4;
+}
+
+.submit-error.is-visible,
+.submit-control:is(:user-invalid, .user-invalid-fallback) ~ .submit-error {
+  display: flex;
+}
+
+.submit-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-block-size: 48px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #1668e3 0%, #0958d9 100%);
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(22, 119, 255, 0.24);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+.submit-btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(22, 119, 255, 0.3);
+}
+
+.submit-btn-primary:focus-visible {
+  outline: 3px solid var(--c-brand);
+  outline-offset: 2px;
+}
+
+.submit-btn-primary:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.submit-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-block-size: 48px;
+  padding: 0 16px;
+  border: 1.5px solid var(--c-border);
+  border-radius: 10px;
+  background: var(--c-surface);
+  color: var(--c-ink);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.submit-btn-secondary:hover:not(:disabled) {
+  border-color: var(--c-brand);
+  background: var(--c-brand-soft);
+  color: var(--c-brand-dark);
+}
+
+.submit-btn-secondary:focus-visible {
+  outline: 3px solid var(--c-brand);
+  outline-offset: 2px;
+}
+
+/* Voice intake workspace */
+.voice-layout {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 720px) {
+  .voice-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.voice-stage-col {
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+
+.voice-control-col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.voice-record-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-block-size: 52px;
+  padding: 12px 18px;
+  border-radius: 12px;
+  border: 1.5px solid rgba(22, 119, 255, 0.35);
+  background: linear-gradient(180deg, #1677ff 0%, #0958d9 100%);
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.voice-record-btn.is-recording {
+  border-color: #dc2626;
+  background: linear-gradient(180deg, #ef4444 0%, #dc2626 100%);
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.25);
+}
+
+.voice-record-btn:focus-visible {
+  outline: 3px solid var(--c-brand);
+  outline-offset: 2px;
+}
+
+.voice-chat-log {
+  max-height: 240px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--c-border-soft);
+  background: var(--c-surface-2);
+}
+
+.voice-msg {
+  max-width: 90%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: break-word;
+}
+
+.voice-msg--assistant {
+  align-self: flex-start;
+  background: #ffffff;
+  border: 1px solid var(--c-border-soft);
+  color: var(--c-ink);
+}
+
+.voice-msg--user {
+  align-self: flex-end;
+  background: var(--c-brand);
+  color: #ffffff;
+}
+
+.submit-history-details {
+  margin-block-start: 20px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border-card);
+  border-radius: var(--r-xl);
+  box-shadow: var(--sh-1);
+  overflow: hidden;
+}
+
+.submit-history-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  min-block-size: 54px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--c-ink);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.submit-history-summary::-webkit-details-marker {
+  display: none;
+}
+
+.submit-history-summary:focus-visible {
+  outline: 3px solid var(--c-brand);
+  outline-offset: -3px;
+}
+
+.visually-hidden:where(:not(:focus-within, :active)) {
+  position: absolute !important;
+  clip-path: inset(50%) !important;
+  overflow: hidden !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  white-space: nowrap !important;
+}

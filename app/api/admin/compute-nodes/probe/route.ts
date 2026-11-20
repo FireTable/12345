@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { probeAndSaveComputeNode, probeComputeEndpoint } from "@/lib/compute-nodes";
+import { requireAdmin } from "@/lib/auth/rbac";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +10,9 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const body = (await req.json().catch(() => null)) as {
       id?: string;
       endpoint?: string;

@@ -8,6 +8,7 @@ import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 import { listDisposalLogs, recordDisposalLog, resolveOperatorName } from "@/lib/disposal";
 import { invalidateCivicAggregates } from "@/lib/civic-cache";
 import { broadcastDataRefresh } from "@/lib/sse-broadcaster";
+import { requireAdmin } from "@/lib/auth/rbac";
 
 type ClusterPatchBody = {
   action?: string;
@@ -102,6 +103,9 @@ async function loadClusterDetailPayload(regionId: string, id: string) {
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const { id } = await params;
     const regionId = await resolveRequestRegionId(req);
     const payload = await loadClusterDetailPayload(regionId, id);
@@ -117,6 +121,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const { id } = await params;
     const regionId = await resolveRequestRegionId(req);
     const { db } = await getRegionDb(regionId);

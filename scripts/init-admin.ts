@@ -9,23 +9,25 @@ import { db } from "../db/client";
 import { user as userTable, account as accountTable, session as sessionTable } from "../lib/auth/schema";
 import { eq, or } from "drizzle-orm";
 
-export async function initAdminUser() {
-  const adminEmail = process.env.ADMIN_EMAIL || "admin@civic.local";
-  const adminUsername = process.env.ADMIN_USERNAME || "admin";
-  const adminPassword = process.env.ADMIN_PASSWORD || "admin";
-  const adminName = process.env.ADMIN_NAME || "系统管理员";
+interface SeedUserConfig {
+  email: string;
+  username: string;
+  password: string;
+  name: string;
+  role: "admin" | "user";
+  label: string;
+}
 
-  console.log(`👤 检查系统管理员账号: 用户名="${adminUsername}", 邮箱="${adminEmail}"...`);
+async function ensureSeedUser(cfg: SeedUserConfig) {
+  console.log(`👤 检查${cfg.label}账号: 用户名="${cfg.username}", 邮箱="${cfg.email}", 角色="${cfg.role}"...`);
 
-  // 1. 检查是否存在同名或同邮箱用户
   const [existingUser] = await db
     .select()
     .from(userTable)
-    .where(or(eq(userTable.email, adminEmail), eq(userTable.username, adminUsername)))
+    .where(or(eq(userTable.email, cfg.email), eq(userTable.username, cfg.username)))
     .limit(1);
 
   if (existingUser) {
-    // 检查密码凭据是否完整
     const [existingAccount] = await db
       .select()
       .from(accountTable)
@@ -33,18 +35,19 @@ export async function initAdminUser() {
       .limit(1);
 
     if (existingAccount && existingAccount.password) {
-      console.log(`✅ 管理员账号已存在 (ID: ${existingUser.id}, 角色: ${existingUser.role})，凭据正常。`);
-      if (existingUser.role !== "admin") {
+      if (existingUser.role !== cfg.role) {
         await db
           .update(userTable)
-          .set({ role: "admin" })
+          .set({ role: cfg.role })
           .where(eq(userTable.id, existingUser.id));
-        console.log(`   已升级用户角色为 'admin'。`);
+        console.log(`✅ ${cfg.label}账号已存在 (ID: ${existingUser.id})，已将角色修正为 '${cfg.role}'。`);
+      } else {
+        console.log(`✅ ${cfg.label}账号已存在 (ID: ${existingUser.id}, 角色: ${existingUser.role})，凭据正常。`);
       }
-      return existingUser;
+      return { ...existingUser, role: cfg.role };
     }
 
-    console.log(`⚠️ 管理员记录存在但缺少密码凭据，正在清理旧记录以便重新初始化...`);
+    console.log(`⚠️ ${cfg.label}记录存在但缺少密码凭据，正在清理旧记录以便重新初始化...`);
     await db.delete(sessionTable).where(eq(sessionTable.userId, existingUser.id));
     await db.delete(accountTable).where(eq(accountTable.userId, existingUser.id));
     await db.delete(userTable).where(eq(userTable.id, existingUser.id));
@@ -53,29 +56,51 @@ export async function initAdminUser() {
   try {
     const res = await auth.api.signUpEmail({
       body: {
-        email: adminEmail,
-        password: adminPassword,
-        name: adminName,
-        username: adminUsername,
+        email: cfg.email,
+        password: cfg.password,
+        name: cfg.name,
+        username: cfg.username,
       },
     });
 
     if (res?.user) {
       await db
         .update(userTable)
-        .set({ role: "admin", emailVerified: true })
+        .set({ role: cfg.role, emailVerified: true })
         .where(eq(userTable.id, res.user.id));
-      console.log(`🎉 成功初始化默认系统管理员账号:`);
-      console.log(`   账号: ${adminUsername}`);
-      console.log(`   密码: ${adminPassword}`);
-      console.log(`   角色: admin`);
-      return res.user;
-    } else {
-      console.log(`⚠️ 创建响应未返回用户对象:`, res);
+      console.log(`🎉 成功初始化默认${cfg.label}账号: 用户名="${cfg.username}", 角色="${cfg.role}"`);
+      return { ...res.user, role: cfg.role };
     }
+    console.log(`⚠️ 创建${cfg.label}响应未返回用户对象:`, res);
   } catch (err: any) {
-    console.error(`❌ 初始化管理员失败:`, err?.message || err);
+    console.error(`❌ 初始化${cfg.label}失败:`, err?.message || err);
   }
+  return null;
+}
+
+export async function initCitizenUser() {
+  return ensureSeedUser({
+    email: process.env.CITIZEN_EMAIL || "citizen@civic.local",
+    username: process.env.CITIZEN_USERNAME || "citizen",
+    password: process.env.CITIZEN_PASSWORD || "citizen123",
+    name: process.env.CITIZEN_NAME || "市民体验账号",
+    role: "user",
+    label: "市民体验",
+  });
+}
+
+export async function initAdminUser() {
+  const adminUser = await ensureSeedUser({
+    email: process.env.ADMIN_EMAIL || "admin@civic.local",
+    username: process.env.ADMIN_USERNAME || "admin",
+    password: process.env.ADMIN_PASSWORD || "admin",
+    name: process.env.ADMIN_NAME || "系统管理员",
+    role: "admin",
+    label: "系统管理员",
+  });
+
+  await initCitizenUser();
+  return adminUser;
 }
 
 export const seedAdminUser = initAdminUser;

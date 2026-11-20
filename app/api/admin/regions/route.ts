@@ -3,6 +3,7 @@ import { sql, getAllRegions } from "@/db/client";
 import { registerRegion } from "@/lib/tenant/schema-manager";
 import { invalidateVocabCache } from "@/lib/vocabulary";
 import { ApiCode, apiSuccess, apiError } from "@/lib/api-codes";
+import { requireAdmin } from "@/lib/auth/rbac";
 import {
   ECOMMERCE_CS_PROFILE,
   filterRegionsByAppDomain,
@@ -17,8 +18,11 @@ export const dynamic = "force-dynamic";
  * GET /api/admin/regions
  * 超管查看当前 APP_DOMAIN 下纳管站点及各 Schema 的数据统计（工单数、多频主题数、字典数）
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const appDomain = getAppDomainMode();
     const regions = filterRegionsByAppDomain(await getAllRegions(), appDomain);
 
@@ -75,6 +79,9 @@ export async function GET() {
  */
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const appDomain = getAppDomainMode();
     const body = await req.json();
     const { id, name, city, province, svgMapPath, description, isDefault, domainType } = body;
