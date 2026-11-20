@@ -122,8 +122,11 @@ export function CivicNav() {
       else title = "智能研判中心";
     }
     const regionPrefix = activeRegion ? `${activeRegion.name} · ` : "";
-    document.title = `${regionPrefix}${title} | 民声智理 12345`;
-  }, [pathname, activeRegion?.name]);
+    const isEcommerce = activeRegion?.domainProfile?.domainType === "ECOMMERCE_CS";
+    document.title = isEcommerce
+      ? `${regionPrefix}${title} | 民声智理`
+      : `${regionPrefix}${title} | 民声智理 12345`;
+  }, [pathname, activeRegion?.name, activeRegion?.domainProfile?.domainType]);
 
   useEffect(() => {
     if (!menuOpen && !userMenuOpen && !moreOpen) return;
@@ -163,12 +166,18 @@ export function CivicNav() {
     <>
       <nav className="navbar">
         <div className="navbar__brand" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <Link href="/" style={{ display: "flex", alignItems: "center", textDecoration: "none", color: "inherit" }} title="民声智理 · 12345 AI 智能研判系统">
+          <Link
+            href="/"
+            style={{ display: "flex", alignItems: "center", textDecoration: "none", color: "inherit" }}
+            title={activeRegion?.domainProfile?.domainType === "ECOMMERCE_CS" ? "民声智理 · 电商客诉 AI 智能研判系统" : "民声智理 · 12345 AI 智能研判系统"}
+          >
             <div className="brand-morph-capsule">
               <div className="brand-morph-viewport">
                 <div className="brand-morph-roller">
                   <div className="brand-morph-item">民声智理</div>
-                  <div className="brand-morph-item brand-morph-item--sub">12345 AI 研判</div>
+                  <div className="brand-morph-item brand-morph-item--sub">
+                    {activeRegion?.domainProfile?.domainType === "ECOMMERCE_CS" ? "电商 AI 研判" : "12345 AI 研判"}
+                  </div>
                   <div className="brand-morph-item">民声智理</div>
                 </div>
               </div>

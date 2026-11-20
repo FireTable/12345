@@ -49,6 +49,9 @@ export function RegionSelector() {
     return null;
   }
 
+  const activeBadge = activeRegion.domainProfile?.domainType === "ECOMMERCE_CS" ? "电商客诉" : "政务热线";
+  const isActiveEcom = activeRegion.domainProfile?.domainType === "ECOMMERCE_CS";
+
   return (
     <div className="relative inline-block text-left" ref={containerRef} style={{ position: "relative" }}>
       <button
@@ -68,12 +71,27 @@ export function RegionSelector() {
           fontWeight: 600,
           color: "#0F172A",
           cursor: "pointer",
+          whiteSpace: "nowrap",
           transition: "all 0.15s ease",
         }}
       >
-        <MapPin style={{ width: "13px", height: "13px", color: "#2563EB" }} />
+        <MapPin style={{ width: "13px", height: "13px", color: isActiveEcom ? "#D97706" : "#2563EB", flexShrink: 0 }} />
         <span>{activeRegion.city} · {activeRegion.name}</span>
-        <ChevronDown style={{ width: "12px", height: "12px", color: "#64748B", transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+        <span
+          style={{
+            fontSize: "10px",
+            fontWeight: 600,
+            lineHeight: "15px",
+            padding: "0 5px",
+            borderRadius: "4px",
+            backgroundColor: isActiveEcom ? "#FEF3C7" : "#DBEAFE",
+            color: isActiveEcom ? "#B45309" : "#1D4ED8",
+            flexShrink: 0,
+          }}
+        >
+          {activeBadge}
+        </span>
+        <ChevronDown style={{ width: "12px", height: "12px", color: "#64748B", flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
       </button>
 
       {open && (
@@ -82,7 +100,7 @@ export function RegionSelector() {
             position: "absolute",
             top: "calc(100% + 6px)",
             left: 0,
-            width: "240px",
+            minWidth: "296px",
             backgroundColor: "#FFFFFF",
             borderRadius: "8px",
             boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)",
@@ -98,6 +116,8 @@ export function RegionSelector() {
           <div style={{ maxHeight: "240px", overflowY: "auto" }}>
             {regions.map((r) => {
               const isSelected = r.id === activeRegion.id;
+              const isEcom = r.domainProfile?.domainType === "ECOMMERCE_CS";
+              const badgeLabel = isEcom ? "电商客诉" : "政务热线";
               return (
                 <button
                   key={r.id}
@@ -109,6 +129,7 @@ export function RegionSelector() {
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "space-between",
+                    gap: "8px",
                     width: "100%",
                     padding: "8px 12px",
                     textAlign: "left",
@@ -122,7 +143,25 @@ export function RegionSelector() {
                   onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isSelected ? "#F1F5F9" : "#F8FAFC")}
                   onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = isSelected ? "#F8FAFC" : "transparent")}
                 >
-                  <span>{r.city} · {r.name}</span>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", minWidth: 0 }}>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {r.city} · {r.name}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: "10px",
+                        fontWeight: 600,
+                        lineHeight: "15px",
+                        padding: "0 5px",
+                        borderRadius: "4px",
+                        backgroundColor: isEcom ? "#FEF3C7" : "#EFF6FF",
+                        color: isEcom ? "#B45309" : "#1D4ED8",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {badgeLabel}
+                    </span>
+                  </span>
                   {isSelected && <Check style={{ width: "14px", height: "14px", color: "#2563EB", flexShrink: 0 }} />}
                 </button>
               );

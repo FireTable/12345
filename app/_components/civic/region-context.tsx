@@ -4,6 +4,28 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
 
+export type DomainType = "GOV_12345" | "ECOMMERCE_CS";
+
+export interface DomainTerminology {
+  regionUnit: string;
+  subject: string;
+  ticketNoun: string;
+  ownerNoun: string;
+  themeNoun: string;
+  fakeClosureLabel: string;
+}
+
+export interface DomainProfile {
+  domainType: DomainType;
+  displayName: string;
+  badgeLabel: string;
+  hasGeoMap: boolean;
+  categories: string[];
+  channels: string[];
+  terminology: DomainTerminology;
+  promptPersona?: string;
+}
+
 export interface RegionInfo {
   id: string;
   name: string;
@@ -16,6 +38,7 @@ export interface RegionInfo {
   ticketCount?: number;
   themeCount?: number;
   vocabCount?: number;
+  domainProfile?: DomainProfile | null;
 }
 
 interface RegionContextValue {

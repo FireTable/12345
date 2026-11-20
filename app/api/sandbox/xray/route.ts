@@ -30,6 +30,8 @@ import { CATEGORY } from "@/lib/vocabulary";
 import { triggerClusterJobAuto } from "@/lib/cluster-runner";
 import { invalidateCivicAggregates } from "@/lib/civic-cache";
 import { broadcastDataRefresh } from "@/lib/sse-broadcaster";
+import { getRegionDomainProfile } from "@/lib/domain-profile";
+import { evaluateEcommerceTicket } from "@/lib/ecommerce-triage";
 import type { EnrichedTicket, MultiFrequencyTheme, RawTicket, RiskLevel } from "@/backend/state";
 
 export const dynamic = "force-dynamic";
@@ -79,10 +81,24 @@ function withTimeout<T>(work: Promise<T>, ms: number, msg: string): Promise<T> {
   });
 }
 
-function departmentForCategory(category: string, vocab: RegionVocabulary): string {
+function departmentForCategory(
+  category: string,
+  vocab: RegionVocabulary,
+  isEcommerce = false
+): string {
   const cat = (category || "").trim();
   const findDept = (kw: RegExp) =>
     vocab.departments.find((d) => kw.test(d.name) || kw.test(d.fullName))?.fullName;
+
+  if (isEcommerce) {
+    if (/食安|合规红线/.test(cat)) return findDept(/法务|合规|12315|食安/) || "法务合规与12315应对组";
+    if (/假冒|伪劣|欺诈/.test(cat)) return findDept(/法务|合规|12315|风控/) || "法务合规与12315应对组";
+    if (/物流|延误|丢件|冷链/.test(cat)) return findDept(/冷链|仓储|物流|履约/) || "物流履约协同组";
+    if (/退款|价保|差价/.test(cat)) return findDept(/价保|赔付|退款|财务/) || "售后价保赔付组";
+    if (/客服|推诿|超时|假闭环/.test(cat)) return findDept(/客服|督导/) || "客服督导组";
+    if (/货不对板|宣传|直播间/.test(cat)) return findDept(/运营|选品|直播/) || "店铺运营与选品组";
+    return findDept(/品控|质检/) || "品控质检组";
+  }
 
   if (/交通|出行|违停|道路/.test(cat)) return findDept(/交警|交通/) || "区公安分局交警大队 / 区交通运输局";
   if (/市场|消费|价格|餐饮|食品/.test(cat)) return findDept(/市监|市场/) || "区市场监督管理局";
@@ -93,7 +109,13 @@ function departmentForCategory(category: string, vocab: RegionVocabulary): strin
   return findDept(/城管|综合执法/) || "区城市管理和综合执法局";
 }
 
-function slaHintFromHours(slaHours: number): string {
+function slaHintFromHours(slaHours: number, isEcommerce = false): string {
+  if (isEcommerce) {
+    if (slaHours <= 0) return "自助引导即刻响应（无需建单升级）";
+    if (slaHours <= 2) return `${slaHours}小时内红线加急响应与法务联动`;
+    if (slaHours <= 24) return `${slaHours}小时内优先核查与售后赔付`;
+    return `${Math.round(slaHours / 24)}个工作日内跟进闭环`;
+  }
   if (slaHours <= 0) return "即诉即答（无需派单立案）";
   if (slaHours <= 2) return `${slaHours}小时内紧急响应处置`;
   if (slaHours <= 24) return `${slaHours}小时内快速核查处置`;
@@ -106,9 +128,48 @@ function fallbackRuleExtract(params: {
   maskedContent: string;
   matchedTownship: string | null;
   category: string;
+  isEcommerce?: boolean;
+  riskSignals?: string[];
 }) {
-  const { title, maskedContent, matchedTownship, category } = params;
+  const { title, maskedContent, matchedTownship, category, isEcommerce, riskSignals } = params;
   const combined = `${title} ${maskedContent}`.trim();
+
+  if (isEcommerce) {
+    const skuMatch = combined.match(/SKU-[A-Z0-9_-]{3,24}|[A-Z]{2,5}-\d{4}-\d{2,4}/i);
+    const storeOrCarrierMatch = combined.match(
+      /(天猫旗舰店|抖音直播间|京东自营店|拼多多官方店|顺丰冷链|京东物流|中通快递|圆通快递|韵达快递|极兔速递|[\u4e00-\u9fa5A-Za-z0-9]{2,10}(?:旗舰店|专营店|直播间|自营店|官方店|冷链仓|中心仓|分拨仓|保税仓))/
+    );
+    const subject = skuMatch?.[0]?.toUpperCase() || storeOrCarrierMatch?.[1] || "涉事SKU/店铺";
+    const warehouseOrChannelMatch = combined.match(
+      /((?:华南|华东|华北|跨境)[\u4e00-\u9fa5]{1,6}仓|(?:天猫|抖音|京东|拼多多)[\u4e00-\u9fa5]{1,6}(?:店|直播间))/
+    );
+    const location = matchedTownship || warehouseOrChannelMatch?.[1] || "全渠道";
+    const ecomEventHints: Array<[RegExp, string]> = [
+      [/变质|化冻|发臭|腐烂|发霉|异物|食物中毒|腹泻/, "冷链履约异常导致商品变质腐败"],
+      [/12315|市监|消协|微博|小红书|黑猫|全网曝光/, "多次未解诉求升级12315/舆情红线"],
+      [/假冒|假货|山寨|高仿|防伪/, "疑似假冒伪劣商品合规举报"],
+      [/假闭环|机械回复|已安抚|推诿|敷衍|48小时|48h/, "售后敷衍结案触发假闭环复诉"],
+      [/价保|差价|拒退|退款|尾款/, "大促价保与退款逾期纠纷"],
+      [/破损|漏液|碎裂|瑕疵|开裂/, "商品包装破损质量客诉"],
+      [/延误|丢件|停滞|未揽收|物流|快递/, "物流配送延误与丢件异常"],
+      [/货不对板|错发|漏发|少发|宣传不符/, "直播间宣传不符与错漏发"],
+    ];
+    const matchedEcomEvent = ecomEventHints.find(([re]) => re.test(combined));
+    const eventType = matchedEcomEvent?.[1] || (title ? title.slice(0, 24) : `${category}客诉处置`);
+    const summarizeTitle =
+      title ||
+      `关于${location !== "全渠道" ? location : ""}${subject !== "涉事SKU/店铺" ? subject : ""}${eventType}`.slice(0, 32);
+
+    return {
+      subject,
+      location,
+      eventType,
+      category: category || "商品质量与破损",
+      summarizeTitle,
+      confidence: skuMatch || storeOrCarrierMatch ? 82 : 72,
+      reasoning: `System-2 在线推理端点不可用，已启用电商规则降级抽取（脱敏输入长度 ${maskedContent.length} 字，命中渠道/仓=${matchedTownship || location}，涉事主体="${subject}"，问题模式="${eventType}"${riskSignals?.length ? `，红线信号=${riskSignals.join("、")}` : ""}）。`,
+    };
+  }
 
   const plateTokenMatch = combined.match(/\{\{LICENSE_PLATE_\d+\}\}/);
   const shopMatch = combined.match(/([\u4e00-\u9fa5A-Za-z0-9]{2,12}(?:餐厅|烧烤|大排档|美食城|超市|酒店|公司|物业|工地|幼儿园|学校|工厂|车行))/);
@@ -176,6 +237,8 @@ export async function POST(req: NextRequest) {
     const persist = body?.persist === true;
     const regionId =
       normalizeInputRegionId(body?.regionId) || (await resolveRequestRegionId(req));
+    const domainProfile = await getRegionDomainProfile(regionId);
+    const isEcommerce = domainProfile.domainType === "ECOMMERCE_CS";
 
     // =========================================================================
     // Stage 1: 可逆脱敏 (Reversible PII Anonymization)
@@ -215,34 +278,63 @@ export async function POST(req: NextRequest) {
     // Stage 2: System-1 快思考神经引擎
     // =========================================================================
     const t2Start = performance.now();
-    const systemOne = await getSandboxSystemOne();
-    const s1Decision = await systemOne.evaluate(
-      {
+    let s1Intent = "COMPLAINT";
+    let s1Urgency: "NORMAL" | "MEDIUM" | "URGENT" = "NORMAL";
+    let s1SlaHours = 120;
+    let s1StabilityRisk = false;
+    let s1Category: string = CATEGORY.URBAN_MANAGEMENT;
+    let s1Adapter = "rule";
+    let s1RiskSignals: string[] = [];
+
+    if (isEcommerce) {
+      const ecomDecision = evaluateEcommerceTicket({
         title: titleAnon?.text || rawTitle,
         content: contentAnon.text,
         subdistrict: rawSubdistrict,
-      },
-      { townships: regionVocab.townships }
-    );
+      });
+      s1Intent = ecomDecision.intent;
+      s1Urgency = ecomDecision.urgency;
+      s1SlaHours = ecomDecision.slaHours;
+      s1StabilityRisk = ecomDecision.stabilityRisk;
+      s1Category = ecomDecision.category;
+      s1Adapter = ecomDecision.adapter;
+      s1RiskSignals = ecomDecision.riskSignals;
+    } else {
+      const systemOne = await getSandboxSystemOne();
+      const s1Decision = await systemOne.evaluate(
+        {
+          title: titleAnon?.text || rawTitle,
+          content: contentAnon.text,
+          subdistrict: rawSubdistrict,
+        },
+        { townships: regionVocab.townships }
+      );
+      s1Intent = s1Decision.intent;
+      s1Urgency =
+        s1Decision.stabilityRisk || s1Decision.urgencyLevel === 3
+          ? "URGENT"
+          : s1Decision.urgencyLevel === 2
+            ? "MEDIUM"
+            : "NORMAL";
+      s1SlaHours = s1Decision.slaHours;
+      s1StabilityRisk = s1Decision.stabilityRisk;
+      s1Category =
+        canonicalizeCategory(s1Decision.categoryName) ||
+        s1Decision.categoryName ||
+        CATEGORY.URBAN_MANAGEMENT;
+      s1Adapter = s1Decision.adapterUsed;
+    }
+
     const s1DurationMs = Math.max(0.1, Number((performance.now() - t2Start).toFixed(2)));
-    const s1Urgency =
-      s1Decision.stabilityRisk || s1Decision.urgencyLevel === 3
-        ? "URGENT"
-        : s1Decision.urgencyLevel === 2
-          ? "MEDIUM"
-          : "NORMAL";
-    const s1Category =
-      canonicalizeCategory(s1Decision.categoryName) ||
-      s1Decision.categoryName ||
-      CATEGORY.URBAN_MANAGEMENT;
 
     const step2_systemOne = {
-      intent: s1Decision.intent,
+      intent: s1Intent,
       urgency: s1Urgency,
-      slaHours: s1Decision.slaHours,
-      stabilityRisk: s1Decision.stabilityRisk,
+      slaHours: s1SlaHours,
+      stabilityRisk: s1StabilityRisk,
       category: s1Category,
-      adapter: s1Decision.adapterUsed,
+      adapter: s1Adapter,
+      ...(isEcommerce ? { riskSignals: s1RiskSignals } : {}),
       durationMs: s1DurationMs,
     };
 
@@ -267,6 +359,15 @@ export async function POST(req: NextRequest) {
     const aliasedContent = normalizeAliasesInText(contentAnon.text, aliasMap);
     const aliasedTitle = normalizeAliasesInText(titleAnon?.text || rawTitle, aliasMap);
     const aliasedSubdistrict = normalizeAliasesInText(rawSubdistrict, aliasMap);
+    const matchedFromProfileChannel =
+      isEcommerce
+        ? domainProfile.channels.find((ch) =>
+            [aliasedSubdistrict, rawSubdistrict, aliasedTitle, normalizeAliasesInText(rawContent, aliasMap)]
+              .filter(Boolean)
+              .join(" ")
+              .includes(ch)
+          ) || null
+        : null;
     const matchedTownship =
       canonicalizeTownship(aliasedSubdistrict, regionVocab) ||
       canonicalizeTownship(rawSubdistrict, regionVocab) ||
@@ -276,6 +377,7 @@ export async function POST(req: NextRequest) {
           .join(" "),
         regionVocab.townships
       ) ||
+      matchedFromProfileChannel ||
       null;
 
     const s3DurationMs = Math.max(0.1, Number((performance.now() - t3Start).toFixed(2)));
@@ -292,15 +394,15 @@ export async function POST(req: NextRequest) {
     const syntheticTicket: RawTicket = {
       id: `xray-${Date.now()}`,
       ticketNo: `XRAY-${Date.now()}`,
-      title: aliasedTitle || rawTitle || "市民诉求",
+      title: aliasedTitle || rawTitle || (isEcommerce ? "电商客诉" : "市民诉求"),
       content: aliasedContent,
       maskedContent: aliasedContent,
-      citizenName: "市民*",
+      citizenName: isEcommerce ? "消费者*" : "市民*",
       citizenPhone: "",
       subdistrict: matchedTownship || rawSubdistrict || undefined,
       sourceCategory: s1Category,
       urgency: s1Urgency,
-      channel: "X-Ray 演练沙箱",
+      channel: isEcommerce ? "X-Ray 电商客诉沙箱" : "X-Ray 演练沙箱",
       status: "PENDING",
       createTime: new Date().toISOString(),
     };
@@ -323,9 +425,15 @@ export async function POST(req: NextRequest) {
       );
       const activeName = systemTwo.getActiveBackend().toLowerCase();
       if (!activeName.includes("fallback")) {
-        const prompt = buildBatchExtractionPrompt([syntheticTicket], regionVocab);
-        const townshipNames = regionVocab.townships.map((t) => t.fullName).filter(Boolean);
-        const schema = buildDynamicBatchExtractionSchema(townshipNames);
+        const prompt = buildBatchExtractionPrompt([syntheticTicket], regionVocab, domainProfile);
+        const townshipNames = (
+          regionVocab.townships.length > 0
+            ? regionVocab.townships.map((t) => t.fullName)
+            : isEcommerce
+              ? domainProfile.channels
+              : []
+        ).filter(Boolean);
+        const schema = buildDynamicBatchExtractionSchema(townshipNames, domainProfile);
         const res = await withTimeout(
           systemTwo.createJSON(schema, {
             messages: [{ role: "user", content: prompt }],
@@ -359,6 +467,8 @@ export async function POST(req: NextRequest) {
         maskedContent: aliasedContent,
         matchedTownship,
         category: s1Category,
+        isEcommerce,
+        riskSignals: s1RiskSignals,
       });
       s2Subject = fb.subject;
       s2Location = fb.location;
@@ -391,7 +501,23 @@ export async function POST(req: NextRequest) {
     const t5Start = performance.now();
     const restoredSubject = deanonymize(s2Subject, keymap) || s2Subject;
     const restoredLocation =
-      deanonymize(s2Location, keymap) || s2Location || matchedTownship || "辖区";
+      deanonymize(s2Location, keymap) || s2Location || matchedTownship || (isEcommerce ? "全渠道" : "辖区");
+    const explicitSkuCode = isEcommerce
+      ? ([rawTitle, rawContent, restoredSubject]
+          .filter(Boolean)
+          .join(" ")
+          .match(/SKU-[A-Z0-9_-]{3,24}|[A-Z]{2,5}-\d{4}-\d{2,4}/i)?.[0]
+          ?.toUpperCase() || null)
+      : null;
+    const hasConcreteSubject =
+      Boolean(restoredSubject) &&
+      restoredSubject.length >= 2 &&
+      !["涉事方", "涉事相关方", "涉事SKU/店铺"].includes(restoredSubject) &&
+      !(isEcommerce && domainProfile.channels.includes(restoredSubject));
+    const hasConcreteLocation =
+      Boolean(restoredLocation) &&
+      restoredLocation.length >= 2 &&
+      !["辖区", "全渠道"].includes(restoredLocation);
 
     const { db: tenantDb } = await getRegionDb(regionId);
     const threshold = PRODUCT_COSINE_MIN;
@@ -472,45 +598,95 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 5.2 SQL 降级相似工单检索（按主体、事件、地点、镇街）
+    // 5.2 SQL 降级相似工单检索（按精确主体/SKU 分层检索，避免宽泛地点稀释）
     if (similarTickets.length === 0) {
-      const searchConds = [];
-      if (restoredSubject && restoredSubject !== "涉事方" && restoredSubject.length >= 2) {
-        searchConds.push(ilike(ticketsTable.canonicalSubject, `%${restoredSubject.slice(0, 16)}%`));
+      const exactConds = [];
+      if (explicitSkuCode) {
+        exactConds.push(ilike(ticketsTable.canonicalSubject, `%${explicitSkuCode}%`));
+        exactConds.push(ilike(ticketsTable.title, `%${explicitSkuCode}%`));
+        exactConds.push(ilike(ticketsTable.content, `%${explicitSkuCode}%`));
       }
-      if (restoredLocation && restoredLocation !== "辖区" && restoredLocation.length >= 2) {
-        searchConds.push(ilike(ticketsTable.address, `%${restoredLocation.slice(0, 16)}%`));
+      if (hasConcreteSubject) {
+        exactConds.push(ilike(ticketsTable.canonicalSubject, `%${restoredSubject.slice(0, 16)}%`));
+        if (isEcommerce && /SKU-|^[A-Z0-9-]{5,}$/i.test(restoredSubject)) {
+          exactConds.push(ilike(ticketsTable.title, `%${restoredSubject.slice(0, 20)}%`));
+        }
+      }
+
+      const broadConds = [];
+      if (hasConcreteLocation) {
+        broadConds.push(ilike(ticketsTable.address, `%${restoredLocation.slice(0, 16)}%`));
       }
       if (s2EventType && s2EventType.length >= 2) {
-        searchConds.push(ilike(ticketsTable.eventType, `%${s2EventType.slice(0, 12)}%`));
+        broadConds.push(ilike(ticketsTable.eventType, `%${s2EventType.slice(0, 12)}%`));
       }
-      if (searchConds.length === 0 && matchedTownship) {
-        searchConds.push(eq(ticketsTable.subdistrict, matchedTownship));
+      if (broadConds.length === 0 && matchedTownship) {
+        broadConds.push(eq(ticketsTable.subdistrict, matchedTownship));
       }
 
-      const sqlCandidates = searchConds.length
-        ? await tenantDb
-            .select({
-              ticketNo: ticketsTable.ticketNo,
-              title: ticketsTable.title,
-              summarizeTitle: ticketsTable.summarizeTitle,
-              canonicalSubject: ticketsTable.canonicalSubject,
-              address: ticketsTable.address,
-              eventType: ticketsTable.eventType,
-              status: ticketsTable.status,
-              closedAt: ticketsTable.closedAt,
-              primaryThemeId: ticketsTable.primaryThemeId,
-              subdistrict: ticketsTable.subdistrict,
-            })
-            .from(ticketsTable)
-            .where(or(...searchConds))
-            .orderBy(desc(ticketsTable.createTime))
-            .limit(5)
-        : [];
+      const selectFields = {
+        ticketNo: ticketsTable.ticketNo,
+        title: ticketsTable.title,
+        summarizeTitle: ticketsTable.summarizeTitle,
+        content: ticketsTable.content,
+        canonicalSubject: ticketsTable.canonicalSubject,
+        address: ticketsTable.address,
+        eventType: ticketsTable.eventType,
+        status: ticketsTable.status,
+        closedAt: ticketsTable.closedAt,
+        primaryThemeId: ticketsTable.primaryThemeId,
+        subdistrict: ticketsTable.subdistrict,
+      };
 
-      for (const row of sqlCandidates) {
+      const [exactCandidates, broadCandidates] = await Promise.all([
+        exactConds.length
+          ? tenantDb
+              .select(selectFields)
+              .from(ticketsTable)
+              .where(or(...exactConds))
+              .orderBy(
+                sql`(${ticketsTable.primaryThemeId} IS NOT NULL) DESC`,
+                desc(ticketsTable.createTime)
+              )
+              .limit(15)
+          : Promise.resolve([]),
+        broadConds.length
+          ? tenantDb
+              .select(selectFields)
+              .from(ticketsTable)
+              .where(or(...broadConds))
+              .orderBy(
+                sql`(${ticketsTable.primaryThemeId} IS NOT NULL) DESC`,
+                desc(ticketsTable.createTime)
+              )
+              .limit(15)
+          : Promise.resolve([]),
+      ]);
+
+      const mergedByNo = new Map<string, (typeof exactCandidates)[number]>();
+      for (const row of [...exactCandidates, ...broadCandidates]) {
+        if (!mergedByNo.has(row.ticketNo)) {
+          mergedByNo.set(row.ticketNo, row);
+        }
+      }
+
+      const scored = Array.from(mergedByNo.values()).map((row) => {
         let score = 0.65;
-        if (restoredSubject && row.canonicalSubject && row.canonicalSubject.includes(restoredSubject)) {
+        const rowSubjectLower = (row.canonicalSubject || "").toLowerCase();
+        const rowTitleLower = (row.title || "").toLowerCase();
+        const rowContentLower = (row.content || "").toLowerCase();
+        if (
+          explicitSkuCode &&
+          (rowSubjectLower.includes(explicitSkuCode.toLowerCase()) ||
+            rowTitleLower.includes(explicitSkuCode.toLowerCase()) ||
+            rowContentLower.includes(explicitSkuCode.toLowerCase()))
+        ) {
+          score += 0.25;
+        } else if (
+          hasConcreteSubject &&
+          ((row.canonicalSubject && row.canonicalSubject.includes(restoredSubject)) ||
+            (row.title && row.title.includes(restoredSubject)))
+        ) {
           score += 0.2;
         }
         if (matchedTownship && row.subdistrict === matchedTownship) {
@@ -519,10 +695,20 @@ export async function POST(req: NextRequest) {
         if (s2EventType && row.eventType && row.eventType.includes(s2EventType.slice(0, 4))) {
           score += 0.05;
         }
+        return {
+          row,
+          similarity: Number(Math.min(0.98, score).toFixed(3)),
+          hasTheme: row.primaryThemeId ? 1 : 0,
+        };
+      });
+
+      scored.sort((a, b) => b.similarity - a.similarity || b.hasTheme - a.hasTheme);
+      for (const item of scored.slice(0, 5)) {
+        const { row, similarity } = item;
         similarTickets.push({
           ticketNo: row.ticketNo,
           title: row.summarizeTitle || row.title || "历史工单",
-          similarity: Number(Math.min(0.98, score).toFixed(3)),
+          similarity,
           status: row.status || "PENDING",
           closedAt: row.closedAt ? row.closedAt.toISOString() : null,
           primaryThemeId: row.primaryThemeId || null,
@@ -536,8 +722,15 @@ export async function POST(req: NextRequest) {
     );
     const themeFilterConds = [];
     if (hintThemeIds.length > 0) themeFilterConds.push(inArray(themesTable.id, hintThemeIds));
-    if (restoredSubject && restoredSubject !== "涉事方" && restoredSubject.length >= 2) {
+    if (explicitSkuCode) {
+      themeFilterConds.push(ilike(themesTable.canonicalSubject, `%${explicitSkuCode}%`));
+      themeFilterConds.push(ilike(themesTable.title, `%${explicitSkuCode}%`));
+    }
+    if (hasConcreteSubject) {
       themeFilterConds.push(ilike(themesTable.canonicalSubject, `%${restoredSubject.slice(0, 16)}%`));
+      if (isEcommerce) {
+        themeFilterConds.push(ilike(themesTable.title, `%${restoredSubject.slice(0, 20)}%`));
+      }
     }
     if (matchedTownship) {
       themeFilterConds.push(ilike(themesTable.canonicalLocation, `%${matchedTownship.replace(/(街道|镇)$/, "")}%`));
@@ -622,6 +815,72 @@ export async function POST(req: NextRequest) {
         };
         willTriggerFakeClosure = Boolean(clusterEval.fakeClosureDetected);
       }
+    } else if (isEcommerce && candidateThemeRows.length > 0) {
+      let bestRow: (typeof candidateThemeRows)[number] | null = null;
+      let bestScore = 0;
+      const topSimThemeId =
+        similarTickets.length > 0 && similarTickets[0].similarity >= threshold
+          ? similarTickets[0].primaryThemeId
+          : null;
+
+      for (const row of candidateThemeRows) {
+        let score = 0;
+        const rowSubjLower = (row.canonicalSubject || "").toLowerCase();
+        const rowTitleLower = (row.title || "").toLowerCase();
+        if (
+          explicitSkuCode &&
+          (rowSubjLower.includes(explicitSkuCode.toLowerCase()) ||
+            rowTitleLower.includes(explicitSkuCode.toLowerCase()))
+        ) {
+          score += 55;
+        }
+        if (
+          hasConcreteSubject &&
+          ((row.canonicalSubject &&
+            (row.canonicalSubject.includes(restoredSubject) ||
+              restoredSubject.includes(row.canonicalSubject))) ||
+            (row.title && row.title.includes(restoredSubject)))
+        ) {
+          score += 30;
+        }
+        if (matchedTownship && row.canonicalLocation === matchedTownship) {
+          score += 15;
+        }
+        if (row.category && (row.category === s2Category || row.category === s1Category)) {
+          score += 12;
+        }
+        if (topSimThemeId && row.id === topSimThemeId) {
+          score += 45;
+        } else if (hintThemeIds.includes(row.id)) {
+          score += 10;
+        }
+        if (score > bestScore) {
+          bestScore = score;
+          bestRow = row;
+        }
+      }
+
+      if (bestRow && bestScore >= 45) {
+        const handlingStatus = normalizeStatusCode(bestRow.handlingStatus);
+        matchedTheme = {
+          id: bestRow.id,
+          title: bestRow.title,
+          handlingStatus,
+          riskLevel: bestRow.riskLevel || "LOW",
+        };
+        if (handlingStatus === HANDLING_STATUS.RESOLVED) {
+          const closeStr =
+            closedAtMap.get(bestRow.id) ||
+            bestRow.handlingEta?.toISOString() ||
+            bestRow.lastAt?.toISOString();
+          if (closeStr) {
+            const diffDays = (Date.now() - new Date(closeStr).getTime()) / (24 * 60 * 60 * 1000);
+            willTriggerFakeClosure = diffDays >= -1 && diffDays <= RULES.fakeClosure.windowDays;
+          } else {
+            willTriggerFakeClosure = true;
+          }
+        }
+      }
     } else if (similarTickets.length > 0 && similarTickets[0].similarity >= threshold && similarTickets[0].primaryThemeId) {
       const origRow = candidateThemeRows.find((r) => r.id === similarTickets[0].primaryThemeId);
       if (origRow) {
@@ -659,19 +918,33 @@ export async function POST(req: NextRequest) {
     const leadDepartment =
       (matchedTheme &&
         candidateThemeRows.find((r) => r.id === matchedTheme?.id)?.handlingOwner?.trim()) ||
-      departmentForCategory(s2Category, regionVocab);
-    const slaHint = slaHintFromHours(s1Decision.slaHours);
+      departmentForCategory(s2Category, regionVocab, isEcommerce);
+    const slaHint = slaHintFromHours(s1SlaHours, isEcommerce);
     const fakeClosureAlert = willTriggerFakeClosure
-      ? `⚠️ 假闭环复发预警：该诉求高度吻合已办结主题 [${matchedTheme?.id}]，若正式受理将自动触发重开督办并提级 HIGH 风险。`
+      ? isEcommerce
+        ? `⚠️ 售后假闭环复发预警：该客诉高度吻合已结案/办结主题 [${matchedTheme?.id}]，若正式受理将自动触发 48h 假闭环重开并提级 HIGH 风险督办。`
+        : `⚠️ 假闭环复发预警：该诉求高度吻合已办结主题 [${matchedTheme?.id}]，若正式受理将自动触发重开督办并提级 HIGH 风险。`
       : "";
-    const recommendedAction = [
-      `牵头部门：${leadDepartment}`,
-      `响应时限：${slaHint}`,
-      `办理路径：1. 针对「${restoredSubject || "相关涉事方"}」（位置：${restoredLocation}）反映的「${s2EventType}」开展现场核查；2. 核实情况后按${s2Category}权责清单落实整改并向市民反馈结果。`,
-      fakeClosureAlert,
-    ]
-      .filter(Boolean)
-      .join("\n");
+    const recommendedAction = isEcommerce
+      ? [
+          `责任团队：${leadDepartment}`,
+          `响应时限：${slaHint}`,
+          s1RiskSignals.length > 0
+            ? `合规预警：命中【${s1RiskSignals.join("、")}】，建议立即提级法务合规与舆情防扩散队列。`
+            : "",
+          `处置路径：1. 针对「${restoredSubject || "涉事SKU/店铺"}」（渠道/仓：${restoredLocation}）反映的「${s2EventType}」核查批次库存、冷链温控或物流轨迹；2. 若确认批次或履约异常，启动同批次拦截、主动退赔及消费者一对一回访安抚。`,
+          fakeClosureAlert,
+        ]
+          .filter(Boolean)
+          .join("\n")
+      : [
+          `牵头部门：${leadDepartment}`,
+          `响应时限：${slaHint}`,
+          `办理路径：1. 针对「${restoredSubject || "相关涉事方"}」（位置：${restoredLocation}）反映的「${s2EventType}」开展现场核查；2. 核实情况后按${s2Category}权责清单落实整改并向市民反馈结果。`,
+          fakeClosureAlert,
+        ]
+          .filter(Boolean)
+          .join("\n");
 
     let persistedTicketNo: string | undefined;
     if (persist) {
@@ -680,15 +953,15 @@ export async function POST(req: NextRequest) {
       await tenantDb.insert(ticketsTable).values({
         id: newId,
         ticketNo: newNo,
-        title: rawTitle || s2SummarizeTitle || "市民诉求",
+        title: rawTitle || s2SummarizeTitle || (isEcommerce ? "电商客诉" : "市民诉求"),
         summarizeTitle: deanonymize(s2SummarizeTitle, keymap) || s2SummarizeTitle,
         content: rawContent,
         maskedContent: contentAnon.text,
         subdistrict: matchedTownship || rawSubdistrict || null,
         sourceCategory: s2Category,
         urgency: s1Urgency,
-        slaHours: s1Decision.slaHours,
-        stabilityRisk: s1Decision.stabilityRisk,
+        slaHours: s1SlaHours,
+        stabilityRisk: s1StabilityRisk,
         canonicalSubject: restoredSubject,
         eventType: s2EventType,
         address: restoredLocation,
@@ -714,6 +987,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       regionId,
+      domainType: domainProfile.domainType,
       persist,
       step1_anonymize,
       step2_systemOne,

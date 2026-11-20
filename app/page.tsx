@@ -11,6 +11,7 @@ import { CockpitView } from "@/app/_components/cockpit/cockpit-view";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { SkDashboard } from "@/app/_components/civic/skeletons";
 import { useRegion } from "@/app/_components/civic/region-context";
+import { DomainChannelMatrix } from "@/app/_components/civic/domain-channel-matrix";
 import { useCivicSse } from "@/app/_hooks/use-civic-sse";
 import { PageHeaderActions } from "@/app/_components/civic/page-header-actions";
 import {
@@ -113,6 +114,8 @@ export default function DashboardPage() {
   const donutOpt = useMemo(() => donutOption(ov?.categoryDistribution || {}), [ov]);
   const hasTrend = Object.keys(tr?.daily || {}).length > 0;
   const hasDonut = cats.length > 0;
+  const hasGeoMap = activeRegion?.domainProfile?.hasGeoMap !== false;
+  const regionUnit = activeRegion?.domainProfile?.terminology?.regionUnit || "镇街";
 
   return (
     <>
@@ -261,36 +264,56 @@ export default function DashboardPage() {
             </div>
             <div className="card">
               <div className="card__header">
-                <div className="card__title">镇街工单量排行</div>
-                <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>{daysRange === 0 ? "全周期 · 已研判" : `近 ${daysRange} 天 · 已研判`}</div>
+                <div className="card__title">
+                  {hasGeoMap ? "镇街工单量排行" : `${regionUnit}客诉热度分布矩阵`}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>
+                  {hasGeoMap
+                    ? daysRange === 0
+                      ? "全周期 · 已研判"
+                      : `近 ${daysRange} 天 · 已研判`
+                    : `点击节点下钻 · ${daysRange === 0 ? "全周期" : `近 ${daysRange} 天`}`}
+                </div>
               </div>
-              <div className="card__body" style={{ padding: "8px 12px 4px" }}>
-                {regions.map(([name, n], i) => {
-                  const isUnknown = name === "未知" || !name;
-                  const color = isUnknown ? "#86909C" : getTownshipColor(name);
-                  const top = i < 3;
-                  return (
-                    <div key={name} className="rank-item" onClick={() => router.push(`/multifreq?region=${encodeURIComponent(name)}`)}>
-                      <span
-                        className="rank-item__no"
-                        style={{
-                          background: top ? color : "var(--c-border-soft)",
-                          color: top ? "#fff" : "var(--c-ink-3)",
-                        }}
-                      >
-                        {i + 1}
-                      </span>
-                      <span style={{ color: "var(--c-ink)", fontWeight: 500, minWidth: 42 }}>{name}</span>
-                      <div className="rank-item__track">
-                        <div className="rank-item__bar" style={{ width: `${(n / maxR) * 100}%`, background: color }} />
-                      </div>
-                      <span style={{ color: "var(--c-ink)", fontWeight: 600, minWidth: 60, textAlign: "right", fontFeatureSettings: "'tnum'" }}>
-                        {n.toLocaleString("zh-CN")}
-                      </span>
-                    </div>
-                  );
-                })}
-                {regions.length === 0 && <div className="empty-hint">暂无镇街分布。上传后请启动 Agent 研判，镇街由模型从微观地点切分。</div>}
+              <div className="card__body" style={{ padding: hasGeoMap ? "8px 12px 4px" : "12px" }}>
+                {hasGeoMap ? (
+                  <>
+                    {regions.map(([name, n], i) => {
+                      const isUnknown = name === "未知" || !name;
+                      const color = isUnknown ? "#86909C" : getTownshipColor(name);
+                      const top = i < 3;
+                      return (
+                        <div key={name} className="rank-item" onClick={() => router.push(`/multifreq?region=${encodeURIComponent(name)}`)}>
+                          <span
+                            className="rank-item__no"
+                            style={{
+                              background: top ? color : "var(--c-border-soft)",
+                              color: top ? "#fff" : "var(--c-ink-3)",
+                            }}
+                          >
+                            {i + 1}
+                          </span>
+                          <span style={{ color: "var(--c-ink)", fontWeight: 500, minWidth: 42 }}>{name}</span>
+                          <div className="rank-item__track">
+                            <div className="rank-item__bar" style={{ width: `${(n / maxR) * 100}%`, background: color }} />
+                          </div>
+                          <span style={{ color: "var(--c-ink)", fontWeight: 600, minWidth: 60, textAlign: "right", fontFeatureSettings: "'tnum'" }}>
+                            {n.toLocaleString("zh-CN")}
+                          </span>
+                        </div>
+                      );
+                    })}
+                    {regions.length === 0 && <div className="empty-hint">暂无镇街分布。上传后请启动 Agent 研判，镇街由模型从微观地点切分。</div>}
+                  </>
+                ) : (
+                  <DomainChannelMatrix
+                    counts={ov?.regionDistribution || {}}
+                    regionCategory={ov?.regionCategory}
+                    domainProfile={activeRegion?.domainProfile}
+                    compact
+                    onSelect={(name) => router.push(`/multifreq?region=${encodeURIComponent(name)}`)}
+                  />
+                )}
               </div>
             </div>
           </section>
@@ -325,7 +348,9 @@ export default function DashboardPage() {
             </div>
             <div className="card">
               <div className="card__header">
-                <div className="card__title">镇街 × 类型 工单数量</div>
+                <div className="card__title">
+                  {hasGeoMap ? "镇街 × 类型 工单数量" : `${regionUnit} × 类型 工单数量`}
+                </div>
                 <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>色深表示工单数量</div>
               </div>
               <div className="card__body heatmap-scroll" style={{ padding: "8px 12px" }}>

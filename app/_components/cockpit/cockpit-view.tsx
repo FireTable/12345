@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Activity, Clock } from "lucide-react";
 import { useRegion } from "../civic/region-context";
+import { DomainChannelMatrix } from "../civic/domain-channel-matrix";
 import { useCockpitData } from "./use-cockpit-data";
 import type { CockpitClosureFunnel, CockpitHourlyBucket } from "./cockpit-types";
 import { CockpitTitleCrown, CockpitTopControls } from "./cockpit-header";
@@ -27,6 +28,7 @@ export function CockpitView({ onClose }: CockpitViewProps) {
 
   const currentRegion = activeRegion || (regions.length > 0 ? regions[0] : null);
   const regionId = currentRegion?.id || "gz_tianhe";
+  const hasGeoMap = currentRegion?.domainProfile?.hasGeoMap !== false;
   const cockpit = useCockpitData(regionId);
 
   // 监听浏览器全屏状态
@@ -80,14 +82,25 @@ export function CockpitView({ onClose }: CockpitViewProps) {
   return (
     <div className="fixed inset-0 z-[9999] w-screen h-screen bg-[#020612] text-slate-100 overflow-hidden select-none animate-in fade-in duration-300">
 
-      {/* 1. 核心底图：全屏贯通数字孪生 GIS 底图 (覆盖整个视口) */}
-      <CockpitMap
-        activeRegion={currentRegion}
-        counts={cockpit.subdistrictCounts}
-        selectedTownship={cockpit.selectedTownship}
-        onSelectTownship={cockpit.setSelectedTownship}
-        className="absolute inset-0 w-full h-full z-0"
-      />
+      {/* 1. 核心底图：政务租户使用全屏 GIS 底图；无地理区划的行业租户保持纯暗夜数字网格背景 */}
+      {hasGeoMap ? (
+        <CockpitMap
+          activeRegion={currentRegion}
+          counts={cockpit.subdistrictCounts}
+          selectedTownship={cockpit.selectedTownship}
+          onSelectTownship={cockpit.setSelectedTownship}
+          className="absolute inset-0 w-full h-full z-0"
+        />
+      ) : (
+        <div
+          className="absolute inset-0 w-full h-full z-0 pointer-events-none"
+          style={{
+            background:
+              "radial-gradient(circle at 50% 35%, rgba(22, 119, 255, 0.16), rgba(2, 6, 18, 0.96) 62%), linear-gradient(rgba(64, 150, 255, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(64, 150, 255, 0.05) 1px, transparent 1px)",
+            backgroundSize: "100% 100%, 36px 36px, 36px 36px",
+          }}
+        />
+      )}
 
       {/* 2. 顶部微胶囊控制项 (无盒装Header，左右贴顶悬浮) */}
       <CockpitTopControls
@@ -137,9 +150,29 @@ export function CockpitView({ onClose }: CockpitViewProps) {
             </div>
           </section>
 
-          {/* 中间开阔视区：展示底层 GIS 数字孪生地图交互，底部贯通悬浮工单时序走势与 24h 波峰 */}
-          <div className="flex-1 h-full flex flex-col justify-end pointer-events-none pb-0.5 min-w-0">
-            <div className="w-full h-[176px] grid grid-cols-12 gap-2.5 pointer-events-auto">
+          {/* 中间开阔视区：政务模式留空透出 GIS 底图，无地理区划模式展示渠道/仓网热度矩阵；底部贯通悬浮时序走势与 24h 波峰 */}
+          <div
+            className={`flex-1 h-full flex flex-col pointer-events-none pb-0.5 min-w-0 ${
+              hasGeoMap ? "justify-end" : "justify-between gap-2.5"
+            }`}
+          >
+            {!hasGeoMap && (
+              <div className="flex-1 min-h-0 pointer-events-auto">
+                <DomainChannelMatrix
+                  variant="dark"
+                  counts={cockpit.subdistrictCounts}
+                  selected={cockpit.selectedTownship || ""}
+                  domainProfile={currentRegion?.domainProfile}
+                  loading={cockpit.loading}
+                  onSelect={(name) =>
+                    cockpit.setSelectedTownship(
+                      cockpit.selectedTownship === name ? null : name
+                    )
+                  }
+                />
+              </div>
+            )}
+            <div className="w-full h-[176px] grid grid-cols-12 gap-2.5 pointer-events-auto shrink-0">
               <div className="col-span-7 h-full min-h-0 min-w-0">
                 <CockpitTrendChart
                   daily={cockpit.trendDaily}

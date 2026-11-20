@@ -13,6 +13,7 @@ import { Clock, TrendingUp, Flame, Layers } from "lucide-react";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { SkMultifreq } from "@/app/_components/civic/skeletons";
 import { useRegion } from "@/app/_components/civic/region-context";
+import { DomainChannelMatrix } from "@/app/_components/civic/domain-channel-matrix";
 import { useCivicSse } from "@/app/_hooks/use-civic-sse";
 import {
   Select,
@@ -93,6 +94,8 @@ function MultifreqInner() {
   const router = useRouter();
   const search = useSearchParams();
   const { activeRegion, isLoading: regionLoading } = useRegion();
+  const hasGeoMap = activeRegion?.domainProfile?.hasGeoMap !== false;
+  const regionUnit = activeRegion?.domainProfile?.terminology?.regionUnit || "镇街";
   const [rows, setRows] = useState<Cluster[]>([]);
   const [ov, setOv] = useState<Overview | null>(null);
   const urlTown = search.get("region") || "";
@@ -103,6 +106,11 @@ function MultifreqInner() {
   const [minCount, setMinCount] = useState(2);
   const [windowDays, setWindowDays] = useState(7);
   const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    if (regionLoading || hasGeoMap || !urlTown) return;
+    setRegion((prev) => prev || urlTown);
+  }, [regionLoading, hasGeoMap, urlTown]);
 
   function load() {
     const headers: Record<string, string> = {};
@@ -157,17 +165,42 @@ function MultifreqInner() {
 
   const clusterByRegion: Record<string, number> = {};
   for (const r of filtered) {
-    if (r.region) clusterByRegion[r.region] = (clusterByRegion[r.region] || 0) + 1;
+    if (!r.region) continue;
+    if (hasGeoMap) {
+      clusterByRegion[r.region] = (clusterByRegion[r.region] || 0) + 1;
+    } else {
+      const head = r.region.split(" 等 ")[0];
+      for (const part of head.split(" · ")) {
+        const name = part.trim();
+        if (name) clusterByRegion[name] = (clusterByRegion[name] || 0) + 1;
+      }
+    }
   }
 
   const regions = useMemo(() => {
     const fromTickets = Object.keys(ov?.regionDistribution || {});
-    const labels = fromTickets.length > 0 ? fromTickets : townChoices(rows.map((r) => r.region));
-    const set = new Set(labels.filter((name) => isTownLabel(name) || name === "未知"));
+    if (hasGeoMap) {
+      const labels = fromTickets.length > 0 ? fromTickets : townChoices(rows.map((r) => r.region));
+      const set = new Set(labels.filter((name) => isTownLabel(name) || name === "未知"));
+      const list = [...set].filter((name) => name !== "未知").sort((a, b) => a.localeCompare(b, "zh-CN"));
+      if (set.has("未知")) list.push("未知");
+      return list;
+    }
+
+    const rowLabels = rows.flatMap((r) =>
+      (r.region || "")
+        .split(" 等 ")[0]
+        .split(" · ")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    );
+    const configured = activeRegion?.domainProfile?.channels || [];
+    const labels = fromTickets.length > 0 ? fromTickets : rowLabels.length > 0 ? rowLabels : configured;
+    const set = new Set(labels.filter(Boolean));
     const list = [...set].filter((name) => name !== "未知").sort((a, b) => a.localeCompare(b, "zh-CN"));
     if (set.has("未知")) list.push("未知");
     return list;
-  }, [ov, rows]);
+  }, [ov, rows, hasGeoMap, activeRegion?.domainProfile?.channels]);
 
   const top5 = [...filtered]
     .sort((a, b) => clusterStoryPenalty(a) - clusterStoryPenalty(b) || b.count - a.count)
@@ -209,11 +242,11 @@ function MultifreqInner() {
               load();
             }}
           >
-            <SelectTrigger className="w-[125px] h-[34px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
-              <SelectValue placeholder="全部镇街" />
+            <SelectTrigger className={`${hasGeoMap ? "w-[125px]" : "min-w-[138px] w-auto"} h-[34px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg`}>
+              <SelectValue placeholder={hasGeoMap ? "全部镇街" : `全部${regionUnit}`} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">全部镇街</SelectItem>
+              <SelectItem value="all">{hasGeoMap ? "全部镇街" : `全部${regionUnit}`}</SelectItem>
               {regions.map((r) => (
                 <SelectItem key={r} value={r}>
                   {r}
@@ -265,19 +298,38 @@ function MultifreqInner() {
           <section className="split-row split-row--map">
             <div className="card">
               <div className="card__header">
-                <div className="card__title">{activeRegion ? activeRegion.name : "全区"}多频工单地理透势</div>
-                <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>点击镇街筛选 · 悬停查看详情</div>
+                <div className="card__title">
+                  {hasGeoMap
+                    ? `${activeRegion ? activeRegion.name : "全区"}多频工单地理透势`
+                    : `${activeRegion ? activeRegion.name : "当前站点"} · ${regionUnit}客诉热度与高风险分布矩阵`}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>
+                  {hasGeoMap ? "点击镇街筛选 · 悬停查看详情" : `点击${regionUnit}筛选 · 高亮展示高风险客诉节点`}
+                </div>
               </div>
-              <div className="card__body split-pane">
-                <CivicMap
-                  counts={ov?.regionDistribution || {}}
-                  clusterCounts={clusterByRegion}
-                  selected={region}
-                  onSelect={(name) => {
-                    setRegion(name);
-                    load();
-                  }}
-                />
+              <div className="card__body split-pane" style={hasGeoMap ? undefined : { padding: "12px", display: "block" }}>
+                {hasGeoMap ? (
+                  <CivicMap
+                    counts={ov?.regionDistribution || {}}
+                    clusterCounts={clusterByRegion}
+                    selected={region}
+                    onSelect={(name) => {
+                      setRegion(name);
+                      load();
+                    }}
+                  />
+                ) : (
+                  <DomainChannelMatrix
+                    counts={ov?.regionDistribution || {}}
+                    clusterCounts={clusterByRegion}
+                    selected={region}
+                    domainProfile={activeRegion?.domainProfile}
+                    onSelect={(name) => {
+                      setRegion(region === name ? "" : name);
+                      load();
+                    }}
+                  />
+                )}
               </div>
             </div>
             <div className="card">
@@ -315,7 +367,7 @@ function MultifreqInner() {
                     <th style={{ width: 55, minWidth: 45, textAlign: "center" }}>排名</th>
                     <th style={{ width: 90, minWidth: 80 }}>群组编号</th>
                     <th style={{ width: 130, minWidth: 120 }}>研判模式</th>
-                    <th style={{ width: 130, minWidth: 130 }}>辖区 · 业务</th>
+                    <th style={{ width: 130, minWidth: 130 }}>{hasGeoMap ? "辖区 · 业务" : `${regionUnit} · 业务`}</th>
                     <th>代表性诉求标题</th>
                     <th style={{ width: 110, textAlign: "center" }}>待处理 / 总数</th>
                     <th style={{ width: 80, textAlign: "center" }}>紧急度</th>

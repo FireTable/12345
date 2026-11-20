@@ -29,6 +29,8 @@ const NON_GEOGRAPHIC_STEMS = [
   "所属",
   "地址",
 ];
+const NON_ADMIN_CHANNEL_SUFFIX =
+  /(?:旗舰店|专营店|官方店|自营店|直播间|冷链仓|中心仓|分拨仓|保税仓)$/;
 
 export function explicitAdmin(value?: string | null): string | null {
   const text = (value || "").trim();
@@ -59,7 +61,7 @@ export function parseAdminArea(location?: string | null): {
   subdistrict: string | null;
 } {
   const text = (location || "").trim();
-  if (!text || PLACEHOLDER_ADMIN.has(text)) {
+  if (!text || PLACEHOLDER_ADMIN.has(text) || NON_ADMIN_CHANNEL_SUFFIX.test(text)) {
     return { district: null, subdistrict: null };
   }
 
@@ -68,6 +70,7 @@ export function parseAdminArea(location?: string | null): {
   let match: RegExpExecArray | null;
   while ((match = districtRe.exec(text))) {
     const suffix = match[0];
+    if (suffix === "旗" && text[match.index + 1] === "舰") continue;
     if (suffix === "区") {
       const prev = text.slice(Math.max(0, match.index - 2), match.index);
       if (DISTRICT_PREFIX_SKIP.some((p) => prev.endsWith(p))) continue;
