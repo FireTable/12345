@@ -245,10 +245,11 @@ p,
   }
 }
 
-.navbar a,
+.navbar a {
+  text-decoration: none;
+}
 .main a {
   color: var(--c-brand-text);
   text-decoration: none;
 }
-.navbar a:hover,
 .main a:hover { color: var(--c-brand-dark); }

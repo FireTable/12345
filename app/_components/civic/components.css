@@ -201,9 +201,9 @@
   color: var(--c-brand-dark);
   font-weight: 600;
   background: var(--c-brand-soft);
-  box-shadow: inset 0 -2px 0 var(--c-brand);
 }
-.navbar .nav-more__trigger { color: var(--c-brand-text); }
+.navbar .nav-more__trigger { color: var(--c-ink-2); }
+.navbar .nav-more__trigger.is-active,
 .navbar .nav-more__trigger:hover { color: var(--c-brand-dark); }
 .nav-item.is-active::after { content: none; }
 :where(.navbar a, .navbar button, .table-wrapper, .table-scroll):focus-visible {
@@ -390,10 +390,6 @@
   .nav-item {
     width: 100%;
     padding: 10px var(--s-3);
-  }
-  .nav-item[aria-current="page"],
-  .nav-item.is-active {
-    box-shadow: inset 3px 0 0 var(--c-brand);
   }
   .navbar__user {
     flex-wrap: wrap;
