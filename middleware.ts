@@ -76,7 +76,15 @@ export function middleware(request: NextRequest) {
 
   // 5. Protected pages
   if (!sessionToken) {
-    const loginUrl = new URL("/login", request.url);
+    const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+    const host = forwardedHost || request.headers.get("host")?.trim();
+    const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+    const proto = (forwardedProto || request.nextUrl.protocol.replace(/:$/, "") || "http").replace(/[^a-z]/gi, "");
+    const safeOrigin =
+      host && /^[a-zA-Z0-9.\-:\[\]]+$/.test(host)
+        ? `${proto}://${host}`
+        : request.url;
+    const loginUrl = new URL("/login", safeOrigin);
     if (pathname !== "/") {
       loginUrl.searchParams.set("from", pathname);
     }

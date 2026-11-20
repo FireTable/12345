@@ -205,7 +205,7 @@ export function CivicNav() {
   };
 
   const isLoginPage = pathname === "/login";
-  const brandHref = isCitizen ? "/submit" : "/";
+  const brandHref = !isAuthenticated || isLoginPage ? "/login" : isCitizen ? "/submit" : "/";
 
   return (
     <>
@@ -213,6 +213,7 @@ export function CivicNav() {
         <div className="navbar__brand">
           <Link
             href={brandHref}
+            prefetch={false}
             className="navbar__brand-link"
             aria-label="民声智理首页"
             title={

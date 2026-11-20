@@ -3,17 +3,20 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { Cpu, X, CheckCircle2, AlertCircle, ChevronUp } from "lucide-react";
 import { useCivicSse } from "@/app/_hooks/use-civic-sse";
+import { useAuthRole } from "@/lib/auth/use-role";
 import { useCivicWorkflow } from "./civic-workflow";
 import { useRegion } from "./region-context";
 import { PipelineCanvas, type PipelineStateResponse } from "@/app/workbench/_components/pipeline-canvas";
 
 export function PipelineDrawer() {
+  const { isAdmin } = useAuthRole();
   const { pipelineDrawerOpen, setPipelineDrawerOpen } = useCivicWorkflow();
   const { activeRegion } = useRegion();
   const [pipelineData, setPipelineData] = useState<PipelineStateResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
   const fetchState = useCallback(async () => {
+    if (!isAdmin) return;
     try {
       setLoading(true);
       const regParam = activeRegion?.id ? `?region=${encodeURIComponent(activeRegion.id)}` : "";
@@ -27,12 +30,13 @@ export function PipelineDrawer() {
     } finally {
       setLoading(false);
     }
-  }, [activeRegion?.id]);
+  }, [isAdmin, activeRegion?.id]);
 
   // SSE 推送：每帧 task-progress 携带 taskProgress + metrics，合并进 pipelineData
   // 让 PipelineCanvas 进度条 / 主题数实时更新，不必额外 fetchState。
   // pipeline-state-refresh 信号（系统二节点健康等重量级数据）才走完整 fetch。
-  useCivicSse(activeRegion?.id, (msg) => {
+  useCivicSse(isAdmin ? activeRegion?.id : undefined, (msg) => {
+    if (!isAdmin) return;
     if (msg.type === "task-progress") {
       setPipelineData((prev) => {
         const tp = msg.taskProgress as PipelineStateResponse["taskProgress"];
@@ -70,16 +74,16 @@ export function PipelineDrawer() {
   // 更完整（含 endpointRecentTickets / currentLocation 等内存字段）。
   // fetchState 用来补 systemTwoNodes 等 SSE 不便携带的重量级字段。
   useEffect(() => {
-    if (pipelineDrawerOpen) {
+    if (isAdmin && pipelineDrawerOpen) {
       fetchState();
     }
-  }, [pipelineDrawerOpen, activeRegion?.id, fetchState]);
+  }, [isAdmin, pipelineDrawerOpen, activeRegion?.id, fetchState]);
 
   const isRunning = (pipelineData?.taskProgress?.status || "").toUpperCase() === "RUNNING";
 
   // 抽屉打开时锁住背后页面滚动，避免手机上抽屉和页面一起滑
   useEffect(() => {
-    if (!pipelineDrawerOpen) return;
+    if (!isAdmin || !pipelineDrawerOpen) return;
     const prevBody = document.body.style.overflow;
     const prevHtml = document.documentElement.style.overflow;
     document.body.style.overflow = "hidden";
@@ -88,7 +92,7 @@ export function PipelineDrawer() {
       document.body.style.overflow = prevBody;
       document.documentElement.style.overflow = prevHtml;
     };
-  }, [pipelineDrawerOpen]);
+  }, [isAdmin, pipelineDrawerOpen]);
 
   // ESC 键关闭抽屉
   useEffect(() => {
@@ -106,6 +110,8 @@ export function PipelineDrawer() {
     (pipelineData?.metrics.totalTickets || 0) > 0 &&
     (pipelineData?.metrics.analyzedTickets || 0) >= (pipelineData?.metrics.totalTickets || 0) &&
     !isRunning;
+
+  if (!isAdmin) return null;
 
   return (
     <>
