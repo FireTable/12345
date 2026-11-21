@@ -238,7 +238,7 @@ export default function SubmitPage() {
   const { activeRegion, appDomain } = useRegion();
   const datalistId = useId();
 
-  const [mode, setMode] = useState<SubmitMode>("form");
+  const [mode, setMode] = useState<SubmitMode>("voice");
   const formTabRef = useRef<HTMLButtonElement>(null);
   const voiceTabRef = useRef<HTMLButtonElement>(null);
 
@@ -367,24 +367,27 @@ export default function SubmitPage() {
   const [chatPending, setChatPending] = useState<boolean>(false);
   const chatLogRef = useRef<HTMLDivElement>(null);
 
+  const createWelcomeMessage = useCallback(
+    (id = "welcome"): ChatMessage => ({
+      id,
+      role: "assistant",
+      content: isEcommerce
+        ? "您好，我是智能售后客服。请直接说话或输入您遇到的订单/商品问题，我会自动帮您梳理要素并生成客诉单。"
+        : "您好，我是 12345 智能语音受理员。请直接说话或输入您要反映的情况，我会自动核对镇街、地点与诉求内容。",
+    }),
+    [isEcommerce]
+  );
+
   // 初始化欢迎词随业务域变化
   useEffect(() => {
-    setVoiceMessages([
-      {
-        id: "welcome",
-        role: "assistant",
-        content: isEcommerce
-          ? "您好，我是智能售后客服。请直接点击语音按钮或下方快捷场景告诉我您遇到的订单/商品问题，我会自动帮您提取要素生成客诉单。"
-          : "您好，我是 12345 智能语音受理员。请点击语音按钮或直接输入您要反映的情况，我会自动核对镇街、地点与诉求内容。",
-      },
-    ]);
-  }, [isEcommerce, activeRegion?.id]);
+    setVoiceMessages([createWelcomeMessage()]);
+  }, [createWelcomeMessage, activeRegion?.id]);
 
   useEffect(() => {
-    if (chatLogRef.current) {
+    if (chatLogRef.current && (voiceMessages.length > 1 || chatPending)) {
       chatLogRef.current.scrollTop = chatLogRef.current.scrollHeight;
     }
-  }, [voiceMessages]);
+  }, [voiceMessages, chatPending, voiceDraft]);
 
   // ----------------- 我的投诉进度 -----------------
   const [myTickets, setMyTickets] = useState<MyTicketItem[]>([]);
@@ -711,11 +714,11 @@ export default function SubmitPage() {
     if (e.key === "ArrowRight" || e.key === "ArrowLeft" || e.key === "Home" || e.key === "End") {
       e.preventDefault();
       if (e.key === "Home") {
-        switchMode("form", true);
+        switchMode("voice", true);
         return;
       }
       if (e.key === "End") {
-        switchMode("voice", true);
+        switchMode("form", true);
         return;
       }
       switchMode(mode === "form" ? "voice" : "form", true);
@@ -725,21 +728,21 @@ export default function SubmitPage() {
   const quickVoiceDemos = isEcommerce
     ? [
         {
-          label: "示例 1：残缺诉求（触发追问 SKU/渠道）",
+          title: "生鲜礼盒化冻变质无客服回应",
           text: "我买的生鲜礼盒拆开全化冻发臭了，客服一直不理人",
         },
         {
-          label: "示例 2：完整诉求（自动填单）",
+          title: "天猫旗舰店冷链礼盒变质申请赔付",
           text: "在天猫旗舰店买的SKU-GD2026-881冷链礼盒从华南冷链仓发出，收货化冻变质发臭要求退款赔付，电话13912345678",
         },
       ]
     : [
         {
-          label: "示例 1：残缺诉求（触发追问地点）",
+          title: "夜间烧烤油烟噪音扰民",
           text: "天河这边晚上老有烧烤油烟吵得睡不着",
         },
         {
-          label: "示例 2：完整诉求（自动填单）",
+          title: "天河南一路老广烧烤档夜间油烟",
           text: "天河南街道天河南一路88号老广烧烤档，每天晚上11点到凌晨2点油烟排风噪音严重扰民，联系电话13800138000",
         },
       ];
@@ -747,6 +750,14 @@ export default function SubmitPage() {
   const hasDraftCategory = Boolean(voiceDraft.category.trim());
   const hasDraftSubdistrict = Boolean(voiceDraft.subdistrict.trim());
   const hasDraftContent = voiceDraft.content.trim().length >= 6;
+  const filledRequiredCount = [hasDraftCategory, hasDraftSubdistrict, hasDraftContent].filter(Boolean).length;
+  const hasAnyVoiceDraft = Boolean(
+    voiceDraft.category.trim() ||
+      voiceDraft.subdistrict.trim() ||
+      voiceDraft.subject.trim() ||
+      voiceDraft.address.trim() ||
+      voiceDraft.content.trim()
+  );
   const missingRequiredLabels = [
     !hasDraftCategory ? "所属分类" : "",
     !hasDraftSubdistrict ? regionUnitLabel : "",
@@ -755,6 +766,31 @@ export default function SubmitPage() {
   const isVoiceDraftReady = missingRequiredLabels.length === 0;
   const latestVoiceCaption =
     [...voiceMessages].reverse().find((m) => m.role === "assistant")?.content || "";
+
+  const handleResetVoiceChat = () => {
+    if (chatPending) return;
+    asr.stop();
+    stageRef.current?.stop();
+    setVoiceDraft(EMPTY_DRAFT);
+    setMissingFields([]);
+    setReadyToSubmit(false);
+    setChatInput("");
+    setVoiceMessages([createWelcomeMessage(`welcome-${Date.now()}`)]);
+  };
+
+  const syncVoiceDraftToForm = () => {
+    setFormValues((prev) => ({
+      title: voiceDraft.title || prev.title,
+      content: voiceDraft.content || prev.content,
+      subdistrict: voiceDraft.subdistrict || prev.subdistrict,
+      category: voiceDraft.category || prev.category,
+      subject: voiceDraft.subject || prev.subject,
+      address: voiceDraft.address || prev.address,
+      contactPhone: voiceDraft.contactPhone || prev.contactPhone,
+    }));
+    switchMode("form", true);
+    toast.info("已将对话整理内容同步到表单，可继续修改");
+  };
 
   return (
     <div className={`submit-shell${mode === "voice" ? " submit-shell--voice" : ""}`}>
@@ -841,23 +877,6 @@ export default function SubmitPage() {
           onKeyDown={handleTabListKeyDown}
         >
           <button
-            ref={formTabRef}
-            type="button"
-            role="tab"
-            id="tab-form"
-            aria-selected={mode === "form"}
-            tabIndex={mode === "form" ? 0 : -1}
-            onClick={() => switchMode("form")}
-            className="submit-tab"
-          >
-            <span className="submit-tab__title">
-              <FileText size={16} aria-hidden="true" className="shrink-0" />
-              <span>基础表单填报</span>
-            </span>
-            <span className="submit-tab__sub">自主填写要素</span>
-          </button>
-
-          <button
             ref={voiceTabRef}
             type="button"
             role="tab"
@@ -869,9 +888,26 @@ export default function SubmitPage() {
           >
             <span className="submit-tab__title">
               <Sparkles size={16} aria-hidden="true" className="shrink-0" />
-              <span>智能语音受理</span>
+              <span>智能对话受理</span>
             </span>
-            <span className="submit-tab__sub">说话口述，自动填单</span>
+            <span className="submit-tab__sub">说话或打字，AI 自动填单</span>
+          </button>
+
+          <button
+            ref={formTabRef}
+            type="button"
+            role="tab"
+            id="tab-form"
+            aria-selected={mode === "form"}
+            tabIndex={mode === "form" ? 0 : -1}
+            onClick={() => switchMode("form")}
+            className="submit-tab"
+          >
+            <span className="submit-tab__title">
+              <FileText size={16} aria-hidden="true" className="shrink-0" />
+              <span>传统表单填报</span>
+            </span>
+            <span className="submit-tab__sub">自主填写各项要素</span>
           </button>
         </div>
 
@@ -1152,11 +1188,11 @@ export default function SubmitPage() {
           </div>
         </div>
 
-        {/* Tab 2: 智能语音受理（3D 语音形象 + Stream ASR） */}
+        {/* Tab 2: 智能对话受理（左侧 3D 数字人舞台 + 右侧全高对话与卡片流） */}
         <div role="tabpanel" aria-labelledby="tab-voice" hidden={mode !== "voice"}>
-          <div className="submit-panel-body">
+          <div className="submit-panel-body submit-panel-body--voice">
             <div className="voice-layout">
-              {/* 3D 语音形象舞台 */}
+              {/* 左侧：3D 语音形象舞台 */}
               <div className="voice-stage-col">
                 <XiaochunStage
                   ref={stageRef}
@@ -1165,114 +1201,60 @@ export default function SubmitPage() {
                   title={isEcommerce ? "智能售后客服" : "12345 智能语音受理员"}
                   caption={latestVoiceCaption}
                   width="100%"
-                  height="var(--voice-stage-h)"
-                  lazy={true}
+                  height="100%"
+                  lazy={false}
                   outfit="xiaochun_civic"
                 />
               </div>
 
-              {/* 语音控制 + 对话流 + 辅助输入框 */}
-              <div className="voice-control-col">
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => void handleVoiceToggle()}
-                    aria-pressed={asr.isRecording}
-                    className={`voice-record-btn${asr.isRecording ? " is-recording" : ""}`}
-                  >
-                    {asr.isRecording ? (
-                      <>
-                        <MicOff size={18} aria-hidden="true" />
-                        <span>点击停止录音并发送</span>
-                      </>
-                    ) : (
-                      <>
-                        <Mic size={18} aria-hidden="true" />
-                        <span>
-                          {asr.status === "downloading"
-                            ? `正在准备语音模型 (${asr.downloadPercent}%)`
-                            : asr.status === "initializing"
-                              ? "正在初始化麦克风..."
-                              : "点击开始语音投诉"}
-                        </span>
-                      </>
-                    )}
-                  </button>
-
-                  {/* 语音引擎状态与实时音量/中间字 */}
-                  <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="truncate">{asr.statusHint}</span>
-                      <span className="shrink-0 font-mono text-[11px] text-slate-500">
-                        {asr.backend === "stream-asr"
-                          ? "Stream-ASR"
-                          : asr.backend === "web-speech"
-                            ? "Web Speech"
-                            : "待命"}
+              {/* 右侧：主流对话工作区（顶栏 + 对话/内联确认卡 + 底部一体化输入胶囊） */}
+              <div className="voice-chat-col">
+                {/* 轻量对话顶栏 */}
+                <div className="voice-chat-bar">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-xs font-semibold text-slate-900 truncate">
+                      {isEcommerce ? "智能售后客服" : "12345 智能语音受理员"}
+                    </span>
+                    {(hasAnyVoiceDraft || voiceMessages.length > 1) && (
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium border tabular-nums whitespace-nowrap ${
+                          isVoiceDraftReady
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            : "bg-blue-50 text-blue-700 border-blue-200"
+                        }`}
+                      >
+                        已识别 {filledRequiredCount}/3 项必填
                       </span>
-                    </div>
-
-                    {asr.status === "downloading" ? (
-                      <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
-                        <div
-                          className="h-full bg-blue-600 transition-all"
-                          style={{ width: `${asr.downloadPercent}%` }}
-                        />
-                      </div>
-                    ) : null}
-
-                    {asr.isRecording ? (
-                      <div className="mt-2 space-y-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[11px] text-slate-500 shrink-0">
-                            VAD: {asr.vadState}
-                          </span>
-                          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-200">
-                            <div
-                              className="h-full bg-emerald-500 transition-all duration-75"
-                              style={{ width: `${Math.round(asr.audioLevel * 100)}%` }}
-                            />
-                          </div>
-                        </div>
-                        {asr.interimText ? (
-                          <div className="text-slate-800 bg-white rounded px-2 py-1 border border-slate-200">
-                            实时识别：{asr.interimText}
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : null}
-
-                    {asr.error ? (
-                      <p className="mt-1.5 text-red-600 font-medium">{asr.error}</p>
-                    ) : null}
+                    )}
                   </div>
-                </div>
-
-                {/* 动态双域快捷演示语音文本 */}
-                <div>
-                  <div className="text-xs font-semibold text-slate-600 mb-1.5">
-                    无麦快捷演示语音（一键模拟口述）：
-                  </div>
-                  <div className="grid grid-cols-1 gap-2">
-                    {quickVoiceDemos.map((demo) => (
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {hasAnyVoiceDraft && (
                       <button
-                        key={demo.label}
+                        type="button"
+                        onClick={syncVoiceDraftToForm}
+                        className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100 cursor-pointer"
+                      >
+                        转表单微调
+                      </button>
+                    )}
+                    {voiceMessages.length > 1 && (
+                      <button
                         type="button"
                         disabled={chatPending}
-                        onClick={() => void sendVoiceTurn(demo.text)}
-                        className="w-full min-h-11 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs text-slate-700 hover:border-blue-400 hover:bg-blue-50/60 transition-colors cursor-pointer disabled:opacity-60"
+                        onClick={handleResetVoiceChat}
+                        className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-100 cursor-pointer disabled:opacity-50"
                       >
-                        <div className="font-semibold text-blue-700">{demo.label}</div>
-                        <div className="mt-0.5 text-slate-600 line-clamp-2">{demo.text}</div>
+                        <RotateCcw size={11} aria-hidden="true" />
+                        <span>清空重说</span>
                       </button>
-                    ))}
+                    )}
                   </div>
                 </div>
 
-                {/* 对话气泡记录 */}
+                {/* 全高对话消息与内联确认卡滚动区 */}
                 <div
                   ref={chatLogRef}
-                  className="voice-chat-log"
+                  className="voice-chat-thread"
                   aria-label="语音受理对话记录"
                 >
                   {voiceMessages.map((msg) => (
@@ -1285,152 +1267,241 @@ export default function SubmitPage() {
                       {msg.content}
                     </div>
                   ))}
-                  {chatPending ? (
-                    <div className="voice-msg voice-msg--assistant text-slate-500">
-                      正在整理投诉要素...
+
+                  {/* 首轮未发言时的自然场景引导（发第一句后自动收起） */}
+                  {voiceMessages.length <= 1 && !chatPending && (
+                    <div className="space-y-2 pt-1">
+                      <div className="text-xs text-slate-500">
+                        您可以直接开口说话，或点选常见场景快速开始：
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        {quickVoiceDemos.map((demo) => (
+                          <button
+                            key={demo.title}
+                            type="button"
+                            disabled={chatPending}
+                            onClick={() => void sendVoiceTurn(demo.text)}
+                            className="w-full min-h-11 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-left text-xs hover:border-blue-400 hover:bg-blue-50/50 transition-colors cursor-pointer disabled:opacity-60"
+                          >
+                            <div className="font-semibold text-slate-900">{demo.title}</div>
+                            <div className="mt-0.5 text-slate-500 line-clamp-1">{demo.text}</div>
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  ) : null}
+                  )}
+
+                  {/* AI 思考态脉冲 */}
+                  {chatPending && (
+                    <div
+                      role="status"
+                      aria-live="polite"
+                      className="voice-msg voice-msg--assistant inline-flex items-center gap-2.5 text-slate-600"
+                    >
+                      <span className="voice-thinking-dots" aria-hidden="true">
+                        <span />
+                        <span />
+                        <span />
+                      </span>
+                      <span className="text-xs">正在理解诉求并提取要素…</span>
+                    </div>
+                  )}
+
+                  {/* 对话内联：实时抽取的诉求工单确认卡（首屏零滚动闭环） */}
+                  {(hasAnyVoiceDraft || voiceMessages.length > 1) && (
+                    <div className="mt-1 rounded-xl border border-slate-200 bg-slate-50/90 p-3.5 space-y-3">
+                      <div className="flex items-start justify-between gap-2 flex-wrap">
+                        <div className="min-w-0">
+                          <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                            <Sparkles size={13} className="text-blue-600 shrink-0" aria-hidden="true" />
+                            <span>诉求工单草稿</span>
+                          </div>
+                          <p className="text-[11px] text-slate-600 mt-0.5">
+                            {isVoiceDraftReady
+                              ? readyToSubmit || missingFields.length === 0
+                                ? "3 项必填要素已齐全，可直接确认提交。"
+                                : `必填要素已齐备（可选补充：${missingFields.join("、")}）。`
+                              : `还需补充：${missingRequiredLabels.join("、")}`}
+                          </p>
+                        </div>
+                      </div>
+
+                      <dl className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                        <div className="rounded-lg bg-white border border-slate-200/80 px-2.5 py-2 min-w-0">
+                          <dt className="flex items-center justify-between gap-1.5 text-[11px] text-slate-500">
+                            <span>
+                              所属分类 <span className="text-red-600" aria-hidden="true">*</span>
+                            </span>
+                            <SlotStatusTag filled={hasDraftCategory} />
+                          </dt>
+                          <dd className="mt-1 font-medium text-slate-900 break-words">
+                            {voiceDraft.category || "待识别"}
+                          </dd>
+                        </div>
+                        <div className="rounded-lg bg-white border border-slate-200/80 px-2.5 py-2 min-w-0">
+                          <dt className="flex items-center justify-between gap-1.5 text-[11px] text-slate-500">
+                            <span>
+                              {regionUnitLabel} <span className="text-red-600" aria-hidden="true">*</span>
+                            </span>
+                            <SlotStatusTag filled={hasDraftSubdistrict} />
+                          </dt>
+                          <dd className="mt-1 font-medium text-slate-900 break-words">
+                            {voiceDraft.subdistrict || "待识别"}
+                          </dd>
+                        </div>
+                        {voiceDraft.subject.trim() && (
+                          <div className="rounded-lg bg-white border border-slate-200/80 px-2.5 py-2 min-w-0">
+                            <dt className="text-[11px] text-slate-500">{subjectLabel}</dt>
+                            <dd className="mt-1 font-medium text-slate-900 break-words">
+                              {voiceDraft.subject}
+                            </dd>
+                          </div>
+                        )}
+                        {voiceDraft.address.trim() && (
+                          <div className="rounded-lg bg-white border border-slate-200/80 px-2.5 py-2 min-w-0">
+                            <dt className="text-[11px] text-slate-500">{addressLabel}</dt>
+                            <dd className="mt-1 font-medium text-slate-900 break-words">
+                              {voiceDraft.address}
+                            </dd>
+                          </div>
+                        )}
+                        <div className="rounded-lg bg-white border border-slate-200/80 px-2.5 py-2 sm:col-span-2 min-w-0">
+                          <dt className="flex items-center justify-between gap-1.5 text-[11px] text-slate-500">
+                            <span>
+                              诉求内容 <span className="text-red-600" aria-hidden="true">*</span>
+                            </span>
+                            <SlotStatusTag
+                              filled={hasDraftContent}
+                              pendingLabel={
+                                voiceDraft.content.trim().length > 0 ? "需至少 6 字" : "待补充"
+                              }
+                            />
+                          </dt>
+                          <dd className="mt-1 font-medium text-slate-900 whitespace-pre-wrap break-words line-clamp-3">
+                            {voiceDraft.content || "等待语音或文字补充…"}
+                          </dd>
+                        </div>
+                      </dl>
+
+                      <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                        <button
+                          type="button"
+                          disabled={submitting}
+                          onClick={() => void handleVoiceDraftSubmit()}
+                          className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-700 cursor-pointer disabled:opacity-60"
+                        >
+                          <CheckCircle2 size={15} aria-hidden="true" />
+                          <span>{submitting ? "正在提交..." : "一键确认提交投诉"}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={syncVoiceDraftToForm}
+                          className="inline-flex min-h-10 items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 cursor-pointer"
+                        >
+                          同步到表单微调
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                {/* 辅助文字输入框（严格 IME 安全回车） */}
-                <form onSubmit={handleVoiceChatFormSubmit} className="space-y-2">
-                  <label
-                    htmlFor="voice-chat-input"
-                    className="block text-xs font-semibold text-slate-700"
-                  >
-                    辅助文字补充（Enter 发送，Shift+Enter 换行）
+                {/* 仅在录音、准备语音或提示异常时轻量化显示，避免常驻技术术语 */}
+                {(asr.isRecording ||
+                  asr.status === "downloading" ||
+                  asr.status === "initializing" ||
+                  asr.error) && (
+                  <div className="px-3.5 pt-2 shrink-0">
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate font-medium text-slate-700">
+                          {asr.isRecording
+                            ? "正在聆听，请清晰描述问题…"
+                            : asr.status === "downloading"
+                              ? "正在准备本地语音识别…"
+                              : asr.status === "initializing"
+                                ? "正在打开麦克风…"
+                                : asr.statusHint}
+                        </span>
+                        {asr.status === "downloading" && (
+                          <span className="font-mono tabular-nums text-blue-600 shrink-0">
+                            {Math.round(asr.downloadPercent)}%
+                          </span>
+                        )}
+                      </div>
+                      {asr.status === "downloading" && (
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+                          <div
+                            className="h-full bg-blue-600 transition-all"
+                            style={{ width: `${asr.downloadPercent}%` }}
+                          />
+                        </div>
+                      )}
+                      {asr.isRecording && (
+                        <div className="space-y-1">
+                          <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+                            <div
+                              className="h-full bg-emerald-500 transition-all duration-75"
+                              style={{ width: `${Math.min(100, Math.max(8, Math.round(asr.audioLevel * 100)))}%` }}
+                            />
+                          </div>
+                          {asr.interimText && (
+                            <div className="text-slate-800 bg-white rounded px-2 py-1 border border-slate-200">
+                              实时转写：{asr.interimText}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {asr.error && <p className="text-amber-700 font-medium">{asr.error}</p>}
+                    </div>
+                  </div>
+                )}
+
+                {/* 底部一体化输入胶囊（语音键 + 自动增高输入框 + 发送按钮） */}
+                <form onSubmit={handleVoiceChatFormSubmit} className="voice-composer">
+                  <label htmlFor="voice-chat-input" className="visually-hidden">
+                    输入诉求内容
                   </label>
-                  <div className="flex flex-col sm:flex-row gap-2">
+                  <div className="voice-composer__box">
+                    <button
+                      type="button"
+                      onClick={() => void handleVoiceToggle()}
+                      aria-pressed={asr.isRecording}
+                      aria-label={asr.isRecording ? "停止录音并发送" : "点击开始语音输入"}
+                      className={`voice-record-btn${asr.isRecording ? " is-recording" : ""}`}
+                    >
+                      {asr.isRecording ? (
+                        <>
+                          <MicOff size={15} aria-hidden="true" />
+                          <span>结束发送</span>
+                        </>
+                      ) : (
+                        <>
+                          <Mic size={15} aria-hidden="true" />
+                          <span>{asr.status === "initializing" ? "开启中…" : "语音"}</span>
+                        </>
+                      )}
+                    </button>
+
                     <textarea
                       id="voice-chat-input"
-                      rows={2}
+                      rows={1}
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
                       onKeyDown={handleVoiceTextareaKeyDown}
-                      placeholder="补充地点、订单号或具体问题..."
-                      className="submit-control min-h-[48px] flex-1 !py-2.5"
+                      placeholder="说话或输入问题…（Enter 发送）"
+                      className="voice-composer__input"
                     />
+
                     <button
                       type="submit"
-                      disabled={chatPending}
-                      className="submit-btn-primary sm:w-28 shrink-0"
+                      disabled={chatPending || !chatInput.trim()}
+                      aria-label="发送消息"
+                      className="voice-send-btn"
                     >
-                      <Send size={15} aria-hidden="true" />
-                      <span>发送</span>
+                      <Send size={16} aria-hidden="true" />
                     </button>
                   </div>
                 </form>
-              </div>
-            </div>
-
-            {/* 实时抽取投诉草稿摘要 */}
-            <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50/80 p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                <div className="min-w-0">
-                  <h2 className="text-sm font-semibold text-slate-900">
-                    实时抽取的投诉草稿摘要
-                  </h2>
-                  <p className="text-xs text-slate-600 mt-0.5">
-                    {isVoiceDraftReady
-                      ? readyToSubmit || missingFields.length === 0
-                        ? "3 项必填要素已齐全，可直接点击「一键确认提交投诉」。"
-                        : `必填要素已齐全，可直接点击「一键确认提交投诉」（建议可补：${missingFields.join("、")}）。`
-                      : `还需补充：${missingRequiredLabels.join("、")}，齐备即可「一键确认提交投诉」。`}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFormValues((prev) => ({
-                      title: voiceDraft.title || prev.title,
-                      content: voiceDraft.content || prev.content,
-                      subdistrict: voiceDraft.subdistrict || prev.subdistrict,
-                      category: voiceDraft.category || prev.category,
-                      subject: voiceDraft.subject || prev.subject,
-                      address: voiceDraft.address || prev.address,
-                      contactPhone: voiceDraft.contactPhone || prev.contactPhone,
-                    }));
-                    switchMode("form", true);
-                    toast.info("已将草稿同步至表单，可进一步细化修改");
-                  }}
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 cursor-pointer min-h-9"
-                >
-                  同步到表单微调
-                </button>
-              </div>
-
-              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                <div className="rounded-lg bg-white border border-slate-200/80 p-2.5 min-w-0">
-                  <dt className="flex items-center justify-between gap-2 text-slate-500">
-                    <span>
-                      所属分类 <span className="text-red-600" aria-hidden="true">*</span>
-                    </span>
-                    <SlotStatusTag filled={hasDraftCategory} />
-                  </dt>
-                  <dd className="mt-1 font-medium text-slate-900 break-words">
-                    {voiceDraft.category || "待识别（可继续描述或切表单选择）"}
-                  </dd>
-                </div>
-                <div className="rounded-lg bg-white border border-slate-200/80 p-2.5 min-w-0">
-                  <dt className="flex items-center justify-between gap-2 text-slate-500">
-                    <span>
-                      {regionUnitLabel} <span className="text-red-600" aria-hidden="true">*</span>
-                    </span>
-                    <SlotStatusTag filled={hasDraftSubdistrict} />
-                  </dt>
-                  <dd className="mt-1 font-medium text-slate-900 break-words">
-                    {voiceDraft.subdistrict ||
-                      (isEcommerce ? "待识别（如店铺/仓网）" : "待识别（如街道名称）")}
-                  </dd>
-                </div>
-                <div className="rounded-lg bg-white border border-slate-200/80 p-2.5 min-w-0">
-                  <dt className="flex items-center justify-between gap-2 text-slate-500">
-                    <span>{subjectLabel}</span>
-                    <span className="text-[11px] text-slate-400">选填</span>
-                  </dt>
-                  <dd className="mt-1 font-medium text-slate-900 break-words">
-                    {voiceDraft.subject || "未提及"}
-                  </dd>
-                </div>
-                <div className="rounded-lg bg-white border border-slate-200/80 p-2.5 min-w-0">
-                  <dt className="flex items-center justify-between gap-2 text-slate-500">
-                    <span>{addressLabel}</span>
-                    <span className="text-[11px] text-slate-400">选填</span>
-                  </dt>
-                  <dd className="mt-1 font-medium text-slate-900 break-words">
-                    {voiceDraft.address || "未提及"}
-                  </dd>
-                </div>
-                <div className="rounded-lg bg-white border border-slate-200/80 p-2.5 sm:col-span-2 min-w-0">
-                  <dt className="flex items-center justify-between gap-2 text-slate-500">
-                    <span>
-                      诉求内容 <span className="text-red-600" aria-hidden="true">*</span>
-                    </span>
-                    <SlotStatusTag
-                      filled={hasDraftContent}
-                      pendingLabel={
-                        voiceDraft.content.trim().length > 0
-                          ? "待补充（需至少 6 字）"
-                          : "待补充"
-                      }
-                    />
-                  </dt>
-                  <dd className="mt-1 font-medium text-slate-900 whitespace-pre-wrap break-words">
-                    {voiceDraft.content || "等待语音或文字输入..."}
-                  </dd>
-                </div>
-              </dl>
-
-              <div className="mt-4 flex flex-col sm:flex-row gap-2.5">
-                <button
-                  type="button"
-                  disabled={submitting}
-                  onClick={() => void handleVoiceDraftSubmit()}
-                  className="submit-btn-primary flex-1"
-                >
-                  <CheckCircle2 size={17} aria-hidden="true" />
-                  <span>{submitting ? "正在提交投诉..." : "一键确认提交投诉"}</span>
-                </button>
               </div>
             </div>
           </div>
