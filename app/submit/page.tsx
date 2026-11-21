@@ -374,8 +374,8 @@ export default function SubmitPage() {
         id: "welcome",
         role: "assistant",
         content: isEcommerce
-          ? "您好，我是售后客诉专员小蠢。请直接点击语音按钮或下方快捷场景告诉我您遇到的订单/商品问题，我会自动帮您提取要素生成客诉单。"
-          : "您好，我是民声语音受理专员小蠢。请点击语音按钮或直接输入您要反映的情况，我会自动核对镇街、地点与诉求内容。",
+          ? "您好，我是智能售后客服。请直接点击语音按钮或下方快捷场景告诉我您遇到的订单/商品问题，我会自动帮您提取要素生成客诉单。"
+          : "您好，我是 12345 智能语音受理员。请点击语音按钮或直接输入您要反映的情况，我会自动核对镇街、地点与诉求内容。",
       },
     ]);
   }, [isEcommerce, activeRegion?.id]);
@@ -755,7 +755,7 @@ export default function SubmitPage() {
   const isVoiceDraftReady = missingRequiredLabels.length === 0;
 
   return (
-    <div className="submit-shell">
+    <div className={`submit-shell${mode === "voice" ? " submit-shell--voice" : ""}`}>
       {/* 页面级单一礼貌播报区 */}
       <div className="visually-hidden" aria-live="polite">
         {liveAnnouncement}
@@ -774,8 +774,8 @@ export default function SubmitPage() {
         </h1>
         <p className="submit-header__sub">
           {isEcommerce
-            ? "支持自主填写或语音向「小蠢」反映订单与商品问题，自动脱敏建单并跟踪处理闭环。"
-            : "支持自主填写或语音向「小蠢」反映身边问题，自动脱敏分派并实时追踪办理结果。"}
+            ? "支持自主填写或通过智能语音客服反映订单与商品问题，自动脱敏建单并跟踪处理闭环。"
+            : "支持自主填写或通过智能语音受理员反映身边问题，自动脱敏分派并实时追踪办理结果。"}
         </p>
       </header>
 
@@ -867,7 +867,7 @@ export default function SubmitPage() {
           >
             <span className="submit-tab__title">
               <Sparkles size={16} aria-hidden="true" className="shrink-0" />
-              <span>Agent 语音受理（小蠢）</span>
+              <span>智能语音受理</span>
             </span>
             <span className="submit-tab__sub">说话口述，自动填单</span>
           </button>
@@ -1150,20 +1150,19 @@ export default function SubmitPage() {
           </div>
         </div>
 
-        {/* Tab 2: Agent 语音受理（小蠢 + Stream ASR） */}
+        {/* Tab 2: 智能语音受理（3D 语音形象 + Stream ASR） */}
         <div role="tabpanel" aria-labelledby="tab-voice" hidden={mode !== "voice"}>
           <div className="submit-panel-body">
             <div className="voice-layout">
-              {/* 小蠢 3D 舞台 */}
+              {/* 3D 语音形象舞台 */}
               <div className="voice-stage-col">
                 <XiaochunStage
                   ref={stageRef}
-                  title={isEcommerce ? "售后客诉专员 · 小蠢" : "民声语音受理专员 · 小蠢"}
-                  subtitle={isEcommerce ? "智能识别订单/SKU与退款诉求" : "智能识别镇街/地点与民声诉求"}
-                  width={260}
-                  height={330}
-                  lazy="click"
-                  scene="light"
+                  variant="stage"
+                  title={isEcommerce ? "智能售后客服" : "12345 智能语音受理员"}
+                  width="100%"
+                  height="var(--voice-stage-h)"
+                  lazy={true}
                   outfit="xiaochun_office_lady"
                 />
               </div>
@@ -1284,7 +1283,7 @@ export default function SubmitPage() {
                   ))}
                   {chatPending ? (
                     <div className="voice-msg voice-msg--assistant text-slate-500">
-                      小蠢正在整理投诉要素...
+                      正在整理投诉要素...
                     </div>
                   ) : null}
                 </div>

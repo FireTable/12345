@@ -305,23 +305,37 @@
 }
 
 /* Voice intake workspace */
+/* 语音模式放宽页面，让语音形象站在原本的左右留白里 */
+.submit-shell--voice {
+  max-width: 1180px;
+}
+
 .voice-layout {
+  --voice-stage-h: clamp(480px, calc(100dvh - 300px), 720px);
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
-  gap: 20px;
+  grid-template-columns: minmax(320px, 5fr) minmax(0, 6fr);
+  gap: 28px;
   align-items: start;
 }
 
-@media (max-width: 720px) {
-  .voice-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
 .voice-stage-col {
+  position: sticky;
+  top: 88px;
   display: flex;
   justify-content: center;
   min-width: 0;
+}
+
+@media (max-width: 860px) {
+  .voice-layout {
+    --voice-stage-h: min(44dvh, 380px);
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .voice-stage-col {
+    position: static;
+  }
 }
 
 .voice-control-col {

@@ -1098,8 +1098,8 @@ export async function processIntakeChat(input: {
 
     const systemPrompt =
       domainType === "ECOMMERCE_CS"
-        ? `你是电商售后客诉智能受理专员「小蠢」。请从脱敏后的用户陈述中抽取结构化草稿，并返回严格 JSON：{ "reply": "1-2句亲切自然的中文口播回复", "title": "简短标题", "subdistrict": "匹配渠道/仓网名", "category": "匹配客诉分类", "subject": "SKU编号或涉事商品/店铺", "address": "订单号或仓网地点" }。可选渠道/仓网：${options.subdistricts.join("、")}；可选分类：${options.categories.join("、")}。未提及的字段留空字符串。`
-        : `你是12345政务热线语音受理专员「小蠢」。请从脱敏后的市民陈述中抽取结构化草稿，并返回严格 JSON：{ "reply": "1-2句亲切自然的中文口播回复", "title": "简短标题", "subdistrict": "匹配镇街名", "category": "匹配分类", "subject": "涉事主体/商铺/单位", "address": "具体路名门牌/地点" }。可选镇街：${options.subdistricts.join("、")}；可选分类：${options.categories.join("、")}。未提及的字段留空字符串。`;
+        ? `你是电商平台「智能售后客服」。请从脱敏后的用户陈述中抽取结构化草稿，并返回严格 JSON：{ "reply": "1-2句亲切自然的中文口播回复", "title": "简短标题", "subdistrict": "匹配渠道/仓网名", "category": "匹配客诉分类", "subject": "SKU编号或涉事商品/店铺", "address": "订单号或仓网地点" }。可选渠道/仓网：${options.subdistricts.join("、")}；可选分类：${options.categories.join("、")}。未提及的字段留空字符串。`
+        : `你是12345政务服务热线「智能语音受理员」。请从脱敏后的市民陈述中抽取结构化草稿，并返回严格 JSON：{ "reply": "1-2句亲切自然的中文口播回复", "title": "简短标题", "subdistrict": "匹配镇街名", "category": "匹配分类", "subject": "涉事主体/商铺/单位", "address": "具体路名门牌/地点" }。可选镇街：${options.subdistricts.join("、")}；可选分类：${options.categories.join("、")}。未提及的字段留空字符串。`;
 
     const llmRes = await callSystemTwoJsonSafe(
       IntakeLlmSchema,
@@ -1164,18 +1164,27 @@ export async function processIntakeChat(input: {
     (prevFirstClause.length >= 4 && existingTitle === prevFirstClause) ||
     (Boolean(prevAutoTitle) && existingTitle === prevAutoTitle);
 
+  // 群众在最新一句里明确说出的主体/地址（原文可见）视为更正，覆盖前几轮推断出的旧值
+  const subjectCandidate = preferExplicitSku ? ruleSubject : llmPatch.subject || ruleSubject;
+  const addressCandidate = preferExplicitEcomOrder ? ruleAddress : llmPatch.address || ruleAddress;
+  const explicitlyRestated = (candidate: string | undefined, existing: string): boolean =>
+    Boolean(candidate) &&
+    candidate !== existing &&
+    latestUserText.includes(candidate as string) &&
+    !(existing && latestUserText.includes(existing));
+
   const mergedDraft: IntakeDraft = {
     title: isPlaceholderTitle ? llmPatch.title || "" : existingTitle,
     content: clampStr(combinedRaw, 2000),
     subdistrict: existingSubdistrict || llmPatch.subdistrict || ruleSubdistrict || "",
     category: existingCategory || llmPatch.category || ruleCategory || "",
     subject:
-      existingSubject ||
-      (preferExplicitSku ? ruleSubject : llmPatch.subject || ruleSubject) ||
+      (explicitlyRestated(subjectCandidate, existingSubject) ? subjectCandidate : existingSubject) ||
+      subjectCandidate ||
       "",
     address:
-      existingAddress ||
-      (preferExplicitEcomOrder ? ruleAddress : llmPatch.address || ruleAddress) ||
+      (explicitlyRestated(addressCandidate, existingAddress) ? addressCandidate : existingAddress) ||
+      addressCandidate ||
       "",
     contactPhone: clampStr(extractedPhone, 32),
   };
@@ -1201,8 +1210,8 @@ export async function processIntakeChat(input: {
     } else if (latestUserText.length === 0) {
       reply =
         domainType === "ECOMMERCE_CS"
-          ? "您好，我是售后客诉专员小蠢，请告诉我您遇到的商品或物流问题、购买渠道和SKU编号。"
-          : "您好，我是民声语音受理专员小蠢，请告诉我您要反映的问题、所在街道以及具体路名门牌。";
+          ? "您好，我是智能售后客服，请告诉我您遇到的商品或物流问题、购买渠道和SKU编号。"
+          : "您好，我是 12345 智能语音受理员，请告诉我您要反映的问题、所在街道以及具体路名门牌。";
     } else {
       reply = `我已记录您的诉求，还需要补充${missingFields.join("和")}，麻烦再说明一下以便精准派单。`;
     }

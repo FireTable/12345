@@ -271,7 +271,7 @@ export function VoiceOutreachDialog({
     },
   });
 
-  // 弹窗打开时初始化外呼话术并唤醒小蠢
+  // 弹窗打开时初始化外呼话术并唤醒 3D 语音形象
   useEffect(() => {
     const dialogEl = dialogRef.current;
     if (!dialogEl) return;
@@ -439,7 +439,7 @@ export function VoiceOutreachDialog({
                     width={220}
                     height={280}
                     scene="light"
-                    title={isEcommerce ? "售后专员 · 小蠢" : "12345 专员 · 小蠢"}
+                    title={isEcommerce ? "售后回访专员" : "12345 回访专员"}
                     subtitle={task.taskType === "REOPEN_CALLBACK" ? "48h 满意度回访" : "要素核实外呼"}
                     caption={caption}
                     muted={muted}
@@ -561,7 +561,7 @@ export function VoiceOutreachDialog({
                         >
                           <div className="text-[10px] opacity-75 mb-0.5 font-medium">
                             {turn.role === "agent"
-                              ? "AI 外呼专员 · 小蠢"
+                              ? "AI 外呼专员"
                               : isEcommerce
                               ? "买家应答"
                               : "来电人应答"}

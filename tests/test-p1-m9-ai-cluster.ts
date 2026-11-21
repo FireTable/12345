@@ -1092,7 +1092,7 @@ async function testP1_7_DbAndGovernanceFlows() {
           }),
         };
       }
-      if (sysPrompt.includes("受理专员")) {
+      if (sysPrompt.includes("智能语音受理员") || sysPrompt.includes("智能售后客服")) {
         if (turnMode === "generic_subj_llm") {
           return {
             content: JSON.stringify({

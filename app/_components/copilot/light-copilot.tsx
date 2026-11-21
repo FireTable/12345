@@ -122,6 +122,15 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
   const [stageMuted, setStageMuted] = useState(false);
   const [stageCaption, setStageCaption] = useState("");
   const stageRef = useRef<XiaochunStageHandle>(null);
+  // 宽屏时 3D 形象站在抽屉左侧的遮罩留白里；窄屏（抽屉占满）时收回抽屉内的小卡片
+  const [stageOnBackdrop, setStageOnBackdrop] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const sync = () => setStageOnBackdrop(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
   const lastSpokenIdRef = useRef<string | null>(null);
   const isEcommerce = activeRegion?.domainProfile?.domainType === "ECOMMERCE_CS";
   const regionKey = `${activeRegion?.id || ""}|${activeRegion?.city || ""}|${activeRegion?.name || ""}|${activeRegion?.domainProfile?.domainType || ""}`;
@@ -228,7 +237,7 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
     if (!latestAssistant || latestAssistant.id === lastSpokenIdRef.current) return;
 
     const spoken = extractCivicActions(latestAssistant.content, false)
-      .cleanText.replace(/[#*`>_~|[\]]/g, " ")
+      .cleanText.replace(/[#*`>_~|[\]]/g, "")
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 180);
@@ -389,6 +398,27 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
         exit={{ opacity: 0 }}
         transition={{ duration: 0.2, ease: "easeOut" }}
       >
+        {showStage && stageOnBackdrop && (
+          <div className="flex flex-1 min-w-0 items-end justify-center px-6 pointer-events-none">
+            <div
+              className="pointer-events-auto w-full max-w-[560px]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <XiaochunStage
+                variant="stage"
+                width="100%"
+                height="min(92dvh, 900px)"
+              ref={stageRef}
+              outfit="xiaochun_office_lady"
+              lazy={false}
+              muted={stageMuted}
+              onMuteChange={setStageMuted}
+              title={isEcommerce ? "AI 客诉助手" : "AI 研判助手"}
+              caption={stageCaption}
+              />
+            </div>
+          </div>
+        )}
         <motion.div
           className="w-full max-w-lg h-full bg-white border-l border-slate-200 shadow-2xl flex flex-col overflow-hidden text-slate-900"
           onClick={(e) => e.stopPropagation()}
@@ -534,18 +564,18 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
         </div>
 
         {/* 按需展开的紧凑 3D 语音助手 */}
-        {showStage && (
+        {showStage && !stageOnBackdrop && (
           <div className="px-4 py-2.5 bg-slate-50/90 border-b border-slate-200 flex items-center justify-center shrink-0">
             <XiaochunStage
-              ref={stageRef}
               width={180}
               height={210}
-              outfit="xiaochun_office_lady"
               scene="light"
+              ref={stageRef}
+              outfit="xiaochun_office_lady"
               lazy={false}
               muted={stageMuted}
               onMuteChange={setStageMuted}
-              title={isEcommerce ? "AI 客诉助手 · 小蠢" : "AI 研判助手 · 小蠢"}
+              title={isEcommerce ? "AI 客诉助手" : "AI 研判助手"}
               caption={stageCaption}
             />
           </div>
