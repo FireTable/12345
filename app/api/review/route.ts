@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getRegionDb } from "@/db/client";
 import { reviewQueueTable, ticketsTable } from "@/db/schema";
 import { listReviewQueue, seedReviewQueue } from "@/lib/review-queue";
+import { clampPage, clampSize } from "@/lib/api-bounds";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 import { recordDisposalLog, resolveOperatorName } from "@/lib/disposal";
 import { invalidateCivicAggregates } from "@/lib/civic-cache";
@@ -48,8 +49,8 @@ function buildTicketCorrectionPatch(correction: ReviewCorrection | undefined) {
 }
 
 /**
- * GET /api/review?status=PENDING
- * 按当前请求租户隔离查询人工复核队列。
+ * GET /api/review?status=PENDING&page=1&size=10
+ * 按当前请求租户隔离分页查询人工复核队列。
  */
 export async function GET(req: Request) {
   try {
@@ -58,14 +59,18 @@ export async function GET(req: Request) {
 
     const regionId = await resolveRequestRegionId(req);
     const { searchParams } = new URL(req.url);
-    const statusParam = searchParams.get("status") || "PENDING";
-    const rows = await listReviewQueue(regionId, statusParam);
+    const statusParam = searchParams.get("status") ?? "PENDING";
+    const page = clampPage(searchParams.get("page"));
+    const size = clampSize(searchParams.get("size"));
+    const result = await listReviewQueue(regionId, statusParam, { page, size });
 
     return NextResponse.json({
       success: true,
       regionId,
-      data: rows,
-      total: rows.length,
+      page: result.page,
+      size: result.size,
+      total: result.total,
+      data: result.data,
     });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Failed to fetch review queue";

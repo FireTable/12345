@@ -1,4 +1,6 @@
 import postgres from "postgres";
+import { evictTenantPool, invalidateRegionCache } from "@/db/client";
+import { invalidateCivicAggregates } from "@/lib/civic-cache";
 
 /**
  * PostgreSQL 多租户 Schema 隔离核心管理器
@@ -79,6 +81,7 @@ export async function createTenantTables(sql: postgres.Sql, schemaName: string) 
   await sql.unsafe(`CREATE SCHEMA IF NOT EXISTS "${schemaName}";`);
   // halfvec 需要数据库级扩展。镜像是带 pgvector 的 Postgres 16。这里不建 HNSW。
   await sql.unsafe(`CREATE EXTENSION IF NOT EXISTS vector`);
+  await sql.unsafe(`CREATE EXTENSION IF NOT EXISTS pg_trgm`);
 
   // 2. 在该 Schema 下执行 DDL 建表脚本
   await sql.begin(async (tx) => {
@@ -132,6 +135,20 @@ export async function createTenantTables(sql: postgres.Sql, schemaName: string) 
     await tx`CREATE INDEX IF NOT EXISTS idx_tickets_source_category ON tickets (source_category);`;
     await tx`CREATE INDEX IF NOT EXISTS idx_tickets_primary_theme_id ON tickets (primary_theme_id);`;
     await tx`CREATE INDEX IF NOT EXISTS idx_tickets_status_create_time ON tickets (status, create_time);`;
+    await tx`CREATE INDEX IF NOT EXISTS idx_tickets_title_trgm ON tickets USING gin (title gin_trgm_ops);`;
+    await tx`CREATE INDEX IF NOT EXISTS idx_tickets_summarize_title_trgm ON tickets USING gin (summarize_title gin_trgm_ops);`;
+    await tx`CREATE INDEX IF NOT EXISTS idx_tickets_content_trgm ON tickets USING gin (content gin_trgm_ops);`;
+    await tx`CREATE INDEX IF NOT EXISTS idx_tickets_canonical_subject_trgm ON tickets USING gin (canonical_subject gin_trgm_ops);`;
+    await tx`CREATE INDEX IF NOT EXISTS idx_tickets_address_trgm ON tickets USING gin (address gin_trgm_ops);`;
+    await tx`CREATE INDEX IF NOT EXISTS idx_tickets_ticket_no_trgm ON tickets USING gin (ticket_no gin_trgm_ops);`;
+    await tx`CREATE INDEX IF NOT EXISTS idx_tickets_subdistrict_trgm ON tickets USING gin (subdistrict gin_trgm_ops);`;
+    await tx`CREATE INDEX IF NOT EXISTS idx_tickets_district_trgm ON tickets USING gin (district gin_trgm_ops);`;
+    await tx`CREATE INDEX IF NOT EXISTS idx_tickets_source_category_trgm ON tickets USING gin (source_category gin_trgm_ops);`;
+    await tx`CREATE INDEX IF NOT EXISTS idx_tickets_subdistrict_create_time ON tickets (subdistrict, create_time DESC);`;
+    await tx`CREATE INDEX IF NOT EXISTS idx_tickets_create_time_id_desc ON tickets (create_time DESC, id DESC);`;
+    await tx`CREATE INDEX IF NOT EXISTS idx_tickets_primary_theme_create_time ON tickets (primary_theme_id, create_time DESC);`;
+    await tx`CREATE INDEX IF NOT EXISTS idx_tickets_fake_closure_true ON tickets (create_time DESC) WHERE is_fake_closure = true;`;
+    await tx`CREATE INDEX IF NOT EXISTS idx_tickets_stability_risk_true ON tickets (create_time DESC) WHERE stability_risk = true;`;
 
     // 工单嵌入旁路表。HNSW 在回填写完之后单独建，不放在这张表的创建语句里。
     await tx`
@@ -178,6 +195,11 @@ export async function createTenantTables(sql: postgres.Sql, schemaName: string) 
     await tx`CREATE INDEX IF NOT EXISTS idx_themes_subject ON themes (canonical_subject);`;
     await tx`CREATE INDEX IF NOT EXISTS idx_themes_pattern_type ON themes (pattern_type);`;
     await tx`CREATE INDEX IF NOT EXISTS idx_themes_ticket_count ON themes (ticket_count);`;
+    await tx`CREATE INDEX IF NOT EXISTS idx_themes_title_trgm ON themes USING gin (title gin_trgm_ops);`;
+    await tx`CREATE INDEX IF NOT EXISTS idx_themes_canonical_subject_trgm ON themes USING gin (canonical_subject gin_trgm_ops);`;
+    await tx`CREATE INDEX IF NOT EXISTS idx_themes_canonical_location_trgm ON themes USING gin (canonical_location gin_trgm_ops);`;
+    await tx`CREATE INDEX IF NOT EXISTS idx_themes_event_type_trgm ON themes USING gin (event_type gin_trgm_ops);`;
+    await tx`CREATE INDEX IF NOT EXISTS idx_themes_category_trgm ON themes USING gin (category gin_trgm_ops);`;
 
     // 2.3 工单-多频主题关联表 ticket_themes
     await tx`
@@ -207,6 +229,8 @@ export async function createTenantTables(sql: postgres.Sql, schemaName: string) 
     `;
     await tx`CREATE INDEX IF NOT EXISTS idx_review_queue_status ON review_queue (status);`;
     await tx`CREATE INDEX IF NOT EXISTS idx_review_queue_ticket_id ON review_queue (ticket_id);`;
+    await tx`CREATE INDEX IF NOT EXISTS idx_review_queue_status_created_at ON review_queue (status, created_at DESC, id DESC);`;
+    await tx`CREATE INDEX IF NOT EXISTS idx_review_queue_created_at_desc ON review_queue (created_at DESC, id DESC);`;
 
     // 2.5 官方标准政务词汇表 vocabularies
     await tx`
@@ -332,6 +356,7 @@ export async function registerRegion(sql: postgres.Sql, params: CreateRegionPara
       status = 'ACTIVE',
       updated_at = now();
   `;
+  invalidateRegionCache();
 }
 
 /**
@@ -343,9 +368,11 @@ export async function destroyRegionTenant(sql: postgres.Sql, regionId: string) {
   `;
   if (!region) return false;
 
+  await evictTenantPool(region.schema_name, regionId);
   await sql.unsafe(`DROP SCHEMA IF EXISTS "${region.schema_name}" CASCADE;`);
   await sql`DELETE FROM public.regions WHERE id = ${regionId};`;
   const g = globalThis as { __disposalLogsEnsuredSchemas?: Set<string> };
   g.__disposalLogsEnsuredSchemas?.delete(region.schema_name);
+  invalidateCivicAggregates(regionId);
   return true;
 }

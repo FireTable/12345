@@ -4,12 +4,9 @@ import "@/app/_components/civic/tokens.css";
 import "@/app/_components/civic/components.css";
 import "@/app/_components/civic/layout.css";
 import "@/app/_components/civic/civic-pages.css";
-import "@/app/workbench/workbench.css";
 import "@/app/_components/cockpit/cockpit-glass.css";
-import "leaflet/dist/leaflet.css";
 import { CivicNav } from "@/app/_components/civic/civic-nav";
 import { CivicWorkflowProvider } from "@/app/_components/civic/civic-workflow";
-import { PipelineDrawer } from "@/app/_components/civic/pipeline-drawer";
 import { Toaster } from "@/app/_components/ui/sonner";
 import { RegionProvider } from "@/app/_components/civic/region-context";
 import { getAppDomainMode } from "@/lib/app-domain";
@@ -260,7 +257,6 @@ export default function RootLayout({
           <CivicWorkflowProvider>
             <CivicNav />
             <main className="main">{children}</main>
-            <PipelineDrawer />
             <Toaster />
           </CivicWorkflowProvider>
         </RegionProvider>

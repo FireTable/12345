@@ -55,7 +55,17 @@ export async function resolveRequestRegionId(
     const cookieStore = await cookies();
     pushCandidate(normalizeRegionId(cookieStore.get("active_region")?.value));
   } catch {
-    // ignore (unit tests / CLI scripts outside Next request scope)
+    if (req && "headers" in req) {
+      const rawCookie = req.headers.get("cookie") || "";
+      const match = rawCookie.match(/(?:^|;\s*)active_region=([^;]+)/);
+      if (match?.[1]) {
+        try {
+          pushCandidate(normalizeRegionId(decodeURIComponent(match[1])));
+        } catch {
+          pushCandidate(normalizeRegionId(match[1]));
+        }
+      }
+    }
   }
 
   let allRegions: Awaited<ReturnType<typeof getAllRegions>> = [];
@@ -69,16 +79,14 @@ export async function resolveRequestRegionId(
     for (const candidate of candidates) {
       const matched =
         allRegions.find((r) => r.id === candidate) ||
-        allRegions.find((r) => r.id.endsWith(`_${candidate}`));
+        allRegions.find((r) => r.id.endsWith(`_${candidate}`)) ||
+        allRegions.find((r) => r.schemaName === candidate);
       if (matched) {
         if (isRegionAllowedInAppDomain(matched, mode)) {
           return matched.id;
         }
         // 非当前 APP_DOMAIN 的租户（例如 GOV_12345 主站收到旧 ecom_demo cookie）直接丢弃
         continue;
-      }
-      if (mode === "ALL") {
-        return candidate;
       }
     }
 

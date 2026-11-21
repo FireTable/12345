@@ -1,11 +1,14 @@
 import {
   CivicChatCompletion,
   CivicChatCompletionParams,
+  CivicChatStreamChunk,
   SystemTwoConfig,
 } from '../types';
 import { extractReasoningAndContent, parseStructuredJson } from '../parser';
 import { ISystemTwoAdapter } from './types';
 import { recordNodeMetric } from '../metrics';
+import { linkAbortSignals, createAbortError } from './abort-utils';
+import { readOpenAISseStream } from './sse-stream';
 
 export class LocalMetalAdapter implements ISystemTwoAdapter {
   readonly name = 'LocalMetalAdapter (llama-server / Metal)';
@@ -96,8 +99,7 @@ export class LocalMetalAdapter implements ISystemTwoAdapter {
       payload.response_format = params.response_format;
     }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    const linked = linkAbortSignals(this.timeoutMs, params.signal);
     const startMs = Date.now();
 
     try {
@@ -105,7 +107,7 @@ export class LocalMetalAdapter implements ISystemTwoAdapter {
         method: 'POST',
         headers: this.authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(payload),
-        signal: controller.signal,
+        signal: linked.signal,
       });
 
       if (!res.ok) {
@@ -202,8 +204,104 @@ export class LocalMetalAdapter implements ISystemTwoAdapter {
           : undefined,
         parsed,
       };
+    } catch (err) {
+      if (params.signal?.aborted) {
+        throw createAbortError(params.signal);
+      }
+      throw err;
     } finally {
-      clearTimeout(timeout);
+      linked.cleanup();
     }
+  }
+
+  async *chatCompletionsStream(
+    params: CivicChatCompletionParams
+  ): AsyncGenerator<CivicChatStreamChunk> {
+    const enableThinking = params.enable_thinking ?? this.defaultEnableThinking;
+    const url = `${this.endpoint}/chat/completions`;
+
+    const payload: Record<string, unknown> = {
+      model: params.model || this.model,
+      messages: params.messages,
+      temperature: params.temperature ?? 0.2,
+      max_tokens: params.max_tokens ?? 2048,
+      stream: true,
+      chat_template_kwargs: {
+        enable_thinking: enableThinking,
+      },
+    };
+
+    if (params.top_p !== undefined) {
+      payload.top_p = params.top_p;
+    }
+
+    if (params.response_format) {
+      payload.response_format = params.response_format;
+    }
+
+    const linked = linkAbortSignals(this.timeoutMs, params.signal);
+    const startMs = Date.now();
+    let res: Response;
+
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: this.authHeaders({
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
+        }),
+        body: JSON.stringify(payload),
+        signal: linked.signal,
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text().catch(() => '');
+        throw new Error(
+          `[LocalMetalAdapter] llama-server HTTP ${res.status}: ${res.statusText}. ${errorText}`
+        );
+      }
+    } catch (err) {
+      linked.cleanup();
+      if (params.signal?.aborted) {
+        throw createAbortError(params.signal);
+      }
+      throw err;
+    }
+
+    yield* readOpenAISseStream({
+      res,
+      endpoint: this.endpoint,
+      externalSignal: params.signal,
+      abortCombined: linked.abortCombined,
+      cleanup: linked.cleanup,
+      onComplete: ({ usage, timings, approxCompletionChunks }) => {
+        const durationMs = Math.max(1, Date.now() - startMs);
+        const completionTokens = usage?.completion_tokens ?? timings?.predicted_n ?? approxCompletionChunks;
+        const promptTokens = usage?.prompt_tokens ?? timings?.prompt_n ?? 0;
+        const totalTokens = usage?.total_tokens ?? completionTokens + promptTokens;
+        let tokensPerSecond = 0;
+        if (timings && typeof timings.predicted_per_second === 'number' && timings.predicted_per_second > 0) {
+          tokensPerSecond = timings.predicted_per_second;
+        } else if (timings && typeof timings.predicted_ms === 'number' && timings.predicted_ms > 0 && timings.predicted_n) {
+          tokensPerSecond = timings.predicted_n / (timings.predicted_ms / 1000);
+        } else if (completionTokens > 0 && durationMs > 0) {
+          tokensPerSecond = completionTokens / (durationMs / 1000);
+        }
+        const modelPredictedMs = Number(timings?.predicted_ms || 0);
+        const modelTotalMs = Number(timings?.prompt_ms || 0) + modelPredictedMs;
+        const finalDurationMs =
+          modelPredictedMs > 0 ? Math.round(modelPredictedMs) : modelTotalMs > 0 ? Math.round(modelTotalMs) : durationMs;
+
+        recordNodeMetric({
+          endpoint: this.endpoint,
+          tokensPerSecond: tokensPerSecond > 0 ? Math.round(tokensPerSecond * 10) / 10 : undefined,
+          completionTokens,
+          promptTokens,
+          totalTokens,
+          durationMs: finalDurationMs,
+          updatedAt: Date.now(),
+        });
+      },
+    });
   }
 }

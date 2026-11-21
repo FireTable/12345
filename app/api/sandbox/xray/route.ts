@@ -220,7 +220,7 @@ function asRisk(v?: string | null): RiskLevel {
 
 export async function POST(req: NextRequest) {
   try {
-    const guard = await guardAgentRequest(req, { role: "admin", scope: "xray" });
+    const guard = await guardAgentRequest(req, { role: "admin", scope: "xray", maxPerMinute: 15 });
     if ("response" in guard) return guard.response;
 
     const body = (await req.json().catch(() => null)) as {

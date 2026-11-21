@@ -1,14 +1,28 @@
 "use client";
 
 import React, { createContext, useCallback, useContext, useState } from "react";
+import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { UploadDialog } from "@/app/_components/dashboard/upload-dialog";
-import { LightCopilot } from "@/app/_components/copilot/light-copilot";
 import type { TaskProgress } from "@/lib/task-progress";
 import { useCivicSse } from "@/app/_hooks/use-civic-sse";
 import { useRegion } from "./region-context";
 import { useAuthRole } from "@/lib/auth/use-role";
+
+const UploadDialog = dynamic(
+  () => import("@/app/_components/dashboard/upload-dialog").then((m) => m.UploadDialog),
+  { ssr: false }
+);
+
+const LightCopilot = dynamic(
+  () => import("@/app/_components/copilot/light-copilot").then((m) => m.LightCopilot),
+  { ssr: false }
+);
+
+const PipelineDrawer = dynamic(
+  () => import("./pipeline-drawer").then((m) => m.PipelineDrawer),
+  { ssr: false }
+);
 
 type CivicWorkflow = {
   analyzing: boolean;
@@ -39,7 +53,9 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
   const { isAdmin } = useAuthRole();
 
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadMounted, setUploadMounted] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
+  const [copilotMounted, setCopilotMounted] = useState(false);
   const [pipelineDrawerOpen, setPipelineDrawerOpenState] = useState(false);
 
   const setPipelineDrawerOpen: React.Dispatch<React.SetStateAction<boolean>> = useCallback(
@@ -121,7 +137,9 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
   React.useEffect(() => {
     if (!isAdmin) {
       setUploadOpen(false);
+      setUploadMounted(false);
       setCopilotOpen(false);
+      setCopilotMounted(false);
       setPipelineDrawerOpenState(false);
     }
   }, [isAdmin]);
@@ -160,6 +178,7 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
 
   const openUpload = useCallback(() => {
     if (!isAdmin) return;
+    setUploadMounted(true);
     setUploadOpen(true);
   }, [isAdmin]);
 
@@ -174,6 +193,7 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
 
   const openCopilot = useCallback(() => {
     if (!isAdmin) return;
+    setCopilotMounted(true);
     setCopilotOpen(true);
   }, [isAdmin]);
 
@@ -194,19 +214,20 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
       }}
     >
       {children}
-      {isAdmin ? (
-        <>
-          <UploadDialog
-            isOpen={uploadOpen}
-            onClose={() => setUploadOpen(false)}
-            onDatabaseUpdated={refreshPages}
-          />
-          <LightCopilot
-            isOpen={copilotOpen}
-            onClose={() => setCopilotOpen(false)}
-          />
-        </>
+      {isAdmin && (uploadOpen || uploadMounted) ? (
+        <UploadDialog
+          isOpen={uploadOpen}
+          onClose={() => setUploadOpen(false)}
+          onDatabaseUpdated={refreshPages}
+        />
       ) : null}
+      {isAdmin && (copilotOpen || copilotMounted) ? (
+        <LightCopilot
+          isOpen={copilotOpen}
+          onClose={() => setCopilotOpen(false)}
+        />
+      ) : null}
+      {isAdmin ? <PipelineDrawer /> : null}
     </CivicWorkflowContext.Provider>
   );
 }

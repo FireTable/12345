@@ -1,8 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useRef, useState } from "react";
 import { X, Play, Film, ExternalLink } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/app/_components/ui/dialog";
 
 export interface DemoVideo {
   id: string;
@@ -71,34 +76,9 @@ export function VideoModal({
   isOpen: boolean;
   onClose: () => void;
 }) {
-  const [mounted, setMounted] = useState(false);
   const [activeVideo, setActiveVideo] = useState<DemoVideo>(DEMO_VIDEOS[0]);
   const [isBuffering, setIsBuffering] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  // Lock body scroll and handle Escape key
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onClose();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.body.style.overflow = originalOverflow;
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isOpen, onClose]);
 
   // Handle switching video without destroying video DOM element
   const handleSelectVideo = (vid: DemoVideo) => {
@@ -114,39 +94,39 @@ export function VideoModal({
     }
   };
 
-  if (!mounted || !isOpen) return null;
-
-  return createPortal(
-    <div className="video-modal-backdrop" onClick={onClose}>
-      <div
-        className="video-modal-content"
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="video-modal-title"
+  return (
+    <Dialog
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent
+        showCloseButton={false}
+        className="video-modal-content !flex !flex-col !w-[calc(100vw-1.5rem)] sm:!w-[calc(100vw-3rem)] !max-w-[1060px] !max-h-[90dvh] !p-0 !gap-0 !rounded-2xl overflow-hidden"
       >
         {/* Modal Header */}
         <div className="video-modal-header">
           <div className="video-modal-header-left">
-            <div className="video-modal-icon-badge">
+            <div className="video-modal-icon-badge" aria-hidden="true">
               <Film size={18} />
             </div>
             <div>
-              <div id="video-modal-title" className="video-modal-title">
+              <DialogTitle id="video-modal-title" className="video-modal-title">
                 系统功能演示视频
-              </div>
-              <div className="video-modal-subtitle">
+              </DialogTitle>
+              <DialogDescription className="video-modal-subtitle">
                 民声智理 · 12345 AI 智能研判系统演示全集
-              </div>
+              </DialogDescription>
             </div>
           </div>
           <button
             type="button"
-            className="video-modal-close-btn"
+            className="video-modal-close-btn min-h-[44px] min-w-[44px] sm:min-h-[32px] sm:min-w-[32px]"
             onClick={onClose}
             aria-label="关闭视频"
           >
-            <X size={20} />
+            <X size={20} aria-hidden="true" />
           </button>
         </div>
 
@@ -184,10 +164,10 @@ export function VideoModal({
                   href={activeVideo.src}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="video-open-raw-link"
+                  className="video-open-raw-link min-h-[44px] sm:min-h-0 inline-flex items-center"
                   title="在新窗口直接打开"
                 >
-                  <ExternalLink size={13} />
+                  <ExternalLink size={13} aria-hidden="true" />
                   <span>独立窗口播放</span>
                 </a>
               </div>
@@ -208,11 +188,11 @@ export function VideoModal({
                   <button
                     key={vid.id}
                     type="button"
-                    className={`video-playlist-item${isActive ? " is-active" : ""}`}
+                    className={`video-playlist-item min-h-[44px]${isActive ? " is-active" : ""}`}
                     onClick={() => handleSelectVideo(vid)}
                   >
                     <div className="video-item-index">
-                      {isActive ? <Play size={12} fill="currentColor" /> : idx + 1}
+                      {isActive ? <Play size={12} fill="currentColor" aria-hidden="true" /> : idx + 1}
                     </div>
                     <div className="video-item-meta">
                       <div className="video-item-title-row">
@@ -227,8 +207,7 @@ export function VideoModal({
             </div>
           </div>
         </div>
-      </div>
-    </div>,
-    document.body
+      </DialogContent>
+    </Dialog>
   );
 }

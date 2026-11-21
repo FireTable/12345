@@ -355,15 +355,31 @@ export function legalTownshipName(text?: string | null, vocab?: RegionVocabulary
   return exactTownshipName(parsed, target);
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /**
  * 将任意镇街或地点文本标准化为对应的官方标准全称（通用动态归一化）
  */
 export function canonicalizeTownship(name?: string | null, vocab?: RegionVocabulary): string | null {
   if (!name) return null;
   const targetVocab = vocab || loadPresetVocabulary("shunde");
-  const clean = name
-    .trim()
-    .replace(new RegExp(`^(${targetVocab.provinceName}|${targetVocab.cityName}|${targetVocab.regionName})`, "g"), "");
+  const adminPrefixes = [
+    targetVocab.provinceName,
+    targetVocab.cityName,
+    targetVocab.regionName,
+  ]
+    .map((p) => (p || "").trim())
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length)
+    .map(escapeRegExp);
+
+  let clean = name.trim();
+  if (adminPrefixes.length > 0) {
+    clean = clean.replace(new RegExp(`^(?:${adminPrefixes.join("|")})+`, "g"), "").trim();
+  }
+  if (!clean) return null;
 
   // 1. 优先精确匹配
   for (const t of targetVocab.townships) {
@@ -372,23 +388,8 @@ export function canonicalizeTownship(name?: string | null, vocab?: RegionVocabul
     }
   }
 
-  // 2. 包含匹配
-  for (const t of targetVocab.townships) {
-    if (clean.includes(t.fullName) || clean.includes(t.name)) {
-      return t.fullName;
-    }
-    if (t.aliases.some((a) => clean.includes(a))) {
-      return t.fullName;
-    }
-    if (t.communities.some((c) => clean.includes(c))) {
-      return t.fullName;
-    }
-    if (t.landmarks.some((l) => clean.includes(l))) {
-      return t.fullName;
-    }
-  }
-
-  return null;
+  // 2. 包含匹配：委托最长匹配逻辑，避免短前缀抢占长镇街名称
+  return matchTownshipName(clean, targetVocab.townships);
 }
 
 /**

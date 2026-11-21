@@ -45,10 +45,9 @@ export async function GET(req: Request) {
         regionQuery === "未知");
     const category = searchParams.get("category") || "";
     const keyword = searchParams.get("keyword") || "";
-    const pageParam = searchParams.get("page");
-    const sizeParam = searchParams.get("size");
-    const page = pageParam ? clampPage(pageParam) : 1;
-    const size = sizeParam ? clampSize(sizeParam) : 500;
+    const page = clampPage(searchParams.get("page"));
+    const size = clampSize(searchParams.get("size"));
+    const offset = Math.min((page - 1) * size, 2_000_000_000);
 
     const buildWhere = (regionFilter: string) => {
       const filters = [];
@@ -57,9 +56,30 @@ export async function GET(req: Request) {
           filters.push(
             or(
               isNull(ticketsTable.subdistrict),
-              eq(ticketsTable.subdistrict, ""),
-              eq(ticketsTable.subdistrict, "未知"),
-              eq(ticketsTable.subdistrict, "未指定")
+              inArray(ticketsTable.subdistrict, ["", "未知", "未指定"])
+            )
+          );
+        } else if (isEcommerce || domainProfile.channels.includes(regionFilter)) {
+          filters.push(
+            or(
+              eq(ticketsTable.subdistrict, regionFilter),
+              eq(ticketsTable.district, regionFilter)
+            )
+          );
+        } else if (regionFilter.length < 3 && !/(?:街道|镇|乡)$/.test(regionFilter)) {
+          filters.push(
+            or(
+              inArray(ticketsTable.subdistrict, [
+                regionFilter,
+                `${regionFilter}街道`,
+                `${regionFilter}镇`,
+                `${regionFilter}乡`,
+              ]),
+              eq(ticketsTable.district, regionFilter),
+              ilike(ticketsTable.district, `%${regionFilter}镇%`),
+              ilike(ticketsTable.district, `%${regionFilter}街道%`),
+              ilike(ticketsTable.district, `%${regionFilter}乡%`),
+              ilike(ticketsTable.district, `%${regionFilter}区%`)
             )
           );
         } else {
@@ -77,15 +97,10 @@ export async function GET(req: Request) {
 
       const effectiveStatus = status || (tab === "pending" || tab === "progress" || tab === "finished" ? tab : "");
       if (effectiveStatus === "RESOLVED" || effectiveStatus === "finished") {
-        filters.push(or(eq(ticketsTable.status, "RESOLVED"), eq(ticketsTable.status, "FINISHED")));
+        filters.push(inArray(ticketsTable.status, ["RESOLVED", "FINISHED"]));
       } else if (effectiveStatus === "IN_PROGRESS" || effectiveStatus === "progress") {
         filters.push(
-          or(
-            eq(ticketsTable.status, "DISPATCHED"),
-            eq(ticketsTable.status, "VERIFIED"),
-            eq(ticketsTable.status, "IN_PROGRESS"),
-            eq(ticketsTable.status, "PROCESSING")
-          )
+          inArray(ticketsTable.status, ["DISPATCHED", "VERIFIED", "IN_PROGRESS", "PROCESSING"])
         );
       } else if (effectiveStatus === "PENDING" || effectiveStatus === "pending") {
         filters.push(eq(ticketsTable.status, "PENDING"));
@@ -137,9 +152,9 @@ export async function GET(req: Request) {
         primaryThemeId: ticketsTable.primaryThemeId,
       })
       .from(ticketsTable)
-      .orderBy(desc(ticketsTable.createTime))
+      .orderBy(desc(ticketsTable.createTime), desc(ticketsTable.id))
       .limit(size)
-      .offset((page - 1) * size);
+      .offset(offset);
 
     const snapPromise = cacheGetOrLoad(`workorders:stats:${regionId}`, () => loadWorkorderStats(regionId));
 
@@ -147,7 +162,7 @@ export async function GET(req: Request) {
     let countRows: Array<{ count: number }> | null;
     let dbRows: Awaited<typeof listQ>;
 
-    if (!regionQuery || regionAllowedDirect) {
+    if (!regionQuery || regionQuery === regionId || regionAllowedDirect) {
       const where = buildWhere(regionAllowedDirect ? regionQuery : "");
       const [snapRes, cRows, lRows] = await Promise.all([
         snapPromise,
@@ -404,11 +419,49 @@ export async function POST(req: Request) {
                       themeId: incResult.matchedThemeId,
                     })
                     .onConflictDoNothing();
+                  const matchedRow = activeRows.find((r: any) => r.id === incResult.matchedThemeId);
+                  const parseThemeMoment = (raw: string | Date | null | undefined): Date | null => {
+                    if (!raw) return null;
+                    if (raw instanceof Date) return Number.isNaN(raw.getTime()) ? null : raw;
+                    const s = String(raw).trim();
+                    if (!s) return null;
+                    const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)
+                      ? `${s.replace(" ", "T")}+08:00`
+                      : s;
+                    const parsed = new Date(normalized);
+                    return Number.isNaN(parsed.getTime()) ? null : parsed;
+                  };
+                  const ticketMoment = memberLastAt(singleRec.ticketNo, singleRec.createTime ?? null);
+                  const existingFirstAt = parseThemeMoment(matchedRow?.firstAt);
+                  const existingLastAt = parseThemeMoment(matchedRow?.lastAt);
+                  const themeFirstOcc = parseThemeMoment(incResult.matchedTheme?.firstOccurrence);
+                  const themeLastOcc = parseThemeMoment(incResult.matchedTheme?.lastOccurrence);
+                  const firstCandidates = [existingFirstAt, themeFirstOcc, ticketMoment].filter(
+                    (d): d is Date => d instanceof Date && !Number.isNaN(d.getTime())
+                  );
+                  const lastCandidates = [existingLastAt, themeLastOcc, ticketMoment].filter(
+                    (d): d is Date => d instanceof Date && !Number.isNaN(d.getTime())
+                  );
+                  const nextFirstAt =
+                    firstCandidates.length > 0
+                      ? new Date(Math.min(...firstCandidates.map((d) => d.getTime())))
+                      : ticketMoment;
+                  const nextLastAt =
+                    lastCandidates.length > 0
+                      ? new Date(Math.max(...lastCandidates.map((d) => d.getTime())))
+                      : ticketMoment;
+                  const nextTimeSpanHours = Math.max(
+                    1,
+                    incResult.matchedTheme?.timeSpanHours ?? 1,
+                    Math.floor((nextLastAt.getTime() - nextFirstAt.getTime()) / 3_600_000)
+                  );
                   await tenantDb
                     .update(themesTable)
                     .set({
                       ticketCount: incResult.matchedTheme?.ticketCount ?? 1,
-                      lastAt: memberLastAt(singleRec.ticketNo, singleRec.createTime ?? null),
+                      firstAt: nextFirstAt,
+                      lastAt: nextLastAt,
+                      timeSpanHours: nextTimeSpanHours,
                       riskLevel: incResult.matchedTheme?.riskLevel,
                       riskReason: incResult.matchedTheme?.riskReason,
                       aiSummary: incResult.matchedTheme?.aiSummary,

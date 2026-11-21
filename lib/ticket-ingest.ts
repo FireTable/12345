@@ -1,6 +1,6 @@
 import { db, getRegionDb } from "@/db/client";
 import { ticketsTable } from "@/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { inArray, sql as drizzleSql } from "drizzle-orm";
 import { desensitizeContent } from "@/backend/anonymizer";
 import { profileTicket } from "@/backend/ticket-profile";
 import { AGENT_TICKET_NULLS } from "@/lib/civic-persist";
@@ -211,20 +211,30 @@ export async function insertRecordsBatch(records: any[], regionId?: string): Pro
 
       const newRecords = chunk.filter((c) => !existingSet.has(c.ticketNo));
       if (existingSet.size > 0) {
-        const updateRows = chunk.filter(
-          (row) => existingSet.has(row.ticketNo) && row.createTime instanceof Date
-        );
-        const CONCURRENCY = 25;
-        for (let u = 0; u < updateRows.length; u += CONCURRENCY) {
-          const sub = updateRows.slice(u, u + CONCURRENCY);
-          await Promise.all(
-            sub.map((row) =>
-              targetDb
-                .update(ticketsTable)
-                .set({ createTime: row.createTime })
-                .where(eq(ticketsTable.ticketNo, row.ticketNo))
-            )
+        const dedupedUpdates = new Map<string, Date>();
+        for (const row of chunk) {
+          if (
+            existingSet.has(row.ticketNo) &&
+            row.createTime instanceof Date &&
+            !Number.isNaN(row.createTime.getTime())
+          ) {
+            dedupedUpdates.set(row.ticketNo, row.createTime);
+          }
+        }
+        if (dedupedUpdates.size > 0) {
+          const valuesSql = drizzleSql.join(
+            Array.from(dedupedUpdates.entries()).map(
+              ([ticketNo, createTime]) =>
+                drizzleSql`(${ticketNo}::varchar, ${createTime.toISOString()}::timestamptz)`
+            ),
+            drizzleSql`, `
           );
+          await targetDb.execute(drizzleSql`
+            UPDATE tickets AS t
+            SET create_time = v.create_time
+            FROM (VALUES ${valuesSql}) AS v(ticket_no, create_time)
+            WHERE t.ticket_no = v.ticket_no
+          `);
         }
       }
 

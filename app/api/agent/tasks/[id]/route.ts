@@ -16,6 +16,7 @@ export async function PATCH(
     const guard = await guardAgentRequest(req, {
       role: "admin",
       scope: "agent-task-action",
+      maxPerMinute: 30,
     });
     if ("response" in guard) return guard.response;
 

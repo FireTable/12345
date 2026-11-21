@@ -1,9 +1,9 @@
 import type { TicketRadarState, EnrichedTicket, RawTicket } from "../state";
 import {
   isLocalSystemTwo,
-  modelSupportsToolCalling,
   getSystemTwoEngine,
 } from "../model";
+import { createAbortError } from "@civic/system-two";
 import { workOrderClockFromTicketNo, workOrderInstantFromTicketNo } from "@/lib/work-order-date";
 import {
   BatchExtractionSchema,
@@ -118,31 +118,60 @@ function hasStoredSystemOne(ticket: RawTicket): boolean {
 }
 
 
+function sleepAbortable(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) {
+    return Promise.reject(createAbortError(signal));
+  }
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(createAbortError(signal));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 /**
  * 批次调用大模型进行严格、精准的结构化 Zod 要素抽取
  */
 async function extractBatchWithLLM(
   tickets: RawTicket[],
   startIndex: number,
-  vocab?: RegionVocabulary
+  vocab?: RegionVocabulary,
+  signal?: AbortSignal
 ): Promise<{
   items: Map<number, ExtractedTicketItem>;
   fromLlm: Set<number>;
   endpoint: string | null;
   durationMs: number | undefined;
 }> {
+  if (signal?.aborted) {
+    throw createAbortError(signal);
+  }
   const result = new Map<number, ExtractedTicketItem>();
   const fromLlm = new Set<number>();
   if (tickets.length === 0) return { items: result, fromLlm, endpoint: null, durationMs: undefined };
 
-  // 1. 建立本批工单的本地脱敏 Keymap 映射，用于大模型抽取结果的确定性实体还原
+  // 1. 建立本批工单的本地脱敏 Keymap 映射（正文与标题共享 seedKeymap），用于大模型抽取结果的确定性实体还原
   const keymapByIndex = new Map<number, Record<string, string>>();
-  const maskedTickets: RawTicket[] = tickets.map((t, idx) => {
-    const anon = anonymize(t.content || "");
-    keymapByIndex.set(idx + 1, anon.keymap);
+  const maskedTickets: Array<RawTicket & { maskedTitle?: string }> = tickets.map((t, idx) => {
+    const contentAnon = anonymize(t.content || "");
+    const titleAnon = t.title
+      ? anonymize(t.title, { seedKeymap: contentAnon.keymap })
+      : null;
+    const mergedKeymap: Record<string, string> = {
+      ...contentAnon.keymap,
+      ...(titleAnon?.keymap || {}),
+    };
+    keymapByIndex.set(idx + 1, mergedKeymap);
     return {
       ...t,
-      maskedContent: anon.text,
+      maskedContent: contentAnon.text,
+      maskedTitle: titleAnon ? titleAnon.text : "无",
     };
   });
 
@@ -174,14 +203,21 @@ async function extractBatchWithLLM(
   const dynamicSchema = buildDynamicBatchExtractionSchema(townshipNames);
 
   for (let attempt = 0; attempt < 3; attempt++) {
+    if (signal?.aborted) {
+      throw createAbortError(signal);
+    }
     try {
       const startMs = Date.now();
       const systemTwo = await getSystemTwoEngine();
+      if (signal?.aborted) {
+        throw createAbortError(signal);
+      }
       const { data, timings, endpoint } = await systemTwo.createJSON(dynamicSchema, {
         messages: [{ role: "user", content: prompt }],
         enableThinking: false,
         maxTokens: LLM_TOKENS.EXTRACTION,
         temperature: 0.1,
+        signal,
       });
       // 把本批工单按"实际命中的 endpoint"记录到 engine 内存的最近列表，
       // 让 workbench 按节点显示"该 endpoint 刚处理了哪些工单"，而不是 modulo 切 DB 列表。
@@ -225,9 +261,12 @@ async function extractBatchWithLLM(
         if (result.size === tickets.length) return { items: result, fromLlm, endpoint: endpoint ?? null, durationMs: timings?.total_ms };
       }
     } catch (err: any) {
+      if (signal?.aborted) {
+        throw createAbortError(signal);
+      }
       console.warn(`[extract-node] System-2 extraction batch error at index ${startIndex} attempt ${attempt + 1}:`, err.message);
     }
-    if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
+    if (attempt < 2) await sleepAbortable(1500 * (attempt + 1), signal);
   }
 
   // 3. 模型失败时平滑退化为本地动态规则抽取引擎
@@ -250,8 +289,8 @@ function fallbackDynamicExtraction(ticket: RawTicket, defaultCategory = "综合�
   const district = explicitAdmin(ticket?.district) || "";
 
   // 1. 车牌号基础识别
-  const matchPlate = content.match(/(?:车牌[号为：:\s]*|小车|车辆|车牌[：:\s]*)([粤京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼][A-Z][\s]?[A-Z0-9]{4,6}[A-Z0-9挂学警港澳]?)/);
-  const plateSubject = matchPlate && matchPlate[1] ? `${matchPlate[1].replace(/\s+/g, "").toUpperCase()}车辆` : "";
+  const matchPlate = content.match(/(?:车牌[号为：:\s]*|小车|车辆|车牌[：:\s]*)([粤京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵青藏川宁琼][A-Z][·•・\- ]?(?:[A-Z0-9]{4,5}[挂学警港澳]|[A-Z0-9]{5,6}))(?![A-Z0-9挂学警港澳])/);
+  const plateSubject = matchPlate && matchPlate[1] ? `${matchPlate[1].replace(/[·•・\-\s]+/g, "").toUpperCase()}车辆` : "";
 
   // 2. 涉事主体（优先车牌或直接实体）
   const subject = plateSubject || "涉事方";
@@ -334,8 +373,13 @@ async function resumeStoredTickets(
  * Extract Node: 全量采用 AI Agent 大模型语义抽取四要素与摘要标题（P-Queue 受控并发与真实进度回报）
  */
 export async function extractNode(
-  state: TicketRadarState
+  state: TicketRadarState,
+  config?: { signal?: AbortSignal }
 ): Promise<Partial<TicketRadarState>> {
+  const signal = config?.signal;
+  if (signal?.aborted) {
+    throw createAbortError(signal);
+  }
   const rawTickets = state.rawTickets || [];
   const taskId = state.taskId;
   const regionId = state.regionId;
@@ -344,7 +388,7 @@ export async function extractNode(
   }
   const CHUNK_SIZE = isLocalSystemTwo() ? 1 : 4;
   const extractionMap = new Map<number, ExtractedTicketItem>();
-  // 共享进程级 LLM 池：所有 region 的 LLM 调用都走这一个 PQueue 排队，
+  // 共享进程级 LLM 池：所有 region 的 LLM 调用都走这一个 LlmPool 排队，
   // 避免 N region × endpoint 数 远超真实吞吐。
   const queue = getLlmPool();
 
@@ -356,19 +400,7 @@ export async function extractNode(
   if (taskId) {
     updateTaskProgress(taskId, regionId, {
       stage: "EXTRACTING",
-      stageText: "正在探测模型是否支持工具调用...",
-      total: rawTickets.length,
-      processed: 0,
-      percent: 0,
-    });
-  }
-  const toolsOk = await modelSupportsToolCalling();
-  if (taskId) {
-    updateTaskProgress(taskId, regionId, {
-      stage: "EXTRACTING",
-      stageText: toolsOk
-        ? `模型支持工具调用，开始抽取 (共 ${rawTickets.length} 条)...`
-        : `模型不支持工具调用，已回退 JSON 抽取 (共 ${rawTickets.length} 条)...`,
+      stageText: `开始抽取工单要素 (共 ${rawTickets.length} 条)...`,
       total: rawTickets.length,
       processed: 0,
       percent: 0,
@@ -539,7 +571,7 @@ export async function extractNode(
     const chunk = idxs.map((i) => normalizedRawTickets[i]);
     const indexMap = idxs;
     chunkTasks.push(async () => {
-      const packed = await extractBatchWithLLM(chunk, 0, regionVocab);
+      const packed = await extractBatchWithLLM(chunk, 0, regionVocab, signal);
       packed.fromLlm.forEach((packedIdx) => {
         const key = indexMap[packedIdx];
         if (key !== undefined) llmTicketIndexes.add(key);
@@ -597,7 +629,7 @@ export async function extractNode(
   }
 
   if (chunkTasks.length > 0) {
-    await queue.addAll(chunkTasks);
+    await queue.addAll(chunkTasks, { lane: "batch", signal });
   }
 
   // 2. 只校准这一轮新抽出的工单。已经落库的主体和地点保持原样。

@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { clampDays } from "@/lib/api-bounds";
+import { cacheGetOrLoad } from "@/lib/civic-cache";
 import { loadOverview } from "@/lib/civic-queries";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 
@@ -9,7 +11,11 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   try {
     const regionId = await resolveRequestRegionId(req);
-    const full = await loadOverview(0, regionId);
+    const days = clampDays(new URL(req.url).searchParams.get("days"), 0);
+    const { value: full } = await cacheGetOrLoad(
+      `overview:${regionId}:${days}`,
+      () => loadOverview(days, regionId)
+    );
     return NextResponse.json({
       success: true,
       regionId,

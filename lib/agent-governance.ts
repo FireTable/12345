@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { anonymize, deanonymize } from "@civic/anonymizer";
-import { SystemOneEngine } from "@civic/system-one";
+import { SystemOneEngine, hasCivicRedlineSignal } from "@civic/system-one";
 import { getRegionDb, sql } from "@/db/client";
 import {
   disposalLogsTable,
@@ -11,7 +11,9 @@ import {
   ticketsTable,
   vocabulariesTable,
 } from "@/db/schema";
+import { createAbortError, isAbortError, linkAbortSignals } from "@civic/system-two";
 import { getSystemTwoEngine } from "@/backend/model";
+import { getLlmPool } from "@/backend/llm-pool";
 import { profileTicket } from "@/backend/ticket-profile";
 import { invalidateCivicAggregates } from "@/lib/civic-cache";
 import { canonicalizeCategory, getRegionVocabulary, loadPresetVocabulary } from "@/lib/vocabulary";
@@ -133,16 +135,251 @@ const pendingSchemas: Map<string, Promise<void>> =
 globalThis.__agentGovPendingSchemas = pendingSchemas;
 
 const LLM_SHORT_TIMEOUT_MS = 12_000;
-const REDLINE_KEYWORDS_RE =
-  /群体|上访|聚集|堵路|罢工|跳楼|轻生|伤亡|人身伤害|食物中毒|腹泻|呕吐|12315|市监局|黑猫投诉|媒体曝光|热搜|集体维权|维稳/;
-const GENERIC_SUBJECT_RE = /^(?:涉事方|相关主体|未知|不详|无|空|null)$/i;
+const CORE_REDLINE_PREFIX =
+  "群体性?(?:事件|纠纷|维权|抗议|聚集)|集体讨薪|串联聚集|静坐抗议|绝食|下跪维权|抬棺|集体上访|越级上访|进京上访|赴省进京|到北京上访|组织上访|串联上访|上访|聚众(?:闹事|维权|抗议|堵路|堵门|讨薪|示威|冲击|围堵)|非法聚集|聚集(?:闹事|维权|抗议|堵路|堵门|讨薪|示威|冲击|围堵)";
+const CORE_REDLINE_MIDDLE =
+  "罢工|集体停工|跳楼|跳桥|跳河|轻生|自杀|自残|自焚|寻短见|割腕|服毒|不想活|生无可恋|一起死|报复社会|扬言报复|威胁报复|报复|杀人|持刀伤人|持刀砍|砍伤|持械伤人|行凶伤人|砍人|血案|同归于尽|鱼死网破|与人拼命|拼命|放火|纵火|泼汽油|带汽油|携带炸药|安放炸弹|群殴|聚众斗殴|涉黑(?:涉恶)?|涉恶|黑恶势力|强迫交易|收取保护费|欺行霸市|伤亡|人身伤害|人员重伤|多人重伤|重伤被困|突发地陷|路面塌陷|坍塌|重大(?:交通(?:安全)?|生产安全|安全|火灾)?事故|毒气(?:泄漏)?|投毒|燃气严重泄漏|煤气大量泄漏|(?:发生|突发|引发|造成)爆炸|爆炸起火|(?:化工厂|厂房|车间|燃气管道|危化品|仓库|现场)[^，。]{0,6}爆炸|群体中毒|集体腹泻|集体呕吐|食物中毒|腹泻|呕吐|12315|市监局|消协|黑猫投诉|媒体曝光|全网曝光|热搜|集体维权|集体抗议|维稳|(?:扬言|威胁|声称|逼得)[^，。！？；;\\n]{0,12}(?:闹事|拼命|极端|出人命|没法活)";
+const CORE_REDLINE_TAIL = "堵桥|封桥|阻断交通|堵门|围堵|拉横幅";
+const CORE_REDLINE_PATTERN = `${CORE_REDLINE_PREFIX}|堵路|${CORE_REDLINE_MIDDLE}|封路|${CORE_REDLINE_TAIL}`;
+const ECOM_REDLINE_PATTERN = `${CORE_REDLINE_PATTERN}|假货|假冒|变质|发霉`;
+const SQL_CORE_REDLINE_MIDDLE = CORE_REDLINE_MIDDLE.replace(
+  "(?:发生|突发|引发|造成)爆炸",
+  "(?:^|[^锅瓶未没无非不别勿有会]|(?:^|[^没])有|(?:^|[^不])会)(?:发生|突发|引发|造成)爆炸"
+)
+  .replace(
+    "(?:化工厂|厂房|车间|燃气管道|危化品|仓库|现场)[^，。]{0,6}爆炸",
+    "(?:化工厂|厂房|车间|燃气管道|危化品|仓库|现场)(?:(?!(?:未|没|无|并非|不是|排除))[^，。]){0,6}爆炸"
+  )
+  .replace("人员重伤", "(?:^|[^无未没有]|(?:^|[^没])有)人员重伤");
+export const SQL_CORE_REDLINE_PATTERN = `${CORE_REDLINE_PREFIX}|(?:^|[^拥])堵路(?:[^况段]|$)|${SQL_CORE_REDLINE_MIDDLE}|(?:^|[^工]|(?:^|[^施])工)封路(?!施工)|${CORE_REDLINE_TAIL}`;
+export const SQL_ECOM_REDLINE_PATTERN = `${SQL_CORE_REDLINE_PATTERN}|假货|假冒|变质|发霉`;
+const REDLINE_ADVERSATIVE_GAP = "(?:(?!但|却|不过|可是|然而)[^，。！？；;\\n])";
+const REDLINE_NEGATION_PRE_RE = new RegExp(
+  `(?:(?:并非|不是|没有发生|未发生|没有|并未|未见|未出现|未(?!来|果)|不存在|已排除|排除|不涉及|防止|预防|杜绝|辟谣|谣言|虚假|避免|谨防|严防|切勿|不要|禁止)${REDLINE_ADVERSATIVE_GAP}{0,8}|无(?:任何|明显|实际|发生|人员|迹象)${REDLINE_ADVERSATIVE_GAP}{0,6}|无人|无)$`
+);
+const REDLINE_FOOD_SAFETY_CHAIN_NEG_RE =
+  /(?:没有发生|未发生|没有|并未|未见|未出现|不存在|已排除|排除|不涉及|无)(?:(?:任何|明显|实际)的?)?(?:(?:食物中毒|群体中毒|(?:群体|集体)?(?:腹泻|呕吐))(?:及|和|或|与|、))+(?:群体|集体)?$/;
+const REDLINE_WORRY_PRE_RE = new RegExp(
+  `(?:担心|害怕|生怕|谨防|避免)${REDLINE_ADVERSATIVE_GAP}{0,8}$`
+);
+const REDLINE_EXTREME_VIOLENCE_WORRY_RE =
+  /^(?:报复社会|扬言报复|威胁报复|报复|杀人|持刀伤人|持刀砍|砍伤|持械伤人|行凶伤人|砍人|血案|同归于尽|鱼死网破|与人拼命|拼命|放火|纵火|泼汽油|带汽油|携带炸药|安放炸弹|群殴|聚众斗殴)$/;
+const REDLINE_ACCIDENT_PREVENTIVE_RE =
+  /(?:(?:容易|极易|很易|较易|易|可能会?|或许会?|也许会?|恐会?|难免会?|防止|预防|避免|谨防|严防|杜绝|以免|以防)(?:引发|造成|发生|导致|出现|酿成|带来|产生|诱发|演变成){0,2})(?:(?:非常|极其|很|比较|较)?(?:严重的?|恶劣的?|更大的?|类似的?|新的?|不必要的?|惨重的?|潜在的?)|一起|各类|各种)?$/;
+const REDLINE_ACCIDENT_POST_HAZARD_RE =
+  /^(?:的(?:安全|潜在|重大|严重){0,2}(?:隐患|风险|苗头|可能(?:性)?)|(?:安全|潜在|重大|严重){0,2}(?:隐患|风险|苗头))/;
+const REDLINE_EXPLOSION_BENIGN_CONTEXT_RE =
+  /(?:锅|灯泡|热水器|烧水器|油烟机|抽油烟机|消毒柜|燃气灶|煤气灶|煤气瓶|电瓶(?!车)|筒灯|玻璃|钢化玻璃|如果[^，。]{0,8}发生爆炸)/;
+const REDLINE_EXPLOSION_INDUSTRIAL_CONTEXT_RE =
+  /(?:化工厂|厂房|车间|燃气管道|危化品|仓库)/;
+
+export function hasRedlineSignal(
+  text: string,
+  options?: { isEcommerce?: boolean }
+): boolean {
+  if (!text) return false;
+  const source = options?.isEcommerce ? ECOM_REDLINE_PATTERN : CORE_REDLINE_PATTERN;
+  const globalRe = new RegExp(source, "g");
+  let match: RegExpExecArray | null;
+  while ((match = globalRe.exec(text)) !== null) {
+    const idx = match.index;
+    const matched = match[0];
+    if (
+      matched === "堵路" &&
+      (text[idx - 1] === "拥" || text[idx + 2] === "况" || text[idx + 2] === "段")
+    ) {
+      continue;
+    }
+    if (
+      matched === "封路" &&
+      (text.slice(Math.max(0, idx - 2), idx) === "施工" ||
+        text.slice(idx + 2, idx + 4) === "施工")
+    ) {
+      continue;
+    }
+    const before = text.slice(Math.max(0, idx - 16), idx);
+    const beforeFood = text.slice(Math.max(0, idx - 24), idx);
+    if (
+      REDLINE_NEGATION_PRE_RE.test(before) ||
+      REDLINE_FOOD_SAFETY_CHAIN_NEG_RE.test(beforeFood)
+    ) {
+      continue;
+    }
+    if (
+      REDLINE_EXTREME_VIOLENCE_WORRY_RE.test(matched) &&
+      REDLINE_WORRY_PRE_RE.test(before)
+    ) {
+      continue;
+    }
+    if (/^重大.*事故$/.test(matched)) {
+      const accidentPre = text.slice(Math.max(0, idx - 20), idx);
+      const accidentAfter = text.slice(
+        idx + matched.length,
+        Math.min(text.length, idx + matched.length + 8)
+      );
+      if (
+        REDLINE_ACCIDENT_PREVENTIVE_RE.test(accidentPre) ||
+        REDLINE_ACCIDENT_POST_HAZARD_RE.test(accidentAfter)
+      ) {
+        continue;
+      }
+    }
+    if (matched.includes("爆炸")) {
+      const expOffset = matched.indexOf("爆炸");
+      if (expOffset > 0) {
+        const expIdx = idx + expOffset;
+        const beforeExplosion = text.slice(Math.max(0, expIdx - 16), expIdx);
+        if (REDLINE_NEGATION_PRE_RE.test(beforeExplosion)) {
+          continue;
+        }
+      }
+      const explosionWindow = text.slice(
+        Math.max(0, idx - 60),
+        Math.min(text.length, idx + matched.length + 20)
+      );
+      if (
+        REDLINE_EXPLOSION_BENIGN_CONTEXT_RE.test(explosionWindow) &&
+        !REDLINE_EXPLOSION_INDUSTRIAL_CONTEXT_RE.test(explosionWindow)
+      ) {
+        continue;
+      }
+    }
+    return true;
+  }
+  return false;
+}
+const GENERIC_SUBJECT_RE =
+  /^(?:涉事方|相关主体|未知|不详|无|空|null|undefined|n\/a|市民|车主|商家|商铺|店铺|店主|单位|某单位|某店铺|某商家|某公司|某企业|某工厂|某餐厅|某餐馆|买家|卖家|消费者|顾客|客户|客服|外包客服|平台客服|当事人|反映人|诉求人|投诉人|业主|租客|物业|部门|相关单位|相关部门|涉事单位|涉事店铺|涉事商家|涉事主体|涉事车辆|车辆|司机|小贩|摊贩|咨询市民|催办诉求人|无名|不知名)$/i;
+const GENERIC_SUBJECT_SUFFIX_RE = /(?:涉事方|责任主体|责任对象)$/;
+const GENERIC_SUBJECT_WRAPPER_RE =
+  /^(?:某|该|这|那|一)?(?:家|位|个)?(?:我的|涉事|相关)?(?:单位|店铺|商铺|商店|商家|公司|企业|工厂|工地|餐厅|餐馆|饭店|超市|物业|快递|物流|商品|客服|卖家|买家|车主|市民|车辆)$/;
+
+function isGenericSubject(value?: string | null): boolean {
+  const s = (value || "").trim();
+  if (!s) return true;
+  return (
+    GENERIC_SUBJECT_RE.test(s) ||
+    GENERIC_SUBJECT_SUFFIX_RE.test(s) ||
+    GENERIC_SUBJECT_WRAPPER_RE.test(s)
+  );
+}
+
 const PHONE_RE = /(?<!\d)(?:(?:\+|00)86)?(1[3-9]\d{9})(?!\d)|\b(0\d{2,3}-?\d{7,8})\b/;
 const SKU_RE = /(?:^|[^A-Za-z0-9])(SKU[-_][A-Za-z0-9]{2,}(?:[-_][A-Za-z0-9]+)*|SKU[A-Za-z0-9]{3,})(?![A-Za-z0-9])/i;
 const LABELED_SKU_RE = /(?:SKU编号|SKU|货号|商品编号)\s*(?:是|为|[：:])\s*([A-Za-z0-9][A-Za-z0-9_-]{3,28})/i;
 const NEGATIVE_CALLBACK_RE =
-  /没解决|未解决|没有解决|复发|敷衍|假办结|还是吵|还在吵|照样吵|依然|仍然|没收到退款|没退款|拒退|没整改|没处理|没人联系|还是坏|还是漏|不满意|推诿|踢皮球/;
-const POSITIVE_CALLBACK_RE =
-  /已解决|解决了|已整改|整改了|满意|挺好|感谢|谢谢|已退款|收到退款|恢复了|修好了|通水了|不吵了|没问题/;
+  /(?:没|没有|未|并未|还没|还没有|还未|尚未|压根没|根本没|完全没)(?:彻底|完全|真正|实际|及时|妥善|实质性?地?|有效|真正地?)?(?:解决|修好|弄好|搞定|办妥|整改|处理|恢复|通水|改善|好转|退款|退到账|到账)|复发|敷衍|假办结|强行办结|强行结案|还是吵|还在吵|照样吵|照样漏|还在漏|还在响|还在臭|漏水|还是坏|还是漏|还是老问题|老问题(?:还在|依然|仍然|没变)?|(?:依然|仍然|还是)?老样子|一模一样|毫无变化|没啥变化|纹丝不动|照旧|又犯了|又坏了|又漏了|又开始了|反弹|回潮|依然(?:存在|没改|没解决|未解决|很吵|漏水|一样)|仍然(?:存在|没改|没解决|未解决|很吵|漏水|一样)|没收到退款|钱没退|退款没到|拒退|不给退|没人联系|没人管|压根没人管|根本没人管|没人理|没人回|没回电|一直拖着|一直拖|拖着不办|白跑一趟|白等了|不满意|不太满意|并不满意|不是很满意|态度(?:依然|仍然|还是|一直|依旧)?(?:很|太|极|非常|比较)?(?:差|不好|恶劣|敷衍)|(?:依然|仍然|还是)不好|(?:整改|质量|验收)?不过关|推诿|踢皮球|扯皮|(?:还有|仍有|存在)问题|还是有问题|问题(?:根本|依然|仍然)?还在|没人(?:上门|来修|来|处理|解决|管)|没办好|照样(?:响|臭|坏|漏|吵|堵)|又出现(?:了)?|(?:钱|退款)[^，,。！？；;]{0,4}(?:没|未)(?:给我?)?退|(?:没|没有|未|并未|还没|还没有|还未|尚未)(?:得到|能|给|给我|帮我|及时)(?:解决|修好|弄好|搞定|办妥|退到账|到账|处理|恢复)|(?:未能|没能)(?:解决|修好|弄好|处理|恢复|到账)/g;
+const POSITIVE_RESOLUTION_RE =
+  /(?:彻底|完全)好了|(?:完全|现在|已经|也)?不(?:再)?漏水了|没有再漏水了|已经?解决(?:了)?|彻底解决(?:了)?|解决好(?:了)?|解决(?:了)?|已整改|整改(?:了|到位)|已退款|收到退款|退到账(?:了)?|退款到账(?:了)?|钱退了|已赔付|恢复(?:了)?|修好(?:了)?|弄好(?:了)?|搞定(?:了)?|办妥(?:了)?|妥了|处理好(?:了)?|处理完(?:了)?|通水(?:了)?|安静了|不吵了|不漏了|不臭了|通畅了|正常了|没啥问题|没有问题|没问题|(?:不再|不会再|已经?不|并未再|也没|没再)(?:漏水|吵|臭|坏|漏)(?:了)?/g;
+const POSITIVE_POLITE_RE = /满意|挺好(?:的)?|感谢|谢谢/g;
+
+const CALLBACK_NEG_DENIAL_PREFIX_RE =
+  /(?:并非|并不是|不是|并没有|没有|并未|不存在|谈不上|不算|别说|哪有)(?:[^，,。！？；;\n]{0,4})$/;
+const CALLBACK_SYMPTOM_DENIAL_PREFIX_RE =
+  /(?<!不是|并非)(?:不再|不会再|已经?不|再也不|再也没|并未再|也没|(?<![还老])不|(?<![还])没)(?:再|怎么|太)?$/;
+const CALLBACK_SYMPTOM_TARGET_RE =
+  /^(?:漏水|复发|反弹|回潮|敷衍|假办结|强行办结|强行结案|推诿|踢皮球|扯皮)$/;
+const CALLBACK_POS_NEG_PREFIX_RE =
+  /(?:并非|并不是|不是|并没有|没有|并未|尚未|还没|还没有|还未|根本没|压根没|完全没|一点没|丝毫没|一点都没|根本不|压根不|完全不|并不|不太|不算|谈不上|别说|哪有|哪里|(?<![已终没])未|(?<![还都])没|(?<![还从并])不)(?:太|很|算|真正|完全|彻底|怎么|什么|有多)?$/;
+const CALLBACK_ADVERSATIVE_RE =
+  /(?:(?:^|[，,。！？；;\s])(?:但(?:实际上|其实)?(?!是)|其实|实际上|反而|结果)|但是(?:实际上|其实)?|可是|不过(?!关|去|瘾|分|多|于|来)|然而)/g;
+
+const CALLBACK_GAP_NEG_RE =
+  /(?:没有?|未能?|没能|尚未|还没有?|还未|并未)([^，,。！？；;\n]{0,6})$/;
+const CALLBACK_GAP_DOUBLE_DENIAL_RE = /(?:不是|并非|并不是|哪里是)(?:没|未)/;
+const CALLBACK_GAP_FILLER_RE =
+  /^(?:得到|能|给|给我|帮我|及时|一直|到现在|至今|也|还|妥善|如期|顺利)*$/;
+
+function scoreCallbackChunk(chunk: string): {
+  neg: number;
+  pos: number;
+  resolvedPos: number;
+  ambiguous: number;
+} {
+  let neg = 0;
+  let pos = 0;
+  let resolvedPos = 0;
+  let ambiguous = 0;
+  const clauses = chunk.split(/[，,。！？；;\n]+/).filter(Boolean);
+  for (const clause of clauses) {
+    NEGATIVE_CALLBACK_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = NEGATIVE_CALLBACK_RE.exec(clause)) !== null) {
+      const pre = clause.slice(Math.max(0, m.index - 12), m.index);
+      if (CALLBACK_NEG_DENIAL_PREFIX_RE.test(pre)) continue;
+      if (
+        CALLBACK_SYMPTOM_TARGET_RE.test(m[0]) &&
+        CALLBACK_SYMPTOM_DENIAL_PREFIX_RE.test(pre)
+      ) {
+        continue;
+      }
+      neg += 1;
+    }
+
+    POSITIVE_RESOLUTION_RE.lastIndex = 0;
+    while ((m = POSITIVE_RESOLUTION_RE.exec(clause)) !== null) {
+      const pre = clause.slice(Math.max(0, m.index - 12), m.index);
+      if (CALLBACK_POS_NEG_PREFIX_RE.test(pre)) continue;
+      // 否定词与解决类动词之间夹有若干字（如"没有得到解决""未能解决"）：
+      // 规则层不得判为 POSITIVE；明确的未解决填充词计为负反馈，其余交由 LLM。
+      const gapPre = clause.slice(Math.max(0, m.index - 8), m.index);
+      const gap = CALLBACK_GAP_NEG_RE.exec(gapPre);
+      if (gap && !CALLBACK_GAP_DOUBLE_DENIAL_RE.test(gapPre)) {
+        if (CALLBACK_GAP_FILLER_RE.test(gap[1])) neg += 1;
+        else ambiguous += 1;
+        continue;
+      }
+      resolvedPos += 1;
+      pos += 1;
+    }
+
+    POSITIVE_POLITE_RE.lastIndex = 0;
+    while ((m = POSITIVE_POLITE_RE.exec(clause)) !== null) {
+      const pre = clause.slice(Math.max(0, m.index - 12), m.index);
+      if (CALLBACK_POS_NEG_PREFIX_RE.test(pre)) continue;
+      pos += 1;
+    }
+  }
+  return { neg, pos, resolvedPos, ambiguous };
+}
+
+const CALLBACK_AFTER_PROBLEM_RE = /[没未不还又]|照样|问题|漏|响|臭|坏|吵|堵|没人/;
+
+export function evaluateCallbackSentiment(
+  transcript: string
+): "NEGATIVE" | "POSITIVE" | "UNCLEAR" {
+  const text = (transcript || "").trim();
+  if (!text) return "UNCLEAR";
+
+  CALLBACK_ADVERSATIVE_RE.lastIndex = 0;
+  let lastAdv: RegExpExecArray | null = null;
+  let advMatch: RegExpExecArray | null;
+  while ((advMatch = CALLBACK_ADVERSATIVE_RE.exec(text)) !== null) {
+    lastAdv = advMatch;
+  }
+
+  if (lastAdv) {
+    const before = text.slice(0, lastAdv.index);
+    const after = text.slice(lastAdv.index + lastAdv[0].length);
+    const afterScore = scoreCallbackChunk(after);
+    if (afterScore.neg > 0) return "NEGATIVE";
+    if (afterScore.resolvedPos > 0) return "POSITIVE";
+    if (afterScore.ambiguous > 0) return "UNCLEAR";
+    const beforeVerdict = evaluateCallbackSentiment(before);
+    if (beforeVerdict === "NEGATIVE") return "NEGATIVE";
+    // 转折后含问题迹象时，绝不以转折前的客套/声称"已解决"判为满意，交由 LLM 复核。
+    if (CALLBACK_AFTER_PROBLEM_RE.test(after)) return "UNCLEAR";
+    if (beforeVerdict !== "UNCLEAR") return beforeVerdict;
+    if (afterScore.pos > 0) return "POSITIVE";
+    return "UNCLEAR";
+  }
+
+  const score = scoreCallbackChunk(text);
+  if (score.neg > 0) return "NEGATIVE";
+  if (score.ambiguous > 0) return "UNCLEAR";
+  if (score.pos > 0) return "POSITIVE";
+  return "UNCLEAR";
+}
 
 function clampStr(value: unknown, max: number): string {
   const s = typeof value === "string" ? value.trim() : value == null ? "" : String(value).trim();
@@ -372,34 +609,45 @@ function maskFreeText(text: string): string {
 async function callSystemTwoJsonSafe<T>(
   schema: z.ZodType<T>,
   messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
-  maxTokens = 512
+  maxTokens = 512,
+  signal?: AbortSignal
 ): Promise<{ data: T; usedLlm: true } | null> {
+  if (signal?.aborted) {
+    throw createAbortError(signal);
+  }
+  const linked = linkAbortSignals(LLM_SHORT_TIMEOUT_MS, signal);
   try {
-    const engine = await Promise.race([
-      getSystemTwoEngine(),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("System-2 init timeout")), LLM_SHORT_TIMEOUT_MS)
-      ),
-    ]);
-
-    if (engine.getActiveBackend().toLowerCase().includes("fallback")) {
-      return null;
+    return await getLlmPool().run(
+      async (slotSignal) => {
+        const effectiveSignal = slotSignal ?? linked.signal;
+        if (effectiveSignal.aborted) {
+          throw createAbortError(effectiveSignal);
+        }
+        const engine = await getSystemTwoEngine();
+        if (effectiveSignal.aborted) {
+          throw createAbortError(effectiveSignal);
+        }
+        if (engine.getActiveBackend().toLowerCase().includes("fallback")) {
+          return null;
+        }
+        const res = await engine.createJSON(schema, {
+          messages,
+          enableThinking: false,
+          temperature: 0.1,
+          maxTokens,
+          signal: effectiveSignal,
+        });
+        return { data: res.data, usedLlm: true as const };
+      },
+      { lane: "interactive", signal: linked.signal }
+    );
+  } catch (err) {
+    if (signal?.aborted || (isAbortError(err) && signal?.aborted)) {
+      throw createAbortError(signal);
     }
-
-    const res = await Promise.race([
-      engine.createJSON(schema, {
-        messages,
-        enableThinking: false,
-        temperature: 0.1,
-        maxTokens,
-      }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("System-2 inference timeout")), LLM_SHORT_TIMEOUT_MS)
-      ),
-    ]);
-    return { data: res.data, usedLlm: true };
-  } catch {
     return null;
+  } finally {
+    linked.cleanup();
   }
 }
 
@@ -630,7 +878,7 @@ function extractAddressSlot(text: string, domainType: DomainType): string {
     // 仅剥离匹配串开头的叙事引导词，避免误切「XX路88号楼下XX店」的门牌前缀
     const val = raw
       .replace(
-        /^(?:我家|我们|小区|目前|现在|关于|具体)?(?:位于|具体地址是?|具体位置是?|地址是?|位置是?|就在|在|到|是|反映|投诉|楼下|旁边|附近|门口|对面|的|了)+/,
+        /^(?:我是|我家|我们|我|小区|目前|现在|关于|具体)?(?:位于|具体地址是?|具体位置是?|地址是?|位置是?|就在|在|到|是|反映|投诉|楼下|旁边|附近|门口|对面|的|了)+/,
         ""
       )
       .trim();
@@ -666,7 +914,7 @@ function extractSubjectSlot(text: string, domainType: DomainType): string {
     );
     if (labeledEcom?.[1]) {
       const cleaned = labeledEcom[1].replace(/^(?:我?在|我?从|买的|购买的)+/, "").trim();
-      if (cleaned.length >= 2 && !GENERIC_SUBJECT_RE.test(cleaned)) {
+      if (cleaned.length >= 2 && !isGenericSubject(cleaned)) {
         return cleaned.slice(0, 120);
       }
     }
@@ -679,7 +927,7 @@ function extractSubjectSlot(text: string, domainType: DomainType): string {
         .replace(/^.*?(?:买的|购买的|下单的|收到|寄来的|损坏的|变质的)/, "")
         .trim();
       const val = stripped.length >= 2 ? stripped : productMatch[1];
-      if (!GENERIC_SUBJECT_RE.test(val)) return val.slice(0, 120);
+      if (!isGenericSubject(val)) return val.slice(0, 120);
     }
 
     const shopOrCarrierMatch = compact.match(
@@ -687,9 +935,9 @@ function extractSubjectSlot(text: string, domainType: DomainType): string {
     );
     if (shopOrCarrierMatch?.[1]) {
       const stripped = shopOrCarrierMatch[1]
-        .replace(/^(?:我?在|我?从|承运商是?|快递是?|店铺是?|关于|投诉)+/, "")
+        .replace(/^(?:我的|买的|收到的|寄来的|我?在|我?从|承运商是?|快递是?|店铺是?|关于|投诉)+/, "")
         .trim();
-      if (stripped.length >= 2 && !GENERIC_SUBJECT_RE.test(stripped)) {
+      if (stripped.length >= 2 && !isGenericSubject(stripped)) {
         return stripped.slice(0, 120);
       }
     }
@@ -701,7 +949,7 @@ function extractSubjectSlot(text: string, domainType: DomainType): string {
   const candidateRaw = (govSubjMatch?.[1] || govSubjMatch?.[2] || "").trim();
   const candidateParts = candidateRaw.split(/(?:街道|镇|大道|路|巷|街|门口|楼下|旁边|附近|在|位于)/);
   const candidate = (candidateParts[candidateParts.length - 1] || candidateRaw).trim();
-  if (candidate && candidate.length >= 2 && !GENERIC_SUBJECT_RE.test(candidate)) {
+  if (candidate && candidate.length >= 2 && !isGenericSubject(candidate)) {
     return candidate.slice(0, 120);
   }
   return "";
@@ -776,6 +1024,7 @@ export async function processIntakeChat(input: {
   regionId: string;
   messages: IntakeChatMessage[];
   draft?: Partial<IntakeDraft>;
+  signal?: AbortSignal;
 }): Promise<{
   domainType: DomainType;
   reply: string;
@@ -784,6 +1033,9 @@ export async function processIntakeChat(input: {
   readyToSubmit: boolean;
   usedLlm: boolean;
 }> {
+  if (input.signal?.aborted) {
+    throw createAbortError(input.signal);
+  }
   const options = await loadIntakeOptions(input.regionId);
   const domainType = options.domainProfile.domainType;
 
@@ -801,7 +1053,7 @@ export async function processIntakeChat(input: {
   const existingCategory = clampStr(input.draft?.category, 64);
   const existingAddress = clampStr(input.draft?.address, 120);
   const rawExistingSubject = clampStr(input.draft?.subject, 120);
-  const existingSubject = GENERIC_SUBJECT_RE.test(rawExistingSubject) ? "" : rawExistingSubject;
+  const existingSubject = isGenericSubject(rawExistingSubject) ? "" : rawExistingSubject;
   const existingPhone = clampStr(input.draft?.contactPhone, 32);
 
   // 1. 确定性中文规则抽取（永远保底可用）
@@ -858,7 +1110,8 @@ export async function processIntakeChat(input: {
           content: `历史累积陈述：${anonCombined.text}\n最新一句：${anonLatest.text}`,
         },
       ],
-      480
+      480,
+      input.signal
     );
 
     if (llmRes) {
@@ -874,19 +1127,56 @@ export async function processIntakeChat(input: {
         title: clampStr(restored.title, 48),
         subdistrict: validSub,
         category: validCat,
-        subject: GENERIC_SUBJECT_RE.test(llmSubj) ? "" : llmSubj,
+        subject: isGenericSubject(llmSubj) ? "" : llmSubj,
         address: clampStr(restored.address, 120),
       };
     }
   }
 
+  // 已确认的 existing* 槽位优先保护；缺失槽位优先采纳经校验的 LLM 语义抽取，并保留明确 SKU/订单号
+  const preferExplicitEcomOrder =
+    domainType === "ECOMMERCE_CS" &&
+    /^订单\s+[A-Za-z0-9-]+/.test(ruleAddress) &&
+    !/[A-Za-z0-9]{5,}/.test(llmPatch.address || "");
+  const preferExplicitSku =
+    domainType === "ECOMMERCE_CS" &&
+    /^SKU[-_]/i.test(ruleSubject) &&
+    !/SKU[-_]/i.test(llmPatch.subject || "");
+
+  const prevDraftForTitle: IntakeDraft = {
+    title: "",
+    content: clampStr(input.draft?.content, 2000),
+    subdistrict: existingSubdistrict,
+    category: existingCategory,
+    subject: existingSubject,
+    address: existingAddress,
+    contactPhone: existingPhone,
+  };
+  const prevFirstClause =
+    prevDraftForTitle.content.split(/[。！？；;\n]/)[0]?.trim().slice(0, 36) || "";
+  const prevAutoTitle = prevDraftForTitle.content
+    ? buildConciseTitle(prevDraftForTitle, domainType)
+    : "";
+  const isPlaceholderTitle =
+    !existingTitle ||
+    existingTitle === "市民民生诉求登记" ||
+    existingTitle === "电商售后客诉登记" ||
+    (prevFirstClause.length >= 4 && existingTitle === prevFirstClause) ||
+    (Boolean(prevAutoTitle) && existingTitle === prevAutoTitle);
+
   const mergedDraft: IntakeDraft = {
-    title: existingTitle || llmPatch.title || "",
+    title: isPlaceholderTitle ? llmPatch.title || "" : existingTitle,
     content: clampStr(combinedRaw, 2000),
-    subdistrict: ruleSubdistrict || llmPatch.subdistrict || "",
-    category: ruleCategory || llmPatch.category || "",
-    subject: ruleSubject || llmPatch.subject || "",
-    address: ruleAddress || llmPatch.address || "",
+    subdistrict: existingSubdistrict || llmPatch.subdistrict || ruleSubdistrict || "",
+    category: existingCategory || llmPatch.category || ruleCategory || "",
+    subject:
+      existingSubject ||
+      (preferExplicitSku ? ruleSubject : llmPatch.subject || ruleSubject) ||
+      "",
+    address:
+      existingAddress ||
+      (preferExplicitEcomOrder ? ruleAddress : llmPatch.address || ruleAddress) ||
+      "",
     contactPhone: clampStr(extractedPhone, 32),
   };
 
@@ -970,6 +1260,8 @@ export async function submitCitizenTicket(input: {
     slaHours = decision.slaHours;
     stabilityRisk = decision.stabilityRisk;
   } else {
+    const rawFullText = [cleanTitle, content].filter(Boolean).join(" ");
+    const symbolicRedline = hasCivicRedlineSignal(rawFullText);
     try {
       const systemOne = await getIntakeSystemOne();
       const decision = await systemOne.evaluate(
@@ -980,16 +1272,16 @@ export async function submitCitizenTicket(input: {
         },
         { townships: vocab.townships }
       );
+      stabilityRisk = decision.stabilityRisk || symbolicRedline;
       urgency =
-        decision.stabilityRisk || decision.urgencyLevel === 3
+        stabilityRisk || decision.urgencyLevel === 3
           ? "URGENT"
           : decision.urgencyLevel === 2
             ? "MEDIUM"
             : "NORMAL";
-      slaHours = decision.slaHours;
-      stabilityRisk = decision.stabilityRisk;
+      slaHours = stabilityRisk ? 2 : decision.slaHours;
     } catch {
-      stabilityRisk = REDLINE_KEYWORDS_RE.test(content);
+      stabilityRisk = symbolicRedline;
       urgency = stabilityRisk ? "URGENT" : "NORMAL";
       slaHours = stabilityRisk ? 2 : 120;
     }
@@ -1341,7 +1633,7 @@ export async function listAgentTasks(
   const profile = await getRegionDomainProfile(regionId);
 
   const rows = await sql.unsafe(
-    `SELECT * FROM "${schemaName}".agent_tasks ORDER BY updated_at DESC, created_at DESC LIMIT 100`
+    `SELECT * FROM "${schemaName}".agent_tasks ORDER BY updated_at DESC, created_at DESC, id DESC LIMIT 100`
   );
   const allTasks = rows.map((r) => toTaskDto(r as Record<string, unknown>));
   const summary = summarizeTasks(allTasks);
@@ -1388,7 +1680,7 @@ function detectMissingSlots(
   if (!addr || (isEcommerce && addr === sub)) {
     slots.push(isEcommerce ? "订单号/收货仓网明细" : "具体路名门牌/地点");
   }
-  if (!subj || GENERIC_SUBJECT_RE.test(subj)) {
+  if (!subj || isGenericSubject(subj)) {
     slots.push(isEcommerce ? "涉事SKU/商品名称" : "涉事主体/商铺单位");
   }
   if (!sub) {
@@ -1427,9 +1719,11 @@ export async function runAgentPatrol(regionId: string): Promise<{
   ]);
   const isEcommerce = profile.domainType === "ECOMMERCE_CS";
 
+  const genericSubjectSqlList =
+    "('涉事方', '相关主体', '未知', '不详', '无', '空', 'null', 'undefined', '市民', '车主', '商家', '某单位', '某店铺', '买家', '卖家', '客服', '当事人', '业主', '消费者', '顾客', '商铺', '店铺', '单位', '涉事单位', '涉事店铺', '涉事商家', '涉事主体')";
   const missingCondition = isEcommerce
-    ? `(address IS NULL OR address = '' OR address = subdistrict OR char_length(coalesce(address, '')) <= 6 OR canonical_subject IS NULL OR canonical_subject = '' OR canonical_subject IN ('涉事方', '相关主体') OR confidence IS NULL OR confidence < 70)`
-    : `(address IS NULL OR address = '' OR canonical_subject IS NULL OR canonical_subject = '' OR canonical_subject IN ('涉事方', '相关主体') OR confidence IS NULL OR confidence < 70)`;
+    ? `(t.address IS NULL OR t.address = '' OR t.address = t.subdistrict OR char_length(coalesce(t.address, '')) <= 6 OR t.canonical_subject IS NULL OR t.canonical_subject = '' OR t.canonical_subject IN ${genericSubjectSqlList} OR t.confidence IS NULL OR t.confidence < 70)`
+    : `(t.address IS NULL OR t.address = '' OR t.canonical_subject IS NULL OR t.canonical_subject = '' OR t.canonical_subject IN ${genericSubjectSqlList} OR t.confidence IS NULL OR t.confidence < 70)`;
 
   const [existingRows, stabilityRows, missingRowsRaw, overdueThemeRowsRaw, resolvedThemeRows] =
     await Promise.all([
@@ -1437,36 +1731,81 @@ export async function runAgentPatrol(regionId: string): Promise<{
         `SELECT target_type, target_id, task_type FROM "${schemaName}".agent_tasks WHERE status <> 'REJECTED'`
       ),
       sql.unsafe(`
-        SELECT id, ticket_no, title, summarize_title, content, masked_content,
-               citizen_phone, subdistrict, address, canonical_subject, confidence, stability_risk
-        FROM "${schemaName}".tickets
-        WHERE status IN ('PENDING', 'IN_PROGRESS', 'REOPENED')
-          AND stability_risk = true
+        SELECT t.id, t.ticket_no, t.title, t.summarize_title, t.content, t.masked_content,
+               t.citizen_phone, t.subdistrict, t.address, t.canonical_subject, t.confidence, t.stability_risk
+        FROM "${schemaName}".tickets t
+        WHERE t.status IN ('PENDING', 'IN_PROGRESS', 'REOPENED')
+          AND t.stability_risk = true
+          AND NOT EXISTS (
+            SELECT 1 FROM "${schemaName}".agent_tasks at
+            WHERE at.target_type = 'TICKET'
+              AND at.target_id = t.id
+              AND at.task_type = 'REDLINE_BLOCK'
+              AND at.status <> 'REJECTED'
+          )
+        ORDER BY t.create_time DESC NULLS LAST, t.id DESC
         LIMIT 24
       `),
       sql.unsafe(`
-        SELECT id, ticket_no, title, summarize_title, content, masked_content,
-               citizen_phone, subdistrict, source_category, address, canonical_subject, confidence, stability_risk
-        FROM "${schemaName}".tickets
-        WHERE status = 'PENDING'
-          AND coalesce(stability_risk, false) = false
+        SELECT t.id, t.ticket_no, t.title, t.summarize_title, t.content, t.masked_content,
+               t.citizen_phone, t.subdistrict, t.source_category, t.address, t.canonical_subject, t.confidence, t.stability_risk
+        FROM "${schemaName}".tickets t
+        WHERE t.status = 'PENDING'
+          AND coalesce(t.stability_risk, false) = false
           AND ${missingCondition}
+          AND NOT EXISTS (
+            SELECT 1 FROM "${schemaName}".agent_tasks at
+            WHERE at.target_type = 'TICKET'
+              AND at.target_id = t.id
+              AND at.task_type = 'MISSING_INFO'
+              AND at.status <> 'REJECTED'
+          )
+        ORDER BY
+          (CASE WHEN t.address IS NULL OR t.address = '' OR t.canonical_subject IS NULL OR t.canonical_subject = '' THEN 0 ELSE 1 END) ASC,
+          t.create_time DESC NULLS LAST,
+          t.id DESC
         LIMIT 30
       `),
       sql.unsafe(`
-        SELECT id, title, category, risk_level, ticket_count, time_span_hours,
-               handling_owner, recommended_action, canonical_location
-        FROM "${schemaName}".themes
-        WHERE handling_status = 'PENDING'
-          AND ticket_count >= 5
-        ORDER BY ticket_count DESC
+        SELECT th.id, th.title, th.category, th.risk_level, th.ticket_count, th.time_span_hours,
+               th.handling_owner, th.recommended_action, th.canonical_location
+        FROM "${schemaName}".themes th
+        WHERE upper(coalesce(th.handling_status, 'PENDING')) = 'PENDING'
+          AND th.ticket_count >= 5
+          AND (
+            (th.handling_eta IS NOT NULL AND th.handling_eta < now())
+            OR (th.handling_eta IS NULL AND (
+              (th.last_at IS NOT NULL AND th.last_at < now() - interval '24 hours')
+              OR (th.first_at IS NOT NULL AND th.first_at < now() - interval '24 hours')
+              OR th.time_span_hours >= 24
+              OR th.created_at < now() - interval '24 hours'
+            ))
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM "${schemaName}".agent_tasks at
+            WHERE at.target_type = 'THEME'
+              AND at.target_id = th.id
+              AND at.task_type = 'SLA_OVERDUE'
+              AND at.status <> 'REJECTED'
+          )
+        ORDER BY
+          CASE upper(coalesce(th.risk_level, '')) WHEN 'HIGH' THEN 0 WHEN 'MEDIUM' THEN 1 ELSE 2 END ASC,
+          th.ticket_count DESC,
+          th.id DESC
         LIMIT 24
       `),
       sql.unsafe(`
-        SELECT id, title, category, ticket_count, handling_owner, recommended_action, canonical_location
-        FROM "${schemaName}".themes
-        WHERE upper(coalesce(handling_status, '')) IN ('RESOLVED', '已办结')
-        ORDER BY last_at DESC NULLS LAST, ticket_count DESC
+        SELECT th.id, th.title, th.category, th.ticket_count, th.handling_owner, th.recommended_action, th.canonical_location
+        FROM "${schemaName}".themes th
+        WHERE upper(coalesce(th.handling_status, '')) IN ('RESOLVED', '已办结')
+          AND NOT EXISTS (
+            SELECT 1 FROM "${schemaName}".agent_tasks at
+            WHERE at.target_type = 'THEME'
+              AND at.target_id = th.id
+              AND at.task_type = 'REOPEN_CALLBACK'
+              AND at.status <> 'REJECTED'
+          )
+        ORDER BY th.last_at DESC NULLS LAST, th.ticket_count DESC, th.id DESC
         LIMIT 12
       `),
     ]);
@@ -1477,29 +1816,17 @@ export async function runAgentPatrol(regionId: string): Promise<{
   }
 
   // 1. 扫描涉稳/合规红线工单 -> L3_BLOCKED (REDLINE_BLOCK)
-  const redlineRows =
-    stabilityRows.length >= 4
-      ? stabilityRows
-      : [
-          ...stabilityRows,
-          ...(await sql.unsafe(`
-            SELECT id, ticket_no, title, summarize_title, content, masked_content,
-                   citizen_phone, subdistrict, address, canonical_subject, confidence, stability_risk
-            FROM "${schemaName}".tickets
-            WHERE status IN ('PENDING', 'IN_PROGRESS', 'REOPENED')
-              AND coalesce(stability_risk, false) = false
-              AND (
-                title ~ '群体|上访|聚集|堵路|罢工|跳楼|食物中毒|12315|媒体曝光|集体维权'
-                OR content ~ '群体|上访|聚集|堵路|罢工|跳楼|食物中毒|12315|媒体曝光|集体维权'
-              )
-            LIMIT 12
-          `)),
-        ];
-
+  const sqlRedlinePattern = isEcommerce ? SQL_ECOM_REDLINE_PATTERN : SQL_CORE_REDLINE_PATTERN;
   const redlineCandidates: PatrolCandidate[] = [];
-  for (const r of redlineRows) {
+  const pushRedlineCandidate = (r: Record<string, unknown>) => {
     const id = String(r.id);
-    if (activeOrDoneKeys.has(`TICKET:${id}:REDLINE_BLOCK`)) continue;
+    if (activeOrDoneKeys.has(`TICKET:${id}:REDLINE_BLOCK`)) return;
+    if (
+      r.stability_risk !== true &&
+      !hasRedlineSignal(`${r.title || ""} ${r.content || ""}`, { isEcommerce })
+    ) {
+      return;
+    }
     const rawTitle = String(r.summarize_title || r.title || r.ticket_no || id);
     const safeTitle = maskFreeText(rawTitle).slice(0, 140);
     const maskedContact = maskContactForGovernance(
@@ -1533,6 +1860,41 @@ export async function runAgentPatrol(regionId: string): Promise<{
       suggestedOwner: isEcommerce ? "售后合规与法务专班" : "涉稳督办专班",
       reason: "命中红线规则（stabilityRisk=true 或高敏舆情/人体健康风险），L3 强制人工熔断拦截",
     });
+  };
+
+  for (const r of stabilityRows) {
+    pushRedlineCandidate(r as Record<string, unknown>);
+  }
+
+  if (stabilityRows.length < 4) {
+    const FALLBACK_PAGE_SIZE = 120;
+    const MAX_FALLBACK_PAGES = 10;
+    for (let page = 0; page < MAX_FALLBACK_PAGES && redlineCandidates.length < 24; page++) {
+      const batch = await sql.unsafe(
+        `
+        SELECT t.id, t.ticket_no, t.title, t.summarize_title, t.content, t.masked_content,
+               t.citizen_phone, t.subdistrict, t.address, t.canonical_subject, t.confidence, t.stability_risk
+        FROM "${schemaName}".tickets t
+        WHERE t.status IN ('PENDING', 'IN_PROGRESS', 'REOPENED')
+          AND coalesce(t.stability_risk, false) = false
+          AND (t.title ~ $1 OR t.content ~ $1)
+          AND NOT EXISTS (
+            SELECT 1 FROM "${schemaName}".agent_tasks at
+            WHERE at.target_type = 'TICKET'
+              AND at.target_id = t.id
+              AND at.task_type = 'REDLINE_BLOCK'
+              AND at.status <> 'REJECTED'
+          )
+        ORDER BY t.create_time DESC NULLS LAST, t.id DESC
+        LIMIT ${FALLBACK_PAGE_SIZE} OFFSET $2
+        `,
+        [sqlRedlinePattern, page * FALLBACK_PAGE_SIZE]
+      );
+      for (const r of batch) {
+        pushRedlineCandidate(r as Record<string, unknown>);
+      }
+      if (batch.length < FALLBACK_PAGE_SIZE) break;
+    }
   }
 
   // 2. 扫描要素缺失/低置信度待处置工单 -> MISSING_INFO (政务 L2_APPROVAL / 电商 L1_AUTO)
@@ -1546,7 +1908,7 @@ export async function runAgentPatrol(regionId: string): Promise<{
   for (const r of missingRows) {
     const id = String(r.id);
     const fullText = `${r.title || ""} ${r.content || ""}`;
-    if (REDLINE_KEYWORDS_RE.test(fullText)) continue;
+    if (hasRedlineSignal(fullText, { isEcommerce })) continue;
     if (activeOrDoneKeys.has(`TICKET:${id}:MISSING_INFO`)) continue;
 
     const rawTitle = String(r.summarize_title || r.title || r.ticket_no || id);
@@ -1659,39 +2021,55 @@ export async function runAgentPatrol(regionId: string): Promise<{
 
   // 如果该租户没有任何已办结主题，降级检查已办结单工单（供演示假闭环回访）
   if (resolvedThemeRows.length === 0) {
-    const resolvedTickets = await sql.unsafe(`
-      SELECT id, ticket_no, title, summarize_title, citizen_phone, content, subdistrict, primary_theme_id
-      FROM "${schemaName}".tickets
-      WHERE status = 'RESOLVED' OR closure_status = 'RESOLVED'
-      ORDER BY closed_at DESC NULLS LAST, created_at DESC
+    const resolvedThemeExists = await sql.unsafe(`
+      SELECT 1 FROM "${schemaName}".themes
+      WHERE upper(coalesce(handling_status, '')) IN ('RESOLVED', '已办结')
+      LIMIT 1
+    `);
+    if (resolvedThemeExists.length === 0) {
+      const resolvedTickets = await sql.unsafe(`
+      SELECT t.id, t.ticket_no, t.title, t.summarize_title, t.citizen_phone, t.content, t.subdistrict, t.primary_theme_id
+      FROM "${schemaName}".tickets t
+      WHERE (t.status = 'RESOLVED' OR t.closure_status = 'RESOLVED')
+        AND NOT EXISTS (
+          SELECT 1 FROM "${schemaName}".agent_tasks at
+          WHERE at.task_type = 'REOPEN_CALLBACK'
+            AND at.status <> 'REJECTED'
+            AND (
+              (at.target_type = 'TICKET' AND at.target_id = t.id)
+              OR (t.primary_theme_id IS NOT NULL AND at.target_type = 'THEME' AND at.target_id = t.primary_theme_id)
+            )
+        )
+      ORDER BY t.closed_at DESC NULLS LAST, t.created_at DESC, t.id DESC
       LIMIT 6
     `);
-    for (const tk of resolvedTickets) {
-      const id = String(tk.id);
-      const themeId = tk.primary_theme_id ? String(tk.primary_theme_id) : "";
-      if (activeOrDoneKeys.has(`TICKET:${id}:REOPEN_CALLBACK`)) continue;
-      if (themeId && activeOrDoneKeys.has(`THEME:${themeId}:REOPEN_CALLBACK`)) continue;
-      const safeTitle = maskFreeText(String(tk.summarize_title || tk.title || tk.ticket_no)).slice(0, 140);
-      const maskedContact = maskContactForGovernance(
-        tk.citizen_phone as string | null,
-        tk.content as string | null
-      );
-      callbackCandidates.push({
-        taskType: "REOPEN_CALLBACK",
-        autonomyLevel: "L2_APPROVAL",
-        status: "PENDING",
-        targetType: "TICKET",
-        targetId: id,
-        targetTitle: `${tk.ticket_no} · ${safeTitle}`,
-        channel: "VOICE_SIM",
-        maskedContact,
-        missingSlots: [],
-        draftMessage: maskFreeText(
-          `您好（联系方式 ${maskedContact}），关于已办结工单「${safeTitle}」进行48小时满意度回访，请问问题是否已经真正解决？`
-        ),
-        suggestedOwner: `${tk.subdistrict || "属地"}回访坐席`,
-        reason: "已办结工单 48h 满意度核验，排查假闭环",
-      });
+      for (const tk of resolvedTickets) {
+        const id = String(tk.id);
+        const themeId = tk.primary_theme_id ? String(tk.primary_theme_id) : "";
+        if (activeOrDoneKeys.has(`TICKET:${id}:REOPEN_CALLBACK`)) continue;
+        if (themeId && activeOrDoneKeys.has(`THEME:${themeId}:REOPEN_CALLBACK`)) continue;
+        const safeTitle = maskFreeText(String(tk.summarize_title || tk.title || tk.ticket_no)).slice(0, 140);
+        const maskedContact = maskContactForGovernance(
+          tk.citizen_phone as string | null,
+          tk.content as string | null
+        );
+        callbackCandidates.push({
+          taskType: "REOPEN_CALLBACK",
+          autonomyLevel: "L2_APPROVAL",
+          status: "PENDING",
+          targetType: "TICKET",
+          targetId: id,
+          targetTitle: `${tk.ticket_no} · ${safeTitle}`,
+          channel: "VOICE_SIM",
+          maskedContact,
+          missingSlots: [],
+          draftMessage: maskFreeText(
+            `您好（联系方式 ${maskedContact}），关于已办结工单「${safeTitle}」进行48小时满意度回访，请问问题是否已经真正解决？`
+          ),
+          suggestedOwner: `${tk.subdistrict || "属地"}回访坐席`,
+          reason: "已办结工单 48h 满意度核验，排查假闭环",
+        });
+      }
     }
   }
 
@@ -1712,11 +2090,12 @@ export async function runAgentPatrol(regionId: string): Promise<{
     if (!progressed) break;
   }
 
-  const nowIso = new Date().toISOString();
+  const baseMs = Date.now();
   if (selected.length > 0) {
     await Promise.all(
-      selected.map((item) => {
-        const taskId = `at-${Date.now()}-${randomUUID().slice(0, 8)}`;
+      selected.map((item, idx) => {
+        const taskId = `at-${baseMs}-${idx}-${randomUUID().slice(0, 8)}`;
+        const itemIso = new Date(baseMs - idx).toISOString();
         return sql.unsafe(
           `
           INSERT INTO "${schemaName}".agent_tasks (
@@ -1743,7 +2122,7 @@ export async function runAgentPatrol(regionId: string): Promise<{
             item.draftMessage,
             item.suggestedOwner,
             item.reason,
-            nowIso,
+            itemIso,
           ]
         );
       })
@@ -1909,6 +2288,7 @@ export async function processAgentVoiceTurn(input: {
   transcript: string;
   turnIndex?: number;
   operatorName: string;
+  signal?: AbortSignal;
 }): Promise<
   | {
       ok: true;
@@ -1921,6 +2301,9 @@ export async function processAgentVoiceTurn(input: {
     }
   | { ok: false; status: 400 | 404; code: string; error: string }
 > {
+  if (input.signal?.aborted) {
+    throw createAbortError(input.signal);
+  }
   const schemaName = await ensureAgentGovernanceTables(input.regionId);
   const rows = await sql.unsafe(
     `SELECT * FROM "${schemaName}".agent_tasks WHERE id = $1 LIMIT 1`,
@@ -1949,14 +2332,40 @@ export async function processAgentVoiceTurn(input: {
   const now = new Date();
 
   if (task.taskType === "MISSING_INFO") {
-    let address = extractAddressSlot(transcript, domainType);
-    let canonicalSubject = extractSubjectSlot(transcript, domainType);
-    let subdistrict = matchChannelOrSubdistrict(
+    const [existingTicket] = await tenantDb
+      .select({
+        address: ticketsTable.address,
+        canonicalSubject: ticketsTable.canonicalSubject,
+        subdistrict: ticketsTable.subdistrict,
+        confidence: ticketsTable.confidence,
+      })
+      .from(ticketsTable)
+      .where(eq(ticketsTable.id, task.targetId))
+      .limit(1);
+
+    const existingAddr = (existingTicket?.address || "").trim();
+    const existingSubd = (existingTicket?.subdistrict || "").trim();
+    const existingSubj = (existingTicket?.canonicalSubject || "").trim();
+    const isEcommerce = domainType === "ECOMMERCE_CS";
+
+    const hasConfirmedAddress =
+      Boolean(existingAddr) &&
+      !(isEcommerce && (existingAddr === existingSubd || existingAddr.length <= 6));
+    const hasConfirmedSubject = Boolean(existingSubj) && !isGenericSubject(existingSubj);
+    const hasConfirmedSubdistrict = Boolean(existingSubd);
+
+    const ruleAddr = extractAddressSlot(transcript, domainType);
+    const rawRuleSubj = extractSubjectSlot(transcript, domainType);
+    const ruleSubj = isGenericSubject(rawRuleSubj) ? "" : rawRuleSubj;
+    const ruleSubd = matchChannelOrSubdistrict(
       transcript,
       options.subdistricts,
       domainType,
       input.regionId
     );
+    let llmAddr = "";
+    let llmSubj = "";
+    let llmSubd = "";
     let llmReply = "";
 
     const llmRes = await callSystemTwoJsonSafe(
@@ -1971,36 +2380,45 @@ export async function processAgentVoiceTurn(input: {
         },
         { role: "user", content: anonTranscript.text },
       ],
-      384
+      384,
+      input.signal
     );
 
     if (llmRes) {
       const restored = deanonymize(llmRes.data, anonTranscript.keymap);
-      const llmAddr = (restored.address || "").trim();
-      const llmSubj = (restored.canonicalSubject || "").trim();
-      const llmSubd = (restored.subdistrict || "").trim();
-      if (!address && llmAddr) address = clampStr(llmAddr, 255);
-      if (!canonicalSubject && llmSubj) {
-        canonicalSubject = clampStr(llmSubj, 255);
-      }
-      if (!subdistrict && llmSubd && options.subdistricts.includes(llmSubd)) {
-        subdistrict = llmSubd;
-      }
+      llmAddr = clampStr(restored.address, 255);
+      const rawLlmSubj = clampStr(restored.canonicalSubject, 255);
+      llmSubj = isGenericSubject(rawLlmSubj) ? "" : rawLlmSubj;
+      const candidateSubd = (restored.subdistrict || "").trim();
+      llmSubd = options.subdistricts.includes(candidateSubd) ? candidateSubd : "";
       llmReply = clampStr(restored.reply, 220);
     }
 
+    const preferExplicitEcomOrder =
+      isEcommerce &&
+      /^订单\s+[A-Za-z0-9-]+/.test(ruleAddr) &&
+      !/[A-Za-z0-9]{5,}/.test(llmAddr);
+    const preferExplicitSku =
+      isEcommerce &&
+      /^SKU[-_]/i.test(ruleSubj) &&
+      !/SKU[-_]/i.test(llmSubj);
+
+    const resolvedAddress = preferExplicitEcomOrder ? ruleAddr : llmAddr || ruleAddr;
+    const resolvedSubject = preferExplicitSku ? ruleSubj : llmSubj || ruleSubj;
+    const resolvedSubdistrict = llmSubd || ruleSubd;
+
     const patch: Record<string, string> = {};
-    if (address) patch.address = address.slice(0, 255);
-    if (canonicalSubject) patch.canonicalSubject = canonicalSubject.slice(0, 255);
-    if (subdistrict) patch.subdistrict = subdistrict.slice(0, 64);
+    if (!hasConfirmedAddress && resolvedAddress) {
+      patch.address = resolvedAddress.slice(0, 255);
+    }
+    if (!hasConfirmedSubject && resolvedSubject && !isGenericSubject(resolvedSubject)) {
+      patch.canonicalSubject = resolvedSubject.slice(0, 255);
+    }
+    if (!hasConfirmedSubdistrict && resolvedSubdistrict) {
+      patch.subdistrict = resolvedSubdistrict.slice(0, 64);
+    }
 
     if (Object.keys(patch).length > 0) {
-      const [existingTicket] = await tenantDb
-        .select({ confidence: ticketsTable.confidence })
-        .from(ticketsTable)
-        .where(eq(ticketsTable.id, task.targetId))
-        .limit(1);
-
       await tenantDb
         .update(ticketsTable)
         .set({
@@ -2065,12 +2483,7 @@ export async function processAgentVoiceTurn(input: {
   }
 
   // REOPEN_CALLBACK 分支（48h 满意度回访与假闭环嗅探）
-  let sentiment: "NEGATIVE" | "POSITIVE" | "UNCLEAR" = "UNCLEAR";
-  if (NEGATIVE_CALLBACK_RE.test(transcript)) {
-    sentiment = "NEGATIVE";
-  } else if (POSITIVE_CALLBACK_RE.test(transcript)) {
-    sentiment = "POSITIVE";
-  }
+  let sentiment: "NEGATIVE" | "POSITIVE" | "UNCLEAR" = evaluateCallbackSentiment(transcript);
 
   let llmReply = "";
   const llmCb = await callSystemTwoJsonSafe(
@@ -2083,7 +2496,8 @@ export async function processAgentVoiceTurn(input: {
       },
       { role: "user", content: anonTranscript.text },
     ],
-    320
+    320,
+    input.signal
   );
   if (llmCb) {
     if (sentiment === "UNCLEAR" && llmCb.data.sentiment) {

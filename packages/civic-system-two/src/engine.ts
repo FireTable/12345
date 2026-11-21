@@ -2,14 +2,15 @@ import { z } from 'zod';
 import {
   CivicChatCompletion,
   CivicChatCompletionParams,
+  CivicChatStreamChunk,
   ClusterNodeSpec,
   SystemTwoConfig,
 } from './types';
 import { ISystemTwoAdapter } from './adapters/types';
-import { LocalMetalAdapter } from './adapters/local-metal-adapter';
 import { PooledMetalAdapter } from './adapters/pooled-metal-adapter';
 import { CloudOpenAIAdapter } from './adapters/cloud-openai-adapter';
 import { FallbackAdapter } from './adapters/fallback-adapter';
+import { createAbortError } from './adapters/abort-utils';
 import { parseStructuredJson } from './parser';
 
 export interface CreateJSONOptions {
@@ -19,6 +20,7 @@ export interface CreateJSONOptions {
   maxTokens?: number;
   model?: string;
   response_format?: CivicChatCompletionParams['response_format'];
+  signal?: AbortSignal;
 }
 
 export interface StructuredJSONResult<T> {
@@ -52,6 +54,9 @@ export class SystemTwoEngine {
   private fallbackAdapter: FallbackAdapter;
   private activeAdapter: ISystemTwoAdapter;
   private config: SystemTwoConfig;
+  private readonly clusterSwitchbackCooldownMs: number;
+  private lastClusterProbeAt: number;
+  private clusterProbePromise: Promise<boolean> | null = null;
 
   // Per-endpoint 最近处理过的工单预览（in-memory，进程级单例；不落库）
   // 用于 workbench 按节点展示"该 endpoint 最新处理了哪些工单"。
@@ -71,6 +76,16 @@ export class SystemTwoEngine {
     this.clusterAdapter = clusterAdapter;
     this.cloudAdapter = cloudAdapter;
     this.fallbackAdapter = fallbackAdapter || new FallbackAdapter();
+    const cfgCooldown = (config as SystemTwoConfig & { clusterSwitchbackCooldownMs?: number })
+      .clusterSwitchbackCooldownMs;
+    const envCooldown = Number(process.env.SYSTEM_TWO_SWITCHBACK_COOLDOWN_MS);
+    this.clusterSwitchbackCooldownMs =
+      typeof cfgCooldown === 'number' && Number.isFinite(cfgCooldown) && cfgCooldown >= 0
+        ? cfgCooldown
+        : Number.isFinite(envCooldown) && envCooldown >= 0
+          ? envCooldown
+          : 30_000;
+    this.lastClusterProbeAt = activeAdapter === clusterAdapter ? 0 : Date.now();
   }
 
   /**
@@ -155,12 +170,87 @@ export class SystemTwoEngine {
   async refreshBackend(): Promise<string> {
     if (await this.clusterAdapter.isAvailable()) {
       this.activeAdapter = this.clusterAdapter;
+      this.lastClusterProbeAt = 0;
     } else if (this.cloudAdapter && (await this.cloudAdapter.isAvailable())) {
       this.activeAdapter = this.cloudAdapter;
+      this.lastClusterProbeAt = Date.now();
     } else {
       this.activeAdapter = this.fallbackAdapter;
+      this.lastClusterProbeAt = Date.now();
     }
     return this.activeAdapter.name;
+  }
+
+  /**
+   * 处于降级态（cloud / fallback）时，按冷却时间单飞探活本地集群并在恢复后自动切回。
+   */
+  private async maybeSwitchbackToCluster(signal?: AbortSignal): Promise<void> {
+    if (this.activeAdapter === this.clusterAdapter) return;
+    if (signal?.aborted) {
+      throw createAbortError(signal);
+    }
+    if (
+      !this.clusterProbePromise &&
+      Date.now() - this.lastClusterProbeAt < this.clusterSwitchbackCooldownMs
+    ) {
+      return;
+    }
+
+    if (!this.clusterProbePromise) {
+      this.lastClusterProbeAt = Date.now();
+      this.clusterProbePromise = (async () => {
+        try {
+          const ok = await this.clusterAdapter.isAvailable();
+          if (ok) {
+            this.activeAdapter = this.clusterAdapter;
+            this.lastClusterProbeAt = 0;
+            console.log('[SystemTwoEngine] ✅ 本地算力集群已恢复可用，已自动切回 PooledMetalAdapter。');
+            return true;
+          }
+          if (
+            this.activeAdapter === this.fallbackAdapter &&
+            this.cloudAdapter &&
+            (await this.cloudAdapter.isAvailable())
+          ) {
+            this.activeAdapter = this.cloudAdapter;
+          }
+          this.lastClusterProbeAt = Date.now();
+          return false;
+        } catch {
+          this.lastClusterProbeAt = Date.now();
+          return false;
+        } finally {
+          this.clusterProbePromise = null;
+        }
+      })();
+    }
+
+    const probe = this.clusterProbePromise;
+    if (!signal) {
+      await probe;
+      return;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      if (signal.aborted) {
+        reject(createAbortError(signal));
+        return;
+      }
+      const onAbort = () => {
+        reject(createAbortError(signal));
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+      probe.then(
+        () => {
+          signal.removeEventListener('abort', onAbort);
+          resolve();
+        },
+        (err) => {
+          signal.removeEventListener('abort', onAbort);
+          reject(err);
+        }
+      );
+    });
   }
 
   /**
@@ -180,19 +270,124 @@ export class SystemTwoEngine {
     };
   }
 
+  private async *streamFromAdapter(
+    adapter: ISystemTwoAdapter,
+    params: CivicChatCompletionParams
+  ): AsyncGenerator<CivicChatStreamChunk> {
+    if (params.signal?.aborted) {
+      throw createAbortError(params.signal);
+    }
+    if (adapter.chatCompletionsStream) {
+      yield* adapter.chatCompletionsStream(params);
+      return;
+    }
+    const completion = await adapter.chatCompletions(params);
+    const choice = completion.choices[0];
+    yield {
+      deltaContent: choice?.message.content || '',
+      deltaReasoning: choice?.message.reasoning_content,
+      finishReason: choice?.finish_reason || 'stop',
+      endpoint: null,
+      usage: completion.usage,
+      timings: completion.timings,
+    };
+  }
+
+  private async *streamCompletions(
+    params: CivicChatCompletionParams
+  ): AsyncGenerator<CivicChatStreamChunk> {
+    if (params.signal?.aborted) {
+      throw createAbortError(params.signal);
+    }
+
+    await this.maybeSwitchbackToCluster(params.signal);
+    if (params.signal?.aborted) {
+      throw createAbortError(params.signal);
+    }
+
+    let hasYielded = false;
+    try {
+      for await (const chunk of this.streamFromAdapter(this.activeAdapter, params)) {
+        if (
+          chunk.deltaContent ||
+          chunk.deltaReasoning ||
+          (chunk.finishReason !== undefined && chunk.finishReason !== null)
+        ) {
+          hasYielded = true;
+        }
+        yield chunk;
+      }
+      return;
+    } catch (error: any) {
+      if (params.signal?.aborted || hasYielded) {
+        throw error;
+      }
+      console.warn(
+        `[SystemTwoEngine] 主后端 (${this.activeAdapter.name}) 流式调用失败: ${error?.message || error}，正在尝试灾备链路...`
+      );
+    }
+
+    if (
+      this.activeAdapter !== this.cloudAdapter &&
+      this.cloudAdapter &&
+      (await this.cloudAdapter.isAvailable())
+    ) {
+      if (params.signal?.aborted) {
+        throw createAbortError(params.signal);
+      }
+      this.activeAdapter = this.cloudAdapter;
+      this.lastClusterProbeAt = Date.now();
+      let cloudYielded = false;
+      try {
+        for await (const chunk of this.streamFromAdapter(this.cloudAdapter, params)) {
+          if (
+            chunk.deltaContent ||
+            chunk.deltaReasoning ||
+            (chunk.finishReason !== undefined && chunk.finishReason !== null)
+          ) {
+            cloudYielded = true;
+          }
+          yield chunk;
+        }
+        return;
+      } catch (cloudError) {
+        if (params.signal?.aborted || cloudYielded) {
+          throw cloudError;
+        }
+      }
+    }
+
+    if (params.signal?.aborted) {
+      throw createAbortError(params.signal);
+    }
+    this.activeAdapter = this.fallbackAdapter;
+    this.lastClusterProbeAt = Date.now();
+    yield* this.streamFromAdapter(this.fallbackAdapter, params);
+  }
+
   /**
-   * 100% 兼容 OpenAI chat.completions.create 接口
+   * 100% 兼容 OpenAI chat.completions.create 接口，并补充 createStream 流式接口
    */
   readonly chat = {
     completions: {
       create: async <T = unknown>(
         params: CivicChatCompletionParams
       ): Promise<CivicChatCompletion<T>> => {
+        if (params.signal?.aborted) {
+          throw createAbortError(params.signal);
+        }
+        await this.maybeSwitchbackToCluster(params.signal);
+        if (params.signal?.aborted) {
+          throw createAbortError(params.signal);
+        }
         try {
           return (await this.activeAdapter.chatCompletions(
             params
           )) as CivicChatCompletion<T>;
         } catch (error: any) {
+          if (params.signal?.aborted) {
+            throw error;
+          }
           console.warn(
             `[SystemTwoEngine] 主后端 (${this.activeAdapter.name}) 调用失败: ${error.message}，正在尝试灾备链路...`
           );
@@ -203,18 +398,29 @@ export class SystemTwoEngine {
             this.cloudAdapter &&
             (await this.cloudAdapter.isAvailable())
           ) {
+            if (params.signal?.aborted) {
+              throw createAbortError(params.signal);
+            }
             this.activeAdapter = this.cloudAdapter;
+            this.lastClusterProbeAt = Date.now();
             return (await this.cloudAdapter.chatCompletions(
               params
             )) as CivicChatCompletion<T>;
           }
 
+          if (params.signal?.aborted) {
+            throw createAbortError(params.signal);
+          }
           this.activeAdapter = this.fallbackAdapter;
+          this.lastClusterProbeAt = Date.now();
           return (await this.fallbackAdapter.chatCompletions(
             params
           )) as CivicChatCompletion<T>;
         }
       },
+      createStream: (
+        params: CivicChatCompletionParams
+      ): AsyncGenerator<CivicChatStreamChunk> => this.streamCompletions(params),
     },
   };
 
@@ -237,6 +443,7 @@ export class SystemTwoEngine {
       temperature: options.temperature,
       max_tokens: options.maxTokens ?? (enableThinking ? 4096 : 2048),
       response_format: format,
+      signal: options.signal,
     });
 
     const raw = completion.choices[0]?.message.content || '';
@@ -300,6 +507,7 @@ export class SystemTwoEngine {
       maxTokens: params.max_tokens,
       model: params.model,
       response_format: params.response_format,
+      signal: params.signal,
     });
   }
 }

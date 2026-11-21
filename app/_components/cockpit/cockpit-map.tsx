@@ -2,10 +2,90 @@
 
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import type { Map as LeafletMap, GeoJSON as LeafletGeoJSON, Layer } from "leaflet";
+import "leaflet/dist/leaflet.css";
 import { MapPin } from "lucide-react";
 import { getTownshipColor } from "@/lib/civic-cluster";
 import { getTiandituTileUrls } from "@/lib/map/tile-layer";
 import type { RegionInfo } from "../civic/region-context";
+
+function safeCssColor(value: string | undefined, fallback: string): string {
+  const trimmed = (value || "").trim();
+  return /^#[0-9a-fA-F]{3,8}$/.test(trimmed) ? trimmed : fallback;
+}
+
+function buildCockpitBadgeElement(
+  shortLabel: string,
+  count: number,
+  townColor: string,
+  isSelected: boolean,
+  isCompactMap: boolean
+): HTMLElement {
+  const safeColor = safeCssColor(townColor, "#1E5AFF");
+  const pill = document.createElement("div");
+  pill.className = `cockpit-town-pill ${isSelected ? "is-selected" : ""}`;
+  pill.style.display = "inline-flex";
+  pill.style.alignItems = "center";
+  pill.style.borderRadius = "9999px";
+  pill.style.fontFamily = "ui-sans-serif, system-ui, sans-serif";
+  pill.style.whiteSpace = "nowrap";
+  pill.style.cursor = "pointer";
+  pill.style.userSelect = "none";
+  pill.style.transform = "translate(-50%, -50%)";
+  pill.style.pointerEvents = "auto";
+
+  const dot = document.createElement("span");
+  dot.style.borderRadius = "50%";
+
+  const label = document.createElement("span");
+  label.style.fontWeight = "600";
+  label.textContent = shortLabel;
+
+  if (isCompactMap) {
+    pill.style.gap = "4px";
+    pill.style.background = isSelected ? safeColor : "rgba(6, 9, 17, 0.88)";
+    pill.style.border = `1px solid ${isSelected ? "#FFFFFF" : safeColor}`;
+    pill.style.padding = "2px 7px";
+    pill.style.color = "#F8FAFC";
+    pill.style.fontSize = "9px";
+    pill.style.lineHeight = "1.2";
+
+    dot.style.width = "4px";
+    dot.style.height = "4px";
+    dot.style.background = isSelected ? "#FFFFFF" : safeColor;
+
+    pill.appendChild(dot);
+    pill.appendChild(label);
+  } else {
+    pill.style.gap = "6px";
+    pill.style.background = isSelected ? safeColor : "rgba(9, 13, 24, 0.9)";
+    const borderColor = isSelected ? "#FFFFFF" : safeColor.length === 7 ? `${safeColor}cc` : safeColor;
+    pill.style.border = `1px solid ${borderColor}`;
+    pill.style.boxShadow = "0 2px 10px rgba(0, 0, 0, 0.55)";
+    pill.style.padding = "3px 9px";
+    pill.style.color = "#FFFFFF";
+    pill.style.fontSize = "11px";
+    pill.style.transition = "background-color 0.15s ease, border-color 0.15s ease";
+
+    dot.style.width = "6px";
+    dot.style.height = "6px";
+    dot.style.background = safeColor;
+
+    pill.appendChild(dot);
+    pill.appendChild(label);
+
+    if (count > 0) {
+      const countEl = document.createElement("span");
+      countEl.style.color = isSelected ? "#FFFFFF" : "#CBD5E1";
+      countEl.style.fontWeight = "600";
+      countEl.style.fontFamily = "ui-monospace, monospace";
+      countEl.style.fontVariantNumeric = "tabular-nums";
+      countEl.textContent = count.toLocaleString();
+      pill.appendChild(countEl);
+    }
+  }
+
+  return pill;
+}
 
 interface CockpitMapProps {
   activeRegion: RegionInfo | null;
@@ -358,63 +438,16 @@ export function CockpitMap({
           }
 
           const shortLabel = item.name.replace(/(街道|镇|区)$/, "");
-          const badgeHtml = isCompactMap
-            ? `
-              <div class="cockpit-town-pill ${item.isSelected ? "is-selected" : ""}" style="
-                display: inline-flex;
-                align-items: center;
-                gap: 4px;
-                background: ${item.isSelected ? item.townColor : "rgba(6, 9, 17, 0.88)"};
-                border: 1px solid ${item.isSelected ? "#FFFFFF" : item.townColor};
-                border-radius: 9999px;
-                padding: 2px 7px;
-                color: #F8FAFC;
-                font-size: 9px;
-                line-height: 1.2;
-                font-family: ui-sans-serif, system-ui, sans-serif;
-                white-space: nowrap;
-                cursor: pointer;
-                user-select: none;
-                transform: translate(-50%, -50%);
-                pointer-events: auto;
-              ">
-                <span style="width: 4px; height: 4px; border-radius: 50%; background: ${item.isSelected ? "#FFFFFF" : item.townColor};"></span>
-                <span style="font-weight: 600;">${shortLabel}</span>
-              </div>
-            `
-            : `
-              <div class="cockpit-town-pill ${item.isSelected ? "is-selected" : ""}" style="
-                display: inline-flex;
-                align-items: center;
-                gap: 6px;
-                background: ${item.isSelected ? item.townColor : "rgba(9, 13, 24, 0.9)"};
-                border: 1px solid ${item.isSelected ? "#FFFFFF" : `${item.townColor}cc`};
-                box-shadow: 0 2px 10px rgba(0, 0, 0, 0.55);
-                border-radius: 9999px;
-                padding: 3px 9px;
-                color: #FFFFFF;
-                font-size: 11px;
-                font-family: ui-sans-serif, system-ui, sans-serif;
-                white-space: nowrap;
-                cursor: pointer;
-                user-select: none;
-                transform: translate(-50%, -50%);
-                pointer-events: auto;
-                transition: background-color 0.15s ease, border-color 0.15s ease;
-              ">
-                <span style="
-                  width: 6px;
-                  height: 6px;
-                  border-radius: 50%;
-                  background: ${item.townColor};
-                "></span>
-                <span style="font-weight: 600;">${shortLabel}</span>
-                ${item.count > 0 ? `<span style="color: ${item.isSelected ? "#FFFFFF" : "#CBD5E1"}; font-weight: 600; font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums;">${item.count.toLocaleString()}</span>` : ""}
-              </div>
-            `;
+          const badgeEl = buildCockpitBadgeElement(
+            shortLabel,
+            item.count,
+            item.townColor,
+            item.isSelected,
+            isCompactMap
+          );
 
           const icon = L.divIcon({
-            html: badgeHtml,
+            html: badgeEl,
             className: "cockpit-leaflet-div-icon",
             iconSize: [0, 0],
           });

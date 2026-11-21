@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChevronDown, MessageCircle, User, LogOut, Film, Workflow, MessageSquarePlus } from "lucide-react";
@@ -9,9 +10,13 @@ import { NAV_ITEMS } from "./nav-items";
 import { authClient } from "@/lib/auth/client";
 import { useAuthRole } from "@/lib/auth/use-role";
 import { toast } from "sonner";
-import { VideoModal } from "./video-modal";
 import { RegionSelector } from "./region-selector";
 import { useRegion } from "./region-context";
+
+const VideoModal = dynamic(
+  () => import("./video-modal").then((m) => m.VideoModal),
+  { ssr: false }
+);
 
 export { NAV_ITEMS };
 
@@ -140,6 +145,7 @@ export function CivicNav() {
     setMenuOpen(false);
     setMoreOpen(false);
     setUserMenuOpen(false);
+    setVideoModalOpen(false);
   }, [pathname]);
 
   // 动态同步页面 HTML document.title（带当前辖区站点前缀）
@@ -495,7 +501,7 @@ export function CivicNav() {
         )}
       </nav>
 
-      {isAdmin ? (
+      {(isAdmin || isLoginPage) && videoModalOpen ? (
         <VideoModal isOpen={videoModalOpen} onClose={() => setVideoModalOpen(false)} />
       ) : null}
 

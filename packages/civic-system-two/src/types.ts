@@ -35,6 +35,16 @@ export interface CivicChatCompletionParams {
    */
   enable_thinking?: boolean;
   stream?: boolean;
+  signal?: AbortSignal;
+}
+
+export interface CivicChatStreamChunk {
+  deltaContent?: string;
+  deltaReasoning?: string;
+  finishReason?: string | null;
+  endpoint?: string | null;
+  usage?: CivicUsage;
+  timings?: CivicTimings;
 }
 
 export interface CivicChatChoice {

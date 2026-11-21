@@ -11,6 +11,7 @@ export async function GET(req: Request) {
     const guard = await guardAgentRequest(req, {
       role: "admin",
       scope: "agent-report-read",
+      maxPerMinute: 120,
     });
     if ("response" in guard) return guard.response;
 
@@ -34,6 +35,7 @@ export async function POST(req: Request) {
     const guard = await guardAgentRequest(req, {
       role: "admin",
       scope: "agent-report-generate",
+      maxPerMinute: 10,
     });
     if ("response" in guard) return guard.response;
 

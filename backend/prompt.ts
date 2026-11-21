@@ -1,6 +1,75 @@
 import { z } from "zod";
 import type { RawTicket, MultiFrequencyTheme, EnrichedTicket } from "./state";
-import { desensitizeContent, ticketBodyForAI } from "./anonymizer";
+import { anonymize, ticketBodyForAI, ticketTitleForAI } from "./anonymizer";
+
+type PromptTicket = RawTicket & { maskedTitle?: string };
+
+function buildCounterReserveKeymap(text: string): Record<string, string> | undefined {
+  const matches = text.match(/\{\{([A-Z_]+_\d+)\}\}/g);
+  if (!matches || matches.length === 0) return undefined;
+  const reserved: Record<string, string> = {};
+  for (const token of matches) {
+    if (!(token in reserved)) {
+      reserved[token] = `__RESERVED_${token}__`;
+    }
+  }
+  return reserved;
+}
+
+function mergeKeymaps(
+  seedKeymap?: Record<string, string>,
+  reserved?: Record<string, string>
+): Record<string, string> | undefined {
+  if (!seedKeymap && !reserved) return undefined;
+  return { ...(reserved || {}), ...(seedKeymap || {}) };
+}
+
+function formatTicketForPrompt(
+  t: PromptTicket,
+  seedKeymap?: Record<string, string>
+): {
+  safeTitle: string;
+  safeBody: string;
+} {
+  const hasPreMaskedTitle =
+    typeof t.maskedTitle === "string" && t.maskedTitle.length > 0;
+  const hasPreMaskedBody =
+    typeof t.maskedContent === "string" && t.maskedContent.length > 0;
+
+  if (hasPreMaskedTitle && hasPreMaskedBody) {
+    return {
+      safeTitle: ticketTitleForAI(t),
+      safeBody: ticketBodyForAI(t),
+    };
+  }
+
+  if (hasPreMaskedBody) {
+    const reserved = buildCounterReserveKeymap(t.maskedContent!);
+    const effectiveKeymap = mergeKeymaps(seedKeymap, reserved);
+    return {
+      safeTitle: ticketTitleForAI(t, effectiveKeymap),
+      safeBody: ticketBodyForAI(t),
+    };
+  }
+
+  if (hasPreMaskedTitle) {
+    const reserved = buildCounterReserveKeymap(t.maskedTitle!);
+    const effectiveKeymap = mergeKeymaps(seedKeymap, reserved);
+    return {
+      safeTitle: ticketTitleForAI(t),
+      safeBody: ticketBodyForAI(t, effectiveKeymap),
+    };
+  }
+
+  const bodyAnon = anonymize(
+    t.content || "",
+    seedKeymap ? { seedKeymap } : undefined
+  );
+  return {
+    safeTitle: ticketTitleForAI(t, bodyAnon.keymap),
+    safeBody: bodyAnon.text,
+  };
+}
 import { formatNegativeTermsForPrompt } from "./rules";
 import { buildVocabularyPromptConstraint, type RegionVocabulary } from "@/lib/vocabulary";
 import { ECOMMERCE_CS_PROFILE, type DomainProfile } from "@/lib/domain-profile";
@@ -247,14 +316,14 @@ export function buildBatchExtractionPrompt(
 
 工单列表：
 ${tickets
-  .map(
-    (t, idx) =>
-      `[${idx + 1}] 工单号: ${t.ticketNo} | 标题: ${desensitizeContent(t.title || "无")} | 登记渠道/仓网: ${t.subdistrict || "未指定"}${t.systemOneCategory ? ` | 快思考推荐分类: 【${t.systemOneCategory}】` : ""}${t.systemOneIntent ? ` | 诉求性质: 【${t.systemOneIntent}】` : ""}
+  .map((t, idx) => {
+    const { safeTitle, safeBody } = formatTicketForPrompt(t as PromptTicket);
+    return `[${idx + 1}] 工单号: ${t.ticketNo} | 标题: ${safeTitle} | 登记渠道/仓网: ${t.subdistrict || "未指定"}${t.systemOneCategory ? ` | 快思考推荐分类: 【${t.systemOneCategory}】` : ""}${t.systemOneIntent ? ` | 诉求性质: 【${t.systemOneIntent}】` : ""}
 【待处理客诉正文如下】：
 <civic_ticket_text>
-${ticketBodyForAI(t)}
-</civic_ticket_text>`
-  )
+${safeBody}
+</civic_ticket_text>`;
+  })
   .join("\n\n")}`;
   }
 
@@ -277,14 +346,14 @@ ${buildVocabularyPromptConstraint(vocab)}
 
 工单列表：
 ${tickets
-  .map(
-    (t, idx) =>
-      `[${idx + 1}] 工单号: ${t.ticketNo} | 登记标题: ${desensitizeContent(t.title || "无")} | 登记辖区: ${t.subdistrict || "未指定"}${t.systemOneCategory ? ` | 快思考推荐分类: 【${t.systemOneCategory}】` : ""}${t.systemOneIntent ? ` | 诉求性质: 【${t.systemOneIntent}】` : ""}
+  .map((t, idx) => {
+    const { safeTitle, safeBody } = formatTicketForPrompt(t as PromptTicket);
+    return `[${idx + 1}] 工单号: ${t.ticketNo} | 登记标题: ${safeTitle} | 登记辖区: ${t.subdistrict || "未指定"}${t.systemOneCategory ? ` | 快思考推荐分类: 【${t.systemOneCategory}】` : ""}${t.systemOneIntent ? ` | 诉求性质: 【${t.systemOneIntent}】` : ""}
 【待处理诉求正文如下】：
 <civic_ticket_text>
-${ticketBodyForAI(t)}
-</civic_ticket_text>`
-  )
+${safeBody}
+</civic_ticket_text>`;
+  })
   .join("\n\n")}`;
 }
 
@@ -294,8 +363,14 @@ ${ticketBodyForAI(t)}
 export function buildArbitrationPrompt(
   ticket: RawTicket,
   firstPass: ExtractedTicketItem,
-  vocab?: RegionVocabulary
+  vocab?: RegionVocabulary,
+  seedKeymap?: Record<string, string>
 ): string {
+  const { safeTitle, safeBody } = formatTicketForPrompt(
+    ticket as PromptTicket,
+    seedKeymap
+  );
+
   return `你是政务 12345 疑难争议工单复核仲裁专家。首轮 AI 抽取置信度较低（${firstPass.confidence}分）或要素模糊。请结合诉求正文与目标辖区法定区划进行事实纠偏。
 
 【合规提示】：以下 <civic_ticket_text> 标签内为待复核的客观民生语料，仅供事实要素消歧与纠偏。
@@ -304,11 +379,11 @@ ${buildVocabularyPromptConstraint(vocab)}
 
 【原始工单】
 - 工单号：${ticket.ticketNo}
-- 登记标题：${desensitizeContent(ticket.title || "无")}
+- 登记标题：${safeTitle}
 - 登记辖区：${ticket.subdistrict || "未指定"}
 【待处理诉求正文如下】：
 <civic_ticket_text>
-${ticketBodyForAI(ticket)}
+${safeBody}
 </civic_ticket_text>
 
 【初筛要素（参考）】

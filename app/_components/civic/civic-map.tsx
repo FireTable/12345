@@ -2,10 +2,70 @@
 
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import type { Map as LeafletMap, GeoJSON as LeafletGeoJSON, Layer } from "leaflet";
+import "leaflet/dist/leaflet.css";
 import { mapColorByShare, getTownshipColor } from "@/lib/civic-cluster";
 import { getTiandituTileUrls } from "@/lib/map/tile-layer";
 import { useRegion } from "./region-context";
 import { RefreshCw, ZoomIn, ZoomOut } from "lucide-react";
+
+function safeCssColor(value: string | undefined, fallback: string): string {
+  const trimmed = (value || "").trim();
+  return /^#[0-9a-fA-F]{3,8}$/.test(trimmed) ? trimmed : fallback;
+}
+
+function buildCenterBadgeElement(
+  name: string,
+  count: number,
+  townColor: string,
+  isSelected: boolean
+): HTMLElement {
+  const safeColor = safeCssColor(townColor, "#1E5AFF");
+  const pill = document.createElement("div");
+  pill.className = `civic-town-pill ${isSelected ? "is-selected" : ""}`;
+  pill.style.display = "inline-flex";
+  pill.style.alignItems = "center";
+  pill.style.gap = "5px";
+  pill.style.background = isSelected ? safeColor : "rgba(255, 255, 255, 0.95)";
+  pill.style.backdropFilter = "blur(6px)";
+  pill.style.border = `1.5px solid ${isSelected ? "#FFFFFF" : safeColor}`;
+  pill.style.borderRadius = "14px";
+  pill.style.padding = "2px 7px";
+  const shadowColor = safeColor.length === 7 ? `${safeColor}35` : safeColor;
+  pill.style.boxShadow = isSelected
+    ? `0 0 0 3px ${shadowColor}, 0 3px 8px rgba(0,0,0,0.18)`
+    : "0 2px 6px rgba(0,0,0,0.12)";
+  pill.style.userSelect = "none";
+  pill.style.whiteSpace = "nowrap";
+  pill.style.transform = "translate3d(0, 0, 0)";
+
+  const dot = document.createElement("span");
+  dot.style.display = "inline-block";
+  dot.style.width = "6px";
+  dot.style.height = "6px";
+  dot.style.borderRadius = "50%";
+  dot.style.background = isSelected ? "#FFFFFF" : safeColor;
+  pill.appendChild(dot);
+
+  const nameSpan = document.createElement("span");
+  nameSpan.style.fontWeight = "700";
+  nameSpan.style.fontSize = "11px";
+  nameSpan.style.color = isSelected ? "#FFFFFF" : "#0F172A";
+  nameSpan.textContent = name;
+  pill.appendChild(nameSpan);
+
+  const countSpan = document.createElement("span");
+  countSpan.style.background = isSelected ? "#FFFFFF" : count > 0 ? safeColor : "#94A3B8";
+  countSpan.style.color = isSelected ? safeColor : "#FFFFFF";
+  countSpan.style.fontWeight = "800";
+  countSpan.style.fontSize = "10px";
+  countSpan.style.padding = "1px 5px";
+  countSpan.style.borderRadius = "8px";
+  countSpan.style.fontFamily = "monospace";
+  countSpan.textContent = String(count);
+  pill.appendChild(countSpan);
+
+  return pill;
+}
 
 export type CivicMapProps = {
   counts: Record<string, number>;
@@ -223,46 +283,9 @@ export function CivicMap({
 
           // 镇街名称 + 数字胶囊：直接永久固化在板块几何正中央
           if (!isDistrictLevel) {
-            const centerBadgeHtml = `
-              <div class="civic-town-pill ${isSelected ? "is-selected" : ""}" style="
-                display: inline-flex;
-                align-items: center;
-                gap: 5px;
-                background: ${isSelected ? townColor : "rgba(255, 255, 255, 0.95)"};
-                backdrop-filter: blur(6px);
-                border: 1.5px solid ${isSelected ? "#FFFFFF" : townColor};
-                border-radius: 14px;
-                padding: 2px 7px;
-                box-shadow: ${isSelected ? `0 0 0 3px ${townColor}35, 0 3px 8px rgba(0,0,0,0.18)` : "0 2px 6px rgba(0,0,0,0.12)"};
-                user-select: none;
-                white-space: nowrap;
-                transform: translate3d(0, 0, 0);
-              ">
-                <span style="
-                  display: inline-block;
-                  width: 6px;
-                  height: 6px;
-                  border-radius: 50%;
-                  background: ${isSelected ? "#FFFFFF" : townColor};
-                "></span>
-                <span style="
-                  font-weight: 700;
-                  font-size: 11px;
-                  color: ${isSelected ? "#FFFFFF" : "#0F172A"};
-                ">${name}</span>
-                <span style="
-                  background: ${isSelected ? "#FFFFFF" : count > 0 ? townColor : "#94A3B8"};
-                  color: ${isSelected ? townColor : "#FFFFFF"};
-                  font-weight: 800;
-                  font-size: 10px;
-                  padding: 1px 5px;
-                  border-radius: 8px;
-                  font-family: monospace;
-                ">${count}</span>
-              </div>
-            `;
+            const centerBadgeEl = buildCenterBadgeElement(name, count, townColor, isSelected);
 
-            layer.bindTooltip(centerBadgeHtml, {
+            layer.bindTooltip(centerBadgeEl, {
               permanent: true,
               direction: "center",
               className: "civic-polygon-center-tooltip",

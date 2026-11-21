@@ -7,6 +7,7 @@ import type {
   CivicEvaluateOptions,
 } from "../types";
 import { CATEGORY_NAME_MAP } from "../presets/categories";
+import { hasCivicRedlineSignal } from "../redline";
 import { matchTownshipFromOptions } from "./township-matcher";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -251,9 +252,12 @@ export class ONNXAdapter implements DecisionAdapter {
     let urgencyLevel = URGENCY_KEYS[bestUrgIdx] ?? 1;
     const urgencyScore = bestUrgIdx;
 
-    // 4. Stability Risk
-    const stabilityRisk = stabProbs[0] > stabProbs[1]; // Index 0 is YES, Index 1 is NO
-    const stabilityRiskProbability = stabProbs[0];
+    // 4. Stability Risk (Neural Head + Negation-Aware Symbolic Redline Hard Interlock)
+    const symbolicRedline = hasCivicRedlineSignal(`${title} ${body}`.trim());
+    const stabilityRisk = stabProbs[0] > stabProbs[1] || symbolicRedline; // Index 0 is YES, Index 1 is NO
+    const stabilityRiskProbability = symbolicRedline
+      ? Math.max(stabProbs[0], 0.95)
+      : stabProbs[0];
 
     // 5. 动态属地镇街判定（基于当前辖区标准政务白名单，与 System-2 同源）
     const townDecision = matchTownshipFromOptions(ticket, options?.townships);

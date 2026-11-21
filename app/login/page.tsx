@@ -20,27 +20,9 @@ import {
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth/client";
 import { useRegion } from "@/app/_components/civic/region-context";
+import { resolvePostLoginTarget } from "@/lib/security/login-redirect";
 
 type AuthTab = "login" | "register";
-
-const ADMIN_ROUTE_PREFIXES = [
-  "/themes",
-  "/multifreq",
-  "/tickets",
-  "/dict",
-  "/sandbox",
-  "/screen",
-  "/admin",
-  "/agent",
-  "/workbench",
-];
-
-function isAdminRoutePath(path: string): boolean {
-  if (path === "/") return true;
-  return ADMIN_ROUTE_PREFIXES.some(
-    (prefix) => path === prefix || path.startsWith(`${prefix}/`)
-  );
-}
 
 function LoginForm() {
   const { appDomain } = useRegion();
@@ -147,17 +129,6 @@ function LoginForm() {
     return "";
   };
 
-  const resolvePostLoginTarget = (role: string | null | undefined): string => {
-    const normalizedRole = role === "admin" ? "admin" : "user";
-    if (!rawFrom || rawFrom === "/") {
-      return normalizedRole === "user" ? "/submit" : "/";
-    }
-    if (normalizedRole === "user" && isAdminRoutePath(rawFrom)) {
-      return "/submit";
-    }
-    return rawFrom;
-  };
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     const accErr = validateLoginField("account", account);
@@ -211,7 +182,7 @@ function LoginForm() {
           userRole = (sessionRes?.data?.user as { role?: string } | undefined)?.role;
         }
 
-        const targetUrl = resolvePostLoginTarget(userRole);
+        const targetUrl = resolvePostLoginTarget(userRole, rawFrom);
         toast.success(
           userRole === "admin"
             ? "管理员验证成功，正在进入研判工作台..."

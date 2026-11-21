@@ -1,12 +1,29 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
+import dynamic from "next/dynamic";
 import { Cpu, X, CheckCircle2, AlertCircle, ChevronUp } from "lucide-react";
 import { useCivicSse } from "@/app/_hooks/use-civic-sse";
 import { useAuthRole } from "@/lib/auth/use-role";
 import { useCivicWorkflow } from "./civic-workflow";
 import { useRegion } from "./region-context";
-import { PipelineCanvas, type PipelineStateResponse } from "@/app/workbench/_components/pipeline-canvas";
+import "@/app/workbench/workbench.css";
+import type { PipelineStateResponse } from "@/app/workbench/_components/pipeline-canvas";
+
+const PipelineCanvas = dynamic(
+  () => import("@/app/workbench/_components/pipeline-canvas").then((m) => m.PipelineCanvas),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="workbench-canvas-container" aria-busy="true">
+        <div className="workbench-canvas-pending">
+          <span className="workbench-canvas-spinner" aria-hidden="true" />
+          <p className="workbench-canvas-pending__title">正在读取流水线画布</p>
+        </div>
+      </div>
+    ),
+  }
+);
 
 export function PipelineDrawer() {
   const { isAdmin } = useAuthRole();

@@ -7,6 +7,7 @@ import type {
   CivicEvaluateOptions,
 } from "../types";
 import { CATEGORY_NAME_MAP } from "../presets/categories";
+import { hasCivicRedlineSignal } from "../redline";
 import { matchTownshipFromOptions } from "./township-matcher";
 
 export class FallbackAdapter implements DecisionAdapter {
@@ -89,15 +90,13 @@ export class FallbackAdapter implements DecisionAdapter {
       slaHours = 24;
     }
 
-    // 4. 涉稳风险
-    const stabilityRisk =
-      text.includes("跳楼") ||
-      text.includes("拼命") ||
-      text.includes("报复") ||
-      text.includes("上访") ||
-      text.includes("聚集") ||
-      text.includes("堵路") ||
-      text.includes("罢工");
+    // 4. 涉稳风险（10类红线硬互锁 + 否定语境窗口）
+    const rawFullText = `${ticket.title || ""} ${ticket.content || ""}`.trim();
+    const stabilityRisk = hasCivicRedlineSignal(rawFullText);
+    if (stabilityRisk) {
+      urgencyLevel = 3;
+      slaHours = 2;
+    }
 
     // 5. 合理性判定
     const isReasonable = !(text.includes("赔偿1个亿") || text.includes("全是饭桶"));

@@ -287,7 +287,7 @@ def train_epoch_v4(model, dataloader, optimizer, scheduler, device, epoch, total
             if dim == "category":
                 dim_loss = F.cross_entropy(logits, target, weight=cat_weights)
             elif dim == "stability":
-                dim_loss = F.cross_entropy(logits, target, weight=torch.tensor([1.0, 4.0], device=device))
+                dim_loss = F.cross_entropy(logits, target, weight=torch.tensor([4.0, 1.0], device=device))
             elif dim == "urgency":
                 dim_loss = F.cross_entropy(logits, target, weight=torch.tensor([1.0, 1.0, 2.0, 4.0], device=device))
             else:
@@ -390,6 +390,10 @@ def score_onnx(onnx_path: str, dataset: DualStreamDatasetV4, batch_size: int) ->
     )
     correct = {dim: 0 for dim in ANSWER_ORDER}
     total = 0
+    stab_tp = 0
+    stab_fp = 0
+    stab_fn = 0
+    stab_tn = 0
     for t_ids, t_mask, b_ids, b_mask, targets in loader:
         feeds = {
             "title_ids": t_ids.numpy().astype(np.int64),
@@ -401,9 +405,23 @@ def score_onnx(onnx_path: str, dataset: DualStreamDatasetV4, batch_size: int) ->
         total += t_ids.size(0)
         for index, dim in enumerate(ANSWER_ORDER):
             pred = outputs[index].argmax(axis=-1)
-            correct[dim] += int((pred == targets[dim].numpy()).sum())
+            gold = targets[dim].numpy()
+            correct[dim] += int((pred == gold).sum())
+            if dim == "stability":
+                # Index 0 is "YES", Index 1 is "NO"
+                stab_tp += int(((pred == 0) & (gold == 0)).sum())
+                stab_fp += int(((pred == 0) & (gold == 1)).sum())
+                stab_fn += int(((pred == 1) & (gold == 0)).sum())
+                stab_tn += int(((pred == 1) & (gold == 1)).sum())
     accs = {dim: correct[dim] / total for dim in ANSWER_ORDER}
     accs["count"] = total
+    stab_recall = stab_tp / max(stab_tp + stab_fn, 1)
+    stab_precision = stab_tp / max(stab_tp + stab_fp, 1)
+    print(
+        f"ONNX stability TP={stab_tp} FP={stab_fp} FN={stab_fn} TN={stab_tn} "
+        f"recall={stab_recall:.4f} precision={stab_precision:.4f}",
+        flush=True,
+    )
     return accs
 
 
@@ -455,6 +473,10 @@ def main():
     parser.add_argument("--onnx-out", default=DEFAULT_ONNX)
     parser.add_argument("--regression-out", default="")
     args = parser.parse_args()
+
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
 
     started = time.perf_counter()
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")

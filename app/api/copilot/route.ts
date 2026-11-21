@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
+import { isAbortError } from "@civic/system-two";
 import { getRegionDb } from "@/db/client";
 import { streamCopilot, type CopilotTurnInput } from "@/backend/agent/copilot-agent";
-import { formatCopilotStatus } from "@/lib/copilot-protocol";
+import { formatCopilotStatuses } from "@/lib/copilot-protocol";
 import { getRegionDomainProfile } from "@/lib/domain-profile";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 import { guardAgentRequest } from "@/lib/security/agent-guard";
@@ -29,7 +30,7 @@ function readTurns(body: { prompt?: unknown; messages?: unknown }): CopilotTurnI
 
 export async function POST(req: Request) {
   try {
-    const guard = await guardAgentRequest(req, { role: "admin", scope: "copilot" });
+    const guard = await guardAgentRequest(req, { role: "admin", scope: "copilot", maxPerMinute: 15 });
     if ("response" in guard) return guard.response;
 
     const regionId = await resolveRequestRegionId(req);
@@ -46,32 +47,69 @@ export async function POST(req: Request) {
     const domainType = domainProfile.domainType;
     const regionLabel = region ? `${region.city} · ${region.name}` : regionId;
     const encoder = new TextEncoder();
-    const { readable, writable } = new TransformStream();
-    const writer = writable.getWriter();
-    void (async () => {
-      try {
-        for await (const event of streamCopilot({ regionId, regionLabel, domainType, turns })) {
-          const text =
-            event.type === "status"
-              ? formatCopilotStatus(event.tool, event.domainType ?? domainType)
-              : event.text;
-          if (text) await writer.write(encoder.encode(text));
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "研判失败";
+    const abortController = new AbortController();
+    if (req.signal.aborted) {
+      abortController.abort(req.signal.reason);
+    }
+    const onRequestAbort = () => {
+      abortController.abort(req.signal.reason);
+    };
+    req.signal.addEventListener("abort", onRequestAbort, { once: true });
+
+    const readable = new ReadableStream<Uint8Array>({
+      async start(controller) {
         try {
-          await writer.write(encoder.encode(`研判失败：${message}`));
-        } catch {
-          /* client went away */
+          for await (const event of streamCopilot({
+            regionId,
+            regionLabel,
+            domainType,
+            turns,
+            signal: abortController.signal,
+          })) {
+            if (abortController.signal.aborted) break;
+            const text =
+              event.type === "status"
+                ? formatCopilotStatuses(event.tools ?? [event.tool], event.domainType ?? domainType)
+                : event.text;
+            if (text) {
+              controller.enqueue(encoder.encode(text));
+            }
+          }
+          if (!abortController.signal.aborted) {
+            try {
+              controller.close();
+            } catch {
+              /* stream already closed */
+            }
+          }
+        } catch (error) {
+          if (abortController.signal.aborted || isAbortError(error)) {
+            try {
+              controller.close();
+            } catch {
+              /* client went away */
+            }
+            return;
+          }
+          const message = error instanceof Error ? error.message : "研判失败";
+          try {
+            controller.enqueue(encoder.encode(`研判失败：${message}`));
+          } catch {
+            /* client went away */
+          }
+          try {
+            controller.close();
+          } catch {
+            /* already closed */
+          }
+        } finally {
+          req.signal.removeEventListener("abort", onRequestAbort);
         }
-      } finally {
-        try {
-          await writer.close();
-        } catch {
-          /* already closed */
-        }
-      }
-    })();
+      },
+      cancel() {
+        abortController.abort();
+      },
+    });
 
     return new Response(readable, {
       headers: {

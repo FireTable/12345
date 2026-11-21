@@ -27,10 +27,24 @@ interface TrustWhitelist {
 
 const BUILTIN_LOCAL_HOSTNAMES = ["localhost", "127.0.0.1", "[::1]"];
 const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_SWEEP_INTERVAL_MS = 1000;
+const DEFAULT_RATE_LIMIT_PER_MIN = 20;
+export const MAX_RATE_LIMIT_BUCKETS = 1000;
+
+interface CachedTrustWhitelist {
+  authUrl: string;
+  trustedOrigins: string;
+  allowedHosts: string;
+  list: TrustWhitelist;
+}
 
 declare global {
   // eslint-disable-next-line no-var
   var __agentRateLimitBuckets: Map<string, number[]> | undefined;
+  // eslint-disable-next-line no-var
+  var __agentRateLimitLastSweepAt: number | undefined;
+  // eslint-disable-next-line no-var
+  var __agentTrustWhitelistCache: CachedTrustWhitelist | undefined;
 }
 
 function getRateLimitBuckets(): Map<string, number[]> {
@@ -40,8 +54,25 @@ function getRateLimitBuckets(): Map<string, number[]> {
   return globalThis.__agentRateLimitBuckets;
 }
 
+export function resetAgentRateLimitBucketsForTesting(): void {
+  getRateLimitBuckets().clear();
+  globalThis.__agentRateLimitLastSweepAt = 0;
+}
+
+export function getAgentRateLimitBucketCountForTesting(): number {
+  return getRateLimitBuckets().size;
+}
+
+function isTrustedProxyEnabled(): boolean {
+  const raw = (process.env.TRUST_PROXY ?? "").trim().toLowerCase();
+  return raw === "true" || raw === "1";
+}
+
 function parseHostCandidate(raw: string): ParsedHost | null {
-  const value = raw.split(",")[0]?.trim().toLowerCase() || "";
+  if (raw.includes(",")) {
+    return null;
+  }
+  const value = raw.trim().toLowerCase();
   if (!value || /[/?#\\@\s]/.test(value)) {
     return null;
   }
@@ -149,6 +180,20 @@ function addWhitelistEntry(
 }
 
 function buildTrustWhitelist(): TrustWhitelist {
+  const authUrl = process.env.BETTER_AUTH_URL ?? "";
+  const trustedOrigins = process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? "";
+  const allowedHosts = process.env.ALLOWED_AGENT_HOSTS ?? "";
+
+  const cached = globalThis.__agentTrustWhitelistCache;
+  if (
+    cached &&
+    cached.authUrl === authUrl &&
+    cached.trustedOrigins === trustedOrigins &&
+    cached.allowedHosts === allowedHosts
+  ) {
+    return cached.list;
+  }
+
   const list: TrustWhitelist = {
     exactHosts: new Set<string>(),
     hostnames: new Set<string>(BUILTIN_LOCAL_HOSTNAMES),
@@ -158,15 +203,15 @@ function buildTrustWhitelist(): TrustWhitelist {
     explicitSuffixes: [],
   };
 
-  if (process.env.BETTER_AUTH_URL) {
-    addWhitelistEntry(process.env.BETTER_AUTH_URL, list, {
+  if (authUrl) {
+    addWhitelistEntry(authUrl, list, {
       includeHostnameToo: true,
       explicit: true,
     });
   }
 
-  if (process.env.BETTER_AUTH_TRUSTED_ORIGINS) {
-    for (const item of process.env.BETTER_AUTH_TRUSTED_ORIGINS.split(",")) {
+  if (trustedOrigins) {
+    for (const item of trustedOrigins.split(",")) {
       addWhitelistEntry(item, list, {
         includeHostnameToo: false,
         explicit: true,
@@ -174,14 +219,21 @@ function buildTrustWhitelist(): TrustWhitelist {
     }
   }
 
-  if (process.env.ALLOWED_AGENT_HOSTS) {
-    for (const item of process.env.ALLOWED_AGENT_HOSTS.split(",")) {
+  if (allowedHosts) {
+    for (const item of allowedHosts.split(",")) {
       addWhitelistEntry(item, list, {
         includeHostnameToo: false,
         explicit: true,
       });
     }
   }
+
+  globalThis.__agentTrustWhitelistCache = {
+    authUrl,
+    trustedOrigins,
+    allowedHosts,
+    list,
+  };
 
   return list;
 }
@@ -219,18 +271,66 @@ function untrustedHostResponse(): Response {
  * 校验请求的 Host / X-Forwarded-Host 与 Origin / Referer 是否命中受信任白名单。
  */
 export function assertTrustedHostAndOrigin(req: Request): Response | null {
-  const rawHost = req.headers.get("x-forwarded-host") || req.headers.get("host");
-  if (!rawHost) {
+  const rawHostHeader = req.headers.get("host");
+  if (rawHostHeader && rawHostHeader.includes(",")) {
     return untrustedHostResponse();
   }
 
-  const parsedHost = parseHostCandidate(rawHost);
-  if (!parsedHost) {
-    return untrustedHostResponse();
-  }
-
+  const rawForwardedHost = req.headers.get("x-forwarded-host");
   const whitelist = buildTrustWhitelist();
-  if (!matchesTrusted(parsedHost, whitelist)) {
+  let effectiveHost: ParsedHost | null = null;
+
+  if (isTrustedProxyEnabled()) {
+    if (rawForwardedHost !== null) {
+      const segments = rawForwardedHost.split(",").map((s) => s.trim());
+      if (segments.length === 0) {
+        return untrustedHostResponse();
+      }
+      for (const segment of segments) {
+        if (!segment) {
+          return untrustedHostResponse();
+        }
+        const parsedSegment = parseHostCandidate(segment);
+        if (!parsedSegment || !matchesTrusted(parsedSegment, whitelist)) {
+          return untrustedHostResponse();
+        }
+        effectiveHost = parsedSegment;
+      }
+    } else {
+      if (!rawHostHeader) {
+        return untrustedHostResponse();
+      }
+      const parsedHost = parseHostCandidate(rawHostHeader);
+      if (!parsedHost || !matchesTrusted(parsedHost, whitelist)) {
+        return untrustedHostResponse();
+      }
+      effectiveHost = parsedHost;
+    }
+  } else {
+    if (!rawHostHeader) {
+      return untrustedHostResponse();
+    }
+    const parsedHost = parseHostCandidate(rawHostHeader);
+    if (!parsedHost || !matchesTrusted(parsedHost, whitelist)) {
+      return untrustedHostResponse();
+    }
+    if (rawForwardedHost !== null) {
+      if (rawForwardedHost.includes(",")) {
+        return untrustedHostResponse();
+      }
+      const parsedForwarded = parseHostCandidate(rawForwardedHost);
+      if (
+        !parsedForwarded ||
+        !matchesTrusted(parsedForwarded, whitelist) ||
+        !isSameHost(parsedForwarded, parsedHost)
+      ) {
+        return untrustedHostResponse();
+      }
+    }
+    effectiveHost = parsedHost;
+  }
+
+  if (!effectiveHost) {
     return untrustedHostResponse();
   }
 
@@ -243,7 +343,7 @@ export function assertTrustedHostAndOrigin(req: Request): Response | null {
     if (!matchesTrusted(parsedOrigin, whitelist)) {
       return untrustedHostResponse();
     }
-    if (!isSameHost(parsedOrigin, parsedHost) && !matchesExplicitTrusted(parsedOrigin, whitelist)) {
+    if (!isSameHost(parsedOrigin, effectiveHost) && !matchesExplicitTrusted(parsedOrigin, whitelist)) {
       return untrustedHostResponse();
     }
     return null;
@@ -253,6 +353,9 @@ export function assertTrustedHostAndOrigin(req: Request): Response | null {
   if (rawReferer !== null) {
     const parsedReferer = parseUrlOriginHost(rawReferer);
     if (!parsedReferer || !matchesTrusted(parsedReferer, whitelist)) {
+      return untrustedHostResponse();
+    }
+    if (!isSameHost(parsedReferer, effectiveHost) && !matchesExplicitTrusted(parsedReferer, whitelist)) {
       return untrustedHostResponse();
     }
   }
@@ -268,31 +371,53 @@ export function checkAgentRateLimit(
   identity: string,
   maxPerMinute?: number
 ): Response | null {
-  const envLimit = Number(process.env.AGENT_RATE_LIMIT_PER_MIN || 20);
-  const limit =
+  const routeLimit =
     typeof maxPerMinute === "number" && Number.isFinite(maxPerMinute) && maxPerMinute > 0
       ? Math.floor(maxPerMinute)
-      : Number.isFinite(envLimit) && envLimit > 0
-        ? Math.floor(envLimit)
-        : 20;
+      : DEFAULT_RATE_LIMIT_PER_MIN;
+
+  const rawEnvLimit = process.env.AGENT_RATE_LIMIT_PER_MIN;
+  const parsedEnvLimit =
+    rawEnvLimit !== undefined && rawEnvLimit.trim() !== "" ? Number(rawEnvLimit) : NaN;
+  const envLimit =
+    Number.isFinite(parsedEnvLimit) && parsedEnvLimit > 0 ? Math.floor(parsedEnvLimit) : null;
+
+  let limit = routeLimit;
+  if (envLimit !== null) {
+    if (envLimit > DEFAULT_RATE_LIMIT_PER_MIN) {
+      limit = Math.max(routeLimit, envLimit);
+    } else if (envLimit < DEFAULT_RATE_LIMIT_PER_MIN) {
+      limit = Math.min(routeLimit, envLimit);
+    }
+  }
 
   const now = Date.now();
   const cutoff = now - RATE_LIMIT_WINDOW_MS;
   const buckets = getRateLimitBuckets();
+  const bucketKey = `${scope}:${identity}`;
 
-  if (buckets.size > 1000) {
-    for (const [k, hits] of buckets.entries()) {
-      const latest = hits[hits.length - 1] ?? 0;
-      if (latest <= cutoff) {
-        buckets.delete(k);
+  if (!buckets.has(bucketKey) && buckets.size >= MAX_RATE_LIMIT_BUCKETS) {
+    const lastSweepAt = globalThis.__agentRateLimitLastSweepAt ?? 0;
+    if (now - lastSweepAt >= RATE_LIMIT_SWEEP_INTERVAL_MS) {
+      for (const [k, hits] of buckets.entries()) {
+        const latest = hits[hits.length - 1] ?? 0;
+        if (latest <= cutoff) {
+          buckets.delete(k);
+        }
       }
+      globalThis.__agentRateLimitLastSweepAt = now;
+    }
+    while (buckets.size >= MAX_RATE_LIMIT_BUCKETS) {
+      const oldestKey = buckets.keys().next().value;
+      if (oldestKey === undefined) break;
+      buckets.delete(oldestKey);
     }
   }
 
-  const bucketKey = `${scope}:${identity}`;
   const recent = (buckets.get(bucketKey) ?? []).filter((ts) => ts > cutoff);
 
   if (recent.length >= limit) {
+    buckets.delete(bucketKey);
     buckets.set(bucketKey, recent);
     const oldest = recent[0] ?? now;
     const retryAfterSec = Math.max(1, Math.ceil((oldest + RATE_LIMIT_WINDOW_MS - now) / 1000));
@@ -312,6 +437,7 @@ export function checkAgentRateLimit(
   }
 
   recent.push(now);
+  buckets.delete(bucketKey);
   buckets.set(bucketKey, recent);
   return null;
 }

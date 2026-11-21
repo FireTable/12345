@@ -14,6 +14,7 @@ export async function POST(
     const guard = await guardAgentRequest(req, {
       role: "any",
       scope: "intake-reopen",
+      maxPerMinute: 20,
     });
     if ("response" in guard) return guard.response;
 

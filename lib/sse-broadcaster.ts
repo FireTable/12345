@@ -26,10 +26,18 @@
 
 import { getRegionDb } from "@/db/client";
 import { ticketsTable, themesTable } from "@/db/schema";
+import { invalidateCivicAggregates } from "@/lib/civic-cache";
 import { sql as drizzleSql } from "drizzle-orm";
 import { getLatestTaskProgress } from "./task-progress";
 
+export type SseRole = "admin" | "user";
+
 type SseController = ReadableStreamDefaultController<Uint8Array>;
+
+type SseRoleBucket = {
+  admin: Set<SseController>;
+  user: Set<SseController>;
+};
 
 type SseMetrics = {
   totalTickets: number;
@@ -51,14 +59,60 @@ type SseMessage =
   | { type: "pipeline-state-refresh"; regionId: string }
   | { type: "civic-data-refresh"; regionId: string };
 
+type MetricsCacheEntry = { value: SseMetrics | null; fetchedAt: number };
+type BroadcastThrottleEntry = {
+  lastSentAt: number;
+  timer: ReturnType<typeof setTimeout> | null;
+  pendingTaskProgress: unknown;
+};
+
+const METRICS_THROTTLE_MS = 2500;
+const BROADCAST_THROTTLE_MS = 250;
+
 declare global {
   // eslint-disable-next-line no-var
-  var __sse_subscribers: Map<string, Set<SseController>> | undefined;
+  var __sse_subscribers_v2: Map<string, SseRoleBucket> | undefined;
+  // eslint-disable-next-line no-var
+  var __sse_metrics_cache: Map<string, MetricsCacheEntry> | undefined;
+  // eslint-disable-next-line no-var
+  var __sse_metrics_inflight: Map<string, Promise<SseMetrics | null>> | undefined;
+  // eslint-disable-next-line no-var
+  var __sse_metrics_seq: Map<string, number> | undefined;
+  // eslint-disable-next-line no-var
+  var __sse_broadcast_throttle: Map<string, BroadcastThrottleEntry> | undefined;
+  // eslint-disable-next-line no-var
+  var __sse_emit_seq: Map<string, number> | undefined;
+  // eslint-disable-next-line no-var
+  var __sse_emit_chain: Map<string, Promise<void>> | undefined;
 }
 
-const subscribers: Map<string, Set<SseController>> =
-  globalThis.__sse_subscribers ?? new Map<string, Set<SseController>>();
-globalThis.__sse_subscribers = subscribers;
+const subscribers: Map<string, SseRoleBucket> =
+  globalThis.__sse_subscribers_v2 ?? new Map<string, SseRoleBucket>();
+globalThis.__sse_subscribers_v2 = subscribers;
+
+const metricsCache: Map<string, MetricsCacheEntry> =
+  globalThis.__sse_metrics_cache ?? new Map<string, MetricsCacheEntry>();
+globalThis.__sse_metrics_cache = metricsCache;
+
+const metricsInFlight: Map<string, Promise<SseMetrics | null>> =
+  globalThis.__sse_metrics_inflight ?? new Map<string, Promise<SseMetrics | null>>();
+globalThis.__sse_metrics_inflight = metricsInFlight;
+
+const metricsSeqMap: Map<string, number> =
+  globalThis.__sse_metrics_seq ?? new Map<string, number>();
+globalThis.__sse_metrics_seq = metricsSeqMap;
+
+const broadcastThrottle: Map<string, BroadcastThrottleEntry> =
+  globalThis.__sse_broadcast_throttle ?? new Map<string, BroadcastThrottleEntry>();
+globalThis.__sse_broadcast_throttle = broadcastThrottle;
+
+const emitSeqMap: Map<string, number> =
+  globalThis.__sse_emit_seq ?? new Map<string, number>();
+globalThis.__sse_emit_seq = emitSeqMap;
+
+const emitChainMap: Map<string, Promise<void>> =
+  globalThis.__sse_emit_chain ?? new Map<string, Promise<void>>();
+globalThis.__sse_emit_chain = emitChainMap;
 
 const encoder = new TextEncoder();
 
@@ -94,50 +148,128 @@ async function computeMetrics(regionId: string): Promise<SseMetrics | null> {
   }
 }
 
+function invalidateMetricsCache(regionId: string): void {
+  metricsCache.delete(regionId);
+  metricsSeqMap.set(regionId, (metricsSeqMap.get(regionId) ?? 0) + 1);
+}
+
+async function getThrottledMetrics(
+  regionId: string,
+  forceRefresh = false
+): Promise<SseMetrics | null> {
+  if (!forceRefresh) {
+    const cached = metricsCache.get(regionId);
+    if (cached && Date.now() - cached.fetchedAt < METRICS_THROTTLE_MS) {
+      return cached.value;
+    }
+    const existingFlight = metricsInFlight.get(regionId);
+    if (existingFlight) {
+      return existingFlight;
+    }
+  }
+
+  const seq = (metricsSeqMap.get(regionId) ?? 0) + 1;
+  metricsSeqMap.set(regionId, seq);
+
+  let flight: Promise<SseMetrics | null> | undefined;
+  flight = (async () => {
+    try {
+      const value = await computeMetrics(regionId);
+      if (value !== null && (metricsSeqMap.get(regionId) ?? 0) === seq) {
+        metricsCache.set(regionId, { value, fetchedAt: Date.now() });
+      }
+      return value;
+    } finally {
+      if (metricsInFlight.get(regionId) === flight) {
+        metricsInFlight.delete(regionId);
+      }
+    }
+  })();
+
+  metricsInFlight.set(regionId, flight);
+  return flight;
+}
+
+function clearBroadcastThrottle(regionId: string): void {
+  const st = broadcastThrottle.get(regionId);
+  if (st?.timer) {
+    clearTimeout(st.timer);
+    st.timer = null;
+  }
+  if (st) st.pendingTaskProgress = null;
+  broadcastThrottle.delete(regionId);
+}
+
 /**
- * 注册一个订阅者。返回取消注册的函数（路由 handler 在 cancel() 里调一次）。
+ * 从所有角色桶中移除指定订阅者，并在桶为空时清理 region 条目。
+ */
+export function unregisterController(
+  regionId: string,
+  controller: SseController
+): void {
+  const bucket = subscribers.get(regionId);
+  if (!bucket) return;
+  bucket.admin.delete(controller);
+  bucket.user.delete(controller);
+  if (bucket.admin.size === 0) {
+    clearBroadcastThrottle(regionId);
+  }
+  if (bucket.admin.size === 0 && bucket.user.size === 0) {
+    subscribers.delete(regionId);
+  }
+}
+
+/**
+ * 注册一个订阅者（按角色分桶，默认 fail-closed 为 "user"）。
+ * 返回幂等取消注册的函数（路由 handler 在 cancel()/abort 时调一次）。
  *
- * 注册后自动推一帧 task-progress 快照（taskProgress + metrics），
- * 避免新连接要先 HTTP 拉一次再接 SSE。
+ * 仅对 "admin" 订阅者推送初始 task-progress 快照（taskProgress + metrics），
+ * 普通 "user" 订阅者绝不接收管理态势与工单敏感细节。
  */
 export function registerController(
   regionId: string,
-  controller: SseController
+  controller: SseController,
+  role: SseRole = "user"
 ): () => void {
-  let set = subscribers.get(regionId);
-  if (!set) {
-    set = new Set();
-    subscribers.set(regionId, set);
+  const safeRole: SseRole = role === "admin" ? "admin" : "user";
+  let bucket = subscribers.get(regionId);
+  if (!bucket) {
+    bucket = { admin: new Set(), user: new Set() };
+    subscribers.set(regionId, bucket);
   }
-  set.add(controller);
+  bucket[safeRole].add(controller);
 
+  let unregistered = false;
   const cleanup = () => {
-    const cur = subscribers.get(regionId);
-    if (!cur) return;
-    cur.delete(controller);
-    if (cur.size === 0) subscribers.delete(regionId);
+    if (unregistered) return;
+    unregistered = true;
+    unregisterController(regionId, controller);
   };
 
-  // 初始快照（fire-and-forget；DB 走 async 不会阻塞 stream start）
-  void (async () => {
-    try {
-      const tp = await getLatestTaskProgress(regionId);
-      if (!tp) return;
-      const metrics = await computeMetrics(regionId);
-      controller.enqueue(
-        encoder.encode(
-          `data: ${JSON.stringify({
-            type: "task-progress",
-            regionId,
-            taskProgress: tp,
-            metrics,
-          })}\n\n`
-        )
-      );
-    } catch {
-      /* ignore */
-    }
-  })();
+  if (safeRole === "admin") {
+    // 初始快照（fire-and-forget；DB 走 async 不会阻塞 stream start）
+    void (async () => {
+      try {
+        if (unregistered || !subscribers.get(regionId)?.admin.has(controller)) return;
+        const tp = await getLatestTaskProgress(regionId);
+        if (!tp || unregistered || !subscribers.get(regionId)?.admin.has(controller)) return;
+        const metrics = await getThrottledMetrics(regionId, false);
+        if (unregistered || !subscribers.get(regionId)?.admin.has(controller)) return;
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({
+              type: "task-progress",
+              regionId,
+              taskProgress: tp,
+              metrics,
+            })}\n\n`
+          )
+        );
+      } catch {
+        cleanup();
+      }
+    })();
+  }
 
   return cleanup;
 }
@@ -152,62 +284,169 @@ function send(controller: SseController, msg: SseMessage): void {
   }
 }
 
+function isTerminalBroadcast(taskProgress: unknown): boolean {
+  if (!taskProgress || typeof taskProgress !== "object") return false;
+  const tp = taskProgress as {
+    status?: unknown;
+    stage?: unknown;
+    percent?: unknown;
+    error?: unknown;
+  };
+  return (
+    tp.status === "COMPLETED" ||
+    tp.status === "FAILED" ||
+    tp.status === "CANCELLED" ||
+    tp.stage === "COMPLETED" ||
+    (typeof tp.percent === "number" && tp.percent >= 100) ||
+    Boolean(tp.error)
+  );
+}
+
+async function emitTaskProgressFrame(
+  regionId: string,
+  taskProgress: unknown,
+  forceMetricsRefresh: boolean
+): Promise<void> {
+  const seq = (emitSeqMap.get(regionId) ?? 0) + 1;
+  emitSeqMap.set(regionId, seq);
+  const isTerminal = isTerminalBroadcast(taskProgress);
+
+  const prev = emitChainMap.get(regionId) ?? Promise.resolve();
+  const task = prev
+    .catch(() => {})
+    .then(async () => {
+      if (!isTerminal && seq < (emitSeqMap.get(regionId) ?? 0)) {
+        return;
+      }
+      const bucket = subscribers.get(regionId);
+      if (!bucket || bucket.admin.size === 0) return;
+      const metrics = await getThrottledMetrics(regionId, forceMetricsRefresh);
+      if (!isTerminal && seq < (emitSeqMap.get(regionId) ?? 0)) {
+        return;
+      }
+      const currentBucket = subscribers.get(regionId);
+      if (!currentBucket || currentBucket.admin.size === 0) return;
+      const msg: SseMessage = {
+        type: "task-progress",
+        regionId,
+        taskProgress,
+        metrics,
+      };
+      for (const c of currentBucket.admin) send(c, msg);
+    });
+
+  const tail = task.finally(() => {
+    if (emitChainMap.get(regionId) === tail) {
+      emitChainMap.delete(regionId);
+    }
+  });
+  emitChainMap.set(regionId, tail);
+  await task;
+}
+
 /**
- * 推一帧 task-progress 给指定 region 的所有订阅者。
- *
- * 帧里同时塞 taskProgress + metrics：
- *   - taskProgress: chunk 完成的实时状态（status/percent/processed）
- *   - metrics: 当前 DB count（analyzedTickets 等）
- * 这样 PipelineCanvas 不用 fetchState 也能实时更新进度条和主题数。
- *
- * 调用方可以 fire-and-forget（async + .catch），不影响主流程：
- *   broadcastTaskProgress(regionId, tp).catch(() => {});
+ * 推一帧 task-progress 给指定 region 的 admin 订阅者。
+ * 若当前无 admin 订阅者，直接跳过 DB metrics 查询，也不推送给普通 user。
+ * 首帧与终态立即推送（保留 M1 await 语义），高频中间帧按 regionId 合并节流。
  */
 export async function broadcastTaskProgress(
   regionId: string,
   taskProgress: unknown
 ): Promise<void> {
-  const set = subscribers.get(regionId);
-  if (!set || set.size === 0) return;
-  const metrics = await computeMetrics(regionId);
-  const msg: SseMessage = {
-    type: "task-progress",
-    regionId,
-    taskProgress,
-    metrics,
-  };
-  for (const c of set) send(c, msg);
+  const bucket = subscribers.get(regionId);
+  if (!bucket || bucket.admin.size === 0) return;
+
+  const isTerminal = isTerminalBroadcast(taskProgress);
+  const now = Date.now();
+  let st = broadcastThrottle.get(regionId);
+  if (!st) {
+    st = { lastSentAt: 0, timer: null, pendingTaskProgress: null };
+    broadcastThrottle.set(regionId, st);
+  }
+
+  const elapsed = now - st.lastSentAt;
+  const isImmediate = isTerminal || st.lastSentAt === 0 || elapsed >= BROADCAST_THROTTLE_MS;
+
+  if (isImmediate) {
+    if (st.timer) {
+      clearTimeout(st.timer);
+      st.timer = null;
+    }
+    st.pendingTaskProgress = null;
+    st.lastSentAt = now;
+    await emitTaskProgressFrame(regionId, taskProgress, isTerminal);
+    return;
+  }
+
+  st.pendingTaskProgress = taskProgress;
+  if (!st.timer) {
+    const waitMs = Math.max(1, BROADCAST_THROTTLE_MS - elapsed);
+    const entry = st;
+    entry.timer = setTimeout(() => {
+      entry.timer = null;
+      const pending = entry.pendingTaskProgress;
+      entry.pendingTaskProgress = null;
+      if (pending == null) return;
+      entry.lastSentAt = Date.now();
+      void emitTaskProgressFrame(regionId, pending, isTerminalBroadcast(pending));
+    }, waitMs);
+    entry.timer.unref?.();
+  }
 }
 
 /**
- * 推一个 "数据变化" 信号给订阅者，触发 cockpit / themes / multifreq 等
- * 派生聚合页面 refetch 各自的懒数据。比定时轮询更省、更及时。
+ * 推一个 "数据变化" 信号（仅含 type 与 regionId，无敏感载荷）给订阅者，
+ * 触发前端按各自权限重新拉取数据，并同步失效聚合缓存与 SSE metrics 缓存。
  */
 export function broadcastDataRefresh(regionId: string): void {
-  const set = subscribers.get(regionId);
-  if (!set || set.size === 0) return;
+  invalidateCivicAggregates(regionId);
+  invalidateMetricsCache(regionId);
+  const bucket = subscribers.get(regionId);
+  if (!bucket || (bucket.admin.size === 0 && bucket.user.size === 0)) return;
   const msg: SseMessage = { type: "civic-data-refresh", regionId };
-  for (const c of set) send(c, msg);
+  for (const c of bucket.admin) send(c, msg);
+  for (const c of bucket.user) send(c, msg);
 }
 
 /**
- * 推一个 "pipeline-state 缓存失效" 信号，pipeline-drawer 收到后
- * refetch /api/workbench/pipeline-state（含 systemTwoNodes 探活这种
- * SSE 不便携带的重量级数据）。
+ * 推一个 "pipeline-state 缓存失效" 信号给 admin 订阅者，
+ * 触发工作台 refetch /api/workbench/pipeline-state，并同步失效聚合缓存与 SSE metrics 缓存。
  */
 export function broadcastPipelineRefresh(regionId: string): void {
-  const set = subscribers.get(regionId);
-  if (!set || set.size === 0) return;
+  invalidateCivicAggregates(regionId);
+  invalidateMetricsCache(regionId);
+  const bucket = subscribers.get(regionId);
+  if (!bucket || bucket.admin.size === 0) return;
   const msg: SseMessage = { type: "pipeline-state-refresh", regionId };
-  for (const c of set) send(c, msg);
+  for (const c of bucket.admin) send(c, msg);
 }
 
 /**
- * 测试 / 优雅停机用：清掉所有订阅。
+ * 测试 / 优雅停机用：清掉所有订阅与节流状态。
  */
 export function _resetSseBroadcasterForTesting(): void {
-  for (const set of subscribers.values()) {
-    for (const c of set) {
+  for (const st of broadcastThrottle.values()) {
+    if (st.timer) {
+      clearTimeout(st.timer);
+      st.timer = null;
+    }
+    st.pendingTaskProgress = null;
+  }
+  broadcastThrottle.clear();
+  metricsCache.clear();
+  metricsInFlight.clear();
+  metricsSeqMap.clear();
+  emitSeqMap.clear();
+  emitChainMap.clear();
+  for (const bucket of subscribers.values()) {
+    for (const c of bucket.admin) {
+      try {
+        c.close();
+      } catch {
+        /* ignore */
+      }
+    }
+    for (const c of bucket.user) {
       try {
         c.close();
       } catch {

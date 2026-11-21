@@ -11,6 +11,7 @@ export async function POST(req: Request) {
     const guard = await guardAgentRequest(req, {
       role: "admin",
       scope: "agent-patrol",
+      maxPerMinute: 10,
     });
     if ("response" in guard) return guard.response;
 

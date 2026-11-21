@@ -95,7 +95,7 @@
   --dur-slow: 0.4s;
 }
 
-@media (pointer: coarse) {
+@media (max-width: 640px), (pointer: coarse) {
   :root {
     --target-size: 44px;
   }
@@ -105,6 +105,7 @@
 html {
   height: 100%;
   scroll-padding-top: calc(var(--nav-h) + 16px + env(safe-area-inset-top, 0px));
+  scroll-padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
@@ -143,7 +144,7 @@ html {
     align-items: center;
   }
 
-  :where(.quad-dot, .cockpit-shell button, .cockpit-shell [role="button"], .cockpit-shell select, .leaflet-container a) {
+  :where(.quad-dot, .brand-morph-capsule, .cockpit-shell button, .cockpit-shell [role="button"], .cockpit-shell select, .leaflet-container a) {
     min-block-size: 0;
     min-inline-size: 0;
   }
@@ -253,3 +254,77 @@ p,
   text-decoration: none;
 }
 .main a:hover { color: var(--c-brand-dark); }
+
+/* 防止右下角 .chat-fab (48px + 20px) 长期遮挡底部按钮/分页 */
+body:has(.chat-fab) .main {
+  padding-block-end: calc(84px + env(safe-area-inset-bottom, 0px));
+}
+
+/* 390px 窄屏折行与高度自适应 */
+body .quadrant-footer {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+body .chart-legend {
+  flex-wrap: wrap;
+}
+@media (max-width: 900px) {
+  body .video-info-card {
+    height: auto;
+    min-height: 92px;
+  }
+}
+
+/* 移动端与粗指针设备 >= 44px 触控热区兜底（特异度高于 unlayered components.css / civic-pages.css） */
+@media (max-width: 640px), (pointer: coarse) {
+  body :is(
+    .btn,
+    .filter-tab,
+    .page-btn,
+    .navbar__toggle,
+    .navbar-icon-btn,
+    .pipeline-console-icon-btn,
+    .drawer__close,
+    .video-modal-close-btn,
+    .page-size-select,
+    .filter-select
+  ):not(.cockpit-shell *):not(.quad-dot):not(.brand-morph-capsule) {
+    min-block-size: 44px;
+  }
+
+  body :is(
+    .btn,
+    .page-btn,
+    .navbar__toggle,
+    .navbar-icon-btn,
+    .pipeline-console-icon-btn,
+    .drawer__close,
+    .video-modal-close-btn
+  ):not(.cockpit-shell *):not(.quad-dot):not(.brand-morph-capsule) {
+    min-inline-size: 44px;
+  }
+
+  body .search-input,
+  body .page-jump input {
+    min-block-size: 44px;
+    height: auto;
+  }
+
+  body .filter-bar {
+    flex-wrap: wrap;
+  }
+
+  body .search-input {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  body .navbar__toggle,
+  body .navbar-icon-btn,
+  body .pipeline-console-icon-btn,
+  body .drawer__close,
+  body .video-modal-close-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

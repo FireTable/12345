@@ -1,6 +1,5 @@
 import { ChatOpenAI } from "@langchain/openai";
 import { Embeddings, type EmbeddingsParams } from "@langchain/core/embeddings";
-import { z } from "zod";
 import * as nextEnvPkg from "@next/env";
 
 try {
@@ -88,59 +87,6 @@ export function systemTwoConcurrency(): number {
 
   const endpoints = getSystemTwoEndpoints();
   return Math.max(1, lastMergedNodeCount || endpoints.length);
-}
-
-const ToolProbeSchema = z.object({ ping: z.string() });
-
-let toolCallingSupported: boolean | null = null;
-let toolCallingProbe: Promise<boolean> | null = null;
-
-/** 进程内缓存：一次探测，整场研判复用。 */
-export function modelSupportsToolCallingCached(): boolean | null {
-  return toolCallingSupported;
-}
-
-export function markToolCallingUnsupported(reason?: string): void {
-  if (toolCallingSupported !== false) {
-    console.warn(
-      `[llm] tool calling disabled, fallback to JSON${reason ? `: ${reason}` : ""}`
-    );
-  }
-  toolCallingSupported = false;
-}
-
-/**
- * 优先探测当前端点是否支持 tool / function calling。
- * 支持则后续走 withStructuredOutput；失败只记一次，整场回退 JSON。
- */
-export async function modelSupportsToolCalling(): Promise<boolean> {
-  if (toolCallingSupported !== null) return toolCallingSupported;
-  if (toolCallingProbe) return toolCallingProbe;
-
-  toolCallingProbe = (async () => {
-    try {
-      const chat = getChatModel(0);
-      const structured = chat.withStructuredOutput(ToolProbeSchema);
-      const raced = await Promise.race([
-        structured.invoke('只通过函数/工具调用返回 {"ping":"ok"}，不要输出其它文字。'),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("tool-calling probe timeout")), 12000)
-        ),
-      ]);
-      const ping = (raced as { ping?: unknown })?.ping;
-      toolCallingSupported = typeof ping === "string" && ping.length > 0;
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      toolCallingSupported = false;
-      console.warn(`[llm] tool calling probe failed, fallback to JSON: ${message}`);
-    }
-    if (toolCallingSupported) {
-      console.info("[llm] tool calling available, using structured output");
-    }
-    return toolCallingSupported;
-  })();
-
-  return toolCallingProbe;
 }
 
 export function getChatModel(temperature: number = 0.2): ChatOpenAI {

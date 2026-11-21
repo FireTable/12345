@@ -11,6 +11,7 @@ export async function GET(req: Request) {
     const guard = await guardAgentRequest(req, {
       role: "any",
       scope: "intake-my-tickets",
+      maxPerMinute: 120,
     });
     if ("response" in guard) return guard.response;
 

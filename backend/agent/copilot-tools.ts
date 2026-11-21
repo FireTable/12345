@@ -3,15 +3,20 @@
  * 所有工具均为只读或待确认提案生成，绝不直接写入数据库。
  */
 import { tool } from "@langchain/core/tools";
-import { and, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, notInArray, or, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
-import { createEmbedClient } from "@civic/embed";
 import { getRegionDb } from "@/db/client";
 import { themesTable, ticketThemesTable, ticketsTable } from "@/db/schema";
-import { embedEndpointsFromEnv } from "@/backend/embed-products";
-import { ticketBodyForAI } from "@/backend/anonymizer";
+import { embedEndpointsFromEnv, getSharedEmbedClient } from "@/backend/embed-products";
+import { anonymize, deanonymize, ticketBodyForAI } from "@/backend/anonymizer";
+import { getRerankModel } from "@/backend/model";
 import { searchTicketsByVector } from "@/lib/ticket-embeddings";
 import type { DomainType } from "@/lib/domain-profile";
+
+export interface CopilotToolsOptions {
+  sessionKeymap?: Record<string, string>;
+  signal?: AbortSignal;
+}
 
 const loose = z.object({}).passthrough();
 
@@ -111,6 +116,7 @@ function normalizeStatusFilter(value: unknown): string | undefined {
 function normalizeUrgencyFilter(value: unknown): string | undefined {
   const s = String(value || "").trim().toUpperCase();
   if (!s) return undefined;
+  if (s === "HIGH") return "HIGH";
   if (s === "URGENT" || s === "紧急" || s === "高危" || s === "加急") return "URGENT";
   if (s === "MEDIUM" || s === "较急" || s === "中") return "MEDIUM";
   if (s === "NORMAL" || s === "一般" || s === "普通") return "NORMAL";
@@ -126,75 +132,377 @@ function normalizeRiskFilter(value: unknown): string | undefined {
   return undefined;
 }
 
-function extractQueryTokens(rawQuery: string): { phrase: string; tokens: string[] } {
-  const phrase = escapeLike(rawQuery);
-  if (!phrase) return { phrase: "", tokens: [] };
+function createAbortError(signal?: AbortSignal): Error {
+  const reason = signal?.reason;
+  if (reason instanceof Error) {
+    if (reason.name !== "AbortError") reason.name = "AbortError";
+    return reason;
+  }
+  const message = typeof reason === "string" && reason.trim() ? reason : "The operation was aborted";
+  const err = new Error(message);
+  err.name = "AbortError";
+  return err;
+}
+
+function isAbortError(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && (error as { name?: unknown }).name === "AbortError");
+}
+
+export function deanonymizeArgs<T>(input: T, sessionKeymap?: Record<string, string>): T {
+  if (!input || !sessionKeymap || Object.keys(sessionKeymap).length === 0) {
+    return input;
+  }
+  if (typeof input === "string") {
+    return deanonymize(input, sessionKeymap) as unknown as T;
+  }
+  if (Array.isArray(input)) {
+    return input.map((item) => deanonymizeArgs(item, sessionKeymap)) as unknown as T;
+  }
+  if (typeof input === "object") {
+    const record = input as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(record)) {
+      out[k] = deanonymizeArgs(v, sessionKeymap);
+    }
+    return out as T;
+  }
+  return input;
+}
+
+const PLATE_CAPTURE_REGEX =
+  /([粤京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵青藏川宁琼][A-Za-z])[·•・\-\s]?([A-Za-z0-9]{3,5}[A-Za-z0-9挂学警港澳])/g;
+const NORMALIZED_PLATE_REGEX =
+  /^[粤京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵青藏川宁琼][A-Z][A-Z0-9]{3,5}[A-Z0-9挂学警港澳]$/;
+const ZH_WORD_SEGMENTER = new Intl.Segmenter("zh-CN", { granularity: "word" });
+const QUERY_FILLER_WORDS = new Set([
+  "今天",
+  "昨天",
+  "前天",
+  "刚才",
+  "刚刚",
+  "目前",
+  "现在",
+  "一点",
+  "两点",
+  "三点",
+  "左右",
+  "已经",
+  "一直",
+  "导致",
+  "附近",
+  "无法",
+  "正常",
+  "超过",
+  "以及",
+  "因为",
+  "所以",
+  "如果",
+  "然后",
+  "可以",
+  "需要",
+  "进行",
+  "存在",
+  "出现",
+  "希望",
+  "要求",
+  "反映",
+  "投诉",
+  "市民",
+]);
+const SINGLE_CHAR_STOP = new Set([
+  "的",
+  "了",
+  "和",
+  "与",
+  "及",
+  "对",
+  "把",
+  "被",
+  "给",
+  "从",
+  "到",
+  "向",
+  "为",
+  "因",
+  "在",
+  "有",
+  "无",
+  "不",
+  "很",
+  "太",
+  "最",
+  "都",
+  "也",
+  "又",
+  "再",
+  "还",
+  "就",
+  "却",
+  "而",
+  "并",
+  "或",
+  "但",
+]);
+
+function buildPlateVariants(plate: string): string[] {
+  const upper = plate.trim().toUpperCase();
+  if (!NORMALIZED_PLATE_REGEX.test(upper)) return [plate];
+  const prefix = upper.slice(0, 2);
+  const suffix = upper.slice(2);
+  return Array.from(
+    new Set([upper, `${prefix}·${suffix}`, `${prefix}-${suffix}`, `${prefix}・${suffix}`])
+  );
+}
+
+export function extractQueryTokens(rawQuery: string): {
+  phrase: string;
+  anchorTerms: string[];
+  tokens: string[];
+} {
+  const rawCleaned = String(rawQuery || "")
+    .replace(/[%_\\]/g, "")
+    .replace(
+      PLATE_CAPTURE_REGEX,
+      (_match, prefix: string, suffix: string) => `${prefix.toUpperCase()}${suffix.toUpperCase()}`
+    );
+
+  const phrase = rawCleaned
+    .replace(/[，。？！、；：""''“”‘’（）()【】「」『』《》〈〉·•・…—～~`!@#$%^&*+=|<>?/,:\[\]{};"']+/g, " ")
+    .replace(/(?<![A-Za-z0-9])[.-]|[.-](?![A-Za-z0-9])/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 60);
+
+  if (!phrase) return { phrase: "", anchorTerms: [], tokens: [] };
 
   const rawParts = phrase
-    .split(/[\s,，、；;+|/]+/)
+    .split(/\s+/)
     .map((p) => p.trim())
     .filter((p) => p.length >= 2);
 
   const nonStop = rawParts.filter((p) => !QUERY_STOPWORDS.has(p));
-  const seedParts = nonStop.length > 0 ? nonStop : rawParts;
+  const sourceParts = nonStop.length > 0 ? nonStop : rawParts;
+  const interleavedParts: string[] = [];
+  if (sourceParts.length > 6) {
+    for (let lo = 0, hi = sourceParts.length - 1; lo <= hi; lo += 1, hi -= 1) {
+      interleavedParts.push(sourceParts[lo]!);
+      if (lo < hi) {
+        interleavedParts.push(sourceParts[hi]!);
+      }
+    }
+  } else {
+    interleavedParts.push(...sourceParts);
+  }
+  const anchorTerms = interleavedParts.slice(0, 6);
 
   const out: string[] = [];
   const seen = new Set<string>();
   const add = (tok: string) => {
     const clean = tok.trim();
-    if (clean.length < 2 || seen.has(clean)) return;
+    if (clean.length < 2 || QUERY_STOPWORDS.has(clean) || seen.has(clean)) return;
     seen.add(clean);
     out.push(clean);
   };
 
-  for (const part of seedParts) {
+  const chineseSegments: string[] = [];
+  const seenSeg = new Set<string>();
+
+  for (const part of anchorTerms) {
     add(part);
-    if (/^[\u4e00-\u9fff]{4,16}$/.test(part)) {
-      for (let i = 0; i + 2 <= part.length; i += 2) {
-        add(part.slice(i, i + 2));
+
+    const plateSuffixes = new Set<string>();
+    for (const plate of part.match(PLATE_CAPTURE_REGEX) || []) {
+      const upper = plate.trim().toUpperCase();
+      plateSuffixes.add(upper.slice(1));
+      for (const variant of buildPlateVariants(plate)) {
+        add(variant);
       }
-      if (part.length % 2 === 1 && part.length >= 5) {
-        add(part.slice(part.length - 2));
+    }
+    const partWithoutPlates = part.replace(PLATE_CAPTURE_REGEX, " ");
+    for (const code of partWithoutPlates.match(/[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*/g) || []) {
+      const upperCode = code.toUpperCase();
+      const isPlatePart = Array.from(plateSuffixes).some(
+        (ps) => ps === upperCode || ps.startsWith(upperCode)
+      );
+      if (code.length >= 2 && !isPlatePart) add(code);
+    }
+    for (const mixed of part.match(/\d+[号栋座室路街期区楼层线]{1,2}/g) || []) {
+      add(mixed);
+    }
+    for (const seg of part.match(/[\u4e00-\u9fff]{2,}/g) || []) {
+      if (!seenSeg.has(seg)) {
+        seenSeg.add(seg);
+        chineseSegments.push(seg);
       }
     }
   }
 
-  return { phrase, tokens: out.slice(0, 6) };
+  for (const seg of chineseSegments) {
+    add(seg);
+  }
+
+  // Word-segmented Chinese tokens + adjacent 1-char pairs + balanced start/tail/middle bigrams
+  const segPrimary: string[][] = [];
+  const segSecondary: string[][] = [];
+  const segFallback: string[][] = [];
+
+  for (const seg of chineseSegments) {
+    if (seg.length < 3) continue;
+    const primary: string[] = [];
+    const secondary: string[] = [];
+    const fallback: string[] = [];
+    const wordParts = Array.from(ZH_WORD_SEGMENTER.segment(seg)).filter((item) => item.isWordLike);
+
+    for (let idx = 0; idx < wordParts.length; idx += 1) {
+      const part = wordParts[idx];
+      if (part.segment.length >= 2) {
+        if (QUERY_FILLER_WORDS.has(part.segment)) {
+          secondary.push(part.segment);
+        } else {
+          primary.push(part.segment);
+        }
+        if (part.segment.length >= 4) {
+          for (let i = 0; i + 2 <= part.segment.length; i += 1) {
+            fallback.push(part.segment.slice(i, i + 2));
+          }
+        }
+      } else if (part.segment.length === 1) {
+        const next = wordParts[idx + 1];
+        if (
+          next &&
+          next.segment.length === 1 &&
+          part.index + 1 === next.index &&
+          !SINGLE_CHAR_STOP.has(part.segment) &&
+          !SINGLE_CHAR_STOP.has(next.segment)
+        ) {
+          const pair = `${part.segment}${next.segment}`;
+          if (QUERY_FILLER_WORDS.has(pair)) {
+            secondary.push(pair);
+          } else {
+            primary.push(pair);
+          }
+        } else if (part.index + 2 <= seg.length && !SINGLE_CHAR_STOP.has(part.segment)) {
+          fallback.push(seg.slice(part.index, part.index + 2));
+        }
+      }
+    }
+
+    // Spread remaining sliding bigrams across start, tail, and middle
+    const totalBigrams = seg.length - 1;
+    for (let step = 0; step < totalBigrams; step += 1) {
+      const pos = step % 2 === 0 ? Math.floor(step / 2) : totalBigrams - 1 - Math.floor(step / 2);
+      if (pos >= 0 && pos + 2 <= seg.length) {
+        fallback.push(seg.slice(pos, pos + 2));
+      }
+    }
+
+    // Interleave primary words from start and tail so long queries retain both leading context and trailing complaint keywords
+    const interleavedPrimary: string[] = [];
+    for (let lo = 0, hi = primary.length - 1; lo <= hi; lo += 1, hi -= 1) {
+      interleavedPrimary.push(primary[lo]!);
+      if (lo < hi) {
+        interleavedPrimary.push(primary[hi]!);
+      }
+    }
+
+    segPrimary.push(interleavedPrimary);
+    segSecondary.push(secondary);
+    segFallback.push(fallback);
+  }
+
+  for (const group of [segPrimary, segSecondary, segFallback]) {
+    const maxLen = group.reduce((m, arr) => Math.max(m, arr.length), 0);
+    for (let i = 0; i < maxLen && out.length < 12; i += 1) {
+      for (const arr of group) {
+        if (i < arr.length && out.length < 12) {
+          add(arr[i]);
+        }
+      }
+    }
+  }
+
+  return { phrase, anchorTerms, tokens: out.slice(0, 12) };
 }
 
-function isSemanticQuery(query: string): boolean {
+export function isSemanticQuery(query: string): boolean {
   const trimmed = query.trim();
   if (trimmed.length < 2) return false;
-  if (/^(?:EC|IN|GV|TK|SKU|TH|THEME)?[-_]?\d[\dA-Za-z-]*$/i.test(trimmed)) return false;
+  if (/^(?:\{\{[A-Z0-9_]+\}\}\s*)+$/.test(trimmed)) return false;
+  if (/^(?:EC|IN|GV|TK|SKU|TH|THEME)?[-_]?(?=[A-Z0-9-]*\d)[A-Za-z0-9-]{2,}$/i.test(trimmed)) {
+    return false;
+  }
+  if (
+    /^[粤京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵青藏川宁琼][A-Z][·•・\-\s]?[A-Z0-9]{3,5}[A-Z0-9挂学警港澳]$/i.test(
+      trimmed
+    )
+  ) {
+    return false;
+  }
   return /[\u4e00-\u9fffA-Za-z]{2,}/.test(trimmed);
 }
 
-function withTimeout<T>(work: Promise<T>, ms: number, message: string): Promise<T> {
+function withTimeout<T>(
+  work: Promise<T>,
+  ms: number,
+  message: string,
+  signal?: AbortSignal
+): Promise<T> {
+  if (signal?.aborted) {
+    return Promise.reject(createAbortError(signal));
+  }
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(message)), ms);
+    let settled = false;
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(createAbortError(signal));
+    };
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", onAbort);
+      reject(new Error(message));
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+
     work.then(
       (value) => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
         resolve(value);
       },
       (error) => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
         reject(error);
       }
     );
   });
 }
 
-async function embedQuery(text: string, timeoutMs = 3500): Promise<number[]> {
-  const client = createEmbedClient({
+async function embedQuery(
+  text: string,
+  timeoutMs = 3500,
+  signal?: AbortSignal
+): Promise<number[]> {
+  if (signal?.aborted) {
+    throw createAbortError(signal);
+  }
+  const client = getSharedEmbedClient({
     endpoints: embedEndpointsFromEnv(),
     profile: "online",
     apiKey: process.env.EMBEDDING_API_KEY || process.env.OPENAI_API_KEY || "",
   });
   const [vector] = await withTimeout(
-    client.embed([text.trim().slice(0, 500) || "空查询"]),
+    client.embed([text.trim().slice(0, 500) || "空查询"], { signal, timeoutMs }),
     timeoutMs,
-    "工单向量检索超时"
+    "工单向量检索超时",
+    signal
   );
   return vector || [];
 }
@@ -210,6 +518,51 @@ function buildTicketTermOrClause(pattern: string): SQL {
     ilike(ticketsTable.subdistrict, pattern),
     ilike(ticketsTable.sourceCategory, pattern)
   )!;
+}
+
+function buildTicketTermOrClauseForTerm(term: string): SQL {
+  const variants = buildPlateVariants(term);
+  if (variants.length <= 1) {
+    return buildTicketTermOrClause(`%${term}%`);
+  }
+  return or(...variants.map((v) => buildTicketTermOrClause(`%${v}%`)))!;
+}
+
+function buildOverlapTerms(phrase: string, anchorTerms: string[], tokens: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const add = (term: string) => {
+    const clean = term.trim().toLowerCase();
+    if (clean.length < 2 || QUERY_STOPWORDS.has(clean) || seen.has(clean)) return;
+    seen.add(clean);
+    out.push(clean);
+  };
+
+  if (anchorTerms.length >= 2) {
+    for (const a of anchorTerms) {
+      if (a.length <= 6) {
+        add(a);
+      } else {
+        for (const t of tokens) {
+          if (t !== a && a.includes(t)) add(t);
+        }
+        if (!out.some((x) => a.toLowerCase().includes(x))) add(a);
+      }
+    }
+    for (const t of tokens) {
+      if (t !== phrase && !anchorTerms.includes(t) && t.length <= 8) {
+        add(t);
+      }
+    }
+  } else {
+    for (const t of tokens) {
+      if (t !== phrase || tokens.length === 1) {
+        add(t);
+      }
+    }
+    if (out.length === 0 && phrase) add(phrase);
+  }
+  return out;
 }
 
 interface TicketSearchHit {
@@ -232,12 +585,45 @@ interface TicketSearchHit {
   _createTimeMs: number;
 }
 
-export function createCopilotTools(regionId: string, domainType: DomainType = "GOV_12345") {
+export function createCopilotTools(
+  regionId: string,
+  domainType: DomainType = "GOV_12345",
+  options?: CopilotToolsOptions
+) {
   const isEcommerce = domainType === "ECOMMERCE_CS";
+  const sessionKeymap = options?.sessionKeymap;
+  const toolSignal = options?.signal;
+
+  const restoreArgs = <T>(input: T): T => deanonymizeArgs(input, sessionKeymap);
+
+  const maskText = (value: string | null | undefined): string => {
+    const raw = (value || "").trim();
+    if (!raw) return "";
+    const res = anonymize(raw, sessionKeymap ? { seedKeymap: sessionKeymap } : undefined);
+    if (sessionKeymap && res.keymap && Object.keys(res.keymap).length > 0) {
+      Object.assign(sessionKeymap, res.keymap);
+    }
+    return res.text;
+  };
+
+  const bodyForAI = (row: { content?: string | null; maskedContent?: string | null }): string => {
+    if (sessionKeymap) {
+      return row.content && row.content.length > 0
+        ? row.content
+        : row.maskedContent || "";
+    }
+    return ticketBodyForAI(row);
+  };
 
   const searchTickets = tool(
-    async (input) => {
+    async (rawInput, config?: { signal?: AbortSignal }) => {
+      const activeSignal = config?.signal ?? toolSignal;
+      if (activeSignal?.aborted) {
+        throw createAbortError(activeSignal);
+      }
+      const input = restoreArgs(rawInput);
       const rawQuery = String(input.query || "").trim();
+      const maskedQuery = maskText(rawQuery);
       const statusFilter = normalizeStatusFilter(input.status);
       const urgencyFilter = normalizeUrgencyFilter(input.urgency);
       const subdistrictFilter = escapeLike(input.subdistrict);
@@ -245,6 +631,8 @@ export function createCopilotTools(regionId: string, domainType: DomainType = "G
       const isFakeClosureFilter = parseOptionalBool(input.isFakeClosure);
       const stabilityRiskFilter = parseOptionalBool(input.stabilityRisk);
       const limit = clampLimit(input.limit, 8, 12);
+      const recallLimit = Math.min(48, Math.max(limit * 4, 24));
+      const vectorLimit = Math.min(32, Math.max(limit * 3, 16));
 
       const hasStructuredFilter = Boolean(
         statusFilter ||
@@ -255,8 +643,13 @@ export function createCopilotTools(regionId: string, domainType: DomainType = "G
           stabilityRiskFilter !== undefined
       );
 
-      if (!rawQuery && !hasStructuredFilter) {
-        return JSON.stringify({ error: "缺少检索词或筛选条件" });
+      const { phrase, anchorTerms, tokens } = extractQueryTokens(rawQuery);
+      if (!phrase && !hasStructuredFilter) {
+        return JSON.stringify({
+          hits: [],
+          retrievalMode: "none",
+          note: "请提供有效关键词或筛选条件",
+        });
       }
 
       const structuredFilters: SQL[] = [];
@@ -284,39 +677,50 @@ export function createCopilotTools(regionId: string, domainType: DomainType = "G
       }
 
       const { db } = await getRegionDb(regionId);
-      const { phrase, tokens } = extractQueryTokens(rawQuery);
+      const anchorSet = new Set(anchorTerms);
+
+      const ticketSelectFields = {
+        ticketNo: ticketsTable.ticketNo,
+        title: ticketsTable.title,
+        summarizeTitle: ticketsTable.summarizeTitle,
+        content: ticketsTable.content,
+        maskedContent: ticketsTable.maskedContent,
+        subdistrict: ticketsTable.subdistrict,
+        category: ticketsTable.sourceCategory,
+        subject: ticketsTable.canonicalSubject,
+        eventType: ticketsTable.eventType,
+        address: ticketsTable.address,
+        urgency: ticketsTable.urgency,
+        status: ticketsTable.status,
+        isFakeClosure: ticketsTable.isFakeClosure,
+        stabilityRisk: ticketsTable.stabilityRisk,
+        themeId: ticketsTable.primaryThemeId,
+        createTime: ticketsTable.createTime,
+      };
 
       const sqlSearchPromise = (async () => {
-        const whereParts: SQL[] = [...structuredFilters];
         const scoreParts: SQL[] = [];
 
         if (phrase) {
           const phrasePat = `%${phrase}%`;
-          const queryMatchers: SQL[] = [buildTicketTermOrClause(phrasePat)];
-          for (const tok of tokens) {
-            if (tok !== phrase) {
-              queryMatchers.push(buildTicketTermOrClause(`%${tok}%`));
-            }
-          }
-          if (isFakeClosureFilter === undefined && /假闭环|反复投诉/.test(phrase)) {
-            queryMatchers.push(eq(ticketsTable.isFakeClosure, true));
-          }
-          if (stabilityRiskFilter === undefined && /红线|涉稳/.test(phrase)) {
-            queryMatchers.push(eq(ticketsTable.stabilityRisk, true));
-          }
-          whereParts.push(or(...queryMatchers)!);
-
           scoreParts.push(
             sql`CASE WHEN lower(${ticketsTable.ticketNo}) = ${phrase.toLowerCase()} THEN 200 ELSE 0 END`
           );
           scoreParts.push(
             sql`CASE WHEN (coalesce(${ticketsTable.title}, '') ILIKE ${phrasePat} OR coalesce(${ticketsTable.summarizeTitle}, '') ILIKE ${phrasePat} OR coalesce(${ticketsTable.canonicalSubject}, '') ILIKE ${phrasePat}) THEN 80 WHEN (coalesce(${ticketsTable.content}, '') ILIKE ${phrasePat} OR coalesce(${ticketsTable.address}, '') ILIKE ${phrasePat} OR coalesce(${ticketsTable.subdistrict}, '') ILIKE ${phrasePat} OR coalesce(${ticketsTable.sourceCategory}, '') ILIKE ${phrasePat} OR coalesce(${ticketsTable.ticketNo}, '') ILIKE ${phrasePat}) THEN 40 ELSE 0 END`
           );
+          for (const anchor of anchorTerms) {
+            if (anchor === phrase) continue;
+            const aPat = `%${anchor}%`;
+            scoreParts.push(
+              sql`CASE WHEN (coalesce(${ticketsTable.title}, '') ILIKE ${aPat} OR coalesce(${ticketsTable.summarizeTitle}, '') ILIKE ${aPat} OR coalesce(${ticketsTable.canonicalSubject}, '') ILIKE ${aPat}) THEN 32 WHEN (coalesce(${ticketsTable.content}, '') ILIKE ${aPat} OR coalesce(${ticketsTable.address}, '') ILIKE ${aPat} OR coalesce(${ticketsTable.subdistrict}, '') ILIKE ${aPat} OR coalesce(${ticketsTable.sourceCategory}, '') ILIKE ${aPat} OR coalesce(${ticketsTable.ticketNo}, '') ILIKE ${aPat}) THEN 16 ELSE 0 END`
+            );
+          }
           for (const tok of tokens) {
-            if (tok === phrase) continue;
+            if (tok === phrase || anchorSet.has(tok)) continue;
             const tPat = `%${tok}%`;
             scoreParts.push(
-              sql`CASE WHEN (coalesce(${ticketsTable.title}, '') ILIKE ${tPat} OR coalesce(${ticketsTable.summarizeTitle}, '') ILIKE ${tPat} OR coalesce(${ticketsTable.canonicalSubject}, '') ILIKE ${tPat}) THEN 20 WHEN (coalesce(${ticketsTable.content}, '') ILIKE ${tPat} OR coalesce(${ticketsTable.address}, '') ILIKE ${tPat} OR coalesce(${ticketsTable.subdistrict}, '') ILIKE ${tPat} OR coalesce(${ticketsTable.sourceCategory}, '') ILIKE ${tPat} OR coalesce(${ticketsTable.ticketNo}, '') ILIKE ${tPat}) THEN 10 ELSE 0 END`
+              sql`CASE WHEN (coalesce(${ticketsTable.title}, '') ILIKE ${tPat} OR coalesce(${ticketsTable.summarizeTitle}, '') ILIKE ${tPat} OR coalesce(${ticketsTable.canonicalSubject}, '') ILIKE ${tPat}) THEN 16 WHEN (coalesce(${ticketsTable.content}, '') ILIKE ${tPat} OR coalesce(${ticketsTable.address}, '') ILIKE ${tPat} OR coalesce(${ticketsTable.subdistrict}, '') ILIKE ${tPat} OR coalesce(${ticketsTable.sourceCategory}, '') ILIKE ${tPat} OR coalesce(${ticketsTable.ticketNo}, '') ILIKE ${tPat}) THEN 8 ELSE 0 END`
             );
           }
           if (isFakeClosureFilter === undefined && /假闭环|反复投诉/.test(phrase)) {
@@ -328,7 +732,7 @@ export function createCopilotTools(regionId: string, domainType: DomainType = "G
         }
 
         scoreParts.push(
-          sql`(CASE WHEN ${ticketsTable.isFakeClosure} = true THEN 4 ELSE 0 END + CASE WHEN ${ticketsTable.stabilityRisk} = true THEN 4 ELSE 0 END + CASE WHEN upper(coalesce(${ticketsTable.urgency}, '')) = 'URGENT' THEN 2 ELSE 0 END)`
+          sql`(CASE WHEN ${ticketsTable.isFakeClosure} = true THEN 4 ELSE 0 END + CASE WHEN ${ticketsTable.stabilityRisk} = true THEN 4 ELSE 0 END + CASE WHEN upper(coalesce(${ticketsTable.urgency}, '')) IN ('URGENT', 'HIGH') THEN 2 ELSE 0 END)`
         );
 
         const scoreExpr =
@@ -336,36 +740,75 @@ export function createCopilotTools(regionId: string, domainType: DomainType = "G
             ? sql<number>`(${sql.join(scoreParts, sql` + `)})`
             : scoreParts[0]!;
 
-        const rows = await db
+        // Phase 1: AND-first precision across anchorTerms (or exact phrase when <= 1 anchorTerm)
+        const phase1WhereParts: SQL[] = [...structuredFilters];
+        if (anchorTerms.length >= 2) {
+          for (const anchor of anchorTerms.slice(0, 4)) {
+            phase1WhereParts.push(buildTicketTermOrClauseForTerm(anchor));
+          }
+        } else if (phrase) {
+          phase1WhereParts.push(buildTicketTermOrClauseForTerm(phrase));
+        }
+
+        const phase1Rows = await db
           .select({
-            ticketNo: ticketsTable.ticketNo,
-            title: ticketsTable.title,
-            summarizeTitle: ticketsTable.summarizeTitle,
-            content: ticketsTable.content,
-            maskedContent: ticketsTable.maskedContent,
-            subdistrict: ticketsTable.subdistrict,
-            category: ticketsTable.sourceCategory,
-            subject: ticketsTable.canonicalSubject,
-            eventType: ticketsTable.eventType,
-            address: ticketsTable.address,
-            urgency: ticketsTable.urgency,
-            status: ticketsTable.status,
-            isFakeClosure: ticketsTable.isFakeClosure,
-            stabilityRisk: ticketsTable.stabilityRisk,
-            themeId: ticketsTable.primaryThemeId,
-            createTime: ticketsTable.createTime,
+            ...ticketSelectFields,
             relevanceScore: scoreExpr,
           })
           .from(ticketsTable)
-          .where(whereParts.length > 0 ? and(...whereParts) : undefined)
+          .where(phase1WhereParts.length > 0 ? and(...phase1WhereParts) : undefined)
           .orderBy(desc(scoreExpr), desc(ticketsTable.createTime))
-          .limit(limit);
+          .limit(recallLimit);
 
-        return rows;
+        // Phase 2: OR fallback/supplement if Phase 1 returned fewer than limit (or < min supplement threshold)
+        const needFallback =
+          Boolean(phrase) &&
+          phase1Rows.length < Math.min(recallLimit, Math.max(limit * 2, 12)) &&
+          (tokens.length > 0 ||
+            (isFakeClosureFilter === undefined && /假闭环|反复投诉/.test(phrase)) ||
+            (stabilityRiskFilter === undefined && /红线|涉稳/.test(phrase)));
+
+        if (!needFallback) {
+          return phase1Rows;
+        }
+
+        const queryMatchers: SQL[] = [buildTicketTermOrClause(`%${phrase}%`)];
+        for (const tok of tokens) {
+          if (tok !== phrase) {
+            queryMatchers.push(buildTicketTermOrClause(`%${tok}%`));
+          }
+        }
+        if (isFakeClosureFilter === undefined && /假闭环|反复投诉/.test(phrase)) {
+          queryMatchers.push(eq(ticketsTable.isFakeClosure, true));
+        }
+        if (stabilityRiskFilter === undefined && /红线|涉稳/.test(phrase)) {
+          queryMatchers.push(eq(ticketsTable.stabilityRisk, true));
+        }
+
+        const phase2WhereParts: SQL[] = [...structuredFilters, or(...queryMatchers)!];
+        const seenNos = phase1Rows.map((r) => r.ticketNo).filter(Boolean);
+        if (seenNos.length > 0) {
+          phase2WhereParts.push(notInArray(ticketsTable.ticketNo, seenNos));
+        }
+
+        const phase2Rows = await db
+          .select({
+            ...ticketSelectFields,
+            relevanceScore: scoreExpr,
+          })
+          .from(ticketsTable)
+          .where(and(...phase2WhereParts))
+          .orderBy(desc(scoreExpr), desc(ticketsTable.createTime))
+          .limit(recallLimit - phase1Rows.length);
+
+        return [...phase1Rows, ...phase2Rows];
       })();
 
       const vectorSearchPromise = (async () => {
-        if (!rawQuery || !isSemanticQuery(rawQuery)) return [];
+        if (!phrase || !maskedQuery || !isSemanticQuery(maskedQuery)) return [];
+        if (activeSignal?.aborted) {
+          throw createAbortError(activeSignal);
+        }
         try {
           const existsRes = await db.execute(
             sql`SELECT 1 FROM ticket_embeddings WHERE model = 'BAAI/bge-m3' LIMIT 1`
@@ -378,39 +821,89 @@ export function createCopilotTools(regionId: string, domainType: DomainType = "G
         try {
           const hits = await withTimeout(
             (async () => {
-              const vector = await embedQuery(rawQuery, 3500);
+              const vector = await embedQuery(maskedQuery, 3500, activeSignal);
               if (vector.length === 0) return [];
-              return searchTicketsByVector(regionId, vector, Math.min(8, limit));
+              return searchTicketsByVector(regionId, vector, vectorLimit, {
+                status: statusFilter,
+                urgency: urgencyFilter,
+                subdistrict: subdistrictFilter || undefined,
+                category: categoryFilter || undefined,
+                isFakeClosure: isFakeClosureFilter,
+                stabilityRisk: stabilityRiskFilter,
+              });
             })(),
             4200,
-            "工单向量检索超时"
+            "工单向量检索超时",
+            activeSignal
           );
           return hits;
-        } catch {
+        } catch (err) {
+          if (activeSignal?.aborted) {
+            throw err;
+          }
           return [];
         }
       })();
 
       const [sqlRows, rawVectorHits] = await Promise.all([sqlSearchPromise, vectorSearchPromise]);
+      if (activeSignal?.aborted) {
+        throw createAbortError(activeSignal);
+      }
+
+      const overlapTerms = buildOverlapTerms(phrase, anchorTerms, tokens);
+      const countLexicalOverlap = (row: {
+        ticketNo?: string | null;
+        title?: string | null;
+        summarizeTitle?: string | null;
+        subject?: string | null;
+        content?: string | null;
+        maskedContent?: string | null;
+        address?: string | null;
+        subdistrict?: string | null;
+        category?: string | null;
+      }): number => {
+        if (overlapTerms.length === 0) return 0;
+        const haystack = [
+          row.ticketNo,
+          row.title,
+          row.summarizeTitle,
+          row.subject,
+          row.content,
+          row.maskedContent,
+          row.address,
+          row.subdistrict,
+          row.category,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        let hits = 0;
+        for (const term of overlapTerms) {
+          if (haystack.includes(term)) hits += 1;
+        }
+        return hits;
+      };
 
       const merged = new Map<string, TicketSearchHit>();
 
       for (const row of sqlRows) {
-        const score = Number(row.relevanceScore || 0);
+        const overlap = countLexicalOverlap(row);
+        const multiTokenBonus = overlap >= 2 ? overlap * 35 : 0;
+        const score = Number(row.relevanceScore || 0) + multiTokenBonus;
         merged.set(row.ticketNo, {
           ticketNo: row.ticketNo,
-          title: row.summarizeTitle || row.title || "",
-          township: town(row.subdistrict),
+          title: maskText(row.summarizeTitle || row.title || ""),
+          township: town(maskText(row.subdistrict)),
           category: row.category || "",
-          subject: row.subject || "",
-          eventType: row.eventType || "",
-          address: row.address || "",
+          subject: maskText(row.subject || ""),
+          eventType: maskText(row.eventType || ""),
+          address: maskText(row.address || ""),
           urgency: row.urgency || "NORMAL",
           status: row.status || "PENDING",
           isFakeClosure: Boolean(row.isFakeClosure),
           stabilityRisk: Boolean(row.stabilityRisk),
           themeId: row.themeId || "",
-          body: clip(ticketBodyForAI(row), 240),
+          body: clip(maskText(bodyForAI(row).replace(/\s+/g, " ").slice(0, 800)), 240),
           matchSource: "sql",
           _rankScore: score,
           _createTimeMs: row.createTime ? new Date(row.createTime).getTime() : 0,
@@ -422,24 +915,7 @@ export function createCopilotTools(regionId: string, domainType: DomainType = "G
         const vecDetails =
           vecNos.length > 0
             ? await db
-                .select({
-                  ticketNo: ticketsTable.ticketNo,
-                  title: ticketsTable.title,
-                  summarizeTitle: ticketsTable.summarizeTitle,
-                  content: ticketsTable.content,
-                  maskedContent: ticketsTable.maskedContent,
-                  subdistrict: ticketsTable.subdistrict,
-                  category: ticketsTable.sourceCategory,
-                  subject: ticketsTable.canonicalSubject,
-                  eventType: ticketsTable.eventType,
-                  address: ticketsTable.address,
-                  urgency: ticketsTable.urgency,
-                  status: ticketsTable.status,
-                  isFakeClosure: ticketsTable.isFakeClosure,
-                  stabilityRisk: ticketsTable.stabilityRisk,
-                  themeId: ticketsTable.primaryThemeId,
-                  createTime: ticketsTable.createTime,
-                })
+                .select(ticketSelectFields)
                 .from(ticketsTable)
                 .where(and(inArray(ticketsTable.ticketNo, vecNos), ...structuredFilters))
             : [];
@@ -450,40 +926,75 @@ export function createCopilotTools(regionId: string, domainType: DomainType = "G
           if (!detail) continue;
 
           const existing = merged.get(vHit.ticketNo);
-          const simScore = Number((vHit.similarity * 100).toFixed(2));
+          const simScore = Number((vHit.similarity * 35).toFixed(2));
           if (existing) {
             existing.matchSource = "hybrid";
             existing.similarity = vHit.similarity;
-            existing._rankScore += simScore + 50;
+            existing._rankScore += simScore + 25;
           } else {
+            const overlap = countLexicalOverlap(detail);
+            const multiTokenBonus = overlap >= 2 ? overlap * 35 : overlap === 1 ? 8 : 0;
             merged.set(vHit.ticketNo, {
               ticketNo: detail.ticketNo,
-              title: detail.summarizeTitle || detail.title || vHit.title || "",
-              township: town(detail.subdistrict),
+              title: maskText(detail.summarizeTitle || detail.title || vHit.title || ""),
+              township: town(maskText(detail.subdistrict)),
               category: detail.category || vHit.category || "",
-              subject: detail.subject || vHit.subject || "",
-              eventType: detail.eventType || vHit.eventType || "",
-              address: detail.address || vHit.address || "",
+              subject: maskText(detail.subject || vHit.subject || ""),
+              eventType: maskText(detail.eventType || vHit.eventType || ""),
+              address: maskText(detail.address || vHit.address || ""),
               urgency: detail.urgency || vHit.urgency || "NORMAL",
               status: detail.status || "PENDING",
               isFakeClosure: Boolean(detail.isFakeClosure),
               stabilityRisk: Boolean(detail.stabilityRisk),
               themeId: detail.themeId || vHit.themeId || "",
-              body: clip(ticketBodyForAI(detail), 240),
+              body: clip(maskText(bodyForAI(detail).replace(/\s+/g, " ").slice(0, 800)), 240),
               similarity: vHit.similarity,
               matchSource: "vector",
-              _rankScore: simScore,
+              _rankScore: simScore + multiTokenBonus,
               _createTimeMs: detail.createTime ? new Date(detail.createTime).getTime() : 0,
             });
           }
         }
       }
 
-      const sortedHits = Array.from(merged.values())
-        .sort((a, b) => {
-          if (b._rankScore !== a._rankScore) return b._rankScore - a._rankScore;
-          return b._createTimeMs - a._createTimeMs;
-        })
+      const candidates = Array.from(merged.values()).sort((a, b) => {
+        if (b._rankScore !== a._rankScore) return b._rankScore - a._rankScore;
+        return b._createTimeMs - a._createTimeMs;
+      });
+
+      if (phrase && maskedQuery && isSemanticQuery(maskedQuery) && candidates.length >= 2 && !activeSignal?.aborted) {
+        const reranker = getRerankModel();
+        if (reranker) {
+          try {
+            const topK = candidates.slice(0, Math.min(candidates.length, Math.max(limit * 2, 16)));
+            const docs = topK.map(
+              (h) => `${h.title} | ${h.subject} | ${h.township} | ${h.category} | ${h.body}`
+            );
+            const reranked = await withTimeout(
+              reranker.rerank(maskedQuery, docs, docs.length),
+              1500,
+              "工单重排超时",
+              activeSignal
+            );
+            for (const item of reranked) {
+              const target = topK[item.index];
+              if (!target || typeof item.score !== "number" || !Number.isFinite(item.score)) continue;
+              target._rankScore = (target._rankScore >= 200 ? 200 : 0) + target._rankScore * 0.4 + item.score * 100;
+            }
+            candidates.sort((a, b) => {
+              if (b._rankScore !== a._rankScore) return b._rankScore - a._rankScore;
+              return b._createTimeMs - a._createTimeMs;
+            });
+          } catch (err) {
+            if (activeSignal?.aborted) {
+              throw err;
+            }
+            // Rerank failure/timeout falls back silently to hybrid score
+          }
+        }
+      }
+
+      const sortedHits = candidates
         .slice(0, limit)
         .map(({ _rankScore, _createTimeMs, ...rest }) => rest);
 
@@ -524,7 +1035,10 @@ export function createCopilotTools(regionId: string, domainType: DomainType = "G
   );
 
   const searchThemes = tool(
-    async (input) => {
+    async (rawInput, config?: { signal?: AbortSignal }) => {
+      const activeSignal = config?.signal ?? toolSignal;
+      if (activeSignal?.aborted) throw createAbortError(activeSignal);
+      const input = restoreArgs(rawInput);
       const like = keywordLike(input.keyword);
       const risk = normalizeRiskFilter(input.riskLevel);
       const handlingStatus = normalizeStatusFilter(input.handlingStatus);
@@ -574,17 +1088,17 @@ export function createCopilotTools(regionId: string, domainType: DomainType = "G
       return JSON.stringify({
         themes: rows.map((row) => ({
           themeId: row.id,
-          title: row.title,
-          subject: row.subject,
-          location: town(row.location),
-          eventType: row.eventType,
+          title: maskText(row.title),
+          subject: maskText(row.subject),
+          location: town(maskText(row.location)),
+          eventType: maskText(row.eventType),
           category: row.category || "",
           riskLevel: row.riskLevel,
           handlingStatus: row.handlingStatus || "PENDING",
-          handlingOwner: row.handlingOwner || "",
+          handlingOwner: maskText(row.handlingOwner),
           ticketCount: row.ticketCount,
-          summary: clip(row.summary, 180),
-          action: clip(row.action, 180),
+          summary: clip(maskText(row.summary), 180),
+          action: clip(maskText(row.action), 180),
         })),
       });
     },
@@ -604,7 +1118,10 @@ export function createCopilotTools(regionId: string, domainType: DomainType = "G
   );
 
   const getTicket = tool(
-    async (input) => {
+    async (rawInput, config?: { signal?: AbortSignal }) => {
+      const activeSignal = config?.signal ?? toolSignal;
+      if (activeSignal?.aborted) throw createAbortError(activeSignal);
+      const input = restoreArgs(rawInput);
       const ticketNo = String(input.ticketNo || "").trim().slice(0, 64);
       if (!ticketNo) return JSON.stringify({ error: isEcommerce ? "缺少客诉单号" : "缺少工单号" });
       const { db } = await getRegionDb(regionId);
@@ -636,18 +1153,18 @@ export function createCopilotTools(regionId: string, domainType: DomainType = "G
       }
       return JSON.stringify({
         ticketNo: row.ticketNo,
-        title: row.summarizeTitle || row.title || "",
-        township: town(row.subdistrict),
+        title: maskText(row.summarizeTitle || row.title || ""),
+        township: town(maskText(row.subdistrict)),
         category: row.category || "",
-        subject: row.subject || "",
-        eventType: row.eventType || "",
-        address: row.address || "",
+        subject: maskText(row.subject || ""),
+        eventType: maskText(row.eventType || ""),
+        address: maskText(row.address || ""),
         urgency: row.urgency || "",
         status: row.status || "",
         isFakeClosure: Boolean(row.isFakeClosure),
         stabilityRisk: Boolean(row.stabilityRisk),
         themeId: row.themeId || "",
-        body: clip(ticketBodyForAI(row), 320),
+        body: clip(maskText(bodyForAI(row).replace(/\s+/g, " ").slice(0, 800)), 320),
       });
     },
     {
@@ -658,7 +1175,10 @@ export function createCopilotTools(regionId: string, domainType: DomainType = "G
   );
 
   const getTheme = tool(
-    async (input) => {
+    async (rawInput, config?: { signal?: AbortSignal }) => {
+      const activeSignal = config?.signal ?? toolSignal;
+      if (activeSignal?.aborted) throw createAbortError(activeSignal);
+      const input = restoreArgs(rawInput);
       const themeId = String(input.themeId || "").trim().slice(0, 64);
       if (!themeId) return JSON.stringify({ error: isEcommerce ? "缺少客诉案卷编号" : "缺少主题编号" });
       const { db } = await getRegionDb(regionId);
@@ -675,19 +1195,22 @@ export function createCopilotTools(regionId: string, domainType: DomainType = "G
         .limit(5);
       return JSON.stringify({
         themeId: theme.id,
-        title: theme.title,
-        subject: theme.canonicalSubject,
-        location: town(theme.canonicalLocation),
-        eventType: theme.eventType,
+        title: maskText(theme.title),
+        subject: maskText(theme.canonicalSubject),
+        location: town(maskText(theme.canonicalLocation)),
+        eventType: maskText(theme.eventType),
         category: theme.category || "",
         riskLevel: theme.riskLevel,
         handlingStatus: theme.handlingStatus || "PENDING",
-        handlingOwner: theme.handlingOwner || "",
+        handlingOwner: maskText(theme.handlingOwner),
         handlingProgress: theme.handlingProgress ?? 0,
         ticketCount: theme.ticketCount,
-        summary: clip(theme.aiSummary, 400),
-        action: clip(theme.recommendedAction, 400),
-        tickets: members.map((row) => ({ ticketNo: row.ticketNo, title: clip(row.title, 80) })),
+        summary: clip(maskText(theme.aiSummary), 400),
+        action: clip(maskText(theme.recommendedAction), 400),
+        tickets: members.map((row) => ({
+          ticketNo: row.ticketNo,
+          title: clip(maskText(row.title), 80),
+        })),
       });
     },
     {
@@ -833,7 +1356,10 @@ export function createCopilotTools(regionId: string, domainType: DomainType = "G
   );
 
   const listAgentTasks = tool(
-    async (input) => {
+    async (rawInput, config?: { signal?: AbortSignal }) => {
+      const activeSignal = config?.signal ?? toolSignal;
+      if (activeSignal?.aborted) throw createAbortError(activeSignal);
+      const input = restoreArgs(rawInput);
       const { db } = await getRegionDb(regionId);
       const statusRaw = String(input.status || "").trim().toUpperCase();
       const levelRaw = String(input.autonomyLevel || "").trim().toUpperCase();
@@ -888,14 +1414,14 @@ export function createCopilotTools(regionId: string, domainType: DomainType = "G
             status: cell(row, "status"),
             targetType: cell(row, "target_type"),
             targetId: cell(row, "target_id"),
-            targetTitle: cell(row, "target_title"),
+            targetTitle: maskText(cell(row, "target_title")),
             channel: cell(row, "channel"),
-            maskedContact: cell(row, "masked_contact") || null,
+            maskedContact: cell(row, "masked_contact") ? maskText(cell(row, "masked_contact")) : null,
             missingSlots,
-            suggestedOwner: cell(row, "suggested_owner") || null,
-            reason: clip(cell(row, "reason"), 160),
-            draftMessage: clip(cell(row, "draft_message"), 180),
-            resultSummary: cell(row, "result_summary") || null,
+            suggestedOwner: cell(row, "suggested_owner") ? maskText(cell(row, "suggested_owner")) : null,
+            reason: clip(maskText(cell(row, "reason")), 160),
+            draftMessage: clip(maskText(cell(row, "draft_message")), 180),
+            resultSummary: cell(row, "result_summary") ? maskText(cell(row, "result_summary")) : null,
           };
         });
 
@@ -946,7 +1472,10 @@ export function createCopilotTools(regionId: string, domainType: DomainType = "G
   );
 
   const proposeThemeAction = tool(
-    async (input) => {
+    async (rawInput, config?: { signal?: AbortSignal }) => {
+      const activeSignal = config?.signal ?? toolSignal;
+      if (activeSignal?.aborted) throw createAbortError(activeSignal);
+      const input = restoreArgs(rawInput);
       const themeId = String(input.themeId || "").trim().slice(0, 64);
       if (!themeId) {
         return JSON.stringify({ error: isEcommerce ? "缺少案卷编号 themeId" : "缺少主题编号 themeId" });
@@ -1006,11 +1535,11 @@ export function createCopilotTools(regionId: string, domainType: DomainType = "G
 
       const proposal = {
         themeId: theme.id,
-        themeTitle: theme.title,
+        themeTitle: maskText(theme.title),
         action: actionRaw,
-        ...(owner ? { owner } : {}),
+        ...(owner ? { owner: maskText(owner) } : {}),
         ...(eta ? { eta } : {}),
-        ...(note ? { note } : {}),
+        ...(note ? { note: maskText(note) } : {}),
       };
 
       return JSON.stringify({

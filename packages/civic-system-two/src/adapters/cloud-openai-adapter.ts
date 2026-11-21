@@ -1,11 +1,14 @@
 import {
   CivicChatCompletion,
   CivicChatCompletionParams,
+  CivicChatStreamChunk,
   CloudFallbackConfig,
 } from '../types';
 import { extractReasoningAndContent, parseStructuredJson } from '../parser';
 import { ISystemTwoAdapter } from './types';
 import { recordNodeMetric } from '../metrics';
+import { createAbortError, linkAbortSignals } from './abort-utils';
+import { readOpenAISseStream } from './sse-stream';
 
 export class CloudOpenAIAdapter implements ISystemTwoAdapter {
   readonly name = 'CloudOpenAIAdapter (Remote OpenAI-compatible)';
@@ -64,8 +67,7 @@ export class CloudOpenAIAdapter implements ISystemTwoAdapter {
       payload.response_format = params.response_format;
     }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    const linked = linkAbortSignals(this.timeoutMs, params.signal);
     const startMs = Date.now();
 
     try {
@@ -76,7 +78,7 @@ export class CloudOpenAIAdapter implements ISystemTwoAdapter {
           Authorization: `Bearer ${this.apiKey}`,
         },
         body: JSON.stringify(payload),
-        signal: controller.signal,
+        signal: linked.signal,
       });
 
       if (!res.ok) {
@@ -161,8 +163,101 @@ export class CloudOpenAIAdapter implements ISystemTwoAdapter {
           : undefined,
         parsed,
       };
+    } catch (err) {
+      if (params.signal?.aborted) {
+        throw createAbortError(params.signal);
+      }
+      throw err;
     } finally {
-      clearTimeout(timeout);
+      linked.cleanup();
     }
+  }
+
+  async *chatCompletionsStream(
+    params: CivicChatCompletionParams
+  ): AsyncGenerator<CivicChatStreamChunk> {
+    const url = `${this.endpoint}/chat/completions`;
+
+    const payload: Record<string, unknown> = {
+      model: params.model || this.model,
+      messages: params.messages,
+      temperature: params.temperature ?? 0.2,
+      max_tokens: params.max_tokens ?? 2048,
+      stream: true,
+      chat_template_kwargs: {
+        enable_thinking: params.enable_thinking ?? false,
+      },
+    };
+
+    if (params.top_p !== undefined) {
+      payload.top_p = params.top_p;
+    }
+
+    if (params.response_format) {
+      payload.response_format = params.response_format;
+    }
+
+    const linked = linkAbortSignals(this.timeoutMs, params.signal);
+    const startMs = Date.now();
+    let res: Response;
+
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify(payload),
+        signal: linked.signal,
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text().catch(() => '');
+        throw new Error(
+          `[CloudOpenAIAdapter] Remote HTTP ${res.status}: ${res.statusText}. ${errorText}`
+        );
+      }
+    } catch (err) {
+      linked.cleanup();
+      if (params.signal?.aborted) {
+        throw createAbortError(params.signal);
+      }
+      throw err;
+    }
+
+    yield* readOpenAISseStream({
+      res,
+      endpoint: this.endpoint,
+      externalSignal: params.signal,
+      abortCombined: linked.abortCombined,
+      cleanup: linked.cleanup,
+      onComplete: ({ usage, timings, approxCompletionChunks }) => {
+        const durationMs = Math.max(1, Date.now() - startMs);
+        const completionTokens = usage?.completion_tokens ?? approxCompletionChunks;
+        const promptTokens = usage?.prompt_tokens ?? 0;
+        const totalTokens = usage?.total_tokens ?? completionTokens + promptTokens;
+
+        let tokensPerSecond = 0;
+        if (timings && typeof timings.predicted_per_second === 'number' && timings.predicted_per_second > 0) {
+          tokensPerSecond = timings.predicted_per_second;
+        } else if (completionTokens > 0 && durationMs > 0) {
+          tokensPerSecond = completionTokens / (durationMs / 1000);
+        }
+
+        if (tokensPerSecond > 0) {
+          recordNodeMetric({
+            endpoint: this.endpoint,
+            tokensPerSecond: Math.round(tokensPerSecond * 10) / 10,
+            completionTokens,
+            promptTokens,
+            totalTokens,
+            durationMs,
+            updatedAt: Date.now(),
+          });
+        }
+      },
+    });
   }
 }

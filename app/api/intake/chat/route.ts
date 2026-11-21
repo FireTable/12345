@@ -52,6 +52,7 @@ export async function POST(req: Request) {
     const guard = await guardAgentRequest(req, {
       role: "any",
       scope: "intake-chat",
+      maxPerMinute: 20,
     });
     if ("response" in guard) return guard.response;
 

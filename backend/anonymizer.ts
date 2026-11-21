@@ -18,6 +18,7 @@ export interface DesensitizeOptions {
   maskIdCard?: boolean;
   maskEmail?: boolean;
   maskName?: boolean;
+  seedKeymap?: Record<string, string>;
 }
 
 /**
@@ -25,10 +26,13 @@ export interface DesensitizeOptions {
  */
 export function desensitizeContent(
   content: string,
-  _options?: DesensitizeOptions
+  options?: DesensitizeOptions
 ): string {
   if (!content || typeof content !== "string") return "";
-  const result = anonymize(content);
+  const result = anonymize(
+    content,
+    options?.seedKeymap ? { seedKeymap: options.seedKeymap } : undefined
+  );
   return result.text;
 }
 
@@ -36,12 +40,38 @@ export function desensitizeContent(
  * 模型出站正文生成器：
  * 优先读取已落库的脱敏正文 (maskedContent)，若无则现场执行可逆安全脱敏
  */
-export function ticketBodyForAI(ticket: {
-  content?: string | null;
-  maskedContent?: string | null;
-}): string {
+export function ticketBodyForAI(
+  ticket: {
+    content?: string | null;
+    maskedContent?: string | null;
+  },
+  seedKeymap?: Record<string, string>
+): string {
   if (typeof ticket.maskedContent === "string" && ticket.maskedContent.length > 0) {
     return ticket.maskedContent;
   }
-  return desensitizeContent(ticket.content || "");
+  return desensitizeContent(
+    ticket.content || "",
+    seedKeymap ? { seedKeymap } : undefined
+  );
+}
+
+/**
+ * 模型出站标题生成器：
+ * 优先读取同批共享 Keymap 预脱敏的 maskedTitle，若无则继承 seedKeymap 现场脱敏 title
+ */
+export function ticketTitleForAI(
+  ticket: {
+    title?: string | null;
+    maskedTitle?: string | null;
+  },
+  seedKeymap?: Record<string, string>
+): string {
+  if (typeof ticket.maskedTitle === "string" && ticket.maskedTitle.length > 0) {
+    return ticket.maskedTitle;
+  }
+  return desensitizeContent(
+    ticket.title || "无",
+    seedKeymap ? { seedKeymap } : undefined
+  );
 }

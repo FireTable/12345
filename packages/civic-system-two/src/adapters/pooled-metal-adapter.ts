@@ -1,6 +1,7 @@
 import {
   CivicChatCompletion,
   CivicChatCompletionParams,
+  CivicChatStreamChunk,
   ClusterNodeObjectSpec,
   ClusterNodeSpec,
   SystemTwoConfig,
@@ -8,6 +9,7 @@ import {
 import { ISystemTwoAdapter } from './types';
 import { LocalMetalAdapter } from './local-metal-adapter';
 import { NodeMetric, getNodeMetric, getAllNodeMetrics } from '../metrics';
+import { createAbortError } from './abort-utils';
 
 interface ClusterNode {
   adapter: LocalMetalAdapter;
@@ -50,6 +52,8 @@ export class PooledMetalAdapter implements ISystemTwoAdapter {
   readonly name = 'PooledMetalAdapter (Multi-Node LLM Cluster)';
   private nodes: ClusterNode[] = [];
   private config: SystemTwoConfig;
+  private syncGeneration = 0;
+  private availabilityProbePromise: Promise<boolean> | null = null;
 
   constructor(specs: ClusterNodeSpec[], config: SystemTwoConfig = {}) {
     this.config = config;
@@ -115,6 +119,8 @@ export class PooledMetalAdapter implements ISystemTwoAdapter {
     }
 
     this.nodes = nextNodes;
+    this.syncGeneration += 1;
+    this.availabilityProbePromise = null;
   }
 
   getNodeMetas(): Array<{
@@ -136,30 +142,48 @@ export class PooledMetalAdapter implements ISystemTwoAdapter {
   }
 
   /**
-   * 探测所有节点的可用性，至少有 1 个节点在线即算可用
+   * 探测所有节点的可用性，至少有 1 个节点在线即算可用（单飞去重防止并发探活风暴）
    */
   async isAvailable(): Promise<boolean> {
     if (this.nodes.length === 0) return false;
-
-    const probeResults = await Promise.all(
-      this.nodes.map(async (node) => {
-        const ok = await node.adapter.isAvailable();
-        node.isHealthy = ok;
-        node.lastChecked = Date.now();
-        if (ok) node.consecutiveFailures = 0;
-        return { endpoint: node.endpoint, ok };
-      })
-    );
-
-    const onlineNodes = probeResults.filter((p) => p.ok).map((p) => p.endpoint);
-    if (onlineNodes.length > 0) {
-      console.log(
-        `[SystemTwoCluster] ✅ 成功连接 ${onlineNodes.length}/${this.nodes.length} 个算力节点: [${onlineNodes.join(', ')}]`
-      );
-      return true;
+    if (this.availabilityProbePromise) {
+      return this.availabilityProbePromise;
     }
 
-    return false;
+    const gen = this.syncGeneration;
+    const probeNodes = [...this.nodes];
+    const probe = (async () => {
+      try {
+        const probeResults = await Promise.all(
+          probeNodes.map(async (node) => {
+            const ok = await node.adapter.isAvailable();
+            if (this.syncGeneration === gen) {
+              node.isHealthy = ok;
+              node.lastChecked = Date.now();
+              if (ok) node.consecutiveFailures = 0;
+            }
+            return { endpoint: node.endpoint, ok };
+          })
+        );
+
+        const onlineNodes = probeResults.filter((p) => p.ok).map((p) => p.endpoint);
+        if (onlineNodes.length > 0) {
+          console.log(
+            `[SystemTwoCluster] ✅ 成功连接 ${onlineNodes.length}/${probeNodes.length} 个算力节点: [${onlineNodes.join(', ')}]`
+          );
+          return true;
+        }
+
+        return false;
+      } finally {
+        if (this.syncGeneration === gen) {
+          this.availabilityProbePromise = null;
+        }
+      }
+    })();
+
+    this.availabilityProbePromise = probe;
+    return probe;
   }
 
   getHealthyEndpoints(): string[] {
@@ -190,12 +214,26 @@ export class PooledMetalAdapter implements ISystemTwoAdapter {
     return this.lastUsedEndpoint;
   }
 
-  /**
-   * 挑选最佳节点并执行推理，支持透明重试与故障转移
-   */
-  async chatCompletions(params: CivicChatCompletionParams): Promise<CivicChatCompletion> {
+  private isRetryableInfraError(err: any): boolean {
+    const message = String(err?.message || '');
+    return (
+      err?.name === 'AbortError' ||
+      err?.name === 'TimeoutError' ||
+      message.includes('fetch failed') ||
+      message.includes('ECONNREFUSED') ||
+      message.includes('ETIMEDOUT') ||
+      message.includes('HTTP 401') ||
+      message.includes('HTTP 5')
+    );
+  }
+
+  private async selectCandidates(signal?: AbortSignal): Promise<ClusterNode[]> {
     if (this.nodes.length === 0) {
       throw new Error('[SystemTwoCluster] 算力集群中没有配置任何可用节点');
+    }
+
+    if (signal?.aborted) {
+      throw createAbortError(signal);
     }
 
     // 0. 自动重试探活：对当前被标记为不健康的节点，若距离上次检查超过 3 秒，尝试探活复位
@@ -217,6 +255,9 @@ export class PooledMetalAdapter implements ISystemTwoAdapter {
     if (candidates.length === 0) {
       console.warn('[SystemTwoCluster] 暂无健康节点，正在尝试恢复所有节点并探测...');
       await this.isAvailable();
+      if (signal?.aborted) {
+        throw createAbortError(signal);
+      }
       candidates = this.nodes.filter((n) => n.isHealthy);
       if (candidates.length === 0) {
         // 如果依然全部不可达，选一个失败次数最少的节点做最后尝试
@@ -231,43 +272,119 @@ export class PooledMetalAdapter implements ISystemTwoAdapter {
       ...candidates.slice(0, offset),
     ];
 
-    const sortedCandidates = [...rotatedCandidates].sort((a, b) => {
+    return [...rotatedCandidates].sort((a, b) => {
       if (a.inFlight !== b.inFlight) return a.inFlight - b.inFlight;
       return a.consecutiveFailures - b.consecutiveFailures;
     });
+  }
 
+  /**
+   * 挑选最佳节点并执行推理，支持透明重试与故障转移
+   */
+  async chatCompletions(params: CivicChatCompletionParams): Promise<CivicChatCompletion> {
+    const sortedCandidates = await this.selectCandidates(params.signal);
     let lastError: any = null;
 
     for (const node of sortedCandidates) {
+      if (params.signal?.aborted) {
+        throw createAbortError(params.signal);
+      }
       node.inFlight++;
+      let decremented = false;
       try {
         const result = await node.adapter.chatCompletions(params);
         node.inFlight = Math.max(0, node.inFlight - 1);
+        decremented = true;
         node.isHealthy = true;
         node.consecutiveFailures = 0;
         this.lastUsedEndpoint = node.endpoint;
         return result;
       } catch (err: any) {
         node.inFlight = Math.max(0, node.inFlight - 1);
+        decremented = true;
+        if (params.signal?.aborted) {
+          throw err;
+        }
         node.consecutiveFailures++;
         lastError = err;
 
         // 如果是网络连接失败、超时或上游鉴权/服务异常，临时标记为不健康并切换至下一个节点
-        if (
-          err.name === 'AbortError' ||
-          err.message?.includes('fetch failed') ||
-          err.message?.includes('ECONNREFUSED') ||
-          err.message?.includes('ETIMEDOUT') ||
-          err.message?.includes('HTTP 401') ||
-          err.message?.includes('HTTP 5')
-        ) {
+        if (this.isRetryableInfraError(err)) {
           node.isHealthy = false;
+          node.lastChecked = Date.now();
           console.warn(
             `[SystemTwoCluster] ⚠️ 节点 [${node.endpoint}] 连接异常 (${err.message})，已自动故障转移至备用节点...`
           );
         } else {
           // 如果是模型本身报错（如参数错误），直接抛出
           throw err;
+        }
+      } finally {
+        if (!decremented) {
+          node.inFlight = Math.max(0, node.inFlight - 1);
+        }
+      }
+    }
+
+    throw lastError || new Error('[SystemTwoCluster] 所有算力集群节点均执行失败');
+  }
+
+  async *chatCompletionsStream(
+    params: CivicChatCompletionParams
+  ): AsyncGenerator<CivicChatStreamChunk> {
+    const sortedCandidates = await this.selectCandidates(params.signal);
+    let lastError: any = null;
+
+    for (const node of sortedCandidates) {
+      if (params.signal?.aborted) {
+        throw createAbortError(params.signal);
+      }
+      let hasYielded = false;
+      let decremented = false;
+      node.inFlight++;
+
+      try {
+        for await (const chunk of node.adapter.chatCompletionsStream(params)) {
+          if (
+            chunk.deltaContent ||
+            chunk.deltaReasoning ||
+            (chunk.finishReason !== undefined && chunk.finishReason !== null)
+          ) {
+            hasYielded = true;
+            this.lastUsedEndpoint = node.endpoint;
+          }
+          yield chunk;
+        }
+        node.inFlight = Math.max(0, node.inFlight - 1);
+        decremented = true;
+        node.isHealthy = true;
+        node.consecutiveFailures = 0;
+        this.lastUsedEndpoint = node.endpoint;
+        return;
+      } catch (err: any) {
+        node.inFlight = Math.max(0, node.inFlight - 1);
+        decremented = true;
+        if (params.signal?.aborted) {
+          throw err;
+        }
+        lastError = err;
+
+        if (this.isRetryableInfraError(err)) {
+          node.consecutiveFailures++;
+          node.isHealthy = false;
+          node.lastChecked = Date.now();
+          if (hasYielded) {
+            throw err;
+          }
+          console.warn(
+            `[SystemTwoCluster] ⚠️ 节点 [${node.endpoint}] 流式连接异常 (${err.message})，已自动故障转移至备用节点...`
+          );
+        } else {
+          throw err;
+        }
+      } finally {
+        if (!decremented) {
+          node.inFlight = Math.max(0, node.inFlight - 1);
         }
       }
     }

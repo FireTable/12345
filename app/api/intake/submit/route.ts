@@ -11,6 +11,7 @@ export async function POST(req: Request) {
     const guard = await guardAgentRequest(req, {
       role: "any",
       scope: "intake-submit",
+      maxPerMinute: 15,
     });
     if ("response" in guard) return guard.response;
 

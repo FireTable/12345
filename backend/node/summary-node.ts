@@ -9,6 +9,7 @@ import type {
 } from "../state";
 import { getSystemTwoEngine, systemTwoConcurrency } from "../model";
 import { LLM_TOKENS, LLM_TIMEOUTS } from "@/lib/tokens";
+import { createAbortError, linkAbortSignals } from "@civic/system-two";
 
 import {
   BatchThemeEnrichmentSchema,
@@ -17,31 +18,60 @@ import {
 
 const EMPTY_ADVICE = { aiSummary: "", recommendedAction: "" };
 
+function sleepAbortable(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) {
+    return Promise.reject(createAbortError(signal));
+  }
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(createAbortError(signal));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 /**
  * 给一批主题写各自的摘要和处置建议。
  * 只要 JSON，不开思考。思考会把输出额度用完，正文变空，最后每个主题都落成同一句套话。
  */
 export async function enrichThemeBatchWithLLM(
-  themeBatch: MultiFrequencyTheme[]
+  themeBatch: MultiFrequencyTheme[],
+  signal?: AbortSignal
 ): Promise<Array<Partial<MultiFrequencyTheme>>> {
+  if (signal?.aborted) {
+    throw createAbortError(signal);
+  }
   if (themeBatch.length === 0) return [];
-  const fallbacks = themeBatch.map(() => ({ ...EMPTY_ADVICE }));
+  const linked = linkAbortSignals(LLM_TIMEOUTS.THINKING * 3, signal);
 
-  const enrichTask = async (): Promise<Array<Partial<MultiFrequencyTheme>>> => {
+  try {
     const merged = themeBatch.map((theme) => ({
       aiSummary: theme.aiSummary || "",
       recommendedAction: "",
     }));
     for (let attempt = 0; attempt < 3; attempt++) {
+      if (signal?.aborted) {
+        throw createAbortError(signal);
+      }
+      if (linked.signal.aborted) break;
       if (attempt > 0 && merged.every((row) => row.recommendedAction.trim())) break;
       try {
         const systemTwo = await getSystemTwoEngine();
+        if (signal?.aborted) {
+          throw createAbortError(signal);
+        }
         const prompt = buildBatchThemeEnrichmentPrompt(themeBatch);
         const { data } = await systemTwo.createJSON(BatchThemeEnrichmentSchema, {
           messages: [{ role: "user", content: prompt }],
           enableThinking: false,
           maxTokens: LLM_TOKENS.THEME_ADVICE,
           temperature: 0.2,
+          signal: linked.signal,
         });
         if (data && Array.isArray(data.results) && data.results.length > 0) {
           const resultMap = new Map<number, any>();
@@ -54,20 +84,28 @@ export async function enrichThemeBatchWithLLM(
           });
         }
       } catch (err: any) {
+        if (signal?.aborted) {
+          throw createAbortError(signal);
+        }
+        if (linked.signal.aborted) break;
         console.warn(`[summary-node] System-2 batch enrichment error attempt ${attempt + 1}:`, err?.message);
       }
       if (merged.every((row) => row.recommendedAction.trim())) return merged;
-      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
+      if (attempt < 2) {
+        try {
+          await sleepAbortable(1500 * (attempt + 1), linked.signal);
+        } catch {
+          if (signal?.aborted) {
+            throw createAbortError(signal);
+          }
+          break;
+        }
+      }
     }
     return merged;
-  };
-
-  // 慢思考批次超时控制 (充分尊重模型思考推导过程，分配充裕的 10 分钟预算)
-  const timeoutPromise = new Promise<Array<Partial<MultiFrequencyTheme>>>((resolve) =>
-    setTimeout(() => resolve(fallbacks), LLM_TIMEOUTS.THINKING * 3)
-  );
-
-  return Promise.race([enrichTask(), timeoutPromise]);
+  } finally {
+    linked.cleanup();
+  }
 }
 
 import { getLlmPool } from "../llm-pool";
@@ -79,8 +117,13 @@ import { yieldToEventLoop } from "@/lib/yield-loop";
  * Summary Node: Performs LLM deep synthesis for ALL themes, calculates metrics, and builds ForceGraph topology
  */
 export async function summaryNode(
-  state: TicketRadarState
+  state: TicketRadarState,
+  config?: { signal?: AbortSignal }
 ): Promise<Partial<TicketRadarState>> {
+  const signal = config?.signal;
+  if (signal?.aborted) {
+    throw createAbortError(signal);
+  }
   const rawTickets = state.rawTickets || [];
   const initialThemes = state.themes || [];
   const enrichedThemes = [...initialThemes];
@@ -110,7 +153,7 @@ export async function summaryNode(
       const startIdx = i;
       const batch = enrichedThemes.slice(startIdx, startIdx + THEME_CHUNK_SIZE);
       chunkTasks.push(async () => {
-        const batchResults = await enrichThemeBatchWithLLM(batch);
+        const batchResults = await enrichThemeBatchWithLLM(batch, signal);
         batchResults.forEach((res, offset) => {
           const idx = startIdx + offset;
           if (idx < enrichedThemes.length) {
@@ -152,7 +195,11 @@ export async function summaryNode(
       });
     }
 
-    await queue.addAll(chunkTasks);
+    await queue.addAll(chunkTasks, { lane: "batch", signal });
+  }
+
+  if (signal?.aborted) {
+    throw createAbortError(signal);
   }
 
   if (regionId) {
