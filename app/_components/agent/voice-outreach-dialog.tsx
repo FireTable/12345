@@ -131,6 +131,18 @@ function getQuickReplies(
       ];
 }
 
+/** 剥离气隙脱敏占位符，避免数字人播报与电影字幕念出 `{{PHONE_NUMBER_1}}`。 */
+function toSpokenOutreachText(raw: string): string {
+  return raw
+    .replace(/[（(]\s*(?:来电号码|联系方式|联系电话|手机号|号码)?\s*[:：]?\s*\{\{[A-Z0-9_]+\}\}\s*[）)]/g, "")
+    .replace(/\{\{[A-Z0-9_]+\}\}/g, "")
+    .replace(/\s*([，,。！？?!；;])\s*/g, "$1")
+    .replace(/([，,]){2,}/g, "$1")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/^[,，、\s]+/, "")
+    .trim();
+}
+
 export function VoiceOutreachDialog({
   open,
   onOpenChange,
@@ -154,7 +166,6 @@ export function VoiceOutreachDialog({
   const [turns, setTurns] = useState<ConversationTurn[]>([]);
   const [textInput, setTextInput] = useState("");
   const [sending, setSending] = useState(false);
-  const [muted, setMuted] = useState(false);
   const [caption, setCaption] = useState("");
   const [completed, setCompleted] = useState(false);
   const [extractedPatch, setExtractedPatch] = useState<Record<string, unknown> | null>(null);
@@ -162,6 +173,16 @@ export function VoiceOutreachDialog({
   const [reopenedThemeId, setReopenedThemeId] = useState<string | null>(null);
   const [updatedTask, setUpdatedTask] = useState<AgentTaskItem | null>(null);
   const [turnError, setTurnError] = useState<string | null>(null);
+  // 宽屏时 3D 形象放在左侧遮罩区域；窄屏收回弹窗内紧凑卡片
+  const [stageOnBackdrop, setStageOnBackdrop] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const sync = () => setStageOnBackdrop(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
 
   const quickReplies = useMemo(
     () => getQuickReplies(task, isEcommerce),
@@ -214,6 +235,7 @@ export function VoiceOutreachDialog({
             ? json.reply.trim()
             : "已记录您的反馈信息，感谢配合。";
 
+        const spokenReply = toSpokenOutreachText(aiReply);
         setTurns((prev) => [
           ...prev,
           {
@@ -223,8 +245,8 @@ export function VoiceOutreachDialog({
             time: new Date().toLocaleTimeString(),
           },
         ]);
-        setCaption(aiReply);
-        void stageRef.current?.say(aiReply).catch(() => {});
+        setCaption(spokenReply);
+        void stageRef.current?.say(spokenReply).catch(() => {});
 
         if (json.extractedPatch && typeof json.extractedPatch === "object") {
           setExtractedPatch(json.extractedPatch as Record<string, unknown>);
@@ -293,6 +315,7 @@ export function VoiceOutreachDialog({
         ? `您好，这里是${isEcommerce ? "售后质检回访专席" : "12345 政务回访专席"}，请问您此前反映的「${task.targetTitle}」是否已妥善解决？`
         : `您好，这里是${isEcommerce ? "售后信息核实专席" : "12345 政务热线智能专席"}，为尽快为您派单处置「${task.targetTitle}」，请补充具体地点或关键要素。`);
 
+    const spokenGreeting = toSpokenOutreachText(greeting);
     setTurns([
       {
         id: `init-${task.id}`,
@@ -302,7 +325,7 @@ export function VoiceOutreachDialog({
       },
     ]);
     setTextInput("");
-    setCaption(greeting);
+    setCaption(spokenGreeting);
     setCompleted(task.status === "EXECUTED");
     completedRef.current = task.status === "EXECUTED";
     refreshedOnCloseRef.current = false;
@@ -315,7 +338,7 @@ export function VoiceOutreachDialog({
 
     const timer = window.setTimeout(() => {
       stageRef.current?.activate();
-      void stageRef.current?.say(greeting).catch(() => {});
+      void stageRef.current?.say(spokenGreeting).catch(() => {});
     }, 120);
 
     return () => {
@@ -363,6 +386,74 @@ export function VoiceOutreachDialog({
 
   const contactDisplay = task?.maskedContact?.trim() || "{{PHONE_NUMBER_1}}";
 
+  const micControlBlock = (
+    <div className="w-full space-y-2">
+      <button
+        type="button"
+        disabled={sending || completed}
+        onClick={() => {
+          if (asr.isRecording) {
+            asr.stop();
+          } else {
+            void asr.start();
+          }
+        }}
+        className={`w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold inline-flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+          asr.isRecording
+            ? "bg-rose-600 text-white hover:bg-rose-700 shadow-xs"
+            : "bg-blue-600 text-white hover:bg-blue-700 shadow-xs"
+        }`}
+      >
+        {asr.isRecording ? (
+          <>
+            <MicOff className="w-4 h-4 shrink-0" />
+            <span>停止说话并发送</span>
+          </>
+        ) : (
+          <>
+            <Mic className="w-4 h-4 shrink-0" />
+            <span>{completed ? "外呼已完成" : "点击开始语音应答"}</span>
+          </>
+        )}
+      </button>
+
+      {/* ASR Status & Audio Meter */}
+      <div className="rounded-lg border border-slate-200/80 bg-slate-50 px-2.5 py-2 text-[11px] text-slate-600 space-y-1.5">
+        <div className="flex items-center justify-between gap-2">
+          <span className="inline-flex items-center gap-1 font-medium text-slate-700 truncate">
+            <Volume2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+            <span className="truncate">{asr.statusHint || "语音引擎就绪"}</span>
+          </span>
+          {asr.status === "downloading" && (
+            <span className="font-mono tabular-nums text-blue-600 shrink-0">
+              {Math.round(asr.downloadPercent)}%
+            </span>
+          )}
+        </div>
+        {asr.isRecording && (
+          <div className="space-y-1">
+            <div className="h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
+              <div
+                className="h-full bg-blue-600 transition-all duration-100"
+                style={{ width: `${Math.min(100, Math.max(6, Math.round(asr.audioLevel * 100)))}%` }}
+              />
+            </div>
+            {asr.interimText && (
+              <p className="text-[11px] text-blue-700 break-words">
+                识别中：{asr.interimText}
+              </p>
+            )}
+          </div>
+        )}
+        {asr.error && (
+          <p className="text-[11px] text-amber-700 break-words">
+            语音提示：{asr.error}（可使用快捷回复或文字输入）
+          </p>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <>
       <style>{`
@@ -372,7 +463,7 @@ export function VoiceOutreachDialog({
         .civic-voice-dialog::backdrop {
           overflow: hidden;
           overscroll-behavior: contain;
-          background: rgba(15, 23, 42, 0.52);
+          background: rgba(15, 23, 42, 0.56);
           backdrop-filter: blur(4px);
         }
         .civic-voice-dialog[open] {
@@ -383,13 +474,35 @@ export function VoiceOutreachDialog({
         ref={dialogRef}
         aria-labelledby={titleId}
         aria-describedby={descId}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            dialogRef.current?.close();
+          }
+        }}
         onClose={() => {
           handleCloseCleanup();
         }}
-        className="civic-voice-dialog w-[calc(100vw-1rem)] max-w-3xl max-h-[90dvh] m-auto flex-col rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl overflow-hidden"
+        className="civic-voice-dialog w-[calc(100vw-1rem)] max-w-3xl max-h-[90dvh] m-auto flex-col rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl overflow-hidden lg:w-screen lg:max-w-none lg:h-dvh lg:max-h-dvh lg:m-0 lg:flex-row lg:items-center lg:rounded-none lg:border-0 lg:bg-transparent lg:shadow-none lg:overflow-visible"
       >
         {task ? (
           <>
+            {stageOnBackdrop && (
+              <div className="flex-1 min-w-0 h-full relative pointer-events-none">
+                <XiaochunStage
+                  ref={stageRef}
+                  variant="stage"
+                  backdropTone="dark"
+                  width="100%"
+                  height="100%"
+                  outfit="xiaochun_civic"
+                  lazy={false}
+                  title={isEcommerce ? "售后回访专员" : "12345 回访专员"}
+                  caption={caption}
+                />
+              </div>
+            )}
+
+            <div className="w-full max-h-[90dvh] lg:w-[min(700px,54vw)] lg:mr-6 shrink-0 flex flex-col lg:rounded-2xl lg:border lg:border-slate-200 bg-white text-slate-900 lg:shadow-2xl overflow-hidden">
             {/* Header */}
             <div className="px-4 sm:px-5 py-3.5 border-b border-slate-200 bg-slate-50/90 flex items-start justify-between gap-3 shrink-0">
               <div className="min-w-0 flex-1 space-y-1">
@@ -429,93 +542,28 @@ export function VoiceOutreachDialog({
 
             {/* Scrollable Body */}
             <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-5">
-              <div className="grid grid-cols-1 md:grid-cols-[232px_minmax(0,1fr)] gap-4 items-start">
-                {/* Left: Xiaochun 3D Stage & Mic */}
-                <div className="flex flex-col items-center gap-3 min-w-0 w-full">
-                  <XiaochunStage
-                    ref={stageRef}
-                    outfit="xiaochun_office_lady"
-                    lazy={false}
-                    width={220}
-                    height={280}
-                    scene="light"
-                    title={isEcommerce ? "售后回访专员" : "12345 回访专员"}
-                    subtitle={task.taskType === "REOPEN_CALLBACK" ? "48h 满意度回访" : "要素核实外呼"}
-                    caption={caption}
-                    muted={muted}
-                    onMuteChange={setMuted}
-                  />
-
-                  {/* Speech Recognition Trigger */}
-                  <div className="w-full space-y-2">
-                    <button
-                      type="button"
-                      disabled={sending || completed}
-                      onClick={() => {
-                        if (asr.isRecording) {
-                          asr.stop();
-                        } else {
-                          void asr.start();
-                        }
-                      }}
-                      className={`w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold inline-flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-                        asr.isRecording
-                          ? "bg-rose-600 text-white hover:bg-rose-700 shadow-xs"
-                          : "bg-blue-600 text-white hover:bg-blue-700 shadow-xs"
-                      }`}
-                    >
-                      {asr.isRecording ? (
-                        <>
-                          <MicOff className="w-4 h-4 shrink-0" />
-                          <span>停止说话并发送</span>
-                        </>
-                      ) : (
-                        <>
-                          <Mic className="w-4 h-4 shrink-0" />
-                          <span>{completed ? "外呼已完成" : "点击开始语音应答"}</span>
-                        </>
-                      )}
-                    </button>
-
-                    {/* ASR Status & Audio Meter */}
-                    <div className="rounded-lg border border-slate-200/80 bg-slate-50 px-2.5 py-2 text-[11px] text-slate-600 space-y-1.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="inline-flex items-center gap-1 font-medium text-slate-700 truncate">
-                          <Volume2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                          <span className="truncate">{asr.statusHint || "语音引擎就绪"}</span>
-                        </span>
-                        {asr.status === "downloading" && (
-                          <span className="font-mono tabular-nums text-blue-600 shrink-0">
-                            {Math.round(asr.downloadPercent)}%
-                          </span>
-                        )}
-                      </div>
-                      {asr.isRecording && (
-                        <div className="space-y-1">
-                          <div className="h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
-                            <div
-                              className="h-full bg-blue-600 transition-all duration-100"
-                              style={{ width: `${Math.min(100, Math.max(6, Math.round(asr.audioLevel * 100)))}%` }}
-                            />
-                          </div>
-                          {asr.interimText && (
-                            <p className="text-[11px] text-blue-700 break-words">
-                              识别中：{asr.interimText}
-                            </p>
-                          )}
-                        </div>
-                      )}
-                      {asr.error && (
-                        <p className="text-[11px] text-amber-700 break-words">
-                          语音提示：{asr.error}（可使用右侧快捷回复或文字输入）
-                        </p>
-                      )}
-                    </div>
+              <div className={stageOnBackdrop ? "flex flex-col gap-3" : "grid grid-cols-1 md:grid-cols-[232px_minmax(0,1fr)] gap-4 items-start"}>
+                {/* Narrow/Mobile: Xiaochun 3D Card & Mic */}
+                {!stageOnBackdrop && (
+                  <div className="flex flex-col items-center gap-3 min-w-0 w-full">
+                    <XiaochunStage
+                      ref={stageRef}
+                      outfit="xiaochun_civic"
+                      lazy={false}
+                      width="100%"
+                      height={240}
+                      scene="light"
+                      title={isEcommerce ? "售后回访专员" : "12345 回访专员"}
+                      subtitle={task.taskType === "REOPEN_CALLBACK" ? "48h 满意度回访" : "要素核实外呼"}
+                      caption={caption}
+                    />
+                    {micControlBlock}
                   </div>
-                </div>
+                )}
 
-                {/* Right: Transcript, Quick Replies, Input, Extraction Result */}
+                {/* Call Workspace: Context, Mic (wide), Transcript, Quick Replies, Input, Extraction Result */}
                 <div className="min-w-0 flex flex-col gap-3">
+                  {stageOnBackdrop && micControlBlock}
                   {/* Missing Slots / Reason Context */}
                   {(task.missingSlots?.length > 0 || task.reason) && (
                     <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2.5 text-xs space-y-1">
@@ -750,6 +798,7 @@ export function VoiceOutreachDialog({
                   </button>
                 )}
               </div>
+            </div>
             </div>
           </>
         ) : null}

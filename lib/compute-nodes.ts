@@ -33,6 +33,15 @@ export interface EnvComputeNodeDto {
   hasApiKey: boolean;
   apiKeyHint: string | null;
   readOnly: true;
+  lastStatus?: "ONLINE" | "OFFLINE" | null;
+  lastLatencyMs?: number | null;
+}
+
+function normalizeClientEndpoint(ep: string): string {
+  return ep
+    .trim()
+    .replace(/\/+$/, "")
+    .replace(/^(https?:\/\/)0\.0\.0\.0(?=[:/]|$)/i, "$1127.0.0.1");
 }
 
 export interface ProbeResult {
@@ -246,13 +255,14 @@ function getEnvNodes(): EnvComputeNodeDto[] {
     .filter(Boolean);
   const s2Mask = maskApiKey(process.env.OPENAI_API_KEY);
   s2List.forEach((ep, idx) => {
-    const isLocal = isLocalEndpoint(ep);
+    const normalized = normalizeClientEndpoint(ep);
+    const isLocal = isLocalEndpoint(normalized);
     out.push({
       id: `env-s2-${idx + 1}`,
       name: `环境变量 System-2 #${idx + 1}`,
       role: "SYSTEM_TWO",
       provider: isLocal ? "LOCAL" : "CLOUD",
-      endpoint: ep.replace(/\/+$/, ""),
+      endpoint: normalized,
       model: process.env.OPENAI_MODEL || null,
       hasApiKey: isLocal ? false : s2Mask.hasApiKey,
       apiKeyHint: isLocal ? null : s2Mask.apiKeyHint,
@@ -270,13 +280,14 @@ function getEnvNodes(): EnvComputeNodeDto[] {
     .filter(Boolean);
   const embMask = maskApiKey(process.env.EMBEDDING_API_KEY || process.env.OPENAI_API_KEY);
   embList.forEach((ep, idx) => {
-    const isLocal = isLocalEndpoint(ep);
+    const normalized = normalizeClientEndpoint(ep);
+    const isLocal = isLocalEndpoint(normalized);
     out.push({
       id: `env-emb-${idx + 1}`,
       name: `环境变量 Embedding #${idx + 1}`,
       role: "EMBEDDING",
       provider: isLocal ? "LOCAL" : "CLOUD",
-      endpoint: ep.replace(/\/+$/, ""),
+      endpoint: normalized,
       model: process.env.EMBEDDING_MODEL || "BAAI/bge-m3",
       hasApiKey: isLocal ? false : embMask.hasApiKey,
       apiKeyHint: isLocal ? null : embMask.apiKeyHint,
@@ -292,13 +303,36 @@ export async function listComputeNodesForAdmin(): Promise<{
   nodes: ComputeNodePublicDto[];
 }> {
   await ensureComputeNodesTable();
-  const rows = await db
-    .select()
-    .from(computeNodesTable)
-    .orderBy(desc(computeNodesTable.createdAt));
+  const [rows, envNodes] = await Promise.all([
+    db
+      .select()
+      .from(computeNodesTable)
+      .orderBy(desc(computeNodesTable.createdAt)),
+    Promise.all(
+      getEnvNodes().map(async (env) => {
+        const apiKey =
+          env.provider === "LOCAL"
+            ? null
+            : env.role === "EMBEDDING"
+              ? process.env.EMBEDDING_API_KEY || process.env.OPENAI_API_KEY || null
+              : process.env.OPENAI_API_KEY || null;
+        const probe = await probeComputeEndpoint({
+          endpoint: env.endpoint,
+          apiKey,
+          role: env.role,
+          provider: env.provider,
+        }).catch(() => null);
+        return {
+          ...env,
+          lastStatus: probe?.status ?? null,
+          lastLatencyMs: probe?.latencyMs ?? null,
+        };
+      })
+    ),
+  ]);
 
   return {
-    envNodes: getEnvNodes(),
+    envNodes,
     nodes: rows.map(toComputeNodePublicDto),
   };
 }

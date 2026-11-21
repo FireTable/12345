@@ -753,6 +753,8 @@ export default function SubmitPage() {
     !hasDraftContent ? "诉求内容（至少 6 字）" : "",
   ].filter(Boolean);
   const isVoiceDraftReady = missingRequiredLabels.length === 0;
+  const latestVoiceCaption =
+    [...voiceMessages].reverse().find((m) => m.role === "assistant")?.content || "";
 
   return (
     <div className={`submit-shell${mode === "voice" ? " submit-shell--voice" : ""}`}>
@@ -1159,11 +1161,13 @@ export default function SubmitPage() {
                 <XiaochunStage
                   ref={stageRef}
                   variant="stage"
+                  backdropTone="light"
                   title={isEcommerce ? "智能售后客服" : "12345 智能语音受理员"}
+                  caption={latestVoiceCaption}
                   width="100%"
                   height="var(--voice-stage-h)"
                   lazy={true}
-                  outfit="xiaochun_office_lady"
+                  outfit="xiaochun_civic"
                 />
               </div>
 

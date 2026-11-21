@@ -331,12 +331,12 @@ export default function DashboardPage() {
                   display: "flex",
                   flexDirection: "column",
                   alignItems: "center",
-                  justifyContent: "center",
+                  justifyContent: hasTrend ? "flex-start" : "center",
                 }}
               >
                 {hasTrend ? (
                   <div style={{ width: "100%" }}>
-                    <CivicEChart option={trendOpt} height={340} />
+                    <CivicEChart option={trendOpt} height={380} />
                   </div>
                 ) : (
                   <div className="empty-hint">暂无按日工单</div>
@@ -356,7 +356,19 @@ export default function DashboardPage() {
                     : `点击节点下钻 · ${daysRange === 0 ? "全周期" : `近 ${daysRange} 天`}`}
                 </div>
               </div>
-              <div className="card__body" style={{ padding: hasGeoMap ? "8px 12px 4px" : "12px" }}>
+              <div
+                className="card__body"
+                style={
+                  hasGeoMap
+                    ? {
+                        padding: "8px 12px 4px",
+                        maxHeight: 416,
+                        overflowY: "auto",
+                        overscrollBehavior: "contain",
+                      }
+                    : { padding: "12px" }
+                }
+              >
                 {hasGeoMap ? (
                   <>
                     {regions.map(([name, n], i) => {

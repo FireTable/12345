@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Xiaochun, type XiaochunHandle } from "@firetable/project-xiaochun/react";
-import { Sparkles, Volume2, VolumeX, RefreshCw, Play } from "lucide-react";
+import { Sparkles, RefreshCw, Play } from "lucide-react";
 
 export interface XiaochunStageHandle {
   say: (text: string) => Promise<void>;
@@ -19,12 +19,11 @@ export interface XiaochunStageProps {
   height?: number | string;
   lazy?: boolean | "idle" | "click";
   scene?: "light" | "dark" | "transparent";
+  backdropTone?: "dark" | "light";
   outfit?: string;
-  muted?: boolean;
-  onMuteChange?: (muted: boolean) => void;
   /**
    * card：带边框标题栏的小卡片（侧栏/弹窗内使用）。
-   * stage：无边框大舞台，人物直接站在页面留白处，字幕以气泡浮在下方。
+   * stage：无边框大舞台，人物直接站在页面留白处，字幕以电影感无框沉浸样式浮在下方。
    */
   variant?: "card" | "stage";
   className?: string;
@@ -50,29 +49,23 @@ export const XiaochunStage = React.forwardRef<XiaochunStageHandle, XiaochunStage
       height = 360,
       lazy = "click",
       scene = "light",
-      outfit = "xiaochun_office_lady",
-      muted,
-      onMuteChange,
+      backdropTone,
+      outfit = "xiaochun_civic",
       variant = "card",
       className = "",
     },
     ref
   ) {
     const xiaochunRef = useRef<XiaochunHandle | null>(null);
-    const [internalMuted, setInternalMuted] = useState(false);
-    const isMuted = muted ?? internalMuted;
 
     const [activated, setActivated] = useState<boolean>(lazy === false);
     const [ready, setReady] = useState<boolean>(false);
     const [progress, setProgress] = useState<number>(0);
     const [loadError, setLoadError] = useState<string | null>(null);
-    const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
     const [activeCaption, setActiveCaption] = useState<string>(caption || "");
 
     const isReadyRef = useRef(ready);
-    const isMutedRef = useRef(isMuted);
     isReadyRef.current = ready;
-    isMutedRef.current = isMuted;
 
     // 等待模型就绪的挂起者；onReady / onError 时统一结算
     const readyWaitersRef = useRef<Array<(ok: boolean) => void>>([]);
@@ -95,22 +88,6 @@ export const XiaochunStage = React.forwardRef<XiaochunStageHandle, XiaochunStage
         setActivated(true);
       }
     }, [lazy]);
-
-    useEffect(() => {
-      try {
-        xiaochunRef.current?.setVolume(isMuted ? 0 : 1);
-      } catch {
-        // ignore if not ready
-      }
-      if (isMuted) {
-        setIsSpeaking(false);
-        try {
-          void xiaochunRef.current?.stop().catch(() => {});
-        } catch {
-          // ignore
-        }
-      }
-    }, [isMuted]);
 
     useEffect(() => {
       return () => settleReadyWaiters(false);
@@ -143,7 +120,6 @@ export const XiaochunStage = React.forwardRef<XiaochunStageHandle, XiaochunStage
 
     const handleStop = useCallback(() => {
       sayTokenRef.current += 1;
-      setIsSpeaking(false);
       try {
         void xiaochunRef.current?.stop().catch(() => {});
       } catch {
@@ -156,25 +132,21 @@ export const XiaochunStage = React.forwardRef<XiaochunStageHandle, XiaochunStage
         const clean = (text || "").trim();
         if (!clean) return;
         setActiveCaption(clean);
-        if (isMutedRef.current) return;
 
         const token = ++sayTokenRef.current;
         if (!isReadyRef.current) {
           // 统一使用 SDK 内置 TTS（带口型与动作）；未加载时先唤醒，不再退回浏览器语音
           handleActivate();
           const ok = await waitUntilReady();
-          if (!ok || token !== sayTokenRef.current || isMutedRef.current) return;
+          if (!ok || token !== sayTokenRef.current) return;
         }
 
         const handle = xiaochunRef.current;
         if (!handle) return;
         try {
-          setIsSpeaking(true);
           await handle.say(clean, { mode: "speak" });
         } catch {
           // 播报失败时保留字幕即可
-        } finally {
-          if (token === sayTokenRef.current) setIsSpeaking(false);
         }
       },
       [handleActivate, waitUntilReady]
@@ -190,16 +162,9 @@ export const XiaochunStage = React.forwardRef<XiaochunStageHandle, XiaochunStage
       [handleSay, handleActivate, handleStop]
     );
 
-    const toggleMute = () => {
-      const next = !isMuted;
-      if (muted === undefined) {
-        setInternalMuted(next);
-      }
-      onMuteChange?.(next);
-    };
-
     const isStage = variant === "stage";
     const isDark = scene === "dark";
+    const resolvedBackdropTone = backdropTone ?? (isDark ? "dark" : "light");
     const shellBg = isStage
       ? "bg-transparent border-transparent text-slate-900"
       : scene === "transparent"
@@ -215,28 +180,9 @@ export const XiaochunStage = React.forwardRef<XiaochunStageHandle, XiaochunStage
     const embedSrc = process.env.NEXT_PUBLIC_XIAOCHUN_EMBED_URL || undefined;
     const cssHeight = toCssLength(height);
 
-    const muteButton = (
-      <button
-        type="button"
-        onClick={toggleMute}
-        aria-pressed={isMuted}
-        aria-label={isMuted ? "取消静音" : "一键静音"}
-        title={isMuted ? "已静音，点击开启播报" : "点击静音"}
-        className={`inline-flex items-center justify-center ${isStage ? "w-11 h-11" : "w-9 h-9"} rounded-lg border text-xs transition-colors cursor-pointer ${
-          isMuted
-            ? "bg-amber-50 border-amber-300 text-amber-700"
-            : isDark
-              ? "bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700"
-              : "bg-white/90 border-slate-200 text-slate-700 hover:bg-slate-100"
-        }`}
-      >
-        {isMuted ? <VolumeX size={16} aria-hidden="true" /> : <Volume2 size={16} aria-hidden="true" />}
-      </button>
-    );
-
     return (
       <div
-        className={`relative overflow-hidden select-none ${shellBg} ${className}`.trim()}
+        className={`relative overflow-hidden select-none ${isStage ? "pointer-events-none " : ""}${shellBg} ${className}`.trim()}
         style={{
           width: toCssLength(width),
           maxWidth: "100%",
@@ -245,9 +191,7 @@ export const XiaochunStage = React.forwardRef<XiaochunStageHandle, XiaochunStage
         data-xiaochun-stage-status={ready ? "ready" : loadError ? "fallback" : activated ? "loading" : "standby"}
         data-xiaochun-variant={variant}
       >
-        {isStage ? (
-          <div className="absolute right-2 top-2 z-20">{muteButton}</div>
-        ) : (
+        {!isStage && (
           <div
             className={`absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-2 px-3 py-2 border-b backdrop-blur-sm ${
               isDark
@@ -263,14 +207,14 @@ export const XiaochunStage = React.forwardRef<XiaochunStageHandle, XiaochunStage
                 </div>
               ) : null}
             </div>
-            <div className="flex items-center gap-1 shrink-0">{muteButton}</div>
           </div>
         )}
 
-        {/* 3D 形象挂载容器（固定宽高防 CLS） */}
+        {/* 3D 形象挂载容器（stage 模式交由 SDK transparent + passthrough 按网格穿透） */}
         <Xiaochun
           ref={xiaochunRef}
           src={embedSrc}
+          className={isStage ? "pointer-events-none" : undefined}
           lang="zh-CN"
           outfit={outfit}
           scene={isStage ? "transparent" : scene}
@@ -297,18 +241,13 @@ export const XiaochunStage = React.forwardRef<XiaochunStageHandle, XiaochunStage
             setLoadError(null);
             setProgress(100);
             try {
-              xiaochunRef.current?.setVolume(isMutedRef.current ? 0 : 1);
+              xiaochunRef.current?.setVolume(1);
             } catch {
               // ignore
             }
             settleReadyWaiters(true);
           }}
-          onUtterance={(u) => {
-            if (u.phase === "start") setIsSpeaking(true);
-            else if (u.phase === "end") setIsSpeaking(false);
-          }}
           onError={(err) => {
-            setIsSpeaking(false);
             setLoadError(err?.message || "3D 形象暂不可达，回复将以字幕呈现");
             settleReadyWaiters(false);
           }}
@@ -322,6 +261,7 @@ export const XiaochunStage = React.forwardRef<XiaochunStageHandle, XiaochunStage
             }`}
           >
             <div
+              onClick={(e) => e.stopPropagation()}
               className={`pointer-events-auto w-full max-w-[280px] rounded-xl border px-3.5 py-4 text-center shadow-sm ${overlayCardBg}`}
             >
               <div
@@ -374,37 +314,35 @@ export const XiaochunStage = React.forwardRef<XiaochunStageHandle, XiaochunStage
           </div>
         )}
 
-        {/* 实时字幕：card 为底部条，stage 为人物下方的对话气泡 */}
-        {(activeCaption || isMuted || isSpeaking) && (
-          <div
-            className={`absolute z-20 pointer-events-none ${
-              isStage ? "inset-x-3 bottom-3 sm:inset-x-6 sm:bottom-5" : "inset-x-2.5 bottom-2.5"
-            }`}
-          >
+        {/* 电影沉浸式字幕 */}
+        {activeCaption.trim() &&
+          (isStage ? (
             <div
-              role="status"
-              aria-live="polite"
-              className={`border backdrop-blur-md shadow-sm ${
-                isStage
-                  ? "mx-auto max-w-[520px] rounded-2xl px-4 py-3 text-sm leading-relaxed bg-white/90 border-slate-200 text-slate-800"
-                  : `rounded-lg px-2.5 py-2 text-xs leading-relaxed ${
-                      isDark
-                        ? "bg-slate-950/85 border-slate-700 text-slate-100"
-                        : "bg-white/92 border-slate-200 text-slate-800"
-                    }`
-              }`}
+              className={
+                resolvedBackdropTone === "dark"
+                  ? "absolute inset-x-0 bottom-0 z-20 pointer-events-none flex justify-center px-6 sm:px-10 pt-16 pb-6 sm:pb-8 bg-gradient-to-t from-slate-950/72 via-slate-950/32 to-transparent"
+                  : "absolute inset-x-0 bottom-0 z-20 pointer-events-none flex justify-center px-6 sm:px-8 pt-14 pb-5 bg-gradient-to-t from-slate-900/78 via-slate-900/38 to-transparent"
+              }
             >
-              {isMuted && !activeCaption ? (
-                <span className="text-[11px] text-amber-700 font-medium">已静音 · 回复将以文字字幕呈现</span>
-              ) : (
-                <span className={isStage ? "line-clamp-4" : "line-clamp-3"}>
-                  {isMuted ? "[静音字幕] " : ""}
-                  {activeCaption}
-                </span>
-              )}
+              <p
+                role="status"
+                aria-live="polite"
+                className="mx-auto max-w-[min(42rem,92%)] text-center text-[clamp(0.9375rem,0.85rem+0.35vw,1.1875rem)] font-medium leading-relaxed tracking-[0.02em] text-white/95 line-clamp-3 [text-wrap:balance] [text-shadow:0_1px_2px_rgba(0,0,0,0.92),0_2px_10px_rgba(0,0,0,0.75),0_0_24px_rgba(0,0,0,0.45)]"
+              >
+                {activeCaption}
+              </p>
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="absolute inset-x-0 bottom-0 z-20 pointer-events-none bg-gradient-to-t from-slate-950/85 via-slate-950/50 to-transparent px-3 pt-8 pb-2.5 text-center">
+              <p
+                role="status"
+                aria-live="polite"
+                className="text-xs font-medium leading-relaxed tracking-[0.015em] text-white/95 line-clamp-3 [text-wrap:balance] [text-shadow:0_1px_2px_rgba(0,0,0,0.9),0_2px_8px_rgba(0,0,0,0.7)]"
+              >
+                {activeCaption}
+              </p>
+            </div>
+          ))}
       </div>
     );
   }

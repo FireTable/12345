@@ -307,14 +307,14 @@
 /* Voice intake workspace */
 /* 语音模式放宽页面，让语音形象站在原本的左右留白里 */
 .submit-shell--voice {
-  max-width: 1180px;
+  max-width: 1320px;
 }
 
 .voice-layout {
-  --voice-stage-h: clamp(480px, calc(100dvh - 300px), 720px);
+  --voice-stage-h: clamp(460px, calc(100dvh - 295px), 780px);
   display: grid;
-  grid-template-columns: minmax(320px, 5fr) minmax(0, 6fr);
-  gap: 28px;
+  grid-template-columns: minmax(400px, 1.08fr) minmax(0, 1fr);
+  gap: 20px;
   align-items: start;
 }
 
@@ -324,17 +324,24 @@
   display: flex;
   justify-content: center;
   min-width: 0;
+  margin: -24px 0 -24px -24px;
+  background: linear-gradient(180deg, #f8fafc 0%, #eff6ff 55%, #e2e8f0 100%);
+  border-inline-end: 1px solid var(--c-border-soft);
 }
 
 @media (max-width: 860px) {
   .voice-layout {
-    --voice-stage-h: min(44dvh, 380px);
+    --voice-stage-h: min(48dvh, 420px);
     grid-template-columns: minmax(0, 1fr);
     gap: 16px;
   }
 
   .voice-stage-col {
     position: static;
+    margin: 0;
+    border-inline-end: 0;
+    border-radius: 12px;
+    overflow: hidden;
   }
 }
 
