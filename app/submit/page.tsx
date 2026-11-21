@@ -270,6 +270,13 @@ export default function SubmitPage() {
     activeRegion?.domainProfile?.domainType === "ECOMMERCE_CS" ||
     (!activeRegion && appDomain === "ECOMMERCE_CS");
 
+  const isTianhe = Boolean(
+    activeRegion?.id?.includes("tianhe") || activeRegion?.name?.includes("天河")
+  );
+  const isShunde = Boolean(
+    activeRegion?.id?.includes("shunde") || activeRegion?.name?.includes("顺德")
+  );
+
   const regionUnitLabel =
     options?.domainProfile?.terminology?.regionUnit ||
     activeRegion?.domainProfile?.terminology?.regionUnit ||
@@ -617,10 +624,36 @@ export default function SubmitPage() {
     },
   });
 
+  const prevRegionIdRef = useRef<string | undefined>(undefined);
+  const asrStopRef = useRef(asr.stop);
+  asrStopRef.current = asr.stop;
+
+  useEffect(() => {
+    const nextId = activeRegion?.id;
+    if (prevRegionIdRef.current && nextId && prevRegionIdRef.current !== nextId) {
+      asrStopRef.current();
+      stageRef.current?.stop();
+      setVoiceDraft(EMPTY_DRAFT);
+      setMissingFields([]);
+      setReadyToSubmit(false);
+      setChatInput("");
+      setReceipt(null);
+      setReopenTargetId(null);
+      setReopenReason("");
+      setFormValues(EMPTY_DRAFT);
+      setInteracted({});
+      setFieldErrors({});
+    }
+    if (nextId) {
+      prevRegionIdRef.current = nextId;
+    }
+  }, [activeRegion?.id]);
+
   const handleVoiceToggle = async () => {
     if (asr.isRecording) {
       asr.stop();
     } else {
+      stageRef.current?.stop();
       await asr.start();
     }
   };
@@ -725,6 +758,8 @@ export default function SubmitPage() {
     }
   };
 
+  const regionShort = activeRegion?.name || "辖区";
+  const sampleSubdistrict = subdistricts[0] || "中心街道";
   const quickVoiceDemos = isEcommerce
     ? [
         {
@@ -736,16 +771,38 @@ export default function SubmitPage() {
           text: "在天猫旗舰店买的SKU-GD2026-881冷链礼盒从华南冷链仓发出，收货化冻变质发臭要求退款赔付，电话13912345678",
         },
       ]
-    : [
-        {
-          title: "夜间烧烤油烟噪音扰民",
-          text: "天河这边晚上老有烧烤油烟吵得睡不着",
-        },
-        {
-          title: "天河南一路老广烧烤档夜间油烟",
-          text: "天河南街道天河南一路88号老广烧烤档，每天晚上11点到凌晨2点油烟排风噪音严重扰民，联系电话13800138000",
-        },
-      ];
+    : isShunde
+      ? [
+          {
+            title: "夜间烧烤油烟噪音扰民",
+            text: "大良这边晚上老有烧烤油烟吵得睡不着",
+          },
+          {
+            title: "大良清晖路老广烧烤档夜间油烟",
+            text: "大良街道清晖路88号老广烧烤档，每天晚上11点到凌晨2点油烟排风噪音严重扰民，联系电话13800138000",
+          },
+        ]
+      : isTianhe
+        ? [
+            {
+              title: "夜间烧烤油烟噪音扰民",
+              text: "天河这边晚上老有烧烤油烟吵得睡不着",
+            },
+            {
+              title: "天河南一路老广烧烤档夜间油烟",
+              text: "天河南街道天河南一路88号老广烧烤档，每天晚上11点到凌晨2点油烟排风噪音严重扰民，联系电话13800138000",
+            },
+          ]
+        : [
+            {
+              title: "夜间烧烤油烟噪音扰民",
+              text: `${regionShort}这边晚上老有烧烤油烟吵得睡不着`,
+            },
+            {
+              title: `${sampleSubdistrict}夜间烧烤油烟扰民`,
+              text: `${sampleSubdistrict}新城路88号老广烧烤档，每天晚上11点到凌晨2点油烟排风噪音严重扰民，联系电话13800138000`,
+            },
+          ];
 
   const hasDraftCategory = Boolean(voiceDraft.category.trim());
   const hasDraftSubdistrict = Boolean(voiceDraft.subdistrict.trim());
@@ -988,7 +1045,15 @@ export default function SubmitPage() {
                     updateFormField("subdistrict", e.target.value);
                   }}
                   onBlur={(e) => handleFieldBlur("subdistrict", e.currentTarget)}
-                  placeholder={isEcommerce ? "例如：天猫旗舰店 / 华南冷链仓" : "例如：天河南街道"}
+                  placeholder={
+                    isEcommerce
+                      ? "例如：天猫旗舰店 / 华南冷链仓"
+                      : isShunde
+                        ? "例如：大良街道"
+                        : isTianhe
+                          ? "例如：天河南街道"
+                          : `例如：${sampleSubdistrict}`
+                  }
                   autoComplete="off"
                   enterKeyHint="next"
                   aria-invalid={Boolean(interacted.subdistrict && fieldErrors.subdistrict)}
@@ -1127,7 +1192,13 @@ export default function SubmitPage() {
                   value={formValues.address}
                   onChange={(e) => updateFormField("address", e.target.value)}
                   placeholder={
-                    isEcommerce ? "例如：订单 202611200081 / 广州市天河区" : "例如：天河南一路 88 号"
+                    isEcommerce
+                      ? "例如：订单 202611200081 / 广州市天河区"
+                      : isShunde
+                        ? "例如：大良街道清晖路 88 号"
+                        : isTianhe
+                          ? "例如：天河南一路 88 号"
+                          : "例如：新城路 88 号"
                   }
                   enterKeyHint="next"
                   aria-invalid="false"
@@ -1319,8 +1390,8 @@ export default function SubmitPage() {
                           <p className="text-[11px] text-slate-600 mt-0.5">
                             {isVoiceDraftReady
                               ? readyToSubmit || missingFields.length === 0
-                                ? "3 项必填要素已齐全，可直接确认提交。"
-                                : `必填要素已齐备（可选补充：${missingFields.join("、")}）。`
+                                ? "关键要素已齐全，可直接确认提交。"
+                                : `基础必填已齐备，建议继续补充「${missingFields.join("、")}」以便精准派单，或直接提交。`
                               : `还需补充：${missingRequiredLabels.join("、")}`}
                           </p>
                         </div>

@@ -818,6 +818,7 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
                 if (asr.isRecording) {
                   asr.stop();
                 } else {
+                  stageRef.current?.stop();
                   void asr.start();
                 }
               }}

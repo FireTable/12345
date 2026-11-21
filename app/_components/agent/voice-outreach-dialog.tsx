@@ -76,7 +76,8 @@ const PATCH_FIELD_LABELS: Record<string, string> = {
 
 function getQuickReplies(
   task: AgentTaskItem | null,
-  isEcommerce: boolean
+  isEcommerce: boolean,
+  regionId?: string
 ): QuickReplyOption[] {
   if (!task) return [];
 
@@ -119,16 +120,38 @@ function getQuickReplies(
           text: "华南冷链仓发出的订单，外箱压扁冷媒失效导致生鲜变质",
         },
       ]
-    : [
-        {
-          label: "演示补全（路名门牌 + 主体）",
-          text: "天河南一路88号老广烧烤档，每天凌晨一点还在排油烟",
-        },
-        {
-          label: "演示补全（小区楼栋 + 噪音）",
-          text: "体育西横街12号临街工地，夜间23点后仍违规打桩施工",
-        },
-      ];
+    : regionId?.includes("shunde")
+      ? [
+          {
+            label: "演示补全（路名门牌 + 主体）",
+            text: "大良街道清晖路88号老广烧烤档，每天凌晨一点还在排油烟",
+          },
+          {
+            label: "演示补全（小区楼栋 + 噪音）",
+            text: "容桂街道文华路12号临街工地，夜间23点后仍违规打桩施工",
+          },
+        ]
+      : !regionId || regionId.includes("tianhe")
+        ? [
+            {
+              label: "演示补全（路名门牌 + 主体）",
+              text: "天河南一路88号老广烧烤档，每天凌晨一点还在排油烟",
+            },
+            {
+              label: "演示补全（小区楼栋 + 噪音）",
+              text: "体育西横街12号临街工地，夜间23点后仍违规打桩施工",
+            },
+          ]
+        : [
+            {
+              label: "演示补全（路名门牌 + 主体）",
+              text: "新城大道88号老广烧烤档，每天凌晨一点还在排油烟",
+            },
+            {
+              label: "演示补全（小区楼栋 + 噪音）",
+              text: "商业横街12号临街工地，夜间23点后仍违规打桩施工",
+            },
+          ];
 }
 
 /** 剥离气隙脱敏占位符，避免数字人播报与电影字幕念出 `{{PHONE_NUMBER_1}}`。 */
@@ -185,8 +208,8 @@ export function VoiceOutreachDialog({
   }, []);
 
   const quickReplies = useMemo(
-    () => getQuickReplies(task, isEcommerce),
-    [task, isEcommerce]
+    () => getQuickReplies(task, isEcommerce, regionId),
+    [task, isEcommerce, regionId]
   );
 
   const submitTranscript = useCallback(
@@ -395,6 +418,7 @@ export function VoiceOutreachDialog({
           if (asr.isRecording) {
             asr.stop();
           } else {
+            stageRef.current?.stop();
             void asr.start();
           }
         }}
