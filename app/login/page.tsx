@@ -4,6 +4,7 @@ import { useRef, useState, useTransition, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   ShieldCheck,
+  AlertCircle,
   Lock,
   User,
   Sparkles,
@@ -66,10 +67,8 @@ function LoginForm() {
     setErrorMessage("");
     setLiveAnnouncement("");
     if (focusTab) {
-      requestAnimationFrame(() => {
-        if (next === "login") loginTabRef.current?.focus();
-        else registerTabRef.current?.focus();
-      });
+      if (next === "login") loginTabRef.current?.focus();
+      else registerTabRef.current?.focus();
     }
   };
 
@@ -141,7 +140,6 @@ function LoginForm() {
 
     if (accErr || pwdErr) {
       setErrorMessage(accErr || pwdErr);
-      setLiveAnnouncement(accErr || pwdErr);
       if (accErr) loginAccountRef.current?.focus();
       else loginPasswordRef.current?.focus();
       return;
@@ -171,7 +169,6 @@ function LoginForm() {
               ? "账号或密码错误，请检查后重试"
               : res.error.message || "登录失败，请稍后重试";
           setErrorMessage(msg);
-          setLiveAnnouncement(msg);
           toast.error(msg);
           return;
         }
@@ -192,7 +189,6 @@ function LoginForm() {
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "网络异常，登录失败";
         setErrorMessage(msg);
-        setLiveAnnouncement(msg);
         toast.error(msg);
       }
     });
@@ -215,7 +211,6 @@ function LoginForm() {
     if (Object.keys(filteredErrs).length > 0) {
       const firstErr = Object.values(filteredErrs)[0];
       setErrorMessage(firstErr);
-      setLiveAnnouncement(firstErr);
       if (errs.name) regNameRef.current?.focus();
       else if (errs.username) regUsernameRef.current?.focus();
       else if (errs.email) regEmailRef.current?.focus();
@@ -238,7 +233,6 @@ function LoginForm() {
         if (res.error) {
           const msg = res.error.message || "注册失败，请检查用户名或邮箱是否已被占用";
           setErrorMessage(msg);
-          setLiveAnnouncement(msg);
           toast.error(msg);
           return;
         }
@@ -250,7 +244,6 @@ function LoginForm() {
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "网络异常，注册失败";
         setErrorMessage(msg);
-        setLiveAnnouncement(msg);
         toast.error(msg);
       }
     });
@@ -262,6 +255,7 @@ function LoginForm() {
     setPassword("admin");
     setErrorMessage("");
     setLoginErrors({});
+    setLiveAnnouncement("已填入管理员体验凭证");
     toast.info("已填入管理员体验凭证 (admin / admin)");
   };
 
@@ -271,6 +265,7 @@ function LoginForm() {
     setPassword("citizen123");
     setErrorMessage("");
     setLoginErrors({});
+    setLiveAnnouncement(`已填入${isEcommerce ? "消费者买家" : "普通市民"}体验凭证`);
     toast.info(
       `已填入${isEcommerce ? "消费者买家" : "普通市民"}体验凭证 (citizen / citizen123)`
     );
@@ -419,7 +414,7 @@ function LoginForm() {
         {/* Error Alert */}
         {errorMessage ? (
           <div className="login-error-alert" role="alert">
-            <ShieldCheck size={16} aria-hidden="true" />
+            <AlertCircle size={16} aria-hidden="true" className="shrink-0" />
             <span>{errorMessage}</span>
           </div>
         ) : null}
@@ -524,14 +519,18 @@ function LoginForm() {
                 />
                 <button
                   type="button"
-                  className="password-toggle-btn min-w-9 min-h-9"
+                  className="password-toggle-btn w-9 h-9 after:content-[''] after:absolute after:-inset-[4px]"
                   onClick={() => setShowPassword((prev) => !prev)}
                   aria-pressed={showPassword}
-                  aria-label={showPassword ? "隐藏密码" : "显示密码"}
+                  aria-label="显示密码"
+                  aria-describedby="login-password-toggle-warning"
                 >
                   {showPassword ? <EyeOff size={16} aria-hidden="true" /> : <Eye size={16} aria-hidden="true" />}
                 </button>
               </div>
+              <span id="login-password-toggle-warning" className="sr-only">
+                注意：开启后将在屏幕上明文显示您输入的密码。
+              </span>
               {loginInteracted.password && loginErrors.password ? (
                 <p id="login-password-error" className="text-xs text-red-600">
                   {loginErrors.password}
@@ -546,7 +545,7 @@ function LoginForm() {
             >
               {isPending ? (
                 <span className="submit-loading-text">
-                  <span className="login-spinner" /> 正在验证凭证并跳转...
+                  <span className="login-spinner" aria-hidden="true" /> 正在验证凭证并跳转...
                 </span>
               ) : (
                 <span className="submit-btn-content">安全登录进入系统</span>
@@ -644,7 +643,7 @@ function LoginForm() {
                   spellCheck={false}
                   minLength={3}
                   maxLength={32}
-                  pattern="[a-zA-Z0-9_.\-]{3,32}"
+                  pattern="[a-zA-Z0-9_.-]{3,32}"
                   enterKeyHint="next"
                   aria-invalid={Boolean(regInteracted.username && regErrors.username)}
                   aria-describedby={
@@ -765,10 +764,11 @@ function LoginForm() {
                 />
                 <button
                   type="button"
-                  className="password-toggle-btn min-w-9 min-h-9"
+                  className="password-toggle-btn w-9 h-9 after:content-[''] after:absolute after:-inset-[4px]"
                   onClick={() => setShowRegPassword((prev) => !prev)}
                   aria-pressed={showRegPassword}
-                  aria-label={showRegPassword ? "隐藏密码" : "显示密码"}
+                  aria-label="显示密码"
+                  aria-describedby="reg-password-toggle-warning"
                 >
                   {showRegPassword ? (
                     <EyeOff size={16} aria-hidden="true" />
@@ -777,6 +777,9 @@ function LoginForm() {
                   )}
                 </button>
               </div>
+              <span id="reg-password-toggle-warning" className="sr-only">
+                注意：开启后将在屏幕上明文显示您设置的密码。
+              </span>
               {regInteracted.password && regErrors.password ? (
                 <p id="reg-password-error" className="text-xs text-red-600">
                   {regErrors.password}
@@ -791,7 +794,7 @@ function LoginForm() {
             >
               {isPending ? (
                 <span className="submit-loading-text">
-                  <span className="login-spinner" /> 正在创建账号并登录...
+                  <span className="login-spinner" aria-hidden="true" /> 正在创建账号并登录...
                 </span>
               ) : (
                 <span className="submit-btn-content">
@@ -826,6 +829,7 @@ export default function LoginPage() {
           <div className="login-card" style={{ textAlign: "center", padding: "48px 24px" }}>
             <div
               className="login-spinner"
+              aria-hidden="true"
               style={{
                 margin: "0 auto 16px auto",
                 borderColor: "rgba(22, 119, 255, 0.3)",

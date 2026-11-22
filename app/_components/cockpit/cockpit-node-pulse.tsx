@@ -87,9 +87,9 @@ export function CockpitNodePulse({
       <div className="cockpit-glass-header flex items-center justify-between gap-2 pb-2 shrink-0 min-w-0">
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <Cpu size={14} aria-hidden="true" className="text-violet-400 shrink-0" />
-          <h3 className="text-xs font-semibold text-slate-100 tracking-wide cockpit-single-line">
+          <h2 className="text-xs font-semibold text-slate-100 tracking-wide cockpit-single-line">
             研判节点实时节拍
-          </h3>
+          </h2>
         </div>
         <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-violet-500/12 border border-violet-400/25 text-violet-200 whitespace-nowrap shrink-0">
           SYSTEM-2 调度

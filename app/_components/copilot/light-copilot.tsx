@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
@@ -27,7 +27,7 @@ import { Input } from "@/app/_components/ui/input";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/app/_components/ui/tooltip";
 import { useRegion } from "@/app/_components/civic/region-context";
 import { useAuthRole } from "@/lib/auth/use-role";
-import { useStreamAsr } from "@/app/_hooks/use-stream-asr";
+import { appendRecognizedText, useStreamAsr } from "@/app/_hooks/use-stream-asr";
 import { XiaochunStage, type XiaochunStageHandle } from "@/app/_components/agent/xiaochun-stage";
 import { copilotGreeting, splitCopilotStream } from "@/lib/copilot-protocol";
 import "./copilot-md.css";
@@ -113,6 +113,16 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
   isOpen,
   onClose,
 }) => {
+  const titleId = useId();
+  const inputId = useId();
+  const prefersReducedMotion = useReducedMotion();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
+  const openerWasFabRef = useRef(false);
+  const wasOpenRef = useRef(false);
+  const backdropPointerDownRef = useRef(false);
+  const copilotAbortRef = useRef<AbortController | null>(null);
   const { activeRegion } = useRegion();
   const { isAdmin } = useAuthRole();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -147,17 +157,29 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
     onFinalResult: (text) => {
       const clean = text.trim();
       if (!clean) return;
-      setInput((prev) => (prev.trim() ? `${prev.trim()} ${clean}` : clean));
+      setInput((prev) => appendRecognizedText(prev, clean));
+      inputRef.current?.focus();
     },
   });
 
   useEffect(() => {
+    copilotAbortRef.current?.abort();
+    copilotAbortRef.current = null;
+    setIsTyping(false);
+    setStreamingId(null);
     setMessages([createGreetingMessage()]);
     setActionStates({});
     lastSpokenIdRef.current = "m-init";
     // regionKey 已经覆盖 id / 城市 / 区名 / 业务域。不要把 activeRegion 对象放进依赖，避免同区重绘清空对话。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [regionKey]);
+
+  useEffect(() => {
+    return () => {
+      copilotAbortRef.current?.abort();
+      copilotAbortRef.current = null;
+    };
+  }, []);
   const [streamingId, setStreamingId] = useState<string | null>(null);
   const [actionStates, setActionStates] = useState<
     Record<string, { status: "idle" | "pending" | "done" | "error"; error?: string }>
@@ -208,20 +230,95 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
     if (el) el.scrollTop = el.scrollHeight;
   }
 
-  // Lock background body scroll when Copilot drawer is open
+  // Modal focus management, background inert, Esc + Tab containment, focus return & ASR/TTS cleanup
   React.useEffect(() => {
-    if (isOpen) {
-      const originalOverflow = document.body.style.overflow;
-      document.body.style.overflow = "hidden";
-      return () => {
-        document.body.style.overflow = originalOverflow;
-      };
-    } else {
+    if (!isOpen) {
       asr.stop();
       stageRef.current?.stop();
+      if (wasOpenRef.current) {
+        wasOpenRef.current = false;
+        const opener = openerRef.current;
+        const shouldFallbackToFab = openerWasFabRef.current;
+        openerRef.current = null;
+        openerWasFabRef.current = false;
+        if (opener && opener !== document.body && opener.isConnected) {
+          opener.focus({ preventScroll: true });
+        } else if (shouldFallbackToFab) {
+          document.querySelector<HTMLElement>(".chat-fab")?.focus({ preventScroll: true });
+        }
+      }
+      return;
     }
+
+    if (!wasOpenRef.current) {
+      const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      openerRef.current = active && active !== document.body ? active : null;
+      // CivicNav unmounts .chat-fab as soon as copilotOpen flips true, which drops activeElement to body
+      openerWasFabRef.current =
+        !active || active === document.body || active.classList.contains("chat-fab");
+      wasOpenRef.current = true;
+    }
+
+    const backgroundNodes = Array.from(
+      document.querySelectorAll<HTMLElement>("nav.navbar, nav.page-nav, main.main")
+    );
+    const modifiedInert: HTMLElement[] = [];
+    for (const node of backgroundNodes) {
+      if (!node.inert) {
+        node.inert = true;
+        modifiedInert.push(node);
+      }
+    }
+
+    const dialogEl = dialogRef.current;
+    if (dialogEl && !dialogEl.contains(document.activeElement)) {
+      dialogEl.focus({ preventScroll: true });
+    }
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (e.isComposing || e.keyCode === 229) return;
+        e.preventDefault();
+        onClose();
+        return;
+      }
+      if (e.key === "Tab" && dialogRef.current) {
+        const focusables = Array.from(
+          dialogRef.current.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])'
+          )
+        ).filter(
+          (el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden"
+        );
+        if (focusables.length === 0) {
+          e.preventDefault();
+          dialogRef.current.focus({ preventScroll: true });
+          return;
+        }
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        const active = document.activeElement;
+        if (e.shiftKey) {
+          if (active === first || active === dialogRef.current || !dialogRef.current.contains(active)) {
+            e.preventDefault();
+            last.focus({ preventScroll: true });
+          }
+        } else if (active === last || !dialogRef.current.contains(active)) {
+          e.preventDefault();
+          first.focus({ preventScroll: true });
+        }
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      for (const node of modifiedInert) {
+        node.inert = false;
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]);
+  }, [isOpen, onClose]);
 
   // 折叠展开 3D 语音助手时，自动播报最新 AI 回复
   useEffect(() => {
@@ -249,7 +346,10 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
   }, [isOpen, showStage, isTyping, streamingId, messages]);
 
   const handleClearChat = () => {
-    if (isTyping) return;
+    copilotAbortRef.current?.abort();
+    copilotAbortRef.current = null;
+    setIsTyping(false);
+    setStreamingId(null);
     asr.stop();
     stageRef.current?.stop();
     lastSpokenIdRef.current = "m-init";
@@ -260,8 +360,16 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
   };
 
   const handleSend = async (customText?: string) => {
-    const text = customText || input;
-    if (!text.trim()) return;
+    const rawText =
+      customText ??
+      (asr.isRecording && asr.interimText.trim()
+        ? appendRecognizedText(input, asr.interimText)
+        : input);
+    if (isTyping || !rawText.trim()) return;
+    const text = rawText.trim();
+    if (asr.isRecording || asr.status === "initializing" || asr.status === "downloading") {
+      asr.reset();
+    }
 
     const userMsg: Message = {
       id: `u-${Date.now()}`,
@@ -272,7 +380,7 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
 
     const aiId = `a-${Date.now()}`;
     setMessages((prev) => [...prev, userMsg]);
-    if (!customText) setInput("");
+    if (customText === undefined) setInput("");
     setIsTyping(true);
     setStreamingId(aiId);
     setMessages((prev) => [
@@ -286,6 +394,10 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
     ]);
     requestAnimationFrame(scrollToBottom);
 
+    copilotAbortRef.current?.abort();
+    const controller = new AbortController();
+    copilotAbortRef.current = controller;
+
     try {
       const history = [...messages, userMsg]
         .filter((item) => item.content.trim())
@@ -296,6 +408,7 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
       const res = await fetch("/api/copilot", {
         method: "POST",
         headers,
+        signal: controller.signal,
         body: JSON.stringify({ messages: history }),
       });
 
@@ -310,6 +423,7 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        if (controller.signal.aborted) return;
         acc += decoder.decode(value, { stream: true });
         const split = splitCopilotStream(acc);
         const visible = split.text;
@@ -339,6 +453,7 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
         );
         scrollToBottom();
       }
+      if (controller.signal.aborted) return;
       acc += decoder.decode();
       const finalSplit = splitCopilotStream(acc);
       const finalVisible = finalSplit.text;
@@ -368,6 +483,9 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
         )
       );
     } catch (err) {
+      if (controller.signal.aborted || (err instanceof DOMException && err.name === "AbortError")) {
+        return;
+      }
       // ponytail: 401/超时/LLM 报错都会落到这里,把真实错误塞进 UI 而不是统一说「超时」,便于排查。
       const msg = err instanceof Error ? err.message : String(err);
       setMessages((prev) =>
@@ -378,9 +496,12 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
         )
       );
     } finally {
-      setIsTyping(false);
-      setStreamingId(null);
-      requestAnimationFrame(scrollToBottom);
+      if (copilotAbortRef.current === controller) {
+        copilotAbortRef.current = null;
+        setIsTyping(false);
+        setStreamingId(null);
+        requestAnimationFrame(scrollToBottom);
+      }
     }
   };
 
@@ -390,12 +511,20 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
       {isOpen && (
       <motion.div
         key="copilot-backdrop"
-        className="fixed inset-0 z-[1000] flex justify-end bg-slate-900/50 backdrop-blur-xs overscroll-contain"
-        onClick={onClose}
+        className="fixed inset-0 z-[1000] flex justify-end bg-slate-900/50 backdrop-blur-xs overflow-hidden overscroll-contain"
+        onPointerDown={(e) => {
+          backdropPointerDownRef.current = e.target === e.currentTarget;
+        }}
+        onClick={(e) => {
+          if (e.target === e.currentTarget && backdropPointerDownRef.current) {
+            onClose();
+          }
+          backdropPointerDownRef.current = false;
+        }}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        transition={{ duration: 0.2, ease: "easeOut" }}
+        transition={{ duration: prefersReducedMotion ? 0 : 0.2, ease: "easeOut" }}
       >
         {showStage && stageOnBackdrop && (
           <div className="flex-1 min-w-0 h-full relative pointer-events-none">
@@ -413,12 +542,17 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
           </div>
         )}
         <motion.div
-          className="w-full max-w-lg shrink-0 h-full bg-white border-l border-slate-200 shadow-2xl flex flex-col overflow-hidden text-slate-900"
+          ref={dialogRef}
+          tabIndex={-1}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          className="w-full max-w-lg shrink-0 h-full bg-white sm:border-l border-slate-200 shadow-2xl flex flex-col overflow-hidden overscroll-contain text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
           onClick={(e) => e.stopPropagation()}
-          initial={{ x: "100%" }}
+          initial={prefersReducedMotion ? { x: 0 } : { x: "100%" }}
           animate={{ x: 0 }}
-          exit={{ x: "100%" }}
-          transition={{ duration: 0.28, ease: [0.32, 0.72, 0.18, 1] }}
+          exit={prefersReducedMotion ? { x: 0 } : { x: "100%" }}
+          transition={{ duration: prefersReducedMotion ? 0 : 0.28, ease: [0.32, 0.72, 0.18, 1] }}
         >
         {/* Header */}
         <div className="p-3 sm:p-4 border-b border-slate-200 flex items-center justify-between gap-2 bg-slate-50">
@@ -426,19 +560,26 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
             <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs shrink-0">
               <BotMessageSquare className="w-4 h-4" aria-hidden="true" />
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 min-w-0">
-                <h2 className="text-xs font-bold text-slate-900 truncate">
+                <h2 id={titleId} className="text-[13px] sm:text-xs font-bold text-slate-900 leading-tight">
                   {isEcommerce ? "AI 客诉研判副驾驶" : "AI 智能研判副驾驶"}
                 </h2>
                 <span className="hidden sm:inline-flex text-[10px] font-mono px-1.5 py-0.2 rounded bg-blue-50 text-blue-700 border border-blue-200 font-medium shrink-0">
                   {isEcommerce ? "本站检索" : "本区检索"}
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500 truncate">
-                {activeRegion
-                  ? `${isEcommerce ? "当前电商站点" : "当前辖区"} · ${activeRegion.city} · ${activeRegion.name}`
-                  : "正在确认当前工作站点"}
+              <p className="text-[11px] text-slate-600 truncate whitespace-nowrap">
+                {activeRegion ? (
+                  <>
+                    <span className="hidden sm:inline">
+                      {isEcommerce ? "当前电商站点 · " : "当前辖区 · "}
+                    </span>
+                    {activeRegion.city} · {activeRegion.name}
+                  </>
+                ) : (
+                  "正在确认当前工作站点"
+                )}
               </p>
             </div>
           </div>
@@ -450,15 +591,14 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
               onClick={handleClearChat}
               aria-label="清空对话"
               title="清空当前对话并重新提问"
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-45 disabled:cursor-not-allowed transition-colors cursor-pointer whitespace-nowrap min-h-7"
+              className="relative inline-flex items-center justify-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-45 disabled:cursor-not-allowed transition-colors cursor-pointer whitespace-nowrap min-h-[34px] min-w-[34px] sm:min-w-0 sm:min-h-8 after:content-[''] after:absolute after:-inset-[5px]"
             >
-              <RotateCcw className="w-3 h-3 shrink-0" aria-hidden="true" />
-              <span>清空对话</span>
+              <RotateCcw className="w-3.5 h-3.5 sm:w-3 sm:h-3 shrink-0" aria-hidden="true" />
+              <span className="hidden sm:inline">清空对话</span>
             </button>
             <button
               type="button"
               aria-expanded={showStage}
-              aria-label={showStage ? "收起 3D 语音助手" : "展开 3D 语音助手"}
               onClick={() => {
                 setShowStage((prev) => {
                   const next = !prev;
@@ -468,20 +608,22 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
                   return next;
                 });
               }}
-              className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border transition-colors cursor-pointer whitespace-nowrap min-h-7 ${
+              className={`relative inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium border transition-colors cursor-pointer whitespace-nowrap min-h-[34px] sm:min-h-8 after:content-[''] after:absolute after:-inset-y-[5px] after:inset-x-0 ${
                 showStage
                   ? "bg-blue-50 text-blue-700 border-blue-200"
                   : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
               }`}
             >
               <Volume2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-              <span>3D 语音助手</span>
+              <span>
+                3D 语音<span className="hidden sm:inline">助手</span>
+              </span>
             </button>
             <button
               type="button"
               aria-label="关闭 AI 研判副驾驶"
               onClick={onClose}
-              className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer min-h-7 min-w-7 inline-flex items-center justify-center"
+              className="relative p-1.5 rounded-md text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer min-h-[34px] min-w-[34px] sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center after:content-[''] after:absolute after:-inset-[5px]"
             >
               <X className="w-5 h-5" aria-hidden="true" />
             </button>
@@ -489,7 +631,7 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
         </div>
 
         {/* Preset Prompt Pills */}
-        <div className="px-3 sm:px-4 py-2 bg-white border-b border-slate-100 flex items-center gap-2 overflow-x-auto text-xs shrink-0">
+        <div className="px-3 sm:px-4 py-2 bg-white border-b border-slate-100 grid grid-cols-2 sm:flex sm:flex-wrap gap-1.5 sm:gap-2 text-xs shrink-0">
           {(isEcommerce
             ? [
                 {
@@ -549,7 +691,7 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
               type="button"
               disabled={isTyping}
               onClick={() => void handleSend(chip.prompt)}
-              className={`px-2.5 py-1 rounded-full border whitespace-nowrap shrink-0 text-[11px] font-medium cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${chip.toneClass}`}
+              className={`min-h-[44px] sm:min-h-[32px] min-w-0 px-2.5 py-1.5 rounded-lg sm:rounded-full border text-center leading-snug text-[11px] font-medium cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${chip.toneClass}`}
             >
               {chip.label}
             </button>
@@ -561,7 +703,7 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
           <div className="px-3 py-2 bg-slate-50/90 border-b border-slate-200 flex items-center justify-center shrink-0">
             <XiaochunStage
               width="100%"
-              height={240}
+              height="clamp(170px, 24dvh, 220px)"
               scene="light"
               ref={stageRef}
               outfit="xiaochun_civic"
@@ -610,8 +752,16 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
                           >
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <summary className="cursor-pointer text-[10px] font-medium text-slate-400 hover:text-slate-600 select-none flex items-center gap-1.5 list-none">
-                                  <Brain size={11} className={streaming && !m.content ? "text-blue-500 animate-pulse" : "text-slate-400 group-open:text-blue-500"} />
+                                <summary className="cursor-pointer text-[10px] font-medium text-slate-600 hover:text-slate-800 select-none flex items-center gap-1.5 list-none">
+                                  <Brain
+                                    size={11}
+                                    aria-hidden="true"
+                                    className={
+                                      streaming && !m.content
+                                        ? `text-blue-500${prefersReducedMotion ? "" : " animate-pulse"}`
+                                        : "text-slate-500 group-open:text-blue-500"
+                                    }
+                                  />
                                   <span>{streaming && !m.content ? "思考中…" : "查看思考过程"}</span>
                                 </summary>
                               </TooltipTrigger>
@@ -653,8 +803,11 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
                               ) : null}
                               {streaming && !parsed.pendingBlock ? <span className="copilot-caret" aria-hidden /> : null}
                               {parsed.pendingBlock ? (
-                                <div className="mt-2 rounded-lg border border-blue-200 bg-white px-3 py-2.5 text-[11px] text-slate-500 flex items-center gap-2">
-                                  <Loader2 className="w-3.5 h-3.5 text-blue-600 animate-spin" />
+                                <div className="mt-2 rounded-lg border border-blue-200 bg-white px-3 py-2.5 text-[11px] text-slate-600 flex items-center gap-2">
+                                  <Loader2
+                                    className={`w-3.5 h-3.5 text-blue-600${prefersReducedMotion ? "" : " animate-spin"}`}
+                                    aria-hidden="true"
+                                  />
                                   <span>正在生成待确认执行操作卡片…</span>
                                 </div>
                               ) : null}
@@ -680,25 +833,25 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
                                         </div>
                                         <div className="space-y-1 text-[11px]">
                                           <div className="flex items-start justify-between gap-2">
-                                            <span className="text-slate-400 shrink-0">目标群组</span>
+                                            <span className="text-slate-500 shrink-0">目标群组</span>
                                             <Link
                                               href={`/themes/${encodeURIComponent(act.themeId)}`}
                                               onClick={onClose}
                                               className="font-semibold text-blue-600 hover:underline text-right inline-flex items-center gap-1"
                                             >
                                               <span>{act.themeTitle || act.themeId}</span>
-                                              <ExternalLink className="w-3 h-3 shrink-0" />
+                                              <ExternalLink className="w-3 h-3 shrink-0" aria-hidden="true" />
                                             </Link>
                                           </div>
                                           {act.owner && (
                                             <div className="flex items-start justify-between gap-2">
-                                              <span className="text-slate-400 shrink-0">建议部门</span>
+                                              <span className="text-slate-500 shrink-0">建议部门</span>
                                               <span className="font-medium text-slate-800 text-right">{act.owner}</span>
                                             </div>
                                           )}
                                           {act.eta && (
                                             <div className="flex items-start justify-between gap-2">
-                                              <span className="text-slate-400 shrink-0">预计时限</span>
+                                              <span className="text-slate-500 shrink-0">预计时限</span>
                                               <span className="font-mono text-slate-700 text-right">{act.eta}</span>
                                             </div>
                                           )}
@@ -710,7 +863,7 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
                                         </div>
                                         {state === "error" && errorMsg && (
                                           <div className="flex items-center gap-1.5 text-[11px] text-rose-600 bg-rose-50 border border-rose-200 rounded px-2 py-1">
-                                            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                                            <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                                             <span className="break-all">{errorMsg}</span>
                                           </div>
                                         )}
@@ -724,7 +877,7 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
                                           )}
                                           {state === "done" ? (
                                             <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-md">
-                                              <CheckCircle2 className="w-3.5 h-3.5" />
+                                              <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
                                               <span>已执行落库</span>
                                             </span>
                                           ) : (
@@ -733,16 +886,19 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
                                               disabled={!isAdmin || state === "pending" || streaming}
                                               title={!isAdmin ? "仅管理员可执行处置" : undefined}
                                               onClick={() => void handleExecuteAction(cardKey, act)}
-                                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                                              className="inline-flex min-h-[44px] sm:min-h-[30px] items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
                                             >
                                               {state === "pending" ? (
                                                 <>
-                                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                                  <Loader2
+                                                    className={`w-3 h-3${prefersReducedMotion ? "" : " animate-spin"}`}
+                                                    aria-hidden="true"
+                                                  />
                                                   <span>执行中…</span>
                                                 </>
                                               ) : (
                                                 <>
-                                                  <Play className="w-3 h-3" />
+                                                  <Play className="w-3 h-3" aria-hidden="true" />
                                                   <span>{state === "error" ? "重试执行" : "确认执行"}</span>
                                                 </>
                                               )}
@@ -760,10 +916,10 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
                       ) : null}
                     </div>
                   ) : (
-                    <span className="text-slate-400">…</span>
+                    <span className="text-slate-500">…</span>
                   )}
                 </div>
-                <span className="text-[10px] text-slate-400 mt-1 px-1 font-mono">
+                <span className="text-[10px] text-slate-500 mt-1 px-1 font-mono">
                   {m.timestamp}
                 </span>
               </div>
@@ -771,8 +927,11 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
           })}
 
           {isTyping && !streamingId && (
-            <div className="flex items-center gap-2 text-slate-500 text-xs py-2">
-              <Sparkles className="w-3.5 h-3.5 text-blue-600 animate-spin" aria-hidden="true" />
+            <div className="flex items-center gap-2 text-slate-600 text-xs py-2">
+              <Sparkles
+                className={`w-3.5 h-3.5 text-blue-600${prefersReducedMotion ? "" : " animate-spin"}`}
+                aria-hidden="true"
+              />
               <span>
                 {isEcommerce
                   ? "正在检索当前电商站点客诉与专题并研判..."
@@ -784,8 +943,12 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
 
         {/* Input Bar */}
         <div className="p-3 border-t border-slate-200 bg-white space-y-1.5 shrink-0">
-          {(asr.isRecording || asr.status === "downloading" || asr.error) && (
-            <div className="flex items-center justify-between gap-2 px-1 text-[11px] text-slate-500">
+          {(asr.isRecording || asr.status === "downloading" || asr.status === "initializing" || asr.error) && (
+            <div
+              role={asr.error ? "status" : undefined}
+              aria-live={asr.error ? "polite" : undefined}
+              className="flex items-center justify-between gap-2 px-1 text-[11px] text-slate-600"
+            >
               <span className={`truncate ${asr.error ? "text-amber-700" : "text-blue-700"}`}>
                 {asr.error
                   ? `语音提示：${asr.error}`
@@ -803,7 +966,7 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              handleSend();
+              void handleSend();
             }}
             className="flex items-center gap-2"
           >
@@ -812,30 +975,38 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
               size="icon"
               variant="outline"
               disabled={isTyping}
-              aria-label={asr.isRecording ? "停止语音输入" : "开始语音输入"}
+              aria-label={
+                asr.isRecording || asr.status === "initializing" || asr.status === "downloading"
+                  ? "停止语音输入"
+                  : "开始语音输入"
+              }
               aria-pressed={asr.isRecording}
               onClick={() => {
-                if (asr.isRecording) {
+                if (asr.isRecording || asr.status === "initializing" || asr.status === "downloading") {
                   asr.stop();
                 } else {
                   stageRef.current?.stop();
                   void asr.start();
                 }
               }}
-              className={`h-9 w-9 shrink-0 ${
+              className={`h-11 w-11 sm:h-9 sm:w-9 shrink-0 ${
                 asr.isRecording
                   ? "bg-rose-50 border-rose-300 text-rose-600 hover:bg-rose-100"
                   : "bg-slate-50 border-slate-200 text-slate-600 hover:text-blue-600"
               }`}
             >
               {asr.isRecording ? (
-                <MicOff className="w-4 h-4" />
+                <MicOff className="w-4 h-4" aria-hidden="true" />
               ) : (
-                <Mic className="w-4 h-4" />
+                <Mic className="w-4 h-4" aria-hidden="true" />
               )}
             </Button>
+            <label htmlFor={inputId} className="sr-only">
+              输入研判提问
+            </label>
             <Input
-              aria-label="输入研判提问"
+              ref={inputRef}
+              id={inputId}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
@@ -845,26 +1016,26 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
                     return;
                   }
                   e.preventDefault();
-                  if (!isTyping && input.trim()) {
+                  if (!isTyping && (input.trim() || (asr.isRecording && asr.interimText.trim()))) {
                     void handleSend();
                   }
                 }
               }}
               placeholder={
                 isEcommerce
-                  ? "询问客诉态势、SKU/渠道分布、假闭环或 12315 红线..."
-                  : "询问多频工单态势、镇街分布、归因或处置建议..."
+                  ? "询问客诉态势、渠道/SKU 或红线…"
+                  : "询问工单态势、镇街或处置建议…"
               }
-              className="text-xs h-9 bg-slate-50 border-slate-200 text-slate-900 placeholder:text-slate-400 focus-visible:ring-blue-500"
+              className="text-base sm:text-xs min-h-11 h-auto sm:h-9 bg-slate-50 border-slate-200 text-slate-900 placeholder:text-slate-500 focus-visible:ring-blue-500"
             />
             <Button
               type="submit"
               size="sm"
               aria-label="发送提问"
-              disabled={isTyping || !input.trim()}
-              className="h-9 px-3 bg-blue-600 text-white hover:bg-blue-700 shrink-0 shadow-xs"
+              disabled={isTyping || !(input.trim() || (asr.isRecording && asr.interimText.trim()))}
+              className="h-11 min-w-11 px-3 sm:h-9 sm:min-w-0 bg-blue-600 text-white hover:bg-blue-700 shrink-0 shadow-xs"
             >
-              <Send className="w-3.5 h-3.5" />
+              <Send className="w-3.5 h-3.5" aria-hidden="true" />
             </Button>
           </form>
         </div>

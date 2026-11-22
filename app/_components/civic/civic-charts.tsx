@@ -3,6 +3,22 @@
 import { useEffect, useRef, useState } from "react";
 import { categoryColor } from "@/lib/civic-cluster";
 
+function escapeHtml(text: string): string {
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
+
 declare global {
   interface Window {
     echarts?: {
@@ -122,6 +138,8 @@ export function CivicEChart({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const chartInstanceRef = useRef<any>(null);
+  const onHoverRef = useRef(onHover);
+  onHoverRef.current = onHover;
   const key = JSON.stringify(option);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [errorMsg, setErrorMsg] = useState("");
@@ -139,6 +157,9 @@ export function CivicEChart({
           const chart = echarts.init(ref.current);
           chartInstanceRef.current = chart;
           const parsedOption = JSON.parse(key);
+          if (prefersReducedMotion()) {
+            parsedOption.animation = false;
+          }
           chart.setOption(parsedOption);
 
           // 监听鼠标悬停交互：动态实时切换环形图圆心百分比与分类，并通知外部聚焦
@@ -162,7 +183,7 @@ export function CivicEChart({
                   },
                 });
               }
-              onHover?.(params.name);
+              onHoverRef.current?.(params.name);
             });
 
             chart.on("mouseout", "series.pie", () => {
@@ -171,7 +192,7 @@ export function CivicEChart({
                   title: defaultTitle,
                 });
               }
-              onHover?.(null);
+              onHoverRef.current?.(null);
             });
           }
           setLoadState("ready");
@@ -376,7 +397,8 @@ export function trendOption(daily: Record<string, number>, clusters: Record<stri
         itemStyle: { color: "#FF7D00" },
       },
     ],
-    animationDuration: 1200,
+    animation: !prefersReducedMotion(),
+    animationDuration: prefersReducedMotion() ? 0 : 1200,
     animationEasing: "cubicOut",
   };
 }
@@ -422,7 +444,7 @@ export function donutOption(dist: Record<string, number>) {
       borderColor: "transparent",
       textStyle: { color: "#fff", fontSize: 12 },
       formatter: (p: { name: string; value: number; percent: number }) =>
-        `<b>${p.name}</b><br/>${Number(p.value).toLocaleString("zh-CN")} 件 (${Number(p.percent).toFixed(1)}%)`,
+        `<b>${escapeHtml(p.name)}</b><br/>${Number(p.value).toLocaleString("zh-CN")} 件 (${Number(p.percent).toFixed(1)}%)`,
     },
     legend: {
       bottom: 0,
@@ -454,7 +476,8 @@ export function donutOption(dist: Record<string, number>) {
         },
       },
     ],
-    animationDuration: 1000,
+    animation: !prefersReducedMotion(),
+    animationDuration: prefersReducedMotion() ? 0 : 1000,
     animationEasing: "cubicOut",
   };
 }
@@ -481,6 +504,7 @@ export function miniDonutOption(
   const topColor = topItem ? categoryColor(topItem.name) : "#1677FF";
 
   return {
+    animation: !prefersReducedMotion(),
     title: {
       show: false,
     },
@@ -513,6 +537,7 @@ export function miniDonutOption(
 export function radarOption(values: number[]) {
   const data = values.length === 5 ? values : [0, 0, 0, 0, 0];
   return {
+    animation: !prefersReducedMotion(),
     tooltip: {
       trigger: "item",
       backgroundColor: "rgba(15, 23, 42, 0.95)",
@@ -627,12 +652,12 @@ export function CivicHeatmap({
   if (!regions.length || !cats.length) return <div className="empty-hint">暂无交叉统计。请先启动 Agent 研判。</div>;
   const max = Math.max(1, ...regions.flatMap((r) => cats.map((c) => grid[r]?.[c] || 0)));
   const colors = [
-    "rgb(239, 248, 255)",
-    "rgb(186, 220, 255)",
-    "rgb(120, 188, 255)",
-    "rgb(60, 150, 255)",
-    "rgb(22, 119, 255)",
-    "rgb(9, 88, 217)",
+    "#EFF8FF",
+    "#BADFFF",
+    "#7CC0FF",
+    "#1D68D8",
+    "#0E52C4",
+    "#063A9B",
   ];
   return (
     <table className="heatmap">
@@ -657,7 +682,7 @@ export function CivicHeatmap({
               const lvl =
                 intensity > 0.75 ? 6 : intensity > 0.5 ? 5 : intensity > 0.3 ? 4 : intensity > 0.15 ? 3 : intensity > 0.05 ? 2 : 1;
               const bg = colors[lvl - 1];
-              const textColor = lvl >= 4 ? "#fff" : "#1E5AFF";
+              const textColor = lvl >= 4 ? "#FFFFFF" : "#0B2559";
               return (
                 <td key={c} style={{ overflow: "visible" }}>
                   <div

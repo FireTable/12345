@@ -47,12 +47,20 @@ const AgentReportMarkdown = dynamic(
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           components={{
+            h1: () => null,
+            h2: ({ node: _node, ...props }) => <h3 {...props} />,
+            h3: ({ node: _node, ...props }) => <h4 {...props} />,
+            h4: ({ node: _node, ...props }) => <h5 {...props} />,
+            h5: ({ node: _node, ...props }) => <h6 {...props} />,
+            th: ({ node: _node, scope, ...props }) => (
+              <th scope={scope ?? "col"} {...props} />
+            ),
             table: ({ node: _node, ...props }) => (
               <div
                 role="region"
                 tabIndex={0}
                 aria-label="专报数据表格"
-                className="my-3 w-full max-w-full overflow-x-auto rounded-lg border border-slate-200"
+                className="my-3 w-full max-w-full overflow-x-auto rounded-lg border border-slate-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
               >
                 <table
                   className="!w-max min-w-full !my-0 [&_th]:whitespace-nowrap [&_th]:bg-slate-50 [&_th]:px-3 [&_th]:py-2 [&_td]:px-3 [&_td]:py-2 [&_td]:break-normal [&_td]:whitespace-nowrap [&_td]:tabular-nums [&_td:nth-child(2)]:whitespace-normal [&_td:nth-child(2)]:min-w-[160px] [&_td:nth-child(2)]:max-w-[300px] [&_td:last-child]:whitespace-normal [&_td:last-child]:min-w-[140px]"
@@ -200,6 +208,16 @@ function getTargetHref(task: AgentTaskItem): string {
   return task.targetType === "THEME" ? `/themes/${id}` : `/tickets/${id}`;
 }
 
+function formatTaskTime(iso: string | undefined | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) {
+    return String(iso).slice(0, 16).replace("T", " ");
+  }
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export default function AgentCenterPage() {
   const { isAdmin, isPending: isRolePending } = useAuthRole();
   const { activeRegion } = useRegion();
@@ -214,6 +232,7 @@ export default function AgentCenterPage() {
   const [tasks, setTasks] = useState<AgentTaskItem[]>([]);
   const [summary, setSummary] = useState<AgentSummary>(EMPTY_SUMMARY);
   const [loadingTasks, setLoadingTasks] = useState(false);
+  const [tasksError, setTasksError] = useState<string | null>(null);
   const [patrolling, setPatrolling] = useState(false);
   const [busyTaskId, setBusyTaskId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<"ALL" | "ACTIVE" | "DONE">("ALL");
@@ -222,12 +241,20 @@ export default function AgentCenterPage() {
   const [reports, setReports] = useState<AgentReportItem[]>([]);
   const [selectedReportId, setSelectedReportId] = useState<string>("");
   const [loadingReport, setLoadingReport] = useState(false);
+  const [reportsError, setReportsError] = useState<string | null>(null);
   const [generatingReport, setGeneratingReport] = useState(false);
 
   const [voiceDialogOpen, setVoiceDialogOpen] = useState(false);
   const [voiceMounted, setVoiceMounted] = useState(false);
   const [voiceTask, setVoiceTask] = useState<AgentTaskItem | null>(null);
   const [reportTabVisited, setReportTabVisited] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.location.hash === "#report") {
+      setActiveTab("report");
+      setReportTabVisited(true);
+    }
+  }, []);
 
   const tasksAbortRef = useRef<AbortController | null>(null);
   const tasksSeqRef = useRef(0);
@@ -261,6 +288,7 @@ export default function AgentCenterPage() {
     const seq = ++tasksSeqRef.current;
 
     setLoadingTasks(true);
+    setTasksError(null);
     try {
       const res = await fetch("/api/agent/tasks", {
         headers: buildHeaders(),
@@ -284,7 +312,9 @@ export default function AgentCenterPage() {
       }
     } catch (err: any) {
       if (controller.signal.aborted || err?.name === "AbortError" || seq !== tasksSeqRef.current) return;
-      toast.error(err instanceof Error ? err.message : "加载待办队列失败");
+      const msg = err instanceof Error ? err.message : "加载待办队列失败";
+      setTasksError(msg);
+      toast.error(msg);
     } finally {
       if (!controller.signal.aborted && seq === tasksSeqRef.current) {
         setLoadingTasks(false);
@@ -300,6 +330,7 @@ export default function AgentCenterPage() {
     const seq = ++reportsSeqRef.current;
 
     setLoadingReport(true);
+    setReportsError(null);
     try {
       const res = await fetch("/api/agent/report", {
         headers: buildHeaders(),
@@ -326,7 +357,9 @@ export default function AgentCenterPage() {
       );
     } catch (err: any) {
       if (controller.signal.aborted || err?.name === "AbortError" || seq !== reportsSeqRef.current) return;
-      toast.error(err instanceof Error ? err.message : "加载研判专报失败");
+      const msg = err instanceof Error ? err.message : "加载研判专报失败";
+      setReportsError(msg);
+      toast.error(msg);
     } finally {
       if (!controller.signal.aborted && seq === reportsSeqRef.current) {
         setLoadingReport(false);
@@ -580,7 +613,7 @@ export default function AgentCenterPage() {
             </p>
           </div>
           <div className="pt-2 flex items-center justify-center gap-3 flex-wrap">
-            <Link href="/submit" className="btn btn--primary min-h-[40px] text-xs px-4">
+            <Link href="/submit" className="btn btn--primary min-h-[44px] sm:min-h-[40px] text-xs px-4">
               <span>前往市民/买家投诉端 (/submit)</span>
             </Link>
           </div>
@@ -595,7 +628,7 @@ export default function AgentCenterPage() {
       {/* 紧凑 PageHeader */}
       <div className="page-hero flex-col lg:flex-row lg:items-center">
         <div className="min-w-0 flex-1">
-          <div className="page-hero__title flex items-center gap-2 flex-wrap">
+          <h1 className="page-hero__title flex items-center gap-2 flex-wrap">
             <span>智能治理 · 主动 Agent 中心</span>
             <span className="rounded-full bg-blue-50 border border-blue-200/80 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700 whitespace-nowrap">
               {activeRegion
@@ -605,7 +638,7 @@ export default function AgentCenterPage() {
                   }`
                 : "正在识别工作区"}
             </span>
-          </div>
+          </h1>
           <div className="page-hero__sub">
             {isEcommerce
               ? "全渠道电商客诉主动巡检 · 缺失 SKU/仓网语音补全 · 48h 挽回回访与食安合规红线熔断"
@@ -622,7 +655,7 @@ export default function AgentCenterPage() {
             type="button"
             disabled={patrolling}
             onClick={() => void handlePatrol()}
-            className="btn btn--primary h-[34px] px-3.5 text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap disabled:opacity-60"
+            className="btn btn--primary min-h-[44px] sm:min-h-[36px] px-3.5 text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap disabled:opacity-60"
           >
             {patrolling ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
@@ -635,7 +668,7 @@ export default function AgentCenterPage() {
             type="button"
             disabled={generatingReport}
             onClick={() => void handleGenerateReport()}
-            className="btn btn--default h-[34px] px-3.5 text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap disabled:opacity-60"
+            className="btn btn--default min-h-[44px] sm:min-h-[36px] px-3.5 text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap disabled:opacity-60"
           >
             {generatingReport ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0 text-blue-600" />
@@ -755,9 +788,9 @@ export default function AgentCenterPage() {
           aria-selected={activeTab === "queue"}
           tabIndex={activeTab === "queue" ? 0 : -1}
           onClick={() => switchTab("queue")}
-          className="relative inline-flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 cursor-pointer transition-colors text-slate-600 hover:text-slate-900 aria-selected:text-blue-700 aria-selected:font-semibold after:content-[''] after:absolute after:inset-x-0 after:bottom-0 after:border-b-[3px] after:border-transparent aria-selected:after:border-blue-600 min-h-[44px] sm:min-h-[42px]"
+          className="relative inline-flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors text-slate-600 hover:text-slate-900 aria-selected:text-blue-700 after:content-[''] after:absolute after:inset-x-0 after:bottom-0 after:border-b-[3px] after:border-transparent aria-selected:after:border-blue-600 min-h-[44px] sm:min-h-[42px]"
         >
-          <Bot className="w-4 h-4 shrink-0" />
+          <Bot className="w-4 h-4 shrink-0" aria-hidden="true" />
           <span>主动待办队列</span>
           <span className="text-[11px] font-mono tabular-nums px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
             {summary.pending}/{summary.total}
@@ -772,9 +805,9 @@ export default function AgentCenterPage() {
           aria-selected={activeTab === "report"}
           tabIndex={activeTab === "report" ? 0 : -1}
           onClick={() => switchTab("report")}
-          className="relative inline-flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 cursor-pointer transition-colors text-slate-600 hover:text-slate-900 aria-selected:text-blue-700 aria-selected:font-semibold after:content-[''] after:absolute after:inset-x-0 after:bottom-0 after:border-b-[3px] after:border-transparent aria-selected:after:border-blue-600 min-h-[44px] sm:min-h-[42px]"
+          className="relative inline-flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors text-slate-600 hover:text-slate-900 aria-selected:text-blue-700 after:content-[''] after:absolute after:inset-x-0 after:bottom-0 after:border-b-[3px] after:border-transparent aria-selected:after:border-blue-600 min-h-[44px] sm:min-h-[42px]"
         >
-          <FileText className="w-4 h-4 shrink-0" />
+          <FileText className="w-4 h-4 shrink-0" aria-hidden="true" />
           <span>每日研判专报</span>
           {reports.length > 0 && (
             <span className="text-[11px] font-mono tabular-nums px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
@@ -838,6 +871,26 @@ export default function AgentCenterPage() {
             </span>
           </div>
 
+          {tasksError && (
+            <div
+              role="alert"
+              className="bg-rose-50 rounded-xl border border-rose-200 px-4 py-3 flex items-center justify-between gap-3 flex-wrap text-xs text-rose-800"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" aria-hidden="true" />
+                <span className="break-words">{tasksError}</span>
+              </div>
+              <button
+                type="button"
+                disabled={loadingTasks}
+                onClick={() => void fetchTasks()}
+                className="btn btn--default text-xs min-h-[44px] sm:min-h-[32px] shrink-0"
+              >
+                重新加载
+              </button>
+            </div>
+          )}
+
           {loadingTasks && tasks.length === 0 ? (
             <div className="space-y-3">
               <SkCard height={120}>
@@ -848,6 +901,7 @@ export default function AgentCenterPage() {
               </SkCard>
             </div>
           ) : filteredTasks.length === 0 ? (
+            tasksError ? null : (
             <div className="bg-white rounded-xl border border-slate-200 p-8 text-center space-y-3">
               <div className="text-sm font-semibold text-slate-800">
                 {tasks.length > 0
@@ -866,7 +920,7 @@ export default function AgentCenterPage() {
                     setAutonomyFilter("ALL");
                     setStatusFilter("ALL");
                   }}
-                  className="btn btn--default text-xs min-h-[36px]"
+                  className="btn btn--default text-xs min-h-[44px] sm:min-h-[36px]"
                 >
                   <XCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                   <span>清除筛选查看全部</span>
@@ -876,15 +930,16 @@ export default function AgentCenterPage() {
                   type="button"
                   disabled={patrolling}
                   onClick={() => void handlePatrol()}
-                  className="btn btn--primary text-xs min-h-[36px]"
+                  className="btn btn--primary text-xs min-h-[44px] sm:min-h-[36px]"
                 >
-                  <Radar className="w-3.5 h-3.5 shrink-0" />
+                  <Radar className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                   <span>立即执行首次巡检</span>
                 </button>
               )}
             </div>
+            )
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-3 pb-20">
               {filteredTasks.map((task) => {
                 const isL3 =
                   task.autonomyLevel === "L3_BLOCKED" ||
@@ -926,15 +981,19 @@ export default function AgentCenterPage() {
                             : "L2 待批"}
                         </span>
 
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200 whitespace-nowrap">
-                          {TASK_TYPE_LABELS[task.taskType] || task.taskType}
-                        </span>
+                        {!isL3 && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200 whitespace-nowrap">
+                            {TASK_TYPE_LABELS[task.taskType] || task.taskType}
+                          </span>
+                        )}
 
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border whitespace-nowrap ${statusMeta.className}`}
-                        >
-                          {statusMeta.label}
-                        </span>
+                        {!(isL3 && task.status === "BLOCKED") && (
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border whitespace-nowrap ${statusMeta.className}`}
+                          >
+                            {statusMeta.label}
+                          </span>
+                        )}
 
                         {task.maskedContact && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-mono bg-slate-50 text-slate-700 border border-slate-200 whitespace-nowrap">
@@ -943,24 +1002,24 @@ export default function AgentCenterPage() {
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2 text-[11px] text-slate-400 font-mono shrink-0">
-                        <Clock className="w-3 h-3" />
-                        <span>{task.createdAt ? String(task.createdAt).slice(0, 16) : "—"}</span>
+                      <div className="flex items-center gap-2 text-[11px] text-slate-500 font-mono shrink-0">
+                        <Clock className="w-3 h-3" aria-hidden="true" />
+                        <span>{formatTaskTime(task.createdAt)}</span>
                       </div>
                     </div>
 
                     {/* 标题与目标对象 */}
-                    <div className="flex items-start justify-between gap-3 flex-wrap min-w-0">
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2.5 sm:gap-3 min-w-0">
                       <div className="min-w-0 flex-1 space-y-1">
                         <div className="flex items-center gap-2 flex-wrap min-w-0">
                           <Link
                             href={targetHref}
-                            className="text-sm font-bold text-slate-900 hover:text-blue-600 inline-flex items-center gap-1 min-w-0 max-w-full break-words"
+                            className="text-sm font-bold text-slate-900 hover:text-blue-600 inline-flex items-center gap-1 min-w-0 max-w-full break-words min-h-[24px] py-0.5"
                           >
                             <span className="break-words">{task.targetTitle}</span>
-                            <ExternalLink className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <ExternalLink className="w-3.5 h-3.5 text-slate-500 shrink-0" aria-hidden="true" />
                           </Link>
-                          <span className="text-[11px] font-mono text-slate-400 break-all">
+                          <span className="text-[11px] font-mono text-slate-500 break-all">
                             {task.targetType} #{task.targetId}
                           </span>
                         </div>
@@ -990,7 +1049,7 @@ export default function AgentCenterPage() {
                       </div>
 
                       {task.suggestedOwner && (
-                        <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200/80 rounded-lg px-2.5 py-1 max-w-full min-w-0 break-words">
+                        <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200/80 rounded-lg px-2.5 py-1 max-w-full sm:shrink-0 sm:max-w-[42%] min-w-0 break-words">
                           建议责任方：<b className="text-slate-800 break-words">{task.suggestedOwner}</b>
                         </div>
                       )}
@@ -998,9 +1057,9 @@ export default function AgentCenterPage() {
 
                     {/* AI 拟定话术 */}
                     <div className="rounded-lg border border-slate-200/80 bg-slate-50/75 px-3 py-2.5 text-xs text-slate-700 leading-relaxed space-y-1">
-                      <div className="text-[11px] font-semibold text-slate-500 flex items-center justify-between gap-2">
+                      <div className="text-[11px] font-semibold text-slate-600 flex items-center justify-between gap-2">
                         <span>AI 拟定外联/催办话术</span>
-                        <span className="font-mono text-[10px] text-slate-400">
+                        <span className="font-mono text-[10px] text-slate-500">
                           通道：{task.channel}
                         </span>
                       </div>
@@ -1025,13 +1084,13 @@ export default function AgentCenterPage() {
                             <button
                               type="button"
                               disabled
-                              className="btn btn--default text-xs opacity-50 cursor-not-allowed min-h-[36px]"
+                              className="btn btn--default text-xs opacity-50 cursor-not-allowed min-h-[44px] sm:min-h-[36px]"
                             >
                               自动外联已禁用
                             </button>
                             <Link
                               href={targetHref}
-                              className="btn btn--primary text-xs min-h-[36px]"
+                              className="btn btn--primary text-xs min-h-[44px] sm:min-h-[36px]"
                             >
                               <span>人工核查接管</span>
                               <ExternalLink className="w-3.5 h-3.5 shrink-0" />
@@ -1042,7 +1101,7 @@ export default function AgentCenterPage() {
                         <>
                           <Link
                             href={targetHref}
-                            className="text-xs text-slate-500 hover:text-blue-600 inline-flex items-center gap-1"
+                            className="text-xs text-slate-500 hover:text-blue-600 inline-flex items-center gap-1 min-h-[44px] sm:min-h-[28px] py-1.5 sm:py-0.5"
                           >
                             <span>查看关联对象详情</span>
                             <ExternalLink className="w-3 h-3" />
@@ -1125,7 +1184,27 @@ export default function AgentCenterPage() {
         hidden={activeTab !== "report"}
         tabIndex={activeTab === "report" ? 0 : undefined}
       >
-        <div className="space-y-4">
+        <div className="space-y-4 pb-20">
+          {reportsError && (
+            <div
+              role="alert"
+              className="bg-rose-50 rounded-xl border border-rose-200 px-4 py-3 flex items-center justify-between gap-3 flex-wrap text-xs text-rose-800"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" aria-hidden="true" />
+                <span className="break-words">{reportsError}</span>
+              </div>
+              <button
+                type="button"
+                disabled={loadingReport}
+                onClick={() => void fetchReports()}
+                className="btn btn--default text-xs min-h-[44px] sm:min-h-[32px] shrink-0"
+              >
+                重新加载
+              </button>
+            </div>
+          )}
+
           {loadingReport && reports.length === 0 ? (
             <SkCard height={300}>
               <div className="space-y-3">
@@ -1136,6 +1215,7 @@ export default function AgentCenterPage() {
               </div>
             </SkCard>
           ) : !selectedReport ? (
+            reportsError ? null : (
             <div className="bg-white rounded-xl border border-slate-200 p-8 text-center space-y-3">
               <div className="text-sm font-semibold text-slate-800">
                 尚未生成每日研判专报
@@ -1147,12 +1227,13 @@ export default function AgentCenterPage() {
                 type="button"
                 disabled={generatingReport}
                 onClick={() => void handleGenerateReport()}
-                className="btn btn--primary text-xs min-h-[36px]"
+                className="btn btn--primary text-xs min-h-[44px] sm:min-h-[36px]"
               >
-                <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                <Sparkles className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                 <span>生成今日研判专报</span>
               </button>
             </div>
+            )
           ) : (
             <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden">
               {/* 专报头部工具栏 */}
@@ -1163,7 +1244,7 @@ export default function AgentCenterPage() {
                   </h2>
                   <div className="text-xs text-slate-500 font-mono tabular-nums">
                     专报日期：{selectedReport.reportDate} · 生成于{" "}
-                    {String(selectedReport.createdAt || "").slice(0, 19).replace("T", " ")}
+                    {formatTaskTime(selectedReport.createdAt)}
                   </div>
                 </div>
 
@@ -1198,7 +1279,7 @@ export default function AgentCenterPage() {
 
               {/* 专报 Markdown 渲染区 */}
               <div className="p-4 sm:p-6 min-w-0">
-                <div className="copilot-md text-slate-800 max-w-none [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_p]:text-sm [&_li]:text-sm [&_table]:text-xs">
+                <div className="copilot-md text-slate-800 max-w-none [&_h3]:text-[15px] [&_h4]:text-sm [&_p]:text-sm [&_li]:text-sm [&_table]:text-xs">
                   {(activeTab === "report" || reportTabVisited) && (
                     <AgentReportMarkdown markdown={selectedReport.markdown} />
                   )}

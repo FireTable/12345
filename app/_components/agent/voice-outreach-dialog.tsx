@@ -17,7 +17,7 @@ import {
   Volume2,
   X,
 } from "lucide-react";
-import { useStreamAsr } from "@/app/_hooks/use-stream-asr";
+import { appendRecognizedText, useStreamAsr } from "@/app/_hooks/use-stream-asr";
 import { XiaochunStage, type XiaochunStageHandle } from "@/app/_components/agent/xiaochun-stage";
 
 export interface AgentTaskItem {
@@ -176,11 +176,20 @@ export function VoiceOutreachDialog({
 }: VoiceOutreachDialogProps) {
   const isEcommerce = domainType === "ECOMMERCE_CS";
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const micButtonRef = useRef<HTMLButtonElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const pointerDownOnBackdropRef = useRef(false);
+  const validBackdropClickRef = useRef(false);
+  const lastCompositionEndAtRef = useRef<number | null>(null);
   const stageRef = useRef<XiaochunStageHandle>(null);
+  const textInputRef = useRef<HTMLInputElement>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
   const submittingRef = useRef(false);
   const completedRef = useRef(false);
   const refreshedOnCloseRef = useRef(false);
+  const asrResetRef = useRef<() => void>(() => {});
+  const asrActiveRef = useRef<boolean>(false);
 
   const titleId = useId();
   const descId = useId();
@@ -216,6 +225,9 @@ export function VoiceOutreachDialog({
     async (rawText: string) => {
       const transcript = rawText.trim();
       if (!transcript || !task || submittingRef.current) return;
+      if (asrActiveRef.current) {
+        asrResetRef.current();
+      }
 
       submittingRef.current = true;
       setSending(true);
@@ -308,13 +320,14 @@ export function VoiceOutreachDialog({
     onFinalResult: (finalText) => {
       const clean = finalText.trim();
       if (!clean) return;
-      if (submittingRef.current) {
-        setTextInput((prev) => (prev ? `${prev} ${clean}` : clean));
-        return;
-      }
-      void submitTranscript(clean);
+      setTextInput((prev) => appendRecognizedText(prev, clean));
+      textInputRef.current?.focus();
     },
   });
+
+  asrResetRef.current = asr.reset;
+  asrActiveRef.current =
+    asr.isRecording || asr.status === "initializing" || asr.status === "downloading";
 
   // 弹窗打开时初始化外呼话术并唤醒 3D 语音形象
   useEffect(() => {
@@ -324,11 +337,32 @@ export function VoiceOutreachDialog({
     if (open && task) {
       if (!dialogEl.open) {
         dialogEl.showModal();
+        const isDone = task.status === "EXECUTED";
+        if (isDone) {
+          closeButtonRef.current?.focus({ preventScroll: true });
+        } else {
+          (micButtonRef.current ?? closeButtonRef.current)?.focus({ preventScroll: true });
+        }
       }
     } else if (dialogEl.open) {
       dialogEl.close();
     }
   }, [open, task]);
+
+  // 宽窄屏布局切换时若原焦点按钮被卸载回落到 BODY/dialog，恢复焦点到新挂载的交互控件
+  useEffect(() => {
+    if (!open || !task) return;
+    const dialogEl = dialogRef.current;
+    if (!dialogEl?.open) return;
+    const active = document.activeElement;
+    if (!active || !dialogEl.contains(active) || active === dialogEl) {
+      const target =
+        task.status === "EXECUTED"
+          ? closeButtonRef.current
+          : (micButtonRef.current ?? closeButtonRef.current);
+      target?.focus({ preventScroll: true });
+    }
+  }, [open, task?.id, task?.status, stageOnBackdrop]);
 
   useEffect(() => {
     if (!open || !task) return;
@@ -371,11 +405,22 @@ export function VoiceOutreachDialog({
   }, [open, task?.id]);
 
   useEffect(() => {
-    transcriptEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    if (turns.length <= 1) return;
+    const prefersReducedMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    transcriptEndRef.current?.scrollIntoView({
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+      block: "nearest",
+    });
   }, [turns.length]);
 
+  const stopAsr = asr.stop;
+
   const handleCloseCleanup = useCallback(() => {
-    asr.stop();
+    pointerDownOnBackdropRef.current = false;
+    validBackdropClickRef.current = false;
+    stopAsr();
     stageRef.current?.stop();
     if (dialogRef.current) {
       dialogRef.current.returnValue = "";
@@ -385,7 +430,14 @@ export function VoiceOutreachDialog({
       refreshedOnCloseRef.current = true;
       void onCompleted(updatedTask || task || undefined);
     }
-  }, [asr, onOpenChange, onCompleted, updatedTask, task]);
+  }, [stopAsr, onOpenChange, onCompleted, updatedTask, task]);
+
+  const isOutsidePanel = useCallback((clientX: number, clientY: number) => {
+    const panel = panelRef.current;
+    if (!panel) return false;
+    const r = panel.getBoundingClientRect();
+    return clientX < r.left || clientX > r.right || clientY < r.top || clientY > r.bottom;
+  }, []);
 
   const handleConfirmAndRefresh = useCallback(async () => {
     const latest = updatedTask || task || undefined;
@@ -412,7 +464,9 @@ export function VoiceOutreachDialog({
   const micControlBlock = (
     <div className="w-full space-y-2">
       <button
+        ref={micButtonRef}
         type="button"
+        aria-pressed={asr.isRecording}
         disabled={sending || completed}
         onClick={() => {
           if (asr.isRecording) {
@@ -430,12 +484,12 @@ export function VoiceOutreachDialog({
       >
         {asr.isRecording ? (
           <>
-            <MicOff className="w-4 h-4 shrink-0" />
-            <span>停止说话并发送</span>
+            <MicOff className="w-4 h-4 shrink-0" aria-hidden="true" />
+            <span>停止语音输入</span>
           </>
         ) : (
           <>
-            <Mic className="w-4 h-4 shrink-0" />
+            <Mic className="w-4 h-4 shrink-0" aria-hidden="true" />
             <span>{completed ? "外呼已完成" : "点击开始语音应答"}</span>
           </>
         )}
@@ -445,7 +499,7 @@ export function VoiceOutreachDialog({
       <div className="rounded-lg border border-slate-200/80 bg-slate-50 px-2.5 py-2 text-[11px] text-slate-600 space-y-1.5">
         <div className="flex items-center justify-between gap-2">
           <span className="inline-flex items-center gap-1 font-medium text-slate-700 truncate">
-            <Volume2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+            <Volume2 className="w-3.5 h-3.5 text-blue-600 shrink-0" aria-hidden="true" />
             <span className="truncate">{asr.statusHint || "语音引擎就绪"}</span>
           </span>
           {asr.status === "downloading" && (
@@ -498,15 +552,43 @@ export function VoiceOutreachDialog({
         ref={dialogRef}
         aria-labelledby={titleId}
         aria-describedby={descId}
+        {...({ closedby: "any" } as Record<string, string>)}
+        onPointerDown={(e) => {
+          validBackdropClickRef.current = false;
+          if (e.pointerType === "mouse" && e.button !== 0) {
+            pointerDownOnBackdropRef.current = false;
+            return;
+          }
+          pointerDownOnBackdropRef.current = isOutsidePanel(e.clientX, e.clientY);
+        }}
+        onPointerUp={(e) => {
+          const startedOutside = pointerDownOnBackdropRef.current;
+          pointerDownOnBackdropRef.current = false;
+          if (!startedOutside) return;
+          if (e.pointerType === "mouse" && e.button !== 0) return;
+          if (!isOutsidePanel(e.clientX, e.clientY)) return;
+          validBackdropClickRef.current = true;
+        }}
         onClick={(e) => {
-          if (e.target === e.currentTarget) {
+          const shouldClose = validBackdropClickRef.current;
+          validBackdropClickRef.current = false;
+          if (!shouldClose) return;
+          if (!isOutsidePanel(e.clientX, e.clientY)) return;
+          const supportsClosedBy =
+            typeof HTMLDialogElement !== "undefined" &&
+            "closedBy" in HTMLDialogElement.prototype;
+          if (!supportsClosedBy || stageOnBackdrop) {
             dialogRef.current?.close();
           }
+        }}
+        onPointerCancel={() => {
+          pointerDownOnBackdropRef.current = false;
+          validBackdropClickRef.current = false;
         }}
         onClose={() => {
           handleCloseCleanup();
         }}
-        className="civic-voice-dialog w-[calc(100vw-1rem)] max-w-3xl max-h-[90dvh] m-auto flex-col rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl overflow-hidden lg:w-screen lg:max-w-none lg:h-dvh lg:max-h-dvh lg:m-0 lg:flex-row lg:items-center lg:rounded-none lg:border-0 lg:bg-transparent lg:shadow-none lg:overflow-visible"
+        className="civic-voice-dialog w-[calc(100vw-1rem)] max-w-3xl max-h-[90dvh] m-auto flex-col rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl overflow-hidden lg:w-screen lg:max-w-none lg:h-dvh lg:max-h-dvh lg:m-0 lg:flex-row lg:items-center lg:rounded-none lg:border-0 lg:bg-transparent lg:shadow-none lg:overflow-hidden"
       >
         {task ? (
           <>
@@ -526,13 +608,17 @@ export function VoiceOutreachDialog({
               </div>
             )}
 
-            <div className="w-full max-h-[90dvh] lg:w-[min(700px,54vw)] lg:mr-6 shrink-0 flex flex-col lg:rounded-2xl lg:border lg:border-slate-200 bg-white text-slate-900 lg:shadow-2xl overflow-hidden">
+            <div
+              ref={panelRef}
+              data-voice-dialog-panel="true"
+              className="w-full max-h-[90dvh] lg:w-[min(700px,54vw)] lg:mr-6 shrink-0 flex flex-col lg:rounded-2xl lg:border lg:border-slate-200 bg-white text-slate-900 lg:shadow-2xl overflow-hidden"
+            >
             {/* Header */}
             <div className="px-4 sm:px-5 py-3.5 border-b border-slate-200 bg-slate-50/90 flex items-start justify-between gap-3 shrink-0">
               <div className="min-w-0 flex-1 space-y-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                    <PhoneCall className="w-3.5 h-3.5 shrink-0" />
+                    <PhoneCall className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                     <span>{task.taskType === "REOPEN_CALLBACK" ? "48h 满意度回访" : "缺失要素语音外呼"}</span>
                   </span>
                   <span className="text-[11px] font-mono text-slate-500 truncate">
@@ -542,7 +628,7 @@ export function VoiceOutreachDialog({
                 <h2 id={titleId} className="text-sm sm:text-base font-bold text-slate-900 leading-snug break-words">
                   {task.targetTitle}
                 </h2>
-                <p id={descId} className="text-[11px] text-slate-500 leading-relaxed">
+                <p id={descId} className="text-[11px] text-slate-600 leading-relaxed">
                   {isEcommerce
                     ? "模拟外呼通道（电商全渠道语音适配器 · 本地沙箱） · 气隙脱敏号码："
                     : "模拟外呼通道（12345 SIP 语音网关适配器 · 本地沙箱） · 气隙脱敏号码："}
@@ -550,17 +636,18 @@ export function VoiceOutreachDialog({
                     {contactDisplay}
                   </code>
                   {contactDisplay !== "{{PHONE_NUMBER_1}}" && (
-                    <span className="ml-1 text-slate-400">(气隙占位符 {"{{PHONE_NUMBER_1}}"})</span>
+                    <span className="ml-1 text-slate-500">(气隙占位符 {"{{PHONE_NUMBER_1}}"})</span>
                   )}
                 </p>
               </div>
               <button
+                ref={closeButtonRef}
                 type="button"
                 aria-label="关闭语音外呼弹窗"
                 onClick={() => dialogRef.current?.close()}
-                className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors shrink-0 cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center"
+                className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-200/60 transition-colors shrink-0 cursor-pointer min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] flex items-center justify-center"
               >
-                <X className="w-4 h-4" />
+                <X className="w-4 h-4" aria-hidden="true" />
               </button>
             </div>
 
@@ -614,7 +701,10 @@ export function VoiceOutreachDialog({
 
                   {/* Conversation History */}
                   <div
-                    className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 max-h-[220px] sm:max-h-[250px] overflow-y-auto overscroll-contain space-y-2.5"
+                    role="log"
+                    aria-live="polite"
+                    tabIndex={0}
+                    className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 max-h-[220px] sm:max-h-[250px] overflow-y-auto overscroll-contain space-y-2.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
                     aria-label="外呼对话记录"
                   >
                     {turns.map((turn) => (
@@ -631,7 +721,11 @@ export function VoiceOutreachDialog({
                               : "bg-white text-slate-800 border border-slate-200 rounded-bl-none shadow-2xs"
                           }`}
                         >
-                          <div className="text-[10px] opacity-75 mb-0.5 font-medium">
+                          <div
+                            className={`text-[10px] mb-0.5 font-medium ${
+                              turn.role === "citizen" ? "text-blue-100" : "text-slate-500"
+                            }`}
+                          >
                             {turn.role === "agent"
                               ? "AI 外呼专员"
                               : isEcommerce
@@ -644,7 +738,7 @@ export function VoiceOutreachDialog({
                     ))}
                     {sending && (
                       <div className="flex items-center gap-2 text-xs text-slate-500 py-1">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" aria-hidden="true" />
                         <span>AI 正在解析语义要素并生成回应…</span>
                       </div>
                     )}
@@ -653,8 +747,8 @@ export function VoiceOutreachDialog({
 
                   {/* 2 Dynamic Demo Quick-Reply Buttons */}
                   <div className="space-y-1.5">
-                    <div className="text-[11px] font-medium text-slate-500 flex items-center gap-1">
-                      <Sparkles className="w-3 h-3 text-blue-600" />
+                    <div className="text-[11px] font-medium text-slate-600 flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-blue-600" aria-hidden="true" />
                       <span>现场演示快捷回复（模拟来电人/买家语音输入）</span>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -673,7 +767,7 @@ export function VoiceOutreachDialog({
                           }`}
                         >
                           <div className="font-semibold text-[11px] mb-0.5">{qr.label}</div>
-                          <div className="text-[11px] opacity-85 line-clamp-2 break-words">
+                          <div className="text-[11px] opacity-90 line-clamp-2 break-words">
                             “{qr.text}”
                           </div>
                         </button>
@@ -685,7 +779,12 @@ export function VoiceOutreachDialog({
                   <form
                     onSubmit={(e) => {
                       e.preventDefault();
-                      void submitTranscript(textInput);
+                      const pendingText =
+                        asr.isRecording && asr.interimText.trim()
+                          ? appendRecognizedText(textInput, asr.interimText)
+                          : textInput;
+                      if (sending || completed || !pendingText.trim()) return;
+                      void submitTranscript(pendingText);
                     }}
                     className="space-y-1.5"
                   >
@@ -693,24 +792,33 @@ export function VoiceOutreachDialog({
                       htmlFor={inputId}
                       className="block text-[11px] font-medium text-slate-600"
                     >
-                      文字兜底应答（支持中文输入法安全回车）
+                      文字输入应答
                     </label>
                     <div className="flex items-center gap-2">
                       <input
+                        ref={textInputRef}
                         id={inputId}
                         type="text"
-                        autoFocus
                         value={textInput}
                         disabled={sending || completed}
                         onChange={(e) => setTextInput(e.target.value)}
+                        onCompositionEnd={(e) => {
+                          lastCompositionEndAtRef.current = e.timeStamp;
+                        }}
                         onKeyDown={(e) => {
                           if (e.key === "Enter") {
-                            if (e.nativeEvent.isComposing || e.keyCode === 229) {
-                              e.preventDefault();
+                            e.preventDefault();
+                            const recentCompositionEnd =
+                              lastCompositionEndAtRef.current !== null &&
+                              Math.abs(e.timeStamp - lastCompositionEndAtRef.current) < 50;
+                            if (
+                              e.nativeEvent.isComposing ||
+                              e.keyCode === 229 ||
+                              recentCompositionEnd
+                            ) {
                               return;
                             }
-                            e.preventDefault();
-                            void submitTranscript(textInput);
+                            e.currentTarget.form?.requestSubmit();
                           }
                         }}
                         placeholder={
@@ -720,15 +828,19 @@ export function VoiceOutreachDialog({
                             ? "输入补充的店铺/SKU或满意度反馈…"
                             : "输入补充的门牌地址/主体或满意度反馈…"
                         }
-                        className="flex-1 min-w-0 min-h-[44px] px-3 rounded-lg border border-slate-200 bg-white text-base sm:text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 disabled:bg-slate-50"
+                        className="flex-1 min-w-0 min-h-[44px] px-3 rounded-lg border border-slate-200 bg-white text-base sm:text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 focus-visible:border-blue-600 disabled:bg-slate-50"
                       />
                       <button
                         type="submit"
-                        disabled={sending || completed || !textInput.trim()}
+                        disabled={
+                          sending ||
+                          completed ||
+                          !(textInput.trim() || (asr.isRecording && asr.interimText.trim()))
+                        }
                         aria-label="发送文本应答"
                         className="btn btn--primary min-h-[44px] px-3.5 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        <Send className="w-4 h-4 shrink-0" />
+                        <Send className="w-4 h-4 shrink-0" aria-hidden="true" />
                         <span className="text-xs">发送</span>
                       </button>
                     </div>
@@ -796,8 +908,8 @@ export function VoiceOutreachDialog({
 
             {/* Footer */}
             <div className="px-4 sm:px-5 py-3 border-t border-slate-200 bg-slate-50/90 flex items-center justify-between gap-2 flex-wrap shrink-0">
-              <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+              <div className="flex items-center gap-1.5 text-xs text-slate-600">
+                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" aria-hidden="true" />
                 <span>
                   {completed
                     ? "外呼结果已落库，可确认关闭并刷新待办队列"
@@ -808,7 +920,7 @@ export function VoiceOutreachDialog({
                 <button
                   type="button"
                   onClick={() => dialogRef.current?.close()}
-                  className="btn btn--default min-h-[38px] text-xs"
+                  className="btn btn--default min-h-[44px] sm:min-h-[38px] text-xs"
                 >
                   {completed ? "关闭" : "暂存退出"}
                 </button>
@@ -816,7 +928,7 @@ export function VoiceOutreachDialog({
                   <button
                     type="button"
                     onClick={() => void handleConfirmAndRefresh()}
-                    className="btn btn--primary min-h-[38px] text-xs"
+                    className="btn btn--primary min-h-[44px] sm:min-h-[38px] text-xs"
                   >
                     确认完成并刷新队列
                   </button>

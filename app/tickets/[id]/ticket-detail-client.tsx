@@ -54,6 +54,26 @@ function statusTag(s: string) {
   return "pending";
 }
 
+function formatLocalDate(raw?: string | null): string {
+  if (!raw) return "";
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return String(raw).slice(0, 10);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function formatLocalDateTime(raw?: string | null): string {
+  if (!raw) return "";
+  if (/^\d{4}-\d{2}-\d{2}T/.test(raw)) {
+    const d = new Date(raw);
+    if (!Number.isNaN(d.getTime())) {
+      const pad = (n: number) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+  }
+  return raw;
+}
+
 const SEVEN_CATEGORIES: readonly string[] = CIVIC_CATEGORIES.slice(0, 7);
 
 const ALIAS_TYPE_OPTIONS = [
@@ -69,6 +89,8 @@ export default function TicketDetailPage() {
   const params = useParams<{ id: string }>();
   const [row, setRow] = useState<any>(null);
   const [load, setLoad] = useState<DetailLoadStatus>("pending");
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
   const [actionPending, setActionPending] = useState(false);
   const isMountedRef = useRef(true);
   const patchAbortRef = useRef<AbortController | null>(null);
@@ -115,6 +137,7 @@ export default function TicketDetailPage() {
     if (regionLoading || isRolePending || !isAdmin) return;
     const controller = new AbortController();
     setLoad("pending");
+    setLoadError(null);
     setRow(null);
     const headers: Record<string, string> = {};
     if (activeRegion?.id) headers["x-region-id"] = activeRegion.id;
@@ -122,7 +145,13 @@ export default function TicketDetailPage() {
       headers,
       signal: controller.signal,
     })
-      .then((r) => r.json())
+      .then(async (r) => {
+        const j = await r.json().catch(() => null);
+        if (!r.ok && r.status !== 404) {
+          throw new Error(j?.error || `工单详情加载失败 (${r.status})`);
+        }
+        return j;
+      })
       .then((j) => {
         if (controller.signal.aborted) return;
         setRow(j);
@@ -132,12 +161,13 @@ export default function TicketDetailPage() {
       .catch((err) => {
         if (controller.signal.aborted || err?.name === "AbortError") return;
         setRow(null);
+        setLoadError(err instanceof Error ? err.message : "工单详情加载失败");
         setLoad("error");
       });
     return () => {
       controller.abort();
     };
-  }, [params.id, activeRegion?.id, regionLoading, isAdmin, isRolePending]);
+  }, [params.id, activeRegion?.id, regionLoading, isAdmin, isRolePending, reloadNonce]);
 
   async function patchWorkorder(
     payload: {
@@ -297,7 +327,29 @@ export default function TicketDetailPage() {
           <span>/</span>
           <span>详情</span>
         </div>
-        <div className="empty-hint">未找到该工单</div>
+        {load === "error" || loadError ? (
+          <div
+            role="alert"
+            className="bg-rose-50 rounded-xl border border-rose-200 p-6 text-center space-y-3"
+          >
+            <h1 className="text-base font-bold text-rose-900 m-0">工单详情加载失败</h1>
+            <p className="text-xs text-rose-700 m-0">{loadError || "请检查网络或稍后重试"}</p>
+            <button
+              type="button"
+              onClick={() => setReloadNonce((n) => n + 1)}
+              className="btn btn--default text-xs min-h-[44px] sm:min-h-[34px]"
+            >
+              重新加载
+            </button>
+          </div>
+        ) : (
+          <div className="empty-hint">
+            <h1 className="text-base font-semibold text-slate-800 mb-2">未找到该工单</h1>
+            <Link href="/tickets" className="text-xs text-blue-600 hover:underline">
+              返回工单中心
+            </Link>
+          </div>
+        )}
       </>
     );
   }
@@ -318,7 +370,7 @@ export default function TicketDetailPage() {
       <div className="breadcrumb flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
           <Link href="/tickets" className="hover:underline flex items-center gap-1 whitespace-nowrap">
-            <ChevronLeft className="w-3.5 h-3.5 shrink-0" />
+            <ChevronLeft className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
             <span>工单中心</span>
           </Link>
           <span>/</span>
@@ -356,7 +408,7 @@ export default function TicketDetailPage() {
             </span>
             {row.isFakeClosure && (
               <span className="badge-pill badge-pill--danger inline-flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3" />
+                <AlertTriangle className="w-3 h-3" aria-hidden="true" />
                 疑似假闭环
               </span>
             )}
@@ -380,7 +432,7 @@ export default function TicketDetailPage() {
             </div>
           )}
           <div className="page-hero__sub" style={{ marginTop: 6 }}>
-            {[row.region, row.createdAt, row.closedAt ? `办结于 ${String(row.closedAt).slice(0, 10)}` : ""].filter(Boolean).join(" · ")}
+            {[row.region, formatLocalDateTime(row.createdAt), row.closedAt ? `办结于 ${formatLocalDate(row.closedAt)}` : ""].filter(Boolean).join(" · ")}
           </div>
         </div>
       </div>
@@ -403,10 +455,10 @@ export default function TicketDetailPage() {
           {/* 2. 工单处置与人工纠偏卡片 */}
           <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3.5 shadow-2xs">
             <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
-                <Wrench className="w-4 h-4 text-blue-600 shrink-0" />
+              <h2 className="flex items-center gap-1.5 text-xs font-bold text-slate-800 m-0">
+                <Wrench className="w-4 h-4 text-blue-600 shrink-0" aria-hidden="true" />
                 <span>工单处置与人工纠偏</span>
-              </div>
+              </h2>
               <div className="flex items-center gap-1.5 shrink-0">
                 {!isRolePending && !isAdmin && (
                   <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
@@ -421,14 +473,21 @@ export default function TicketDetailPage() {
 
             {!isRolePending && !isAdmin && (
               <div className="rounded-lg border border-amber-200 bg-amber-50/80 px-2.5 py-2 text-[11px] text-amber-800 flex items-center gap-1.5">
-                <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
+                <ShieldAlert className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                 <span>需管理员权限可执行状态流转、实体纠偏与移出群组处置</span>
+              </div>
+            )}
+
+            {row.isFakeClosure && currentStatus === "RESOLVED" && (
+              <div className="rounded-lg border border-rose-200 bg-rose-50/80 px-2.5 py-2 text-[11px] text-rose-800 flex items-center gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" aria-hidden="true" />
+                <span>该工单疑似假闭环，建议点击「重开处理」恢复处置并核查整改情况。</span>
               </div>
             )}
 
             {/* 状态流转区 */}
             <div className="space-y-2">
-              <label htmlFor="ticket-status-note" className="block text-[11px] font-medium text-slate-500">
+              <label htmlFor="ticket-status-note" className="block text-[11px] font-medium text-slate-600">
                 状态流转与处置备注
               </label>
               <input
@@ -438,7 +497,7 @@ export default function TicketDetailPage() {
                 disabled={!isAdmin || actionPending}
                 onChange={(e) => setStatusNote(e.target.value)}
                 placeholder={isAdmin ? "填写本次处置说明或办结情况（可选）" : "需管理员权限可填写处置备注"}
-                className="w-full h-11 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-slate-50/70 text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-blue-500 disabled:opacity-60 disabled:cursor-not-allowed"
+                className="w-full h-11 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-slate-50/70 text-base sm:text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-blue-500 disabled:opacity-60 disabled:cursor-not-allowed"
               />
               <div className="grid grid-cols-3 gap-1.5">
                 <button
@@ -452,7 +511,7 @@ export default function TicketDetailPage() {
                       : "btn--default"
                   } disabled:opacity-60 disabled:cursor-not-allowed`}
                 >
-                  <Clock className="w-3.5 h-3.5 shrink-0" />
+                  <Clock className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                   <span>待处理</span>
                 </button>
                 <button
@@ -468,7 +527,7 @@ export default function TicketDetailPage() {
                 >
                   {currentStatus === "RESOLVED" ? (
                     <>
-                      <RotateCcw className="w-3.5 h-3.5 shrink-0" />
+                      <RotateCcw className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                       <span>重开处理</span>
                     </>
                   ) : (
@@ -486,7 +545,7 @@ export default function TicketDetailPage() {
                       : "btn--primary"
                   } disabled:opacity-60 disabled:cursor-not-allowed`}
                 >
-                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                   <span>一键办结</span>
                 </button>
               </div>
@@ -502,9 +561,9 @@ export default function TicketDetailPage() {
               >
                 <span>人工纠偏要素与知识沉淀</span>
                 {correctionOpen ? (
-                  <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" />
+                  <ChevronUp className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />
                 ) : (
-                  <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+                  <ChevronDown className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />
                 )}
               </button>
 
@@ -512,7 +571,7 @@ export default function TicketDetailPage() {
                 <form onSubmit={handleCorrectionSubmit} className="mt-2.5 space-y-2.5">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-2">
                     <div className="min-w-0">
-                      <label htmlFor="corr-subdistrict" className="block text-[11px] text-slate-500 mb-1">{unitLabel}</label>
+                      <label htmlFor="corr-subdistrict" className="block text-[11px] text-slate-600 mb-1">{unitLabel}</label>
                       <input
                         id="corr-subdistrict"
                         type="text"
@@ -520,11 +579,11 @@ export default function TicketDetailPage() {
                         disabled={!isAdmin || actionPending}
                         onChange={(e) => setSubdistrict(e.target.value)}
                         placeholder={isEcommerce ? "如：天猫旗舰店" : "如：大良街道"}
-                        className="w-full h-11 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:opacity-60"
+                        className="w-full h-11 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-base sm:text-xs text-slate-900 focus:outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:opacity-60"
                       />
                     </div>
                     <div className="min-w-0">
-                      <label htmlFor="corr-category" className="block text-[11px] text-slate-500 mb-1">诉求分类</label>
+                      <label htmlFor="corr-category" className="block text-[11px] text-slate-600 mb-1">诉求分类</label>
                       <Select
                         value={sourceCategory || undefined}
                         onValueChange={setSourceCategory}
@@ -545,7 +604,7 @@ export default function TicketDetailPage() {
                   </div>
 
                   <div>
-                    <label htmlFor="corr-subject" className="block text-[11px] text-slate-500 mb-1">涉事主体</label>
+                    <label htmlFor="corr-subject" className="block text-[11px] text-slate-600 mb-1">涉事主体</label>
                     <input
                       id="corr-subject"
                       type="text"
@@ -553,12 +612,12 @@ export default function TicketDetailPage() {
                       disabled={!isAdmin || actionPending}
                       onChange={(e) => setCanonicalSubject(e.target.value)}
                       placeholder="填写标准化涉事主体名称"
-                      className="w-full h-11 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:opacity-60"
+                      className="w-full h-11 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-base sm:text-xs text-slate-900 focus:outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:opacity-60"
                     />
                   </div>
 
                   <div>
-                    <label htmlFor="corr-address" className="block text-[11px] text-slate-500 mb-1">事发地址</label>
+                    <label htmlFor="corr-address" className="block text-[11px] text-slate-600 mb-1">事发地址</label>
                     <input
                       id="corr-address"
                       type="text"
@@ -566,13 +625,13 @@ export default function TicketDetailPage() {
                       disabled={!isAdmin || actionPending}
                       onChange={(e) => setAddress(e.target.value)}
                       placeholder="填写微观事发地址"
-                      className="w-full h-11 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:opacity-60"
+                      className="w-full h-11 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-base sm:text-xs text-slate-900 focus:outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:opacity-60"
                     />
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-2">
                     <div className="min-w-0">
-                      <label htmlFor="corr-event-type" className="block text-[11px] text-slate-500 mb-1">细分事件类型</label>
+                      <label htmlFor="corr-event-type" className="block text-[11px] text-slate-600 mb-1">细分事件类型</label>
                       <input
                         id="corr-event-type"
                         type="text"
@@ -580,11 +639,11 @@ export default function TicketDetailPage() {
                         disabled={!isAdmin || actionPending}
                         onChange={(e) => setEventType(e.target.value)}
                         placeholder="如：夜间施工噪音"
-                        className="w-full h-11 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:opacity-60"
+                        className="w-full h-11 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-base sm:text-xs text-slate-900 focus:outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:opacity-60"
                       />
                     </div>
                     <div className="min-w-0">
-                      <label htmlFor="corr-urgency" className="block text-[11px] text-slate-500 mb-1">紧急程度</label>
+                      <label htmlFor="corr-urgency" className="block text-[11px] text-slate-600 mb-1">紧急程度</label>
                       <Select
                         value={urgency}
                         onValueChange={setUrgency}
@@ -603,7 +662,7 @@ export default function TicketDetailPage() {
                   </div>
 
                   <div>
-                    <label htmlFor="corr-note" className="block text-[11px] text-slate-500 mb-1">纠偏说明</label>
+                    <label htmlFor="corr-note" className="block text-[11px] text-slate-600 mb-1">纠偏说明</label>
                     <input
                       id="corr-note"
                       type="text"
@@ -611,7 +670,7 @@ export default function TicketDetailPage() {
                       disabled={!isAdmin || actionPending}
                       onChange={(e) => setCorrectionNote(e.target.value)}
                       placeholder="说明人工调整原因（可选）"
-                      className="w-full h-11 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:opacity-60"
+                      className="w-full h-11 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-base sm:text-xs text-slate-900 focus:outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:opacity-60"
                     />
                   </div>
 
@@ -639,7 +698,10 @@ export default function TicketDetailPage() {
                           onValueChange={(v) => setAliasType(v as typeof aliasType)}
                           disabled={!isAdmin || actionPending}
                         >
-                          <SelectTrigger className="w-full h-11 sm:h-8 bg-white border-slate-200 text-xs text-slate-900 rounded-lg">
+                          <SelectTrigger
+                            aria-label="选择别名类型"
+                            className="w-full h-11 sm:h-8 bg-white border-slate-200 text-xs text-slate-900 rounded-lg"
+                          >
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -658,7 +720,7 @@ export default function TicketDetailPage() {
                             disabled={!isAdmin || actionPending}
                             onChange={(e) => setAliasText(e.target.value)}
                             placeholder="原口语别名"
-                            className="w-full h-11 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:opacity-60"
+                            className="w-full h-11 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-base sm:text-xs text-slate-900 focus:outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:opacity-60"
                           />
                           <input
                             type="text"
@@ -667,7 +729,7 @@ export default function TicketDetailPage() {
                             disabled={!isAdmin || actionPending}
                             onChange={(e) => setCanonicalText(e.target.value)}
                             placeholder="对应标准名称"
-                            className="w-full h-11 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:opacity-60"
+                            className="w-full h-11 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-base sm:text-xs text-slate-900 focus:outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:opacity-60"
                           />
                         </div>
                       </div>
@@ -694,10 +756,10 @@ export default function TicketDetailPage() {
           {/* 3. 归属多频专题联动卡片 */}
           {clusterId && (
             <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3 shadow-2xs">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-blue-900 pb-2 border-b border-slate-100">
-                <Layers className="w-4 h-4 text-blue-600 shrink-0" />
+              <h2 className="flex items-center gap-1.5 text-xs font-bold text-blue-900 pb-2 border-b border-slate-100 m-0">
+                <Layers className="w-4 h-4 text-blue-600 shrink-0" aria-hidden="true" />
                 <span>归属多频研判群组</span>
-              </div>
+              </h2>
               <div className="text-sm font-bold text-slate-800 leading-snug break-words">
                 {row.cluster_info?.title || `${row.region} · ${row.category}专项`}
               </div>
@@ -710,7 +772,7 @@ export default function TicketDetailPage() {
                   className="btn btn--default flex items-center justify-center gap-1.5 text-xs text-blue-700 w-full hover:bg-blue-50 min-h-[44px] sm:min-h-[34px] py-2 font-medium"
                 >
                   <span>前往专题视图研判定位</span>
-                  <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                  <ExternalLink className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                 </Link>
                 <button
                   type="button"
@@ -719,7 +781,7 @@ export default function TicketDetailPage() {
                   onClick={() => setDetachConfirmOpen(true)}
                   className="btn btn--default flex items-center justify-center gap-1.5 text-xs text-rose-600 border-rose-200 hover:border-rose-400 w-full min-h-[44px] sm:min-h-[34px] py-2 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                  <Trash2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                   <span>移出当前群组</span>
                 </button>
               </div>

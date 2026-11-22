@@ -29,9 +29,9 @@ export function CockpitTownshipRank({
       <div className="cockpit-glass-header flex items-center justify-between gap-2 pb-2 shrink-0 min-w-0">
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <BarChart3 size={14} aria-hidden="true" className="text-sky-400 shrink-0" />
-          <h3 className="text-xs font-semibold text-slate-100 tracking-wide cockpit-single-line">
+          <h2 className="text-xs font-semibold text-slate-100 tracking-wide cockpit-single-line">
             {isEcommerce ? "渠道/仓网客诉排行榜" : "镇街工单态势排行榜"}
-          </h3>
+          </h2>
         </div>
         <span className="text-[10px] font-mono text-slate-400 uppercase whitespace-nowrap shrink-0">
           {isEcommerce ? "CHANNEL RANK" : "TOWNSHIP RANK"}

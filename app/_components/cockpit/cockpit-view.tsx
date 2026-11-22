@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { Activity, Clock, ShieldAlert } from "lucide-react";
+import React, { useState, useEffect, useCallback, useRef, useMemo, useId } from "react";
+import { Activity, Clock, AlertTriangle, RotateCw } from "lucide-react";
 import { useRegion, type DomainProfile } from "../civic/region-context";
 import { DomainChannelMatrix } from "../civic/domain-channel-matrix";
 import { useCockpitData } from "./use-cockpit-data";
@@ -18,13 +18,17 @@ import { CockpitNodePulse } from "./cockpit-node-pulse";
 
 interface CockpitViewProps {
   onClose: () => void;
+  /** True when launched as a modal overlay from Dashboard; false on standalone /screen route. */
+  modal?: boolean;
 }
 
-export function CockpitView({ onClose }: CockpitViewProps) {
+export function CockpitView({ onClose, modal = true }: CockpitViewProps) {
   const { activeRegion, regions, switchRegion, isLoading: regionLoading } = useRegion();
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [escWarning, setEscWarning] = useState(false);
-  const escTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const titleId = useId();
 
   const currentRegion = activeRegion || (regions.length > 0 ? regions[0] : null);
   const regionId = currentRegion?.id || "gz_tianhe";
@@ -43,47 +47,56 @@ export function CockpitView({ onClose }: CockpitViewProps) {
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
-  // 快捷键 ESC 双击二次退出防误触逻辑
+  // 原生 <dialog> 模态管控：showModal() 提供 top layer、inert 背景、Esc 退出与焦点自动归还
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
+    const dialog = dialogRef.current;
+    if (!modal) {
+      if (dialog?.open) dialog.close();
+      return;
+    }
+    if (!dialog) return;
 
-        if (document.fullscreenElement) {
-          document.exitFullscreen().catch(() => {});
-        }
-
-        if (escTimerRef.current) {
-          clearTimeout(escTimerRef.current);
-          escTimerRef.current = null;
-          setEscWarning(false);
-          onClose();
-        } else {
-          setEscWarning(true);
-          escTimerRef.current = setTimeout(() => {
-            escTimerRef.current = null;
-            setEscWarning(false);
-          }, 2000);
-        }
+    const handleClose = () => {
+      // Ignore stale queued HTMLDialogElement `close` events from StrictMode remounts when still open
+      if (dialog.open) return;
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
       }
+      onCloseRef.current();
     };
-    window.addEventListener("keydown", handleKeyDown);
+
+    dialog.addEventListener("close", handleClose);
+    if (!dialog.open) {
+      dialog.showModal();
+    }
+
     return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-      if (escTimerRef.current) clearTimeout(escTimerRef.current);
+      dialog.removeEventListener("close", handleClose);
     };
-  }, [onClose]);
+  }, [modal]);
+
+  const handleRequestClose = useCallback(() => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    }
+    if (modal && dialogRef.current?.open) {
+      dialogRef.current.close();
+    } else {
+      onCloseRef.current();
+    }
+  }, [modal]);
 
   const toggleFullscreen = useCallback(() => {
+    const target = (modal ? dialogRef.current : null) ?? document.documentElement;
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
+      target.requestFullscreen().catch(() => {});
     } else {
       document.exitFullscreen().catch(() => {});
     }
-  }, []);
+  }, [modal]);
 
-  return (
-    <div className="cockpit-shell fixed inset-0 z-[9999] w-dvw min-h-dvh h-dvh overflow-y-auto xl:overflow-hidden flex flex-col select-none custom-cockpit-scrollbar">
+  const bodyContent = (
+    <>
       {/* 非地理域环境暗夜 Obsidian 微纹理背景 */}
       {!hasGeoMap && (
         <div
@@ -99,6 +112,7 @@ export function CockpitView({ onClose }: CockpitViewProps) {
 
       {/* 1. 一体悬浮指挥顶栏（PC 单行 / 移动端紧凑两行） */}
       <CockpitHeader
+        titleId={titleId}
         activeRegion={currentRegion}
         regions={regions}
         domainProfile={domainProfile}
@@ -107,10 +121,30 @@ export function CockpitView({ onClose }: CockpitViewProps) {
         onTogglePolling={() => cockpit.setIsPolling(!cockpit.isPolling)}
         onRefresh={cockpit.refresh}
         isRefreshing={cockpit.isRefreshing}
-        onClose={onClose}
+        onClose={handleRequestClose}
         isFullscreen={isFullscreen}
         onToggleFullscreen={toggleFullscreen}
       />
+
+      {cockpit.error && (
+        <div
+          role="alert"
+          className="relative z-30 mx-3 mt-2 px-3.5 py-2 rounded-xl bg-rose-950/85 border border-rose-400/35 text-rose-100 text-xs flex items-center justify-between gap-2 flex-wrap"
+        >
+          <span className="inline-flex items-center gap-2">
+            <AlertTriangle size={14} aria-hidden="true" className="text-rose-300 shrink-0" />
+            <span>{cockpit.error}</span>
+          </span>
+          <button
+            type="button"
+            onClick={cockpit.refresh}
+            className="cockpit-action-btn inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-500/20 border border-rose-400/40 text-rose-100 hover:bg-rose-500/30 text-xs font-medium cursor-pointer"
+          >
+            <RotateCw size={12} aria-hidden="true" />
+            <span>重试</span>
+          </button>
+        </div>
+      )}
 
       {/* 2. 主内容区：PC 端三栏悬浮 HUD，移动端流式纵向暗夜指挥台 */}
       <div
@@ -133,7 +167,10 @@ export function CockpitView({ onClose }: CockpitViewProps) {
         {/* 下部：PC 端三栏贴边调度坞 / 移动端按业务顺序单列流式排布 */}
         <div className="flex-1 w-full flex flex-col gap-3 xl:grid xl:grid-cols-[380px_minmax(0,1fr)_380px] 2xl:grid-cols-[410px_minmax(0,1fr)_410px] xl:gap-3 xl:min-h-0 xl:pointer-events-none">
           {/* 左侧调度坞（移动端拆平参与流式排序） */}
-          <section className="contents xl:flex xl:flex-col xl:gap-2.5 xl:h-full xl:min-h-0 xl:relative xl:z-20 xl:pointer-events-auto xl:order-1">
+          <section
+            aria-label="分类态势与实时工单"
+            className="contents xl:flex xl:flex-col xl:gap-2.5 xl:h-full xl:min-h-0 xl:relative xl:z-20 xl:pointer-events-auto xl:order-1"
+          >
             <div className="order-4 xl:order-none h-[260px] sm:h-[280px] xl:h-[33%] xl:min-h-[160px] min-w-0">
               <CockpitCategoryChart
                 data={cockpit.categoryStats}
@@ -212,7 +249,10 @@ export function CockpitView({ onClose }: CockpitViewProps) {
           </div>
 
           {/* 右侧调度坞（移动端拆平参与流式排序） */}
-          <section className="contents xl:flex xl:flex-col xl:gap-2.5 xl:h-full xl:min-h-0 xl:relative xl:z-20 xl:pointer-events-auto xl:order-3">
+          <section
+            aria-label="排行、漏斗与算力节拍"
+            className="contents xl:flex xl:flex-col xl:gap-2.5 xl:h-full xl:min-h-0 xl:relative xl:z-20 xl:pointer-events-auto xl:order-3"
+          >
             <div className="order-5 xl:order-none h-[280px] sm:h-[300px] xl:h-[40%] xl:min-h-[175px] min-w-0">
               <CockpitTownshipRank
                 stats={cockpit.townshipStats}
@@ -239,21 +279,25 @@ export function CockpitView({ onClose }: CockpitViewProps) {
           </section>
         </div>
       </div>
+    </>
+  );
 
-      {/* ESC 二次退出防误触 HUD 提示条 */}
-      {escWarning && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 rounded-full bg-[#0b1120]/95 border border-white/15 text-slate-100 text-xs font-mono shadow-2xl backdrop-blur-2xl flex items-center gap-2.5 whitespace-nowrap">
-          <ShieldAlert size={14} aria-hidden="true" className="text-sky-400 shrink-0" />
-          <span>
-            再按一次{" "}
-            <kbd className="px-1.5 py-0.5 rounded bg-white/10 text-white font-semibold border border-white/20">
-              ESC
-            </kbd>{" "}
-            退出大屏
-          </span>
-        </div>
-      )}
-    </div>
+  if (modal) {
+    return (
+      <dialog
+        ref={dialogRef}
+        aria-labelledby={titleId}
+        className="cockpit-dialog cockpit-shell overflow-y-auto xl:overflow-hidden custom-cockpit-scrollbar"
+      >
+        {bodyContent}
+      </dialog>
+    );
+  }
+
+  return (
+    <main className="cockpit-shell fixed inset-0 z-[9999] w-dvw min-h-dvh h-dvh overflow-y-auto xl:overflow-hidden flex flex-col custom-cockpit-scrollbar">
+      {bodyContent}
+    </main>
   );
 }
 
@@ -293,9 +337,9 @@ function CockpitHourlyBarCard({
       <div className="cockpit-glass-header flex items-center justify-between gap-1.5 pb-1.5 shrink-0 min-w-0">
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <Clock size={13} aria-hidden="true" className="text-sky-400 shrink-0" />
-          <h3 className="text-xs font-semibold text-slate-100 tracking-normal cockpit-single-line">
+          <h2 className="text-xs font-semibold text-slate-100 tracking-normal cockpit-single-line">
             {isEcommerce ? "24h 客诉波峰" : "24h 来电波峰"}
-          </h3>
+          </h2>
         </div>
         <span className="text-[10px] font-mono tabular-nums text-sky-300 whitespace-nowrap shrink-0 px-1.5 py-0.5 rounded-md bg-sky-500/10 border border-sky-400/20">
           {totalTimed > 0
@@ -401,9 +445,9 @@ function CockpitClosureFunnelCard({
       <div className="cockpit-glass-header flex items-center justify-between gap-2 pb-1.5 shrink-0 min-w-0">
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <Activity size={14} aria-hidden="true" className="text-emerald-400 shrink-0" />
-          <h3 className="text-xs font-semibold text-slate-100 tracking-wide cockpit-single-line">
+          <h2 className="text-xs font-semibold text-slate-100 tracking-wide cockpit-single-line">
             闭环处置全链路漏斗
-          </h3>
+          </h2>
         </div>
         <span className="text-[10px] font-mono tabular-nums text-rose-200 px-2 py-0.5 rounded-md bg-rose-500/12 border border-rose-400/25 whitespace-nowrap shrink-0">
           {loading ? "读取中" : `拦截 ${funnel.fakeClosureIntercepted.toLocaleString()} 件`}

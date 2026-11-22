@@ -382,7 +382,7 @@ export function CivicGeoMap({
               border-radius: 50%;
               background: ${pulseBg};
               filter: blur(2px);
-              animation: pulse 2s infinite ease-in-out;
+              ${typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "" : "animation: pulse 2s infinite ease-in-out;"}
             "></div>
             <!-- 主体矢量水滴图标 -->
             <svg viewBox="0 0 36 44" width="36" height="44" fill="none" xmlns="http://www.w3.org/2000/svg" style="display: block; filter: drop-shadow(0 3px 6px rgba(0,0,0,0.3));">
@@ -557,6 +557,8 @@ export function CivicGeoMap({
 
   return (
     <div
+      role="region"
+      aria-label="事发地点空间分布地图"
       style={{
         position: "relative",
         width: "100%",
@@ -589,7 +591,7 @@ export function CivicGeoMap({
             fontWeight: 500,
           }}
         >
-          <Loader2 className="w-4 h-4 animate-spin text-[#1E5AFF]" />
+          <Loader2 className="w-4 h-4 motion-safe:animate-spin text-[#1E5AFF]" aria-hidden="true" />
           <span>正在精准定位事发空间位置...</span>
         </div>
       )}
@@ -612,7 +614,7 @@ export function CivicGeoMap({
             onClick={() => mapRef.current?.zoomIn()}
             title="放大"
             aria-label="放大地图"
-            className="w-11 h-11 sm:w-7 sm:h-7 rounded-md bg-white border border-slate-200 shadow-sm flex items-center justify-center text-slate-700 hover:bg-slate-50 cursor-pointer"
+            className="w-11 h-11 sm:w-7 sm:h-7 [@media(pointer:coarse)]:w-11 [@media(pointer:coarse)]:h-11 rounded-md bg-white border border-slate-200 shadow-sm flex items-center justify-center text-slate-700 hover:bg-slate-50 cursor-pointer"
           >
             <ZoomIn className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
@@ -621,7 +623,7 @@ export function CivicGeoMap({
             onClick={() => mapRef.current?.zoomOut()}
             title="缩小"
             aria-label="缩小地图"
-            className="w-11 h-11 sm:w-7 sm:h-7 rounded-md bg-white border border-slate-200 shadow-sm flex items-center justify-center text-slate-700 hover:bg-slate-50 cursor-pointer"
+            className="w-11 h-11 sm:w-7 sm:h-7 [@media(pointer:coarse)]:w-11 [@media(pointer:coarse)]:h-11 rounded-md bg-white border border-slate-200 shadow-sm flex items-center justify-center text-slate-700 hover:bg-slate-50 cursor-pointer"
           >
             <ZoomOut className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
@@ -636,8 +638,8 @@ export function CivicGeoMap({
           bottom: 6,
           zIndex: 800,
           fontSize: 10,
-          color: "rgba(100, 116, 139, 0.75)",
-          background: "rgba(255, 255, 255, 0.7)",
+          color: "#475569",
+          background: "rgba(255, 255, 255, 0.88)",
           padding: "1px 6px",
           borderRadius: 4,
           backdropFilter: "blur(2px)",

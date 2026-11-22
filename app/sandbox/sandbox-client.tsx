@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
@@ -105,11 +105,14 @@ export default function SandboxXrayPage() {
   const [content, setContent] = useState("");
 
   const [running, setRunning] = useState(false);
+  const [xrayError, setXrayError] = useState<string | null>(null);
   const [result, setResult] = useState<XrayResult | null>(null);
   const [revealedStage, setRevealedStage] = useState(0);
   const [reasoningOpen, setReasoningOpen] = useState(false);
   const [presetHint, setPresetHint] = useState<string | null>(null);
   const [loadingPreset3, setLoadingPreset3] = useState(false);
+  const presetControllerRef = useRef<AbortController | null>(null);
+  const xrayControllerRef = useRef<AbortController | null>(null);
 
   const [persistConfirmOpen, setPersistConfirmOpen] = useState(false);
   const [persisting, setPersisting] = useState(false);
@@ -123,10 +126,25 @@ export default function SandboxXrayPage() {
     activeRegion?.id?.includes("shunde") || activeRegion?.name?.includes("顺德")
   );
 
-  // 逐级亮起动画（不阻塞真实返回，约 450ms 内依次展开 6 个阶段视觉焦点）
+  useEffect(() => {
+    return () => {
+      presetControllerRef.current?.abort();
+      xrayControllerRef.current?.abort();
+    };
+  }, []);
+
+  // 逐级亮起动画（不阻塞真实返回，遵循系统减少动态偏好设置）
   useEffect(() => {
     if (!result) {
       setRevealedStage(0);
+      return;
+    }
+    const reduceMotion =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduceMotion) {
+      setRevealedStage(6);
       return;
     }
     setRevealedStage(1);
@@ -143,6 +161,7 @@ export default function SandboxXrayPage() {
 
   function applyPreset1() {
     setPresetHint(null);
+    setXrayError(null);
     setPersistedOk(false);
     if (isEcommerce) {
       setTitle("华南冷链仓 SKU-GD2026-881 礼盒化冻发臭，拒赔将向 12315 举报");
@@ -174,6 +193,7 @@ export default function SandboxXrayPage() {
 
   function applyPreset2() {
     setPresetHint(null);
+    setXrayError(null);
     setPersistedOk(false);
     if (isEcommerce) {
       setTitle("抖音直播间下单羽绒服充绒严重缩水与宣传不符");
@@ -198,14 +218,22 @@ export default function SandboxXrayPage() {
 
   async function applyPreset3() {
     if (!isAdmin) return;
+    presetControllerRef.current?.abort();
+    const controller = new AbortController();
+    presetControllerRef.current = controller;
     setLoadingPreset3(true);
     setPresetHint(null);
+    setXrayError(null);
     setPersistedOk(false);
     try {
       const headers: Record<string, string> = {};
       if (activeRegion?.id) headers["x-region-id"] = activeRegion.id;
-      const res = await fetch("/api/clusters", { headers });
+      const res = await fetch("/api/clusters", { headers, signal: controller.signal });
+      if (!res.ok) {
+        throw new Error(`专题索引拉取失败 (${res.status})`);
+      }
       const json = await res.json().catch(() => null);
+      if (controller.signal.aborted) return;
       const list = Array.isArray(json?.topClusters) ? json.topClusters : [];
       const resolved = list.find(
         (c: any) =>
@@ -234,22 +262,31 @@ export default function SandboxXrayPage() {
         `上周回复已办结的${isTianhe ? "猎德大道" : isShunde ? "北滘新城" : activeRegion?.name || "辖区"}夜间违规施工噪音问题昨晚再次发生，凌晨仍有重型机械作业，属于假闭环复发诉求。`
       );
       setPresetHint("当前站点暂未检索到已办结群组，已填充典型假闭环复发测试文本");
-    } catch {
+    } catch (err) {
+      if ((err as { name?: string })?.name === "AbortError" || controller.signal.aborted) return;
       setTitle("已办结路段占道问题短期再次复发");
       setContent("上周回复已办结的占道经营及噪音问题昨晚再次回潮，请求复核重开督办。");
+      setPresetHint("当前站点专题索引拉取异常，已填充通用假闭环复发测试文本");
     } finally {
-      setLoadingPreset3(false);
+      if (presetControllerRef.current === controller) {
+        setLoadingPreset3(false);
+      }
     }
   }
 
-  async function handleRunXray(e: React.FormEvent) {
-    e.preventDefault();
+  async function executeRunXray() {
     if (!isAdmin) return;
     if (!content.trim()) {
-      toast.error("请输入需要透视的市民诉求正文");
+      const msg = "请输入需要透视的市民诉求正文";
+      setXrayError(msg);
+      toast.error(msg);
       return;
     }
+    xrayControllerRef.current?.abort();
+    const controller = new AbortController();
+    xrayControllerRef.current = controller;
     setRunning(true);
+    setXrayError(null);
     setResult(null);
     setReasoningOpen(false);
     setPersistedOk(false);
@@ -259,6 +296,7 @@ export default function SandboxXrayPage() {
       const res = await fetch("/api/sandbox/xray", {
         method: "POST",
         headers,
+        signal: controller.signal,
         body: JSON.stringify({
           title: title.trim() || undefined,
           subdistrict: subdistrict.trim() || undefined,
@@ -268,6 +306,7 @@ export default function SandboxXrayPage() {
         }),
       });
       const json = await res.json().catch(() => ({}));
+      if (controller.signal.aborted) return;
       if (!res.ok || !json.success) {
         throw new Error(json.error || `透视执行失败 (${res.status})`);
       }
@@ -275,10 +314,20 @@ export default function SandboxXrayPage() {
       setResult(payload);
       toast.success("全链路 X-Ray 透视完成（只读演练，未写入业务库）");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "全链路透视请求失败");
+      if ((err as { name?: string })?.name === "AbortError" || controller.signal.aborted) return;
+      const msg = err instanceof Error ? err.message : "全链路透视请求失败";
+      setXrayError(msg);
+      toast.error(msg);
     } finally {
-      setRunning(false);
+      if (xrayControllerRef.current === controller) {
+        setRunning(false);
+      }
     }
+  }
+
+  function handleRunXray(e: React.FormEvent) {
+    e.preventDefault();
+    void executeRunXray();
   }
 
   async function handleConfirmPersist() {
@@ -363,22 +412,22 @@ export default function SandboxXrayPage() {
       {/* 预置示例 + 工单输入面板 */}
       <div className="card mb-5">
         <div className="card__header flex-wrap gap-2.5">
-          <div className="card__title flex items-center gap-2 min-w-0">
+          <h2 className="card__title flex items-center gap-2 min-w-0">
             <Sparkles className="w-4 h-4 text-blue-600 shrink-0" aria-hidden="true" />
             <span>模拟工单输入与典型场景一键填充</span>
-          </div>
+          </h2>
           <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
             <button
               type="button"
               onClick={applyPreset1}
-              className="btn btn--default text-xs py-1.5 px-2.5"
+              className="btn btn--default text-xs min-h-[44px] sm:min-h-0 py-2 sm:py-1.5 px-2.5"
             >
               {isEcommerce ? "① 冷链食安红线归因" : "① 主体违停精确对齐"}
             </button>
             <button
               type="button"
               onClick={applyPreset2}
-              className="btn btn--default text-xs py-1.5 px-2.5"
+              className="btn btn--default text-xs min-h-[44px] sm:min-h-0 py-2 sm:py-1.5 px-2.5"
             >
               {isEcommerce ? "② 虚假宣传与物流履约" : "② 口语俗称别名归一"}
             </button>
@@ -386,7 +435,7 @@ export default function SandboxXrayPage() {
               type="button"
               disabled={loadingPreset3}
               onClick={() => void applyPreset3()}
-              className="btn btn--default text-xs py-1.5 px-2.5 text-rose-700 border-rose-200 hover:border-rose-400"
+              className="btn btn--default text-xs min-h-[44px] sm:min-h-0 py-2 sm:py-1.5 px-2.5 text-rose-700 border-rose-200 hover:border-rose-400"
             >
               {loadingPreset3 ? "正在检索已办结群组…" : "③ 已办结复发假闭环预警"}
             </button>
@@ -402,22 +451,24 @@ export default function SandboxXrayPage() {
           <form onSubmit={handleRunXray} className="space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div className="md:col-span-2 min-w-0">
-                <label className="block text-xs font-medium text-slate-600 mb-1">
+                <label htmlFor="sandbox-ticket-title" className="block text-xs font-medium text-slate-600 mb-1">
                   工单标题（可选）
                 </label>
                 <input
+                  id="sandbox-ticket-title"
                   type="text"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="例如：夜间建筑施工噪音扰民诉求（留空则由 AI 自动提炼）"
-                  className="w-full min-h-[38px] px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
+                  className="w-full min-h-[44px] sm:min-h-[38px] px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
                 />
               </div>
               <div className="min-w-0">
-                <label className="block text-xs font-medium text-slate-600 mb-1">
+                <label htmlFor="sandbox-ticket-subdistrict" className="block text-xs font-medium text-slate-600 mb-1">
                   {activeRegion?.domainProfile?.terminology?.regionUnit || "所属镇街"}（可选）
                 </label>
                 <input
+                  id="sandbox-ticket-subdistrict"
                   type="text"
                   value={subdistrict}
                   onChange={(e) => setSubdistrict(e.target.value)}
@@ -430,18 +481,36 @@ export default function SandboxXrayPage() {
                           ? "如：大良街道"
                           : "如：镇街名称"
                   }
-                  className="w-full min-h-[38px] px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
+                  className="w-full min-h-[44px] sm:min-h-[38px] px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
                 />
               </div>
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">
+              <label htmlFor="sandbox-ticket-content" className="block text-xs font-medium text-slate-600 mb-1">
                 {isEcommerce ? "客诉工单正文（必填）" : "市民诉求正文（必填）"}
               </label>
               <textarea
+                id="sandbox-ticket-content"
                 rows={4}
+                required
+                aria-describedby="sandbox-xray-hint"
+                enterKeyHint="send"
                 value={content}
-                onChange={(e) => setContent(e.target.value)}
+                onChange={(e) => {
+                  setContent(e.target.value);
+                  if (xrayError) setXrayError(null);
+                }}
+                onKeyDown={(e) => {
+                  if (
+                    e.key === "Enter" &&
+                    (e.metaKey || e.ctrlKey) &&
+                    !e.nativeEvent.isComposing &&
+                    e.keyCode !== 229
+                  ) {
+                    e.preventDefault();
+                    if (content.trim() && !running) void executeRunXray();
+                  }
+                }}
                 placeholder={
                   isEcommerce
                     ? "输入电商客诉原文（可包含手机号、SKU、渠道仓网或运单号，系统将演示可逆脱敏与全链路研判）…"
@@ -451,17 +520,17 @@ export default function SandboxXrayPage() {
               />
             </div>
             <div className="flex items-center justify-between gap-3 flex-wrap pt-1">
-              <span className="text-[11px] text-slate-500 min-w-0 break-words">
-                演练过程不会修改数据库，也不会影响 {activeRegion?.name || "当前区"} 基线工单计数。
+              <span id="sandbox-xray-hint" className="text-[11px] text-slate-500 min-w-0 break-words">
+                支持 Cmd/Ctrl + Enter 提交；演练过程不会修改数据库，也不会影响 {activeRegion?.name || "当前区"} 基线工单计数。
               </span>
               <button
                 type="submit"
                 disabled={running || !content.trim()}
-                className="btn btn--primary text-xs px-4 py-2 disabled:opacity-50"
+                className="btn btn--primary text-xs min-h-[44px] sm:min-h-0 px-4 py-2 disabled:opacity-50"
               >
                 {running ? (
                   <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" aria-hidden="true" />
+                    <Loader2 className="w-3.5 h-3.5 motion-safe:animate-spin shrink-0" aria-hidden="true" />
                     <span>正在执行 6 阶段透视…</span>
                   </>
                 ) : (
@@ -475,6 +544,26 @@ export default function SandboxXrayPage() {
           </form>
         </div>
       </div>
+
+      {xrayError && (
+        <div
+          role="alert"
+          className="card mb-5 border-rose-200 bg-rose-50/70 px-4 py-3 flex items-center justify-between gap-3 flex-wrap"
+        >
+          <div className="flex items-center gap-2 text-xs text-rose-800 min-w-0">
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" aria-hidden="true" />
+            <span className="break-words">透视演练异常：{xrayError}</span>
+          </div>
+          <button
+            type="button"
+            disabled={running || !content.trim()}
+            onClick={() => void executeRunXray()}
+            className="btn btn--default text-xs min-h-[44px] sm:min-h-0 px-3 text-rose-700 border-rose-300 hover:bg-rose-100 shrink-0"
+          >
+            重试透视
+          </button>
+        </div>
+      )}
 
       {/* 6 阶段进度条导航 */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-5">
@@ -518,10 +607,10 @@ export default function SandboxXrayPage() {
               }`}
             >
               <div className="card__header flex-wrap gap-2">
-                <div className="card__title flex items-center gap-2 min-w-0">
+                <h2 className="card__title flex items-center gap-2 min-w-0">
                   <Shield className="w-4 h-4 text-emerald-600 shrink-0" aria-hidden="true" />
                   <span>01 · 可逆脱敏 Diff</span>
-                </div>
+                </h2>
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono tabular-nums whitespace-nowrap bg-slate-100 text-slate-700 border border-slate-200 shrink-0">
                   <Clock className="w-3 h-3 shrink-0" aria-hidden="true" />
                   {s1?.durationUs ?? 0} μs
@@ -568,10 +657,10 @@ export default function SandboxXrayPage() {
               }`}
             >
               <div className="card__header flex-wrap gap-2">
-                <div className="card__title flex items-center gap-2 min-w-0">
+                <h2 className="card__title flex items-center gap-2 min-w-0">
                   <Cpu className="w-4 h-4 text-blue-600 shrink-0" aria-hidden="true" />
                   <span>02 · System-1 快思考神经引擎</span>
-                </div>
+                </h2>
                 <div className="flex items-center gap-1.5 flex-wrap shrink-0">
                   <span className="px-2 py-0.5 rounded text-[10px] font-mono whitespace-nowrap bg-blue-50 text-blue-700 border border-blue-200">
                     {s2?.adapter || "onnx"}
@@ -628,10 +717,10 @@ export default function SandboxXrayPage() {
               }`}
             >
               <div className="card__header flex-wrap gap-2">
-                <div className="card__title flex items-center gap-2 min-w-0">
+                <h2 className="card__title flex items-center gap-2 min-w-0">
                   <BookOpen className="w-4 h-4 text-indigo-600 shrink-0" aria-hidden="true" />
                   <span>03 · 法定白名单与别名归一</span>
-                </div>
+                </h2>
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono tabular-nums whitespace-nowrap bg-slate-100 text-slate-700 border border-slate-200 shrink-0">
                   <Clock className="w-3 h-3 shrink-0" aria-hidden="true" />
                   {s3?.durationMs ?? 0} ms
@@ -675,10 +764,10 @@ export default function SandboxXrayPage() {
               }`}
             >
               <div className="card__header flex-wrap gap-2">
-                <div className="card__title flex items-center gap-2 min-w-0">
+                <h2 className="card__title flex items-center gap-2 min-w-0">
                   <Brain className="w-4 h-4 text-purple-600 shrink-0" aria-hidden="true" />
                   <span>04 · System-2 慢思考结构化抽取</span>
-                </div>
+                </h2>
                 <div className="flex items-center gap-1.5 flex-wrap shrink-0">
                   <span
                     className={`px-2 py-0.5 rounded text-[10px] font-mono whitespace-nowrap border ${
@@ -727,8 +816,9 @@ export default function SandboxXrayPage() {
                   <div className="border-t border-slate-100 pt-2">
                     <button
                       type="button"
+                      aria-expanded={reasoningOpen}
                       onClick={() => setReasoningOpen((prev) => !prev)}
-                      className="flex items-center gap-1 text-[11px] font-semibold text-purple-700 hover:underline cursor-pointer"
+                      className="inline-flex items-center gap-1 min-h-[44px] sm:min-h-[24px] py-1 text-[11px] font-semibold text-purple-700 hover:underline cursor-pointer"
                     >
                       <span>{reasoningOpen ? "收起思维链 (Reasoning)" : "展开思维链 (Reasoning)"}</span>
                       {reasoningOpen ? <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" /> : <ChevronDown className="w-3.5 h-3.5" aria-hidden="true" />}
@@ -750,10 +840,10 @@ export default function SandboxXrayPage() {
               }`}
             >
               <div className="card__header flex-wrap gap-2">
-                <div className="card__title flex items-center gap-2 min-w-0">
+                <h2 className="card__title flex items-center gap-2 min-w-0">
                   <GitMerge className="w-4 h-4 text-cyan-600 shrink-0" aria-hidden="true" />
                   <span>05 · 语义吸附与假闭环探测</span>
-                </div>
+                </h2>
                 <div className="flex items-center gap-1.5 flex-wrap shrink-0">
                   <span className="px-2 py-0.5 rounded text-[10px] font-mono tabular-nums whitespace-nowrap bg-cyan-50 text-cyan-800 border border-cyan-200">
                     阈值 {s5?.threshold ?? 0.72}
@@ -793,7 +883,7 @@ export default function SandboxXrayPage() {
                       </div>
                       <Link
                         href={`/themes/${encodeURIComponent(s5.matchedTheme.id)}`}
-                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 hover:underline shrink-0 whitespace-nowrap"
+                        className="inline-flex items-center gap-1 min-h-[44px] sm:min-h-[24px] px-1.5 py-1 sm:py-0.5 text-[11px] font-semibold text-blue-700 hover:underline shrink-0 whitespace-nowrap"
                       >
                         <span>查看群组</span>
                         <ExternalLink className="w-3 h-3 shrink-0" aria-hidden="true" />
@@ -849,10 +939,10 @@ export default function SandboxXrayPage() {
               }`}
             >
               <div className="card__header flex-wrap gap-2">
-                <div className="card__title flex items-center gap-2 min-w-0">
+                <h2 className="card__title flex items-center gap-2 min-w-0">
                   <FileCheck2 className="w-4 h-4 text-emerald-600 shrink-0" aria-hidden="true" />
                   <span>06 · 反向脱敏还原与公文处置建议</span>
-                </div>
+                </h2>
                 <span className="badge-pill badge-pill--success text-[11px] shrink-0">
                   {s6?.slaHint || "常规时限"}
                 </span>
@@ -901,7 +991,7 @@ export default function SandboxXrayPage() {
                 {persistedOk ? (
                   <Link
                     href="/tickets"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 max-w-full flex-wrap"
+                    className="inline-flex items-center gap-1.5 min-h-[44px] sm:min-h-0 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 max-w-full flex-wrap"
                   >
                     <CheckCircle2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                     <span>已入库流转，前往工单中心查看</span>
@@ -912,7 +1002,7 @@ export default function SandboxXrayPage() {
                     type="button"
                     disabled={persisting}
                     onClick={() => setPersistConfirmOpen(true)}
-                    className="btn btn--default text-xs border-blue-200 text-blue-700 hover:border-blue-400 !whitespace-normal text-center leading-snug max-w-full"
+                    className="btn btn--default min-h-[44px] sm:min-h-0 text-xs border-blue-200 text-blue-700 hover:border-blue-400 !whitespace-normal text-center leading-snug max-w-full"
                   >
                     <Database className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                     <span>真实入库流转（写入本区并触发增量研判）</span>

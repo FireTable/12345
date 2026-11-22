@@ -3,7 +3,7 @@
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChevronDown, MessageCircle, User, LogOut, Film, Workflow, MessageSquarePlus } from "lucide-react";
 import { useCivicWorkflow } from "./civic-workflow";
 import { NAV_ITEMS } from "./nav-items";
@@ -112,10 +112,52 @@ export function CivicNav() {
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [videoModalOpen, setVideoModalOpen] = useState(false);
+  const [videoModalMounted, setVideoModalMounted] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const toggleBtnRef = useRef<HTMLButtonElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const userMenuTriggerRef = useRef<HTMLButtonElement>(null);
+  const userMenuListRef = useRef<HTMLDivElement>(null);
   const moreMenuRef = useRef<HTMLDivElement>(null);
+  const moreTriggerRef = useRef<HTMLButtonElement>(null);
+  const videoTriggerRef = useRef<HTMLButtonElement>(null);
+  const prevPipelineOpenRef = useRef(false);
+
+  const openVideoModal = useCallback(() => {
+    setMenuOpen(false);
+    setMoreOpen(false);
+    setUserMenuOpen(false);
+    setVideoModalMounted(true);
+    setVideoModalOpen(true);
+  }, []);
+
+  const closeVideoModal = useCallback(() => {
+    setVideoModalOpen(false);
+    requestAnimationFrame(() => {
+      const trigger = videoTriggerRef.current;
+      if (trigger && trigger.isConnected && trigger.getClientRects().length > 0) {
+        trigger.focus();
+      } else if (
+        toggleBtnRef.current &&
+        toggleBtnRef.current.isConnected &&
+        toggleBtnRef.current.getClientRects().length > 0
+      ) {
+        toggleBtnRef.current.focus();
+      }
+    });
+  }, []);
+
+  const focusUserMenuItem = useCallback((index: number) => {
+    const list = userMenuListRef.current;
+    if (!list) return;
+    const items = Array.from(
+      list.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])')
+    );
+    if (items.length === 0) return;
+    const targetIdx = index < 0 ? items.length - 1 : Math.min(index, items.length - 1);
+    items[targetIdx]?.focus();
+  }, []);
 
   const { menuRef, measureRef, count: visibleNavCount } = useFittingNavCount(
     NAV_ITEMS.length,
@@ -178,23 +220,66 @@ export function CivicNav() {
   }, [pathname, activeRegion, isEcommerce]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 768px)");
+    const onChange = (e: MediaQueryListEvent) => {
+      if (!e.matches) setMenuOpen(false);
+    };
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  useEffect(() => {
+    const wasOpen = prevPipelineOpenRef.current;
+    prevPipelineOpenRef.current = pipelineDrawerOpen;
+    if (wasOpen && !pipelineDrawerOpen) {
+      requestAnimationFrame(() => {
+        const active = document.activeElement;
+        if (!active || active === document.body) {
+          if (
+            toggleBtnRef.current &&
+            toggleBtnRef.current.isConnected &&
+            toggleBtnRef.current.getClientRects().length > 0
+          ) {
+            toggleBtnRef.current.focus();
+          }
+        }
+      });
+    }
+  }, [pipelineDrawerOpen]);
+
+  useEffect(() => {
     if (!menuOpen && !userMenuOpen && !moreOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      setMenuOpen(false);
-      setUserMenuOpen(false);
-      setMoreOpen(false);
+      if (userMenuOpen) {
+        e.preventDefault();
+        setUserMenuOpen(false);
+        requestAnimationFrame(() => userMenuTriggerRef.current?.focus());
+        return;
+      }
+      if (moreOpen) {
+        e.preventDefault();
+        setMoreOpen(false);
+        requestAnimationFrame(() => moreTriggerRef.current?.focus());
+        return;
+      }
+      if (menuOpen) {
+        e.preventDefault();
+        setMenuOpen(false);
+        requestAnimationFrame(() => toggleBtnRef.current?.focus());
+      }
     };
-    const onPointer = (e: MouseEvent) => {
+    const onPointer = (e: PointerEvent) => {
       const target = e.target as Node;
       if (userMenuRef.current && !userMenuRef.current.contains(target)) setUserMenuOpen(false);
       if (moreMenuRef.current && !moreMenuRef.current.contains(target)) setMoreOpen(false);
     };
     window.addEventListener("keydown", onKey);
-    document.addEventListener("mousedown", onPointer);
+    document.addEventListener("pointerdown", onPointer);
     return () => {
       window.removeEventListener("keydown", onKey);
-      document.removeEventListener("mousedown", onPointer);
+      document.removeEventListener("pointerdown", onPointer);
     };
   }, [menuOpen, userMenuOpen, moreOpen]);
 
@@ -246,9 +331,10 @@ export function CivicNav() {
         {isLoginPage ? (
           <div className="navbar__actions navbar__actions--login">
             <button
+              ref={videoTriggerRef}
               type="button"
               className="navbar-icon-btn navbar-icon-btn--video"
-              onClick={() => setVideoModalOpen(true)}
+              onClick={openVideoModal}
               title="系统功能演示视频"
               aria-label="系统功能演示视频"
             >
@@ -271,6 +357,7 @@ export function CivicNav() {
         ) : (
           <>
             <button
+              ref={toggleBtnRef}
               type="button"
               className={`navbar__toggle${menuOpen ? " is-open" : ""}`}
               aria-expanded={menuOpen}
@@ -283,11 +370,13 @@ export function CivicNav() {
               <span className="navbar__toggle-bar" aria-hidden="true" />
             </button>
             {menuOpen ? (
-              <button
-                type="button"
+              <div
                 className="navbar__scrim"
-                aria-label="关闭导航"
-                onClick={() => setMenuOpen(false)}
+                aria-hidden="true"
+                onClick={() => {
+                  setMenuOpen(false);
+                  toggleBtnRef.current?.focus();
+                }}
               />
             ) : null}
             <div id="navbar-panel" className={`navbar__panel${menuOpen ? " is-open" : ""}`}>
@@ -313,39 +402,55 @@ export function CivicNav() {
                           href={it.href}
                           aria-current={active ? "page" : undefined}
                           className={`nav-item${active ? " is-active" : ""}`}
+                          onClick={() => setMenuOpen(false)}
                         >
                           {it.label}
                         </Link>
                       );
                     })}
                     {overflowNav.length > 0 ? (
-                      <div className="nav-more" ref={moreMenuRef}>
+                      <div
+                        className="nav-more"
+                        ref={moreMenuRef}
+                        onBlur={(e) => {
+                          if (
+                            moreOpen &&
+                            e.relatedTarget instanceof Node &&
+                            !e.currentTarget.contains(e.relatedTarget)
+                          ) {
+                            setMoreOpen(false);
+                          }
+                        }}
+                      >
                         <button
+                          ref={moreTriggerRef}
                           type="button"
                           className={`nav-item nav-more__trigger${
                             overflowNav.some((it) => navItemActive(it.href, pathname))
                               ? " is-active"
                               : ""
                           }${moreOpen ? " is-open" : ""}`}
-                          aria-haspopup="menu"
                           aria-expanded={moreOpen}
+                          aria-controls="nav-more-menu"
                           onClick={() => setMoreOpen((open) => !open)}
                         >
                           更多
                           <ChevronDown size={14} aria-hidden="true" />
                         </button>
                         {moreOpen ? (
-                          <div className="nav-more__menu" role="menu">
+                          <div id="nav-more-menu" className="nav-more__menu">
                             {overflowNav.map((it) => {
                               const active = navItemActive(it.href, pathname);
                               return (
                                 <Link
                                   key={it.key}
                                   href={it.href}
-                                  role="menuitem"
                                   aria-current={active ? "page" : undefined}
                                   className={`nav-item${active ? " is-active" : ""}`}
-                                  onClick={() => setMoreOpen(false)}
+                                  onClick={() => {
+                                    setMoreOpen(false);
+                                    setMenuOpen(false);
+                                  }}
                                 >
                                   {it.label}
                                 </Link>
@@ -356,11 +461,12 @@ export function CivicNav() {
                       </div>
                     ) : null}
                   </>
-                ) : isCitizen ? (
+                ) : isCitizen && !navItemActive("/submit", pathname) ? (
                   <Link
                     href="/submit"
-                    aria-current={navItemActive("/submit", pathname) ? "page" : undefined}
-                    className={`nav-item${navItemActive("/submit", pathname) ? " is-active" : ""}`}
+                    aria-current={undefined}
+                    className="nav-item"
+                    onClick={() => setMenuOpen(false)}
                   >
                     <MessageSquarePlus size={15} aria-hidden="true" />
                     <span>我要投诉</span>
@@ -376,7 +482,10 @@ export function CivicNav() {
                       className={`pipeline-console-icon-btn ${pipelineDrawerOpen ? " is-active" : ""} ${
                         analyzing ? " is-processing" : ""
                       }`}
-                      onClick={togglePipelineDrawer}
+                      onClick={() => {
+                        setMenuOpen(false);
+                        togglePipelineDrawer();
+                      }}
                       title={
                         pipelineDrawerOpen
                           ? "收起 AI 研判流水线控制台 (再次点击关闭)"
@@ -394,13 +503,15 @@ export function CivicNav() {
                           : undefined
                       }
                     >
+                      <span className="pipeline-console-icon-btn__fx" aria-hidden="true" />
                       <Workflow size={16} aria-hidden="true" className="text-white relative z-10" />
                     </button>
 
                     <button
+                      ref={videoTriggerRef}
                       type="button"
                       className="navbar-icon-btn navbar-icon-btn--video"
-                      onClick={() => setVideoModalOpen(true)}
+                      onClick={openVideoModal}
                       title="系统功能演示视频"
                       aria-label="系统功能演示视频"
                     >
@@ -445,15 +556,43 @@ export function CivicNav() {
                       </button>
                     </div>
                   ) : (
-                    <div className="navbar-user-menu" ref={userMenuRef}>
+                    <div
+                      className="navbar-user-menu"
+                      ref={userMenuRef}
+                      onBlur={(e) => {
+                        if (
+                          userMenuOpen &&
+                          e.relatedTarget instanceof Node &&
+                          !e.currentTarget.contains(e.relatedTarget)
+                        ) {
+                          setUserMenuOpen(false);
+                        }
+                      }}
+                    >
                       <button
+                        ref={userMenuTriggerRef}
                         type="button"
                         className={`navbar-user-card${userMenuOpen ? " is-open" : ""}`}
                         title={user.email}
                         aria-haspopup="menu"
                         aria-expanded={userMenuOpen}
+                        aria-controls="navbar-user-pop"
                         aria-label="账户操作菜单"
-                        onClick={() => setUserMenuOpen((open) => !open)}
+                        onClick={(e) => {
+                          const next = !userMenuOpen;
+                          setUserMenuOpen(next);
+                          if (next && e.detail === 0) {
+                            requestAnimationFrame(() => focusUserMenuItem(0));
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                            e.preventDefault();
+                            const idx = e.key === "ArrowUp" ? -1 : 0;
+                            setUserMenuOpen(true);
+                            requestAnimationFrame(() => focusUserMenuItem(idx));
+                          }
+                        }}
                       >
                         <User size={14} className="navbar-user-icon" aria-hidden="true" />
                         <span className="navbar-user-name">
@@ -463,12 +602,47 @@ export function CivicNav() {
                         <ChevronDown size={14} className="navbar-user-chevron" aria-hidden="true" />
                       </button>
                       {userMenuOpen ? (
-                        <div className="navbar-user-pop" role="menu">
+                        <div
+                          id="navbar-user-pop"
+                          ref={userMenuListRef}
+                          className="navbar-user-pop"
+                          role="menu"
+                          aria-label="账户操作"
+                          onKeyDown={(e) => {
+                            const list = userMenuListRef.current;
+                            if (!list) return;
+                            const items = Array.from(
+                              list.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])')
+                            );
+                            if (items.length === 0) return;
+                            const current = items.indexOf(document.activeElement as HTMLElement);
+                            if (e.key === "ArrowDown") {
+                              e.preventDefault();
+                              const next = current < 0 ? 0 : (current + 1) % items.length;
+                              items[next]?.focus();
+                            } else if (e.key === "ArrowUp") {
+                              e.preventDefault();
+                              const prev = current <= 0 ? items.length - 1 : current - 1;
+                              items[prev]?.focus();
+                            } else if (e.key === "Home") {
+                              e.preventDefault();
+                              items[0]?.focus();
+                            } else if (e.key === "End") {
+                              e.preventDefault();
+                              items[items.length - 1]?.focus();
+                            } else if (e.key === "Tab") {
+                              setUserMenuOpen(false);
+                            }
+                          }}
+                        >
                           <Link
                             href="/submit"
                             role="menuitem"
                             className="navbar-user-pop__item hover:!bg-blue-50 hover:!text-blue-700"
-                            onClick={() => setUserMenuOpen(false)}
+                            onClick={() => {
+                              setUserMenuOpen(false);
+                              setMenuOpen(false);
+                            }}
                           >
                             <MessageSquarePlus size={14} aria-hidden="true" />
                             <span>{isEcommerce ? "买家投诉端预览" : "市民投诉端预览"}</span>
@@ -501,8 +675,8 @@ export function CivicNav() {
         )}
       </nav>
 
-      {(isAdmin || isLoginPage) && videoModalOpen ? (
-        <VideoModal isOpen={videoModalOpen} onClose={() => setVideoModalOpen(false)} />
+      {(isAdmin || isLoginPage) && (videoModalOpen || videoModalMounted) ? (
+        <VideoModal isOpen={videoModalOpen} onClose={closeVideoModal} />
       ) : null}
 
       {isAdmin && !copilotOpen && !isLoginPage ? (

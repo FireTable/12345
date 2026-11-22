@@ -104,10 +104,39 @@
 /* 只提供 token 与无特异度兜底，不干扰 Tailwind / Shadcn 组件层。 */
 html {
   height: 100%;
+  color-scheme: light;
   scroll-padding-top: calc(var(--nav-h) + 16px + env(safe-area-inset-top, 0px));
   scroll-padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
-  scrollbar-width: thin;
+  scrollbar-width: auto;
   scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+.skip-link {
+  position: fixed;
+  top: max(12px, env(safe-area-inset-top, 0px));
+  left: max(12px, env(safe-area-inset-left, 0px));
+  z-index: 3000;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 2px solid var(--c-brand);
+  background: var(--c-surface);
+  color: var(--c-brand-dark);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow: var(--sh-2);
+}
+
+.skip-link:not(:focus, :focus-visible) {
+  position: absolute !important;
+  clip-path: inset(50%) !important;
+  overflow: hidden !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  white-space: nowrap !important;
 }
 
 @layer base {
@@ -144,9 +173,14 @@ html {
     align-items: center;
   }
 
-  :where(.quad-dot, .brand-morph-capsule, .cockpit-shell button, .cockpit-shell [role="button"], .cockpit-shell select, .leaflet-container a) {
+  :where(.quad-dot, .brand-morph-capsule, .cockpit-shell button, .cockpit-shell [role="button"], .cockpit-shell select, .leaflet-container a, .react-flow__controls button, [data-sonner-toast] button) {
     min-block-size: 0;
     min-inline-size: 0;
+  }
+
+  :where(a, button, summary, input, select, textarea, [role="tab"], [role="button"], [role="option"], [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline: 2px solid var(--c-brand);
+    outline-offset: 2px;
   }
 }
 
@@ -179,7 +213,7 @@ p,
   font-variant-numeric: tabular-nums;
 }
 
-/* 标准滚动条（>= 3:1 对比度）及非支持浏览器的降级分支 */
+/* 标准滚动条（>= 3:1 对比度，避免 thin 缩窄滑块操作热区） */
 .table-wrapper,
 .table-scroll,
 .heatmap-scroll,
@@ -187,63 +221,42 @@ p,
 .modal__body,
 .content-box,
 .navbar__panel,
-.video-playlist-items {
+.video-playlist-items,
+.pipeline-drawer__body {
   --scrollbar-thumb: #64748B;
   --scrollbar-track: #F1F5F9;
-  scrollbar-width: thin;
+  scrollbar-width: auto;
   scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
 
-@supports not (scrollbar-color: auto) {
-  html,
-  .table-wrapper,
-  .table-scroll,
-  .heatmap-scroll,
-  .drawer__body,
-  .modal__body,
-  .content-box,
-  .navbar__panel,
-  .video-playlist-items {
-    scrollbar-width: auto;
-  }
+/* 覆盖 globals.css 的浅灰 6px webkit 滚动条，确保全站浅色滚动条满足 >= 3:1 对比度 */
+:where(*):not(.cockpit-shell):not(.cockpit-shell *)::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
 
-  html::-webkit-scrollbar,
-  .table-wrapper::-webkit-scrollbar,
-  .table-scroll::-webkit-scrollbar,
-  .heatmap-scroll::-webkit-scrollbar,
-  .drawer__body::-webkit-scrollbar,
-  .modal__body::-webkit-scrollbar,
-  .content-box::-webkit-scrollbar,
-  .navbar__panel::-webkit-scrollbar,
-  .video-playlist-items::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
+:where(*):not(.cockpit-shell):not(.cockpit-shell *)::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
 
-  html::-webkit-scrollbar-thumb,
-  .table-wrapper::-webkit-scrollbar-thumb,
-  .table-scroll::-webkit-scrollbar-thumb,
-  .heatmap-scroll::-webkit-scrollbar-thumb,
-  .drawer__body::-webkit-scrollbar-thumb,
-  .modal__body::-webkit-scrollbar-thumb,
-  .content-box::-webkit-scrollbar-thumb,
-  .navbar__panel::-webkit-scrollbar-thumb,
-  .video-playlist-items::-webkit-scrollbar-thumb {
-    background: var(--scrollbar-thumb);
-    border-radius: 4px;
-  }
+:where(*):not(.cockpit-shell):not(.cockpit-shell *)::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 5px;
+  border: 2px solid var(--scrollbar-track);
+}
 
-  html::-webkit-scrollbar-track,
-  .table-wrapper::-webkit-scrollbar-track,
-  .table-scroll::-webkit-scrollbar-track,
-  .heatmap-scroll::-webkit-scrollbar-track,
-  .drawer__body::-webkit-scrollbar-track,
-  .modal__body::-webkit-scrollbar-track,
-  .content-box::-webkit-scrollbar-track,
-  .navbar__panel::-webkit-scrollbar-track,
-  .video-playlist-items::-webkit-scrollbar-track {
-    background: var(--scrollbar-track);
-  }
+:where(*):not(.cockpit-shell):not(.cockpit-shell *)::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* 阻止模态框背后页面穿透滚动（不锁 body.style.overflow） */
+dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
 }
 
 .navbar a {
@@ -275,33 +288,62 @@ body .chart-legend {
   }
 }
 
-/* 移动端与粗指针设备 >= 44px 触控热区兜底（特异度高于 unlayered components.css / civic-pages.css） */
+/* 移动端与粗指针设备 >= 44px 触控热区（紧凑控件用 ::after 扩展热区而不视觉膨胀） */
 @media (max-width: 640px), (pointer: coarse) {
   body :is(
-    .btn,
     .filter-tab,
-    .page-btn,
-    .navbar__toggle,
-    .navbar-icon-btn,
-    .pipeline-console-icon-btn,
-    .drawer__close,
-    .video-modal-close-btn,
     .page-size-select,
     .filter-select
-  ):not(.cockpit-shell *):not(.quad-dot):not(.brand-morph-capsule) {
+  ):not(.cockpit-shell *) {
     min-block-size: 44px;
   }
 
   body :is(
-    .btn,
-    .page-btn,
-    .navbar__toggle,
+    .btn:not([class*="min-h-[4"]),
+    button.page-btn,
     .navbar-icon-btn,
     .pipeline-console-icon-btn,
     .drawer__close,
-    .video-modal-close-btn
-  ):not(.cockpit-shell *):not(.quad-dot):not(.brand-morph-capsule) {
-    min-inline-size: 44px;
+    .modal__close
+  ) {
+    position: relative;
+  }
+
+  body .btn:not([class*="min-h-[4"]):not(.navbar__actions--login *)::after {
+    content: "";
+    position: absolute;
+    inset: -5px 0;
+  }
+
+  body button.page-btn::after {
+    content: "";
+    position: absolute;
+    inset: -7px -5px;
+  }
+
+  body .navbar-icon-btn::after,
+  body .pipeline-console-icon-btn::after {
+    content: "";
+    position: absolute;
+    inset: -5px;
+  }
+
+  body button.navbar-user-card::after {
+    content: "";
+    position: absolute;
+    inset: -5px 0;
+  }
+
+  body .drawer__close::after {
+    content: "";
+    position: absolute;
+    inset: -6px;
+  }
+
+  body .modal__close::after {
+    content: "";
+    position: absolute;
+    inset: -8px;
   }
 
   body .search-input,
@@ -318,13 +360,42 @@ body .chart-legend {
     min-width: 0;
     max-width: 100%;
   }
+}
 
-  body .navbar__toggle,
-  body .navbar-icon-btn,
-  body .pipeline-console-icon-btn,
-  body .drawer__close,
-  body .video-modal-close-btn {
-    min-width: 44px;
-    min-height: 44px;
+/* Windows 高对比度 / Forced Colors Mode 焦点与边界兜底 */
+@media (forced-colors: active) {
+  :where(a, button, summary, input, select, textarea, [role="tab"], [role="button"], [role="option"], [tabindex]:not([tabindex="-1"])):focus-visible,
+  .search-input:focus-within {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+
+  [role="tab"][aria-selected="true"],
+  .filter-tab.is-active,
+  .filter-tab[aria-selected="true"],
+  .page-btn.is-active,
+  .page-btn--active,
+  .video-playlist-item.is-active {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  .btn,
+  .card,
+  .drawer,
+  .modal,
+  .pipeline-drawer,
+  .login-card,
+  .login-form .form-input,
+  .filter-select,
+  .page-size-select,
+  .search-input {
+    border: 1px solid CanvasText;
+  }
+
+  .status-dot,
+  .urgency-dot::before,
+  .risk-pill__dot {
+    forced-color-adjust: none;
   }
 }

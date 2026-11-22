@@ -19,3 +19,21 @@
   padding-inline: max(var(--s-6), env(safe-area-inset-left, 0px)) max(var(--s-6), env(safe-area-inset-right, 0px));
   box-shadow: var(--sh-1);
 }
+
+@media (max-width: 1200px) {
+  .page-nav {
+    padding-inline: max(var(--s-4), env(safe-area-inset-left, 0px)) max(var(--s-4), env(safe-area-inset-right, 0px));
+  }
+}
+
+@media (max-width: 768px) {
+  .page-nav {
+    padding-inline: max(var(--s-3), env(safe-area-inset-left, 0px)) max(var(--s-3), env(safe-area-inset-right, 0px));
+  }
+}
+
+@media (forced-colors: active) {
+  .page-nav {
+    border-bottom: 1px solid CanvasText;
+  }
+}

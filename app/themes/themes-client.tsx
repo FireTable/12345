@@ -66,8 +66,10 @@ export default function ThemesPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
   const [ready, setReady] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const loadAbortRef = useRef<AbortController | null>(null);
   const loadSeqRef = useRef(0);
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   const load = useCallback(() => {
     if (!isAdmin) return;
@@ -78,10 +80,17 @@ export default function ThemesPage() {
 
     const headers: Record<string, string> = {};
     if (activeRegion?.id) headers["x-region-id"] = activeRegion.id;
+    setLoadError(null);
 
     // 站点由 x-region-id / cookie 决定。region 查询参数是镇街名，传站点 id 会把列表滤空。
     fetch("/api/clusters", { headers, signal: controller.signal })
-      .then((r) => r.json())
+      .then(async (r) => {
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          throw new Error(j?.error || `加载多频群组失败 (${r.status})`);
+        }
+        return j;
+      })
       .then((j) => {
         if (controller.signal.aborted || seq !== loadSeqRef.current) return;
         setRows(j.topClusters || []);
@@ -89,7 +98,10 @@ export default function ThemesPage() {
       })
       .catch((err) => {
         if (controller.signal.aborted || err?.name === "AbortError" || seq !== loadSeqRef.current) return;
+        const msg = err instanceof Error ? err.message : "加载多频群组失败";
+        setLoadError(msg);
         setRows([]);
+        toast.error(msg);
       })
       .finally(() => {
         if (controller.signal.aborted || seq !== loadSeqRef.current) return;
@@ -160,6 +172,36 @@ export default function ThemesPage() {
   const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, pages);
   const pageData = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  function activateTab(nextKey: string, focusButton = false) {
+    setTab(nextKey);
+    setPage(1);
+    if (focusButton) {
+      const btn = tabRefs.current[nextKey];
+      if (btn) {
+        btn.focus();
+        btn.scrollIntoView({ block: "nearest", inline: "nearest" });
+      }
+    }
+  }
+
+  function handleTabKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    const idx = TABS.findIndex((t) => t.key === tab);
+    if (idx < 0) return;
+    if (e.key === "ArrowRight") {
+      e.preventDefault();
+      activateTab(TABS[(idx + 1) % TABS.length].key, true);
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      activateTab(TABS[(idx - 1 + TABS.length) % TABS.length].key, true);
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      activateTab(TABS[0].key, true);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      activateTab(TABS[TABS.length - 1].key, true);
+    }
+  }
 
   if (isRolePending || !isAdmin) {
     return <SkThemes />;
@@ -264,23 +306,29 @@ export default function ThemesPage() {
           <div className="card list-card">
             <div className="list-card__head">
               <div>
-                <div className="list-card__title">多频工单群组列表</div>
+                <h2 className="list-card__title m-0">多频工单群组列表</h2>
                 <div className="list-card__sub">点击行进入群组全景研判视图</div>
               </div>
             </div>
 
-            <div className="filter-tabs" role="tablist" aria-label="多频工单群组状态筛选">
+            <div
+              className="filter-tabs"
+              role="tablist"
+              aria-label="多频工单群组状态筛选"
+              onKeyDown={handleTabKeyDown}
+            >
               {TABS.map((t) => (
                 <button
                   key={t.key}
+                  ref={(el) => {
+                    tabRefs.current[t.key] = el;
+                  }}
                   type="button"
                   role="tab"
                   aria-selected={tab === t.key}
+                  tabIndex={tab === t.key ? 0 : -1}
                   className={`filter-tab${tab === t.key ? " is-active" : ""}`}
-                  onClick={() => {
-                    setTab(t.key);
-                    setPage(1);
-                  }}
+                  onClick={() => activateTab(t.key)}
                 >
                   {t.label}
                   <span className="filter-tab__count">{counts[t.key]}</span>
@@ -309,7 +357,10 @@ export default function ThemesPage() {
                   setPage(1);
                 }}
               >
-                <SelectTrigger className="w-full sm:w-[130px] min-h-[44px] sm:min-h-0 sm:h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
+                <SelectTrigger
+                  aria-label="按镇街筛选"
+                  className="w-full sm:w-[130px] min-h-[44px] sm:min-h-0 sm:h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg"
+                >
                   <SelectValue placeholder="镇街：全部" />
                 </SelectTrigger>
                 <SelectContent>
@@ -328,7 +379,10 @@ export default function ThemesPage() {
                   setPage(1);
                 }}
               >
-                <SelectTrigger className="w-full sm:w-[135px] min-h-[44px] sm:min-h-0 sm:h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
+                <SelectTrigger
+                  aria-label="按研判模式筛选"
+                  className="w-full sm:w-[135px] min-h-[44px] sm:min-h-0 sm:h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg"
+                >
                   <SelectValue placeholder="模式：全部" />
                 </SelectTrigger>
                 <SelectContent>
@@ -345,7 +399,10 @@ export default function ThemesPage() {
                   setPage(1);
                 }}
               >
-                <SelectTrigger className="w-full sm:w-[125px] min-h-[44px] sm:min-h-0 sm:h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
+                <SelectTrigger
+                  aria-label="按紧急度筛选"
+                  className="w-full sm:w-[125px] min-h-[44px] sm:min-h-0 sm:h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg"
+                >
                   <SelectValue placeholder="紧急度：全部" />
                 </SelectTrigger>
                 <SelectContent>
@@ -358,6 +415,22 @@ export default function ThemesPage() {
               </Select>
               <span className="filter-bar__summary">共 {filtered.length} 条结果</span>
             </div>
+
+            {loadError && (
+              <div
+                role="alert"
+                className="mx-3 sm:mx-5 my-3 rounded-lg border border-rose-200 bg-rose-50 px-3.5 py-2.5 flex items-center justify-between gap-3 flex-wrap text-xs text-rose-800"
+              >
+                <span>{loadError}</span>
+                <button
+                  type="button"
+                  onClick={load}
+                  className="btn btn--default text-xs min-h-[44px] sm:min-h-[30px]"
+                >
+                  重试加载
+                </button>
+              </div>
+            )}
 
             <div
               className="table-scroll overflow-x-auto max-w-full"
@@ -377,7 +450,7 @@ export default function ThemesPage() {
                     <th scope="col" style={{ width: 80, textAlign: "center" }}>紧急度</th>
                     <th scope="col" style={{ width: 85, textAlign: "right" }}>持续天数</th>
                     <th scope="col" style={{ width: 85 }}>处置状态</th>
-                    <th scope="col" style={{ width: 75, textAlign: "right" }}>操作</th>
+                    <th scope="col" style={{ width: 80, minWidth: 76, textAlign: "right" }}>操作</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -440,7 +513,7 @@ export default function ThemesPage() {
                               router.push(`/themes/${g.id}`);
                             }}
                             aria-label={`查看群组 ${g.title || g.code || g.id} 详情`}
-                            className="inline-flex items-center justify-end min-h-[44px] sm:min-h-0 px-2 sm:px-0 text-[var(--c-brand)] font-medium text-xs bg-transparent border-0 cursor-pointer hover:underline"
+                            className="relative inline-flex items-center justify-end whitespace-nowrap min-h-[28px] min-w-0 py-1 px-2 sm:px-0 text-[var(--c-brand)] font-medium text-xs bg-transparent border-0 cursor-pointer hover:underline after:content-[''] after:absolute after:-inset-y-[8px] after:-left-[12px] after:-right-[4px]"
                           >
                             查看
                           </button>

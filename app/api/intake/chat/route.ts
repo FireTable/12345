@@ -36,6 +36,7 @@ function normalizeDraft(raw: unknown): Partial<IntakeDraft> | undefined {
     "subject",
     "address",
     "contactPhone",
+    "contactEmail",
   ];
   for (const key of keys) {
     const val = rec[key];

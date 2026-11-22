@@ -98,14 +98,15 @@ export function CivicMap({
   // 1. 默认动态从站点数据库拉取第四级镇街多边形网格面（内置本地静态兜底，确保 100% 出现）
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     const regionId = activeRegion?.id || "gz_tianhe";
 
     async function loadBoundary() {
       try {
         // 第一优先级：从服务端数据库拉取最新高精第四级镇街多边形
-        const res = await fetch(`/api/regions/${regionId}/boundary?level=subdistricts`).then((r) =>
-          r.ok ? r.json() : null
-        );
+        const res = await fetch(`/api/regions/${regionId}/boundary?level=subdistricts`, {
+          signal: controller.signal,
+        }).then((r) => (r.ok ? r.json() : null));
         if (cancelled) return;
         if (res?.data?.geojson?.features && res.data.geojson.features.length > 0) {
           setGeoData(res.data.geojson);
@@ -113,9 +114,9 @@ export function CivicMap({
         }
 
         // 第二优先级：本地静态权威多边形兜底（如 public/civic/fs_shunde-townships.geojson）
-        const localRes = await fetch(`/civic/${regionId}-townships.geojson`).then((r) =>
-          r.ok ? r.json() : null
-        );
+        const localRes = await fetch(`/civic/${regionId}-townships.geojson`, {
+          signal: controller.signal,
+        }).then((r) => (r.ok ? r.json() : null));
         if (cancelled) return;
         if (localRes?.features && localRes.features.length > 0) {
           setGeoData(localRes);
@@ -123,23 +124,24 @@ export function CivicMap({
         }
 
         // 第三优先级：回退至区级权威审图轮廓
-        const districtRes = await fetch(`/api/regions/${regionId}/boundary?level=district`).then((r) =>
-          r.ok ? r.json() : null
-        );
+        const districtRes = await fetch(`/api/regions/${regionId}/boundary?level=district`, {
+          signal: controller.signal,
+        }).then((r) => (r.ok ? r.json() : null));
         if (cancelled) return;
         if (districtRes?.data?.geojson?.features) {
           setGeoData(districtRes.data.geojson);
         }
       } catch (err) {
+        if ((err as { name?: string })?.name === "AbortError" || cancelled) return;
         console.warn("[CivicMap] 拉取空间地理资产异常，尝试本地静态兜底:", err);
         try {
-          const fallback = await fetch(`/civic/${regionId}-townships.geojson`).then((r) =>
-            r.ok ? r.json() : null
-          );
+          const fallback = await fetch(`/civic/${regionId}-townships.geojson`, {
+            signal: controller.signal,
+          }).then((r) => (r.ok ? r.json() : null));
           if (!cancelled && fallback?.features) {
             setGeoData(fallback);
           }
-        } catch (e) {}
+        } catch {}
       }
     }
 
@@ -147,6 +149,7 @@ export function CivicMap({
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [activeRegion?.id]);
 
@@ -154,6 +157,7 @@ export function CivicMap({
   useEffect(() => {
     let isMounted = true;
     let invalidateTimer: ReturnType<typeof setTimeout> | null = null;
+    let resizeObserver: ResizeObserver | null = null;
 
     async function initMap() {
       if (!mapContainerRef.current || mapRef.current) return;
@@ -191,6 +195,17 @@ export function CivicMap({
       setMapInstance(map);
       setLoading(false);
 
+      if (typeof ResizeObserver !== "undefined" && mapContainerRef.current) {
+        resizeObserver = new ResizeObserver(() => {
+          const m = map as unknown as { _loaded?: boolean; _mapPane?: unknown };
+          if (!isMounted || mapRef.current !== map || !m._loaded || !m._mapPane) return;
+          try {
+            map.invalidateSize();
+          } catch {}
+        });
+        resizeObserver.observe(mapContainerRef.current);
+      }
+
       invalidateTimer = setTimeout(() => {
         const m = map as unknown as { _loaded?: boolean; _mapPane?: unknown };
         if (!isMounted || mapRef.current !== map || !m._loaded || !m._mapPane) return;
@@ -204,6 +219,10 @@ export function CivicMap({
 
     return () => {
       isMounted = false;
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+        resizeObserver = null;
+      }
       if (invalidateTimer) {
         clearTimeout(invalidateTimer);
         invalidateTimer = null;
@@ -223,6 +242,7 @@ export function CivicMap({
     if (!mapInstance || !geoData) return;
 
     let isMounted = true;
+    let fitInvalidateTimer: ReturnType<typeof setTimeout> | null = null;
     import("leaflet").then((module) => {
       const m = mapInstance as unknown as { _loaded?: boolean; _mapPane?: unknown };
       if (!isMounted || !mapInstance || mapRef.current !== mapInstance || !m._loaded || !m._mapPane) return;
@@ -328,15 +348,21 @@ export function CivicMap({
         }
       } catch (e) {}
 
-      setTimeout(() => {
-        if (mapRef.current) {
+      fitInvalidateTimer = setTimeout(() => {
+        const m = mapRef.current as unknown as { _loaded?: boolean; _mapPane?: unknown } | null;
+        if (!isMounted || !mapRef.current || !m?._loaded || !m?._mapPane) return;
+        try {
           mapRef.current.invalidateSize();
-        }
+        } catch {}
       }, 100);
     });
 
     return () => {
       isMounted = false;
+      if (fitInvalidateTimer) {
+        clearTimeout(fitInvalidateTimer);
+        fitInvalidateTimer = null;
+      }
     };
   }, [mapInstance, geoData, counts, clusterCounts, totalTickets, onSelect]);
 
@@ -373,12 +399,14 @@ export function CivicMap({
 
   return (
     <div
+      role="region"
+      aria-label="行政区划工单热力分布地图"
+      className="min-h-[300px] sm:min-h-[460px]"
       style={{
         position: "relative",
         width: "100%",
         flex: 1,
         height: "100%",
-        minHeight: 460,
         borderRadius: "var(--r-md, 12px)",
         overflow: "hidden",
         border: "1px solid var(--c-border-soft, #E2E8F0)",
@@ -386,7 +414,11 @@ export function CivicMap({
         zIndex: 1,
       }}
     >
-      <div ref={mapContainerRef} style={{ width: "100%", height: "100%", minHeight: 460, background: "#F1F5F9" }} />
+      <div
+        ref={mapContainerRef}
+        className="w-full h-full min-h-[300px] sm:min-h-[460px]"
+        style={{ background: "#F1F5F9" }}
+      />
 
       {/* 顶部标题与选区指示 */}
       <div
@@ -394,10 +426,13 @@ export function CivicMap({
           position: "absolute",
           top: 12,
           left: 12,
+          right: 12,
           zIndex: 800,
           display: "flex",
+          flexWrap: "wrap",
           alignItems: "center",
           gap: 8,
+          pointerEvents: "none",
         }}
       >
         <div
@@ -409,11 +444,13 @@ export function CivicMap({
             border: "1px solid #E2E8F0",
             boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
             display: "flex",
+            flexWrap: "wrap",
             alignItems: "center",
             gap: 6,
             fontSize: 12,
             fontWeight: 700,
             color: "#0F172A",
+            pointerEvents: "auto",
           }}
         >
           <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#1E5AFF" }} />
@@ -422,7 +459,7 @@ export function CivicMap({
               ? `聚焦辖区：${selected}`
               : `${activeRegion ? activeRegion.name : "全区"}行政区划工单热力分布`}
           </span>
-          <span style={{ color: "#64748B", fontWeight: 400, marginLeft: 2 }}>
+          <span className="tabular-nums" style={{ color: "#475569", fontWeight: 500, marginLeft: 2 }}>
             ({totalTickets.toLocaleString()} 件诉求)
           </span>
         </div>
@@ -431,6 +468,7 @@ export function CivicMap({
           <button
             type="button"
             onClick={handleResetView}
+            className="min-h-[44px] sm:min-h-[26px]"
             style={{
               background: "#1E5AFF",
               color: "#ffffff",
@@ -444,9 +482,10 @@ export function CivicMap({
               display: "flex",
               alignItems: "center",
               gap: 4,
+              pointerEvents: "auto",
             }}
           >
-            <RefreshCw style={{ width: 12, height: 12 }} />
+            <RefreshCw style={{ width: 12, height: 12 }} aria-hidden="true" />
             <span>返回全区</span>
           </button>
         )}
@@ -468,41 +507,19 @@ export function CivicMap({
           type="button"
           onClick={() => mapRef.current?.zoomIn()}
           title="放大"
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: 6,
-            background: "#ffffff",
-            border: "1px solid #E2E8F0",
-            boxShadow: "0 2px 4px rgba(0,0,0,0.08)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "#334155",
-            cursor: "pointer",
-          }}
+          aria-label="放大地图"
+          className="w-11 h-11 sm:w-7 sm:h-7 [@media(pointer:coarse)]:w-11 [@media(pointer:coarse)]:h-11 rounded-md bg-white border border-[#E2E8F0] shadow-[0_2px_4px_rgba(0,0,0,0.08)] flex items-center justify-center text-[#334155] hover:bg-slate-50 cursor-pointer"
         >
-          <ZoomIn className="w-3.5 h-3.5" />
+          <ZoomIn className="w-3.5 h-3.5" aria-hidden="true" />
         </button>
         <button
           type="button"
           onClick={() => mapRef.current?.zoomOut()}
           title="缩小"
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: 6,
-            background: "#ffffff",
-            border: "1px solid #E2E8F0",
-            boxShadow: "0 2px 4px rgba(0,0,0,0.08)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "#334155",
-            cursor: "pointer",
-          }}
+          aria-label="缩小地图"
+          className="w-11 h-11 sm:w-7 sm:h-7 [@media(pointer:coarse)]:w-11 [@media(pointer:coarse)]:h-11 rounded-md bg-white border border-[#E2E8F0] shadow-[0_2px_4px_rgba(0,0,0,0.08)] flex items-center justify-center text-[#334155] hover:bg-slate-50 cursor-pointer"
         >
-          <ZoomOut className="w-3.5 h-3.5" />
+          <ZoomOut className="w-3.5 h-3.5" aria-hidden="true" />
         </button>
       </div>
 
@@ -512,6 +529,7 @@ export function CivicMap({
           position: "absolute",
           left: 12,
           bottom: 10,
+          maxWidth: "calc(100% - 76px)",
           zIndex: 800,
           background: "rgba(255, 255, 255, 0.94)",
           backdropFilter: "blur(6px)",
@@ -520,6 +538,7 @@ export function CivicMap({
           border: "1px solid #CBD5E1",
           boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
           display: "flex",
+          flexWrap: "wrap",
           alignItems: "center",
           gap: 8,
           fontSize: 11,
@@ -528,7 +547,7 @@ export function CivicMap({
       >
         <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#1E5AFF" }} />
         <span style={{ fontWeight: 600, color: "#0F172A" }}>镇街网格:</span>
-        <span style={{ color: "#64748B" }}>法定专属区划色 · 悬停网格高亮 · 胶囊数字为诉求量</span>
+        <span style={{ color: "#475569" }}>法定专属区划色 · 悬停网格高亮 · 胶囊数字为诉求量</span>
       </div>
     </div>
   );

@@ -103,7 +103,7 @@ export function VideoModal({
     >
       <DialogContent
         showCloseButton={false}
-        className="video-modal-content !flex !flex-col !w-[calc(100vw-1.5rem)] sm:!w-[calc(100vw-3rem)] !max-w-[1060px] !max-h-[90dvh] !p-0 !gap-0 !rounded-2xl overflow-hidden"
+        className="video-modal-content !flex !flex-col !w-[calc(100dvw-1.5rem)] sm:!w-[calc(100dvw-3rem)] !max-w-[1060px] !max-h-[90dvh] !p-0 !gap-0 !rounded-2xl overflow-hidden overscroll-contain"
       >
         {/* Modal Header */}
         <div className="video-modal-header">
@@ -122,7 +122,7 @@ export function VideoModal({
           </div>
           <button
             type="button"
-            className="video-modal-close-btn min-h-[44px] min-w-[44px] sm:min-h-[32px] sm:min-w-[32px]"
+            className="video-modal-close-btn relative min-h-[44px] min-w-[44px] sm:min-h-[32px] sm:min-w-[32px] sm:after:content-[''] sm:after:absolute sm:after:-inset-[6px]"
             onClick={onClose}
             aria-label="关闭视频"
           >
@@ -138,6 +138,7 @@ export function VideoModal({
               <video
                 ref={videoRef}
                 src={activeVideo.src}
+                aria-label={activeVideo.title}
                 controls
                 autoPlay
                 playsInline
@@ -151,7 +152,7 @@ export function VideoModal({
                 您的浏览器不支持 HTML5 视频播放。
               </video>
               {isBuffering && (
-                <div className="video-buffering-indicator">
+                <div className="video-buffering-indicator" aria-hidden="true">
                   <div className="login-spinner" style={{ width: 28, height: 28, borderWidth: 3 }} />
                 </div>
               )}
@@ -188,6 +189,7 @@ export function VideoModal({
                   <button
                     key={vid.id}
                     type="button"
+                    aria-current={isActive ? "true" : undefined}
                     className={`video-playlist-item min-h-[44px]${isActive ? " is-active" : ""}`}
                     onClick={() => handleSelectVideo(vid)}
                   >

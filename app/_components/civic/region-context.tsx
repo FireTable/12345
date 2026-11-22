@@ -111,15 +111,15 @@ export function RegionProvider({
           }
           const prev = document.cookie.match(/(?:^|; )active_region=([^;]*)/)?.[1] || "";
           const prevId = prev ? decodeURIComponent(prev) : "";
-          document.cookie = `active_region=${matched.id}; path=/; max-age=31536000; SameSite=Lax`;
+          document.cookie = `active_region=${encodeURIComponent(matched.id)}; path=/; max-age=31536000; SameSite=Lax`;
           if (pathname !== "/login" && prevId && prevId !== matched.id && !refreshedCookie.current) {
             refreshedCookie.current = true;
             router.refresh();
           }
         }
       }
-    } catch (err: any) {
-      console.warn("[RegionProvider] Failed to fetch regions:", err.message);
+    } catch (err: unknown) {
+      console.warn("[RegionProvider] Failed to fetch regions:", err instanceof Error ? err.message : String(err));
     } finally {
       setIsLoading(false);
     }
@@ -137,7 +137,7 @@ export function RegionProvider({
 
     setActiveRegion(target);
     localStorage.setItem("civic_active_region", target.id);
-    document.cookie = `active_region=${target.id}; path=/; max-age=31536000; SameSite=Lax`;
+    document.cookie = `active_region=${encodeURIComponent(target.id)}; path=/; max-age=31536000; SameSite=Lax`;
     const isEcom = target.domainProfile?.domainType === "ECOMMERCE_CS";
     toast.success(
       isEcom

@@ -3,7 +3,6 @@
 import React, { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
   Mic,
-  MicOff,
   Send,
   CheckCircle2,
   AlertCircle,
@@ -16,7 +15,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useRegion } from "@/app/_components/civic/region-context";
-import { useStreamAsr } from "@/app/_hooks/use-stream-asr";
+import { appendRecognizedText, useStreamAsr } from "@/app/_hooks/use-stream-asr";
 import {
   XiaochunStage,
   type XiaochunStageHandle,
@@ -53,6 +52,7 @@ interface IntakeDraft {
   subject: string;
   address: string;
   contactPhone: string;
+  contactEmail: string;
 }
 
 interface ChatMessage {
@@ -103,6 +103,7 @@ const EMPTY_DRAFT: IntakeDraft = {
   subject: "",
   address: "",
   contactPhone: "",
+  contactEmail: "",
 };
 
 const DEFAULT_GOV_CATEGORIES = [
@@ -171,17 +172,25 @@ function isTicketResolved(t: MyTicketItem): boolean {
   return s === "RESOLVED" || s === "CLOSED" || c === "RESOLVED" || c === "CLOSED" || t.closureStatus === "已办结";
 }
 
-function isValidPhoneIfPresent(value: string): boolean {
+function isValidPhone(value: string): boolean {
   const trimmed = value.trim();
-  if (!trimmed) return true;
-  return /^(1[3-9]\d{9}|0\d{2,3}-?\d{7,8})$/.test(trimmed);
+  if (!trimmed) return false;
+  const compact = trimmed.replace(/[\s-]/g, "");
+  return /^1[3-9]\d{9}$/.test(compact) || /^0\d{2,3}-?\d{7,8}$/.test(trimmed.replace(/\s+/g, ""));
+}
+
+function isValidEmail(value: string): boolean {
+  const trimmed = value.trim();
+  return Boolean(trimmed) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
 }
 
 function SlotStatusTag({
   filled,
+  filledLabel = "已识别",
   pendingLabel = "待补充",
 }: {
   filled: boolean;
+  filledLabel?: string;
   pendingLabel?: string;
 }) {
   return (
@@ -195,7 +204,7 @@ function SlotStatusTag({
       {filled ? (
         <>
           <CheckCircle2 size={11} aria-hidden="true" />
-          <span>已识别</span>
+          <span>{filledLabel}</span>
         </>
       ) : (
         <span>{pendingLabel}</span>
@@ -306,6 +315,8 @@ export default function SubmitPage() {
         : activeRegion?.domainProfile?.channels || [];
 
   // ----------------- 表单状态与交互后校验 -----------------
+  const formRef = useRef<HTMLFormElement>(null);
+  const voiceInputRef = useRef<HTMLTextAreaElement>(null);
   const [formValues, setFormValues] = useState<IntakeDraft>(EMPTY_DRAFT);
   const [interacted, setInteracted] = useState<Record<string, boolean>>({});
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -316,9 +327,29 @@ export default function SubmitPage() {
   const subdistrictRef = useRef<HTMLInputElement>(null);
   const contentRef = useRef<HTMLTextAreaElement>(null);
   const phoneRef = useRef<HTMLInputElement>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
+
+  const clearFormCustomValidities = useCallback(() => {
+    categoryRef.current?.setCustomValidity("");
+    subdistrictRef.current?.setCustomValidity("");
+    contentRef.current?.setCustomValidity("");
+    phoneRef.current?.setCustomValidity("");
+    emailRef.current?.setCustomValidity("");
+  }, []);
+
+  const resetFormState = useCallback(() => {
+    setFormValues(EMPTY_DRAFT);
+    setInteracted({});
+    setFieldErrors({});
+    clearFormCustomValidities();
+    requestAnimationFrame(() => {
+      formRef.current?.reset();
+    });
+  }, [clearFormCustomValidities]);
 
   const validateFormField = useCallback(
-    (name: keyof IntakeDraft, value: string): string => {
+    (name: keyof IntakeDraft, value: string, nextValues?: IntakeDraft): string => {
+      const vals = nextValues || formValues;
       const trimmed = value.trim();
       if (name === "category" && !trimmed) {
         return "请选择所属投诉分类";
@@ -330,18 +361,45 @@ export default function SubmitPage() {
         if (!trimmed) return "请填写投诉详细内容";
         if (trimmed.length < 6) return "详细内容至少需要 6 个字，请补充关键经过";
       }
-      if (name === "contactPhone" && !isValidPhoneIfPresent(value)) {
-        return "请输入 11 位手机号码或区号座机（也可留空）";
+      if (name === "contactPhone") {
+        if (trimmed && !isValidPhone(trimmed)) {
+          return "请输入有效的 11 位手机号码或区号座机";
+        }
+        if (!trimmed && !vals.contactEmail.trim()) {
+          return "联系电话与电子邮箱请至少填写一项，以便工作人员联系回访";
+        }
+      }
+      if (name === "contactEmail") {
+        if (trimmed && !isValidEmail(trimmed)) {
+          return "请输入有效的电子邮箱地址（如 name@example.com）";
+        }
+        if (!trimmed && !vals.contactPhone.trim()) {
+          return "联系电话与电子邮箱请至少填写一项，以便工作人员联系回访";
+        }
       }
       return "";
     },
-    [regionUnitLabel]
+    [formValues, regionUnitLabel]
   );
 
   const updateFormField = (name: keyof IntakeDraft, value: string) => {
-    setFormValues((prev) => ({ ...prev, [name]: value }));
+    const nextValues = { ...formValues, [name]: value };
+    setFormValues(nextValues);
+    if (name === "contactPhone" || name === "contactEmail") {
+      const phoneErr = validateFormField("contactPhone", nextValues.contactPhone, nextValues);
+      const emailErr = validateFormField("contactEmail", nextValues.contactEmail, nextValues);
+      phoneRef.current?.setCustomValidity(phoneErr);
+      emailRef.current?.setCustomValidity(emailErr);
+      setFieldErrors((prev) => ({
+        ...prev,
+        contactPhone: interacted.contactPhone ? phoneErr : "",
+        contactEmail: interacted.contactEmail ? emailErr : "",
+      }));
+      if (!phoneErr && !emailErr) setLiveAnnouncement("");
+      return;
+    }
     if (fieldErrors[name]) {
-      const nextErr = validateFormField(name, value);
+      const nextErr = validateFormField(name, value, nextValues);
       if (!nextErr) {
         setFieldErrors((prev) => ({ ...prev, [name]: "" }));
         setLiveAnnouncement("");
@@ -353,6 +411,29 @@ export default function SubmitPage() {
     name: keyof IntakeDraft,
     el?: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null
   ) => {
+    if (name === "contactPhone" || name === "contactEmail") {
+      // 只在其中至少一个已失焦且均为空，或自身格式有误时提示
+      const nextInteracted = { ...interacted, [name]: true };
+      const phoneErr =
+        formValues.contactPhone.trim() && !isValidPhone(formValues.contactPhone)
+          ? "请输入有效的 11 位手机号码或区号座机"
+          : !formValues.contactPhone.trim() &&
+              !formValues.contactEmail.trim() &&
+              ((nextInteracted.contactPhone && nextInteracted.contactEmail) || Boolean(formValues.contactPhone || formValues.contactEmail))
+            ? "联系电话与电子邮箱请至少填写一项"
+            : "";
+      const emailErr =
+        formValues.contactEmail.trim() && !isValidEmail(formValues.contactEmail)
+          ? "请输入有效的电子邮箱地址（如 name@example.com）"
+          : "";
+      setInteracted(nextInteracted);
+      phoneRef.current?.setCustomValidity(phoneErr);
+      emailRef.current?.setCustomValidity(emailErr);
+      setFieldErrors((prev) => ({ ...prev, contactPhone: phoneErr, contactEmail: emailErr }));
+      const firstErr = (name === "contactEmail" ? emailErr : phoneErr) || phoneErr || emailErr;
+      if (firstErr) scheduleAnnouncement(firstErr);
+      return;
+    }
     setInteracted((prev) => ({ ...prev, [name]: true }));
     const err = validateFormField(name, formValues[name]);
     if (el && "setCustomValidity" in el) {
@@ -385,16 +466,21 @@ export default function SubmitPage() {
     [isEcommerce]
   );
 
-  // 初始化欢迎词随业务域变化
+  // 初始化欢迎词随业务域变化（仅当尚无用户消息时刷新，避免选项异步加载冲掉进行中的对话）
   useEffect(() => {
-    setVoiceMessages([createWelcomeMessage()]);
-  }, [createWelcomeMessage, activeRegion?.id]);
+    setVoiceMessages((prev) => {
+      if (prev.length <= 1) {
+        return [createWelcomeMessage()];
+      }
+      return prev;
+    });
+  }, [createWelcomeMessage]);
 
   useEffect(() => {
     if (chatLogRef.current && (voiceMessages.length > 1 || chatPending)) {
       chatLogRef.current.scrollTop = chatLogRef.current.scrollHeight;
     }
-  }, [voiceMessages, chatPending, voiceDraft]);
+  }, [voiceMessages.length, chatPending]);
 
   // ----------------- 我的投诉进度 -----------------
   const [myTickets, setMyTickets] = useState<MyTicketItem[]>([]);
@@ -406,38 +492,59 @@ export default function SubmitPage() {
   const historyDetailsRef = useRef<HTMLDetailsElement>(null);
   const historySummaryRef = useRef<HTMLElement>(null);
   const progressScrollSeqRef = useRef(0);
+  const optionsAbortRef = useRef<AbortController | null>(null);
+  const ticketsAbortRef = useRef<AbortController | null>(null);
+  const chatAbortRef = useRef<AbortController | null>(null);
 
   const regionQuery = activeRegion?.id ? `?region=${encodeURIComponent(activeRegion.id)}` : "";
 
   const fetchOptions = useCallback(async () => {
+    optionsAbortRef.current?.abort();
+    const controller = new AbortController();
+    optionsAbortRef.current = controller;
     try {
       setOptionsLoading(true);
-      const res = await fetch(`/api/intake/options${regionQuery}`, { cache: "no-store" });
-      if (!res.ok) return;
+      const res = await fetch(`/api/intake/options${regionQuery}`, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      if (!res.ok || controller.signal.aborted) return;
       const data = (await res.json()) as IntakeOptionsResponse;
-      if (data) {
+      if (data && !controller.signal.aborted) {
         setOptions(data);
       }
-    } catch {
-      // ignore
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
     } finally {
-      setOptionsLoading(false);
+      if (optionsAbortRef.current === controller) {
+        optionsAbortRef.current = null;
+        setOptionsLoading(false);
+      }
     }
   }, [regionQuery]);
 
   const fetchMyTickets = useCallback(async () => {
+    ticketsAbortRef.current?.abort();
+    const controller = new AbortController();
+    ticketsAbortRef.current = controller;
     try {
       setTicketsLoading(true);
-      const res = await fetch(`/api/intake/my-tickets${regionQuery}`, { cache: "no-store" });
-      if (!res.ok) return;
+      const res = await fetch(`/api/intake/my-tickets${regionQuery}`, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      if (!res.ok || controller.signal.aborted) return;
       const data = (await res.json()) as { success?: boolean; tickets?: MyTicketItem[] };
-      if (Array.isArray(data.tickets)) {
+      if (Array.isArray(data.tickets) && !controller.signal.aborted) {
         setMyTickets(data.tickets);
       }
-    } catch {
-      // ignore
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
     } finally {
-      setTicketsLoading(false);
+      if (ticketsAbortRef.current === controller) {
+        ticketsAbortRef.current = null;
+        setTicketsLoading(false);
+      }
     }
   }, [regionQuery]);
 
@@ -445,6 +552,14 @@ export default function SubmitPage() {
     void fetchOptions();
     void fetchMyTickets();
   }, [fetchOptions, fetchMyTickets]);
+
+  useEffect(() => {
+    return () => {
+      optionsAbortRef.current?.abort();
+      ticketsAbortRef.current?.abort();
+      chatAbortRef.current?.abort();
+    };
+  }, []);
 
   // ----------------- 提交逻辑（Tab 1 & Tab 2 共用） -----------------
   const submitPayload = async (payload: IntakeDraft, source: "FORM" | "AGENT_VOICE") => {
@@ -461,6 +576,7 @@ export default function SubmitPage() {
           subject: payload.subject.trim() || undefined,
           address: payload.address.trim() || undefined,
           contactPhone: payload.contactPhone.trim() || undefined,
+          contactEmail: payload.contactEmail.trim() || undefined,
           source,
         }),
       });
@@ -486,9 +602,7 @@ export default function SubmitPage() {
       void fetchMyTickets();
 
       if (source === "FORM") {
-        setFormValues(EMPTY_DRAFT);
-        setInteracted({});
-        setFieldErrors({});
+        resetFormState();
       } else {
         setVoiceDraft(EMPTY_DRAFT);
         setMissingFields([]);
@@ -518,22 +632,25 @@ export default function SubmitPage() {
       subdistrict: validateFormField("subdistrict", formValues.subdistrict),
       content: validateFormField("content", formValues.content),
       contactPhone: validateFormField("contactPhone", formValues.contactPhone),
+      contactEmail: validateFormField("contactEmail", formValues.contactEmail),
     };
 
     categoryRef.current?.setCustomValidity(errs.category);
     subdistrictRef.current?.setCustomValidity(errs.subdistrict);
     contentRef.current?.setCustomValidity(errs.content);
     phoneRef.current?.setCustomValidity(errs.contactPhone);
+    emailRef.current?.setCustomValidity(errs.contactEmail);
 
     setInteracted({
       category: true,
       subdistrict: true,
       content: true,
       contactPhone: true,
+      contactEmail: true,
     });
     setFieldErrors(errs);
 
-    const firstKey = (["category", "subdistrict", "content", "contactPhone"] as const).find(
+    const firstKey = (["category", "subdistrict", "content", "contactPhone", "contactEmail"] as const).find(
       (k) => Boolean(errs[k])
     );
     if (firstKey) {
@@ -543,17 +660,24 @@ export default function SubmitPage() {
       else if (firstKey === "subdistrict") subdistrictRef.current?.focus();
       else if (firstKey === "content") contentRef.current?.focus();
       else if (firstKey === "contactPhone") phoneRef.current?.focus();
+      else if (firstKey === "contactEmail") emailRef.current?.focus();
       return;
     }
 
     await submitPayload(formValues, "FORM");
   };
 
+  const asrResetRef = useRef<() => void>(() => {});
+  const asrActiveRef = useRef<boolean>(false);
+
   // ----------------- 语音对话发送 -----------------
   const sendVoiceTurn = useCallback(
     async (rawText: string) => {
       const clean = rawText.trim();
       if (!clean || chatPending) return;
+      if (asrActiveRef.current) {
+        asrResetRef.current();
+      }
 
       const userMsg: ChatMessage = {
         id: `u-${Date.now()}`,
@@ -565,10 +689,15 @@ export default function SubmitPage() {
       setChatInput("");
       setChatPending(true);
 
+      chatAbortRef.current?.abort();
+      const controller = new AbortController();
+      chatAbortRef.current = controller;
+
       try {
         const res = await fetch(`/api/intake/chat${regionQuery}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
           body: JSON.stringify({
             messages: nextHistory.map((m) => ({ role: m.role, content: m.content })),
             draft: voiceDraft,
@@ -582,6 +711,7 @@ export default function SubmitPage() {
           readyToSubmit?: boolean;
           error?: string;
         };
+        if (controller.signal.aborted) return;
 
         if (!res.ok || !data.success) {
           const msg = data.error || "智能受理暂时繁忙，请稍后重试或切换表单提交";
@@ -589,16 +719,16 @@ export default function SubmitPage() {
           return;
         }
 
-        const mergedDraft: IntakeDraft = {
-          title: data.draft?.title ?? voiceDraft.title,
-          content: data.draft?.content ?? voiceDraft.content,
-          subdistrict: data.draft?.subdistrict ?? voiceDraft.subdistrict,
-          category: data.draft?.category ?? voiceDraft.category,
-          subject: data.draft?.subject ?? voiceDraft.subject,
-          address: data.draft?.address ?? voiceDraft.address,
-          contactPhone: data.draft?.contactPhone ?? voiceDraft.contactPhone,
-        };
-        setVoiceDraft(mergedDraft);
+        setVoiceDraft((prev) => ({
+          title: data.draft?.title ?? prev.title,
+          content: data.draft?.content ?? prev.content,
+          subdistrict: data.draft?.subdistrict ?? prev.subdistrict,
+          category: data.draft?.category ?? prev.category,
+          subject: data.draft?.subject ?? prev.subject,
+          address: data.draft?.address ?? prev.address,
+          contactPhone: data.draft?.contactPhone ?? prev.contactPhone,
+          contactEmail: data.draft?.contactEmail ?? prev.contactEmail,
+        }));
         setMissingFields(Array.isArray(data.missingFields) ? data.missingFields : []);
         setReadyToSubmit(Boolean(data.readyToSubmit));
 
@@ -610,9 +740,15 @@ export default function SubmitPage() {
         ]);
         void stageRef.current?.say(replyText);
       } catch (err: unknown) {
+        if (controller.signal.aborted || (err instanceof DOMException && err.name === "AbortError")) {
+          return;
+        }
         toast.error(err instanceof Error ? err.message : "对话请求失败");
       } finally {
-        setChatPending(false);
+        if (chatAbortRef.current === controller) {
+          chatAbortRef.current = null;
+          setChatPending(false);
+        }
       }
     },
     [chatPending, regionQuery, voiceDraft, voiceMessages]
@@ -620,42 +756,59 @@ export default function SubmitPage() {
 
   const asr = useStreamAsr({
     onFinalResult: (text) => {
-      void sendVoiceTurn(text);
+      const clean = text.trim();
+      if (!clean) return;
+      setChatInput((prev) => appendRecognizedText(prev, clean));
+      voiceInputRef.current?.focus();
     },
   });
 
   const prevRegionIdRef = useRef<string | undefined>(undefined);
   const asrStopRef = useRef(asr.stop);
   asrStopRef.current = asr.stop;
+  asrResetRef.current = asr.reset;
+  asrActiveRef.current =
+    asr.isRecording || asr.status === "initializing" || asr.status === "downloading";
 
   useEffect(() => {
     const nextId = activeRegion?.id;
     if (prevRegionIdRef.current && nextId && prevRegionIdRef.current !== nextId) {
+      chatAbortRef.current?.abort();
+      chatAbortRef.current = null;
+      setChatPending(false);
+      progressScrollSeqRef.current += 1;
       asrStopRef.current();
       stageRef.current?.stop();
       setVoiceDraft(EMPTY_DRAFT);
       setMissingFields([]);
       setReadyToSubmit(false);
       setChatInput("");
+      setVoiceMessages([createWelcomeMessage()]);
       setReceipt(null);
       setReopenTargetId(null);
       setReopenReason("");
-      setFormValues(EMPTY_DRAFT);
-      setInteracted({});
-      setFieldErrors({});
+      resetFormState();
     }
     if (nextId) {
       prevRegionIdRef.current = nextId;
     }
-  }, [activeRegion?.id]);
+  }, [activeRegion?.id, createWelcomeMessage, resetFormState]);
 
   const handleVoiceToggle = async () => {
-    if (asr.isRecording) {
+    if (asr.isRecording || asr.status === "initializing" || asr.status === "downloading") {
       asr.stop();
     } else {
       stageRef.current?.stop();
       await asr.start();
     }
+  };
+
+  const submitComposerInput = () => {
+    const pendingText =
+      asr.isRecording && asr.interimText.trim()
+        ? appendRecognizedText(chatInput, asr.interimText)
+        : chatInput;
+    void sendVoiceTurn(pendingText);
   };
 
   const handleVoiceTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -664,23 +817,32 @@ export default function SubmitPage() {
       if (e.nativeEvent.isComposing || e.keyCode === 229) {
         return;
       }
-      void sendVoiceTurn(chatInput);
+      submitComposerInput();
     }
   };
 
   const handleVoiceChatFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    void sendVoiceTurn(chatInput);
+    submitComposerInput();
   };
 
   const handleVoiceDraftSubmit = async () => {
     const missing: string[] = [];
-    if (voiceDraft.content.trim().length < 6) missing.push("至少 6 字投诉内容");
     if (!voiceDraft.category.trim()) missing.push("所属分类");
     if (!voiceDraft.subdistrict.trim()) missing.push(regionUnitLabel);
+    if (voiceDraft.content.trim().length < 6) missing.push("至少 6 字诉求内容");
+    const phoneTrim = voiceDraft.contactPhone.trim();
+    const emailTrim = voiceDraft.contactEmail.trim();
+    if (phoneTrim && !isValidPhone(phoneTrim)) {
+      missing.push("有效的联系电话");
+    } else if (emailTrim && !isValidEmail(emailTrim)) {
+      missing.push("有效的电子邮箱");
+    } else if (!phoneTrim && !emailTrim) {
+      missing.push("联系电话或邮箱");
+    }
 
     if (missing.length > 0) {
-      const msg = `请先补充：${missing.join("、")}（可继续语音或文字对话，或点击同步到表单微调）`;
+      const msg = `请先补充：${missing.join("、")}（可直接在本草稿卡片内填写或选择）`;
       toast.error(msg);
       scheduleAnnouncement(msg);
       return;
@@ -690,6 +852,7 @@ export default function SubmitPage() {
 
   // ----------------- 重开投诉 -----------------
   const handleConfirmReopen = async (ticketId: string) => {
+    if (reopeningId) return;
     try {
       setReopeningId(ticketId);
       const res = await fetch(`/api/intake/my-tickets/${encodeURIComponent(ticketId)}/reopen${regionQuery}`, {
@@ -717,6 +880,28 @@ export default function SubmitPage() {
 
   // ----------------- Mode Tabs 键盘交互 -----------------
   const switchMode = (next: SubmitMode, focusTab = false) => {
+    if (
+      next === "form" &&
+      mode !== "form" &&
+      hasAnyVoiceDraft &&
+      !formValues.content.trim() &&
+      !formValues.category.trim() &&
+      !formValues.subdistrict.trim()
+    ) {
+      setFormValues((prev) => ({
+        title: voiceDraft.title || prev.title,
+        content: voiceDraft.content || prev.content,
+        subdistrict: voiceDraft.subdistrict || prev.subdistrict,
+        category: voiceDraft.category || prev.category,
+        subject: voiceDraft.subject || prev.subject,
+        address: voiceDraft.address || prev.address,
+        contactPhone: voiceDraft.contactPhone || prev.contactPhone,
+        contactEmail: voiceDraft.contactEmail || prev.contactEmail,
+      }));
+      setInteracted({});
+      setFieldErrors({});
+      clearFormCustomValidities();
+    }
     setMode(next);
     requestAnimationFrame(() => {
       const targetTab = next === "form" ? formTabRef.current : voiceTabRef.current;
@@ -807,25 +992,53 @@ export default function SubmitPage() {
   const hasDraftCategory = Boolean(voiceDraft.category.trim());
   const hasDraftSubdistrict = Boolean(voiceDraft.subdistrict.trim());
   const hasDraftContent = voiceDraft.content.trim().length >= 6;
-  const filledRequiredCount = [hasDraftCategory, hasDraftSubdistrict, hasDraftContent].filter(Boolean).length;
+  const draftPhoneFormatError =
+    Boolean(voiceDraft.contactPhone.trim()) && !isValidPhone(voiceDraft.contactPhone);
+  const draftEmailFormatError =
+    Boolean(voiceDraft.contactEmail.trim()) && !isValidEmail(voiceDraft.contactEmail);
+  const hasDraftContact =
+    (isValidPhone(voiceDraft.contactPhone) || isValidEmail(voiceDraft.contactEmail)) &&
+    !draftPhoneFormatError &&
+    !draftEmailFormatError;
+  const filledRequiredCount = [
+    hasDraftCategory,
+    hasDraftSubdistrict,
+    hasDraftContent,
+    hasDraftContact,
+  ].filter(Boolean).length;
   const hasAnyVoiceDraft = Boolean(
     voiceDraft.category.trim() ||
       voiceDraft.subdistrict.trim() ||
       voiceDraft.subject.trim() ||
       voiceDraft.address.trim() ||
+      voiceDraft.contactPhone.trim() ||
+      voiceDraft.contactEmail.trim() ||
       voiceDraft.content.trim()
   );
   const missingRequiredLabels = [
     !hasDraftCategory ? "所属分类" : "",
     !hasDraftSubdistrict ? regionUnitLabel : "",
     !hasDraftContent ? "诉求内容（至少 6 字）" : "",
+    draftPhoneFormatError
+      ? "有效的联系电话"
+      : draftEmailFormatError
+        ? "有效的电子邮箱"
+        : !hasDraftContact
+          ? "联系电话或邮箱"
+          : "",
   ].filter(Boolean);
   const isVoiceDraftReady = missingRequiredLabels.length === 0;
   const latestVoiceCaption =
     [...voiceMessages].reverse().find((m) => m.role === "assistant")?.content || "";
 
+  const updateVoiceDraftField = (name: keyof IntakeDraft, value: string) => {
+    setVoiceDraft((prev) => ({ ...prev, [name]: value }));
+  };
+
   const handleResetVoiceChat = () => {
     if (chatPending) return;
+    chatAbortRef.current?.abort();
+    chatAbortRef.current = null;
     asr.stop();
     stageRef.current?.stop();
     setVoiceDraft(EMPTY_DRAFT);
@@ -833,20 +1046,6 @@ export default function SubmitPage() {
     setReadyToSubmit(false);
     setChatInput("");
     setVoiceMessages([createWelcomeMessage(`welcome-${Date.now()}`)]);
-  };
-
-  const syncVoiceDraftToForm = () => {
-    setFormValues((prev) => ({
-      title: voiceDraft.title || prev.title,
-      content: voiceDraft.content || prev.content,
-      subdistrict: voiceDraft.subdistrict || prev.subdistrict,
-      category: voiceDraft.category || prev.category,
-      subject: voiceDraft.subject || prev.subject,
-      address: voiceDraft.address || prev.address,
-      contactPhone: voiceDraft.contactPhone || prev.contactPhone,
-    }));
-    switchMode("form", true);
-    toast.info("已将对话整理内容同步到表单，可继续修改");
   };
 
   return (
@@ -915,7 +1114,16 @@ export default function SubmitPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setReceipt(null)}
+                onClick={() => {
+                  setReceipt(null);
+                  requestAnimationFrame(() => {
+                    if (mode === "form") {
+                      categoryRef.current?.focus();
+                    } else {
+                      voiceInputRef.current?.focus();
+                    }
+                  });
+                }}
                 className="inline-flex min-h-12 sm:min-h-10 items-center rounded-md border border-emerald-300 bg-white px-3 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100 cursor-pointer"
               >
                 继续提交
@@ -972,6 +1180,7 @@ export default function SubmitPage() {
         <div role="tabpanel" aria-labelledby="tab-form" hidden={mode !== "form"}>
           <div className="submit-panel-body">
             <form
+              ref={formRef}
               noValidate
               onSubmit={handleFormSubmit}
               aria-labelledby="tab-form"
@@ -1208,47 +1417,96 @@ export default function SubmitPage() {
               </div>
 
               <div className="submit-field">
-                <label htmlFor="submit-phone" className="submit-label">
-                  联系电话（选填）
-                </label>
-                <span id="submit-phone-hint" className="submit-hint">
-                  11 位手机号或区号座机；系统入库将进行隐私气隙脱敏保护
+                <div className="submit-label">
+                  联系方式（电话或邮箱至少填一项） <span className="submit-required-mark" aria-hidden="true">*</span>
+                </div>
+                <span id="submit-contact-hint" className="submit-hint">
+                  填手机号或邮箱均可，便于处理进度通知与回访；入库自动隐私气隙脱敏保护
                 </span>
-                <input
-                  ref={phoneRef}
-                  id="submit-phone"
-                  name="contactPhone"
-                  type="tel"
-                  inputMode="tel"
-                  autoComplete="tel"
-                  value={formValues.contactPhone}
-                  onChange={(e) => {
-                    e.currentTarget.setCustomValidity("");
-                    updateFormField("contactPhone", e.target.value);
-                  }}
-                  onBlur={(e) => handleFieldBlur("contactPhone", e.currentTarget)}
-                  placeholder="例如：13800138000"
-                  enterKeyHint="done"
-                  aria-invalid={Boolean(interacted.contactPhone && fieldErrors.contactPhone)}
-                  aria-describedby={
-                    interacted.contactPhone && fieldErrors.contactPhone
-                      ? "submit-phone-hint submit-phone-error"
-                      : "submit-phone-hint"
-                  }
-                  className={`submit-control${
-                    interacted.contactPhone && fieldErrors.contactPhone
-                      ? " user-invalid-fallback"
-                      : ""
-                  }`}
-                />
-                <div
-                  id="submit-phone-error"
-                  className={`submit-error${
-                    interacted.contactPhone && fieldErrors.contactPhone ? " is-visible" : ""
-                  }`}
-                >
-                  <AlertCircle size={15} className="shrink-0 mt-0.5" aria-hidden="true" />
-                  <span>{fieldErrors.contactPhone || "请输入有效的电话号码"}</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
+                  <div>
+                    <label htmlFor="submit-phone" className="block text-xs font-medium text-slate-600 mb-1">
+                      联系电话
+                    </label>
+                    <input
+                      ref={phoneRef}
+                      id="submit-phone"
+                      name="contactPhone"
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="tel"
+                      value={formValues.contactPhone}
+                      onChange={(e) => {
+                        e.currentTarget.setCustomValidity("");
+                        updateFormField("contactPhone", e.target.value);
+                      }}
+                      onBlur={(e) => handleFieldBlur("contactPhone", e.currentTarget)}
+                      placeholder="例如：13800138000"
+                      enterKeyHint="next"
+                      aria-invalid={Boolean(interacted.contactPhone && fieldErrors.contactPhone)}
+                      aria-describedby={
+                        interacted.contactPhone && fieldErrors.contactPhone
+                          ? "submit-contact-hint submit-phone-error"
+                          : "submit-contact-hint"
+                      }
+                      className={`submit-control${
+                        interacted.contactPhone && fieldErrors.contactPhone
+                          ? " user-invalid-fallback"
+                          : ""
+                      }`}
+                    />
+                    <div
+                      id="submit-phone-error"
+                      className={`submit-error${
+                        interacted.contactPhone && fieldErrors.contactPhone ? " is-visible" : ""
+                      }`}
+                    >
+                      <AlertCircle size={15} className="shrink-0 mt-0.5" aria-hidden="true" />
+                      <span>{fieldErrors.contactPhone || "请输入有效的电话号码"}</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="submit-email" className="block text-xs font-medium text-slate-600 mb-1">
+                      电子邮箱
+                    </label>
+                    <input
+                      ref={emailRef}
+                      id="submit-email"
+                      name="contactEmail"
+                      type="email"
+                      inputMode="email"
+                      autoComplete="email"
+                      value={formValues.contactEmail}
+                      onChange={(e) => {
+                        e.currentTarget.setCustomValidity("");
+                        updateFormField("contactEmail", e.target.value);
+                      }}
+                      onBlur={(e) => handleFieldBlur("contactEmail", e.currentTarget)}
+                      placeholder="例如：citizen@example.com"
+                      enterKeyHint="done"
+                      aria-invalid={Boolean(interacted.contactEmail && fieldErrors.contactEmail)}
+                      aria-describedby={
+                        interacted.contactEmail && fieldErrors.contactEmail
+                          ? "submit-contact-hint submit-email-error"
+                          : "submit-contact-hint"
+                      }
+                      className={`submit-control${
+                        interacted.contactEmail && fieldErrors.contactEmail
+                          ? " user-invalid-fallback"
+                          : ""
+                      }`}
+                    />
+                    <div
+                      id="submit-email-error"
+                      className={`submit-error${
+                        interacted.contactEmail && fieldErrors.contactEmail ? " is-visible" : ""
+                      }`}
+                    >
+                      <AlertCircle size={15} className="shrink-0 mt-0.5" aria-hidden="true" />
+                      <span>{fieldErrors.contactEmail || "请输入有效的电子邮箱"}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -1286,7 +1544,7 @@ export default function SubmitPage() {
                     <span className="text-xs font-semibold text-slate-900 truncate">
                       {isEcommerce ? "智能售后客服" : "12345 智能语音受理员"}
                     </span>
-                    {(hasAnyVoiceDraft || voiceMessages.length > 1) && (
+                    {hasAnyVoiceDraft && (
                       <span
                         className={`rounded-full px-2 py-0.5 text-[11px] font-medium border tabular-nums whitespace-nowrap ${
                           isVoiceDraftReady
@@ -1294,26 +1552,17 @@ export default function SubmitPage() {
                             : "bg-blue-50 text-blue-700 border-blue-200"
                         }`}
                       >
-                        已识别 {filledRequiredCount}/3 项必填
+                        已填齐 {filledRequiredCount}/4 项必填
                       </span>
                     )}
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
-                    {hasAnyVoiceDraft && (
-                      <button
-                        type="button"
-                        onClick={syncVoiceDraftToForm}
-                        className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100 cursor-pointer"
-                      >
-                        转表单微调
-                      </button>
-                    )}
                     {voiceMessages.length > 1 && (
                       <button
                         type="button"
                         disabled={chatPending}
                         onClick={handleResetVoiceChat}
-                        className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-100 cursor-pointer disabled:opacity-50"
+                        className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 min-h-[44px] sm:min-h-[30px] text-[11px] font-medium text-slate-600 hover:bg-slate-100 cursor-pointer disabled:opacity-50"
                       >
                         <RotateCcw size={11} aria-hidden="true" />
                         <span>清空重说</span>
@@ -1365,8 +1614,8 @@ export default function SubmitPage() {
                   {/* AI 思考态脉冲 */}
                   {chatPending && (
                     <div
-                      role="status"
-                      aria-live="polite"
+                      role="progressbar"
+                      aria-label="正在理解诉求并提取要素"
                       className="voice-msg voice-msg--assistant inline-flex items-center gap-2.5 text-slate-600"
                     >
                       <span className="voice-thinking-dots" aria-hidden="true">
@@ -1379,7 +1628,7 @@ export default function SubmitPage() {
                   )}
 
                   {/* 对话内联：实时抽取的诉求工单确认卡（首屏零滚动闭环） */}
-                  {(hasAnyVoiceDraft || voiceMessages.length > 1) && (
+                  {hasAnyVoiceDraft && (
                     <div className="mt-1 rounded-xl border border-slate-200 bg-slate-50/90 p-3.5 space-y-3">
                       <div className="flex items-start justify-between gap-2 flex-wrap">
                         <div className="min-w-0">
@@ -1387,7 +1636,7 @@ export default function SubmitPage() {
                             <Sparkles size={13} className="text-blue-600 shrink-0" aria-hidden="true" />
                             <span>诉求工单草稿</span>
                           </div>
-                          <p className="text-[11px] text-slate-600 mt-0.5">
+                          <p id="voice-draft-status" className="text-[11px] text-slate-600 mt-0.5">
                             {isVoiceDraftReady
                               ? readyToSubmit || missingFields.length === 0
                                 ? "关键要素已齐全，可直接确认提交。"
@@ -1397,47 +1646,173 @@ export default function SubmitPage() {
                         </div>
                       </div>
 
-                      <dl className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                         <div className="rounded-lg bg-white border border-slate-200/80 px-2.5 py-2 min-w-0">
-                          <dt className="flex items-center justify-between gap-1.5 text-[11px] text-slate-500">
+                          <label
+                            htmlFor="draft-category-select"
+                            className="flex items-center justify-between gap-1.5 text-[11px] text-slate-500"
+                          >
                             <span>
                               所属分类 <span className="text-red-600" aria-hidden="true">*</span>
                             </span>
                             <SlotStatusTag filled={hasDraftCategory} />
-                          </dt>
-                          <dd className="mt-1 font-medium text-slate-900 break-words">
-                            {voiceDraft.category || "待识别"}
-                          </dd>
+                          </label>
+                          <select
+                            id="draft-category-select"
+                            value={voiceDraft.category}
+                            onChange={(e) => updateVoiceDraftField("category", e.target.value)}
+                            className="mt-1.5 w-full rounded-md border border-slate-200 bg-slate-50/70 px-2 py-1.5 min-h-[40px] sm:min-h-[32px] text-base sm:text-xs font-medium text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none"
+                          >
+                            <option value="">请选择投诉分类</option>
+                            {categories.map((cat) => (
+                              <option key={cat} value={cat}>
+                                {cat}
+                              </option>
+                            ))}
+                            {voiceDraft.category && !categories.includes(voiceDraft.category) && (
+                              <option value={voiceDraft.category}>{voiceDraft.category}</option>
+                            )}
+                          </select>
                         </div>
+
                         <div className="rounded-lg bg-white border border-slate-200/80 px-2.5 py-2 min-w-0">
-                          <dt className="flex items-center justify-between gap-1.5 text-[11px] text-slate-500">
+                          <label
+                            htmlFor="draft-subdistrict-select"
+                            className="flex items-center justify-between gap-1.5 text-[11px] text-slate-500"
+                          >
                             <span>
                               {regionUnitLabel} <span className="text-red-600" aria-hidden="true">*</span>
                             </span>
                             <SlotStatusTag filled={hasDraftSubdistrict} />
-                          </dt>
-                          <dd className="mt-1 font-medium text-slate-900 break-words">
-                            {voiceDraft.subdistrict || "待识别"}
-                          </dd>
+                          </label>
+                          {subdistricts.length > 0 ? (
+                            <select
+                              id="draft-subdistrict-select"
+                              value={voiceDraft.subdistrict}
+                              onChange={(e) => updateVoiceDraftField("subdistrict", e.target.value)}
+                              className="mt-1.5 w-full rounded-md border border-slate-200 bg-slate-50/70 px-2 py-1.5 min-h-[40px] sm:min-h-[32px] text-base sm:text-xs font-medium text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none"
+                            >
+                              <option value="">请选择{regionUnitLabel}</option>
+                              {subdistricts.map((item) => (
+                                <option key={item} value={item}>
+                                  {item}
+                                </option>
+                              ))}
+                              {voiceDraft.subdistrict && !subdistricts.includes(voiceDraft.subdistrict) && (
+                                <option value={voiceDraft.subdistrict}>{voiceDraft.subdistrict}</option>
+                              )}
+                            </select>
+                          ) : (
+                            <input
+                              id="draft-subdistrict-select"
+                              type="text"
+                              value={voiceDraft.subdistrict}
+                              onChange={(e) => updateVoiceDraftField("subdistrict", e.target.value)}
+                              placeholder={`请输入${regionUnitLabel}`}
+                              className="mt-1.5 w-full rounded-md border border-slate-200 bg-slate-50/70 px-2 py-1.5 min-h-[40px] sm:min-h-[32px] text-base sm:text-xs font-medium text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none"
+                            />
+                          )}
                         </div>
+
                         {voiceDraft.subject.trim() && (
                           <div className="rounded-lg bg-white border border-slate-200/80 px-2.5 py-2 min-w-0">
-                            <dt className="text-[11px] text-slate-500">{subjectLabel}</dt>
-                            <dd className="mt-1 font-medium text-slate-900 break-words">
-                              {voiceDraft.subject}
-                            </dd>
+                            <label htmlFor="draft-subject-input" className="block text-[11px] text-slate-500">
+                              {subjectLabel}
+                            </label>
+                            <input
+                              id="draft-subject-input"
+                              type="text"
+                              value={voiceDraft.subject}
+                              onChange={(e) => updateVoiceDraftField("subject", e.target.value)}
+                              className="mt-1.5 w-full rounded-md border border-slate-200 bg-slate-50/70 px-2 py-1.5 min-h-[38px] sm:min-h-[30px] text-base sm:text-xs font-medium text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none"
+                            />
                           </div>
                         )}
+
                         {voiceDraft.address.trim() && (
                           <div className="rounded-lg bg-white border border-slate-200/80 px-2.5 py-2 min-w-0">
-                            <dt className="text-[11px] text-slate-500">{addressLabel}</dt>
-                            <dd className="mt-1 font-medium text-slate-900 break-words">
-                              {voiceDraft.address}
-                            </dd>
+                            <label htmlFor="draft-address-input" className="block text-[11px] text-slate-500">
+                              {addressLabel}
+                            </label>
+                            <input
+                              id="draft-address-input"
+                              type="text"
+                              value={voiceDraft.address}
+                              onChange={(e) => updateVoiceDraftField("address", e.target.value)}
+                              className="mt-1.5 w-full rounded-md border border-slate-200 bg-slate-50/70 px-2 py-1.5 min-h-[38px] sm:min-h-[30px] text-base sm:text-xs font-medium text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none"
+                            />
                           </div>
                         )}
+
                         <div className="rounded-lg bg-white border border-slate-200/80 px-2.5 py-2 sm:col-span-2 min-w-0">
-                          <dt className="flex items-center justify-between gap-1.5 text-[11px] text-slate-500">
+                          <div className="flex items-center justify-between gap-1.5 text-[11px] text-slate-500">
+                            <span>
+                              联系方式（电话或邮箱至少填一项） <span className="text-red-600" aria-hidden="true">*</span>
+                            </span>
+                            <SlotStatusTag
+                              filled={hasDraftContact}
+                              filledLabel="已填写"
+                              pendingLabel={
+                                draftPhoneFormatError || draftEmailFormatError ? "格式有误" : "二选一必填"
+                              }
+                            />
+                          </div>
+                          <div className="mt-1.5 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <div className="min-w-0">
+                              <label htmlFor="draft-phone-input" className="sr-only">
+                                联系电话
+                              </label>
+                              <input
+                                id="draft-phone-input"
+                                type="tel"
+                                inputMode="tel"
+                                autoComplete="tel"
+                                value={voiceDraft.contactPhone}
+                                onChange={(e) => updateVoiceDraftField("contactPhone", e.target.value)}
+                                placeholder="联系电话（如 13800138000）"
+                                aria-invalid={draftPhoneFormatError}
+                                className={`w-full rounded-md border px-2 py-1.5 min-h-[40px] sm:min-h-[32px] text-base sm:text-xs text-slate-900 focus:bg-white focus:outline-none ${
+                                  draftPhoneFormatError
+                                    ? "border-red-400 bg-red-50/40 focus:border-red-500"
+                                    : "border-slate-200 bg-slate-50/70 focus:border-blue-500"
+                                }`}
+                              />
+                            </div>
+                            <div className="min-w-0">
+                              <label htmlFor="draft-email-input" className="sr-only">
+                                电子邮箱
+                              </label>
+                              <input
+                                id="draft-email-input"
+                                type="email"
+                                inputMode="email"
+                                autoComplete="email"
+                                value={voiceDraft.contactEmail}
+                                onChange={(e) => updateVoiceDraftField("contactEmail", e.target.value)}
+                                placeholder="或电子邮箱（如 user@example.com）"
+                                aria-invalid={draftEmailFormatError}
+                                className={`w-full rounded-md border px-2 py-1.5 min-h-[40px] sm:min-h-[32px] text-base sm:text-xs text-slate-900 focus:bg-white focus:outline-none ${
+                                  draftEmailFormatError
+                                    ? "border-red-400 bg-red-50/40 focus:border-red-500"
+                                    : "border-slate-200 bg-slate-50/70 focus:border-blue-500"
+                                }`}
+                              />
+                            </div>
+                          </div>
+                          {(draftPhoneFormatError || draftEmailFormatError) && (
+                            <p className="mt-1 text-[11px] text-red-600">
+                              {draftPhoneFormatError
+                                ? "电话格式不正确（支持 11 位手机号或区号座机）"
+                                : "邮箱格式不正确（如 name@example.com）"}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="rounded-lg bg-white border border-slate-200/80 px-2.5 py-2 sm:col-span-2 min-w-0">
+                          <label
+                            htmlFor="draft-content-textarea"
+                            className="flex items-center justify-between gap-1.5 text-[11px] text-slate-500"
+                          >
                             <span>
                               诉求内容 <span className="text-red-600" aria-hidden="true">*</span>
                             </span>
@@ -1447,130 +1822,166 @@ export default function SubmitPage() {
                                 voiceDraft.content.trim().length > 0 ? "需至少 6 字" : "待补充"
                               }
                             />
-                          </dt>
-                          <dd className="mt-1 font-medium text-slate-900 whitespace-pre-wrap break-words line-clamp-3">
-                            {voiceDraft.content || "等待语音或文字补充…"}
-                          </dd>
+                          </label>
+                          <textarea
+                            id="draft-content-textarea"
+                            rows={2}
+                            value={voiceDraft.content}
+                            onChange={(e) => updateVoiceDraftField("content", e.target.value)}
+                            placeholder="可以直接修改或补充具体情况（至少 6 个字）"
+                            className="mt-1.5 w-full rounded-md border border-slate-200 bg-slate-50/70 px-2 py-1.5 text-base sm:text-xs font-medium leading-relaxed text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none resize-y"
+                          />
                         </div>
-                      </dl>
+                      </div>
 
                       <div className="flex flex-wrap items-center gap-2 pt-0.5">
                         <button
                           type="button"
-                          disabled={submitting}
+                          disabled={submitting || !isVoiceDraftReady}
+                          aria-describedby="voice-draft-status"
                           onClick={() => void handleVoiceDraftSubmit()}
-                          className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-700 cursor-pointer disabled:opacity-60"
+                          className={
+                            isVoiceDraftReady
+                              ? "inline-flex min-h-11 sm:min-h-10 w-full items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-700 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                              : "inline-flex min-h-11 sm:min-h-10 w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-100 px-3.5 py-2 text-xs font-medium text-slate-500 cursor-not-allowed"
+                          }
                         >
-                          <CheckCircle2 size={15} aria-hidden="true" />
-                          <span>{submitting ? "正在提交..." : "一键确认提交投诉"}</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={syncVoiceDraftToForm}
-                          className="inline-flex min-h-10 items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 cursor-pointer"
-                        >
-                          同步到表单微调
+                          {submitting ? (
+                            <>
+                              <CheckCircle2 size={15} aria-hidden="true" />
+                              <span>正在提交...</span>
+                            </>
+                          ) : !isVoiceDraftReady ? (
+                            <>
+                              <AlertCircle size={15} aria-hidden="true" />
+                              <span>请先补充：{missingRequiredLabels.join("、")}</span>
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle2 size={15} aria-hidden="true" />
+                              <span>一键确认提交投诉</span>
+                            </>
+                          )}
                         </button>
                       </div>
                     </div>
                   )}
                 </div>
 
-                {/* 仅在录音、准备语音或提示异常时轻量化显示，避免常驻技术术语 */}
-                {(asr.isRecording ||
-                  asr.status === "downloading" ||
-                  asr.status === "initializing" ||
-                  asr.error) && (
+                {/* 仅在模型下载或出现错误时轻量化显示；常规录音态与实时声波直接合入麦克风图标与输入框 */}
+                {(asr.status === "downloading" || Boolean(asr.error)) && (
                   <div className="px-3.5 pt-2 shrink-0">
                     <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 space-y-1.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="truncate font-medium text-slate-700">
-                          {asr.isRecording
-                            ? "正在聆听，请清晰描述问题…"
-                            : asr.status === "downloading"
-                              ? "正在准备本地语音识别…"
-                              : asr.status === "initializing"
-                                ? "正在打开麦克风…"
-                                : asr.statusHint}
-                        </span>
-                        {asr.status === "downloading" && (
-                          <span className="font-mono tabular-nums text-blue-600 shrink-0">
-                            {Math.round(asr.downloadPercent)}%
-                          </span>
-                        )}
-                      </div>
                       {asr.status === "downloading" && (
-                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
-                          <div
-                            className="h-full bg-blue-600 transition-all"
-                            style={{ width: `${asr.downloadPercent}%` }}
-                          />
-                        </div>
-                      )}
-                      {asr.isRecording && (
-                        <div className="space-y-1">
+                        <>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="truncate font-medium text-slate-700">
+                              正在准备本地语音识别…
+                            </span>
+                            <span className="font-mono tabular-nums text-blue-600 shrink-0">
+                              {Math.round(asr.downloadPercent)}%
+                            </span>
+                          </div>
                           <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
                             <div
-                              className="h-full bg-emerald-500 transition-all duration-75"
-                              style={{ width: `${Math.min(100, Math.max(8, Math.round(asr.audioLevel * 100)))}%` }}
+                              className="h-full bg-blue-600 transition-all"
+                              style={{ width: `${asr.downloadPercent}%` }}
                             />
                           </div>
-                          {asr.interimText && (
-                            <div className="text-slate-800 bg-white rounded px-2 py-1 border border-slate-200">
-                              实时转写：{asr.interimText}
-                            </div>
-                          )}
-                        </div>
+                        </>
                       )}
                       {asr.error && <p className="text-amber-700 font-medium">{asr.error}</p>}
                     </div>
                   </div>
                 )}
 
-                {/* 底部一体化输入胶囊（语音键 + 自动增高输入框 + 发送按钮） */}
+                {/* 底部一体化输入条（自适应输入框 + 右侧语音与发送操作组） */}
                 <form onSubmit={handleVoiceChatFormSubmit} className="voice-composer">
                   <label htmlFor="voice-chat-input" className="visually-hidden">
                     输入诉求内容
                   </label>
+                  {asr.isRecording && asr.interimText.trim() && chatInput.trim() && (
+                    <p className="px-2 pb-1 text-[11px] text-slate-500 truncate" aria-live="polite">
+                      实时转写：{asr.interimText}
+                    </p>
+                  )}
                   <div className="voice-composer__box">
-                    <button
-                      type="button"
-                      onClick={() => void handleVoiceToggle()}
-                      aria-pressed={asr.isRecording}
-                      aria-label={asr.isRecording ? "停止录音并发送" : "点击开始语音输入"}
-                      className={`voice-record-btn${asr.isRecording ? " is-recording" : ""}`}
-                    >
-                      {asr.isRecording ? (
-                        <>
-                          <MicOff size={15} aria-hidden="true" />
-                          <span>结束发送</span>
-                        </>
-                      ) : (
-                        <>
-                          <Mic size={15} aria-hidden="true" />
-                          <span>{asr.status === "initializing" ? "开启中…" : "语音"}</span>
-                        </>
-                      )}
-                    </button>
-
                     <textarea
+                      ref={voiceInputRef}
                       id="voice-chat-input"
                       rows={1}
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
                       onKeyDown={handleVoiceTextareaKeyDown}
-                      placeholder="说话或输入问题…（Enter 发送）"
+                      placeholder={
+                        asr.isRecording
+                          ? asr.interimText
+                            ? `实时转写：${asr.interimText}`
+                            : "正在聆听，请直接说话…"
+                          : asr.status === "initializing"
+                            ? "正在打开麦克风…"
+                            : "说话或输入问题…"
+                      }
                       className="voice-composer__input"
                     />
 
-                    <button
-                      type="submit"
-                      disabled={chatPending || !chatInput.trim()}
-                      aria-label="发送消息"
-                      className="voice-send-btn"
-                    >
-                      <Send size={16} aria-hidden="true" />
-                    </button>
+                    <div className="voice-composer__actions">
+                      <button
+                        type="button"
+                        onClick={() => void handleVoiceToggle()}
+                        aria-pressed={asr.isRecording}
+                        title={
+                          asr.isRecording || asr.status === "initializing" || asr.status === "downloading"
+                            ? "点击停止语音输入"
+                            : "点击开始语音输入"
+                        }
+                        aria-label={
+                          asr.isRecording || asr.status === "initializing" || asr.status === "downloading"
+                            ? "停止语音输入"
+                            : "点击开始语音输入"
+                        }
+                        style={
+                          asr.isRecording
+                            ? ({
+                                "--mic-level": String(
+                                  Math.min(1, Math.max(0.2, asr.audioLevel * 1.8)).toFixed(2)
+                                ),
+                              } as React.CSSProperties)
+                            : undefined
+                        }
+                        className={`voice-record-btn${
+                          asr.isRecording
+                            ? " is-recording"
+                            : asr.status === "initializing" || asr.status === "downloading"
+                              ? " is-initializing"
+                              : ""
+                        }`}
+                      >
+                        {asr.isRecording ? (
+                          <span className="voice-eq-bars" aria-hidden="true">
+                            <span />
+                            <span />
+                            <span />
+                          </span>
+                        ) : asr.status === "initializing" || asr.status === "downloading" ? (
+                          <RefreshCw size={15} className="motion-safe:animate-spin" aria-hidden="true" />
+                        ) : (
+                          <Mic size={17} aria-hidden="true" />
+                        )}
+                      </button>
+
+                      <button
+                        type="submit"
+                        disabled={
+                          chatPending || !(chatInput.trim() || (asr.isRecording && asr.interimText.trim()))
+                        }
+                        aria-label="发送消息"
+                        title="发送消息"
+                        className="voice-send-btn"
+                      >
+                        <Send size={15} aria-hidden="true" />
+                      </button>
+                    </div>
                   </div>
                 </form>
               </div>
@@ -1609,7 +2020,7 @@ export default function SubmitPage() {
               type="button"
               onClick={() => void fetchMyTickets()}
               disabled={ticketsLoading}
-              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 min-h-[44px] sm:min-h-[30px] text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
             >
               <RefreshCw size={13} className={ticketsLoading ? "animate-spin" : ""} aria-hidden="true" />
               <span>刷新</span>
@@ -1663,7 +2074,7 @@ export default function SubmitPage() {
                           <span className="text-xs text-slate-500">· {ticket.subdistrict}</span>
                         ) : null}
                       </div>
-                      <time className="text-xs text-slate-400 tabular-nums">
+                      <time className="text-xs text-slate-500 tabular-nums">
                         {ticket.createdAt ? new Date(ticket.createdAt).toLocaleString("zh-CN") : ""}
                       </time>
                     </div>
@@ -1714,7 +2125,7 @@ export default function SubmitPage() {
                                 type="button"
                                 disabled={reopeningId === ticket.id}
                                 onClick={() => void handleConfirmReopen(ticket.id)}
-                                className="inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 cursor-pointer disabled:opacity-60"
+                                className="inline-flex min-h-11 sm:min-h-10 items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 cursor-pointer disabled:opacity-60"
                               >
                                 <RotateCcw size={13} aria-hidden="true" />
                                 <span>
@@ -1727,7 +2138,7 @@ export default function SubmitPage() {
                                   setReopenTargetId(null);
                                   setReopenReason("");
                                 }}
-                                className="inline-flex min-h-10 items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
+                                className="inline-flex min-h-11 sm:min-h-10 items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
                               >
                                 取消
                               </button>
@@ -1740,7 +2151,7 @@ export default function SubmitPage() {
                               setReopenTargetId(ticket.id);
                               setReopenReason("");
                             }}
-                            className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 cursor-pointer"
+                            className="inline-flex min-h-11 sm:min-h-10 items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 cursor-pointer"
                           >
                             <RotateCcw size={13} aria-hidden="true" />
                             <span>问题未解决 · 申请重开核查</span>

@@ -3,10 +3,18 @@
 import React, { useRef, useEffect, useState, useCallback } from "react";
 import dynamic from "next/dynamic";
 import type { GraphData, GraphNode } from "@/backend/state";
-import { RefreshCw, Network, X } from "lucide-react";
+import { RefreshCw, Network, X, ZoomIn, ZoomOut } from "lucide-react";
 import { Card } from "@/app/_components/ui/card";
 import { Button } from "@/app/_components/ui/button";
 import { Badge } from "@/app/_components/ui/badge";
+
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
 
 // Dynamically import ForceGraph2D with ssr: false for Next.js
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
@@ -88,6 +96,7 @@ export const GraphVisualizer: React.FC<GraphVisualizerProps> = ({
   const fgRef = useRef<any>(null);
   const hasFittedRef = useRef(false);
   const forcesAppliedRef = useRef(false);
+  const placedLabelBoxesRef = useRef<Array<{ x: number; y: number; w: number; h: number }>>([]);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null);
@@ -160,20 +169,41 @@ export const GraphVisualizer: React.FC<GraphVisualizerProps> = ({
     };
   }, [graphData, dimensions.width, dimensions.height, applyForces]);
 
+  useEffect(() => {
+    if (!selectedNode) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setSelectedNode(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedNode]);
+
   const handleNodeClick = (node: any) => {
     setSelectedNode(node);
     if (fgRef.current) {
-      fgRef.current.centerAt(node.x, node.y, 700);
-      fgRef.current.zoom(2.2, 700);
+      const duration = prefersReducedMotion() ? 0 : 700;
+      fgRef.current.centerAt(node.x, node.y, duration);
+      fgRef.current.zoom(2.2, duration);
     }
     if (onNodeClick) {
       onNodeClick(node);
     }
   };
 
+  const handleZoomBy = (factor: number) => {
+    if (!fgRef.current || typeof fgRef.current.zoom !== "function") return;
+    const current = Number(fgRef.current.zoom()) || 1;
+    const next = Math.min(8, Math.max(0.35, current * factor));
+    fgRef.current.zoom(next, prefersReducedMotion() ? 0 : 220);
+  };
+
+  const fitPadding = Math.max(36, Math.min(64, Math.round(dimensions.height * 0.14)));
+
   const handleResetZoom = () => {
     if (fgRef.current) {
-      fgRef.current.zoomToFit(450, 44);
+      fgRef.current.zoomToFit(prefersReducedMotion() ? 0 : 450, fitPadding);
       setSelectedNode(null);
     }
   };
@@ -181,19 +211,19 @@ export const GraphVisualizer: React.FC<GraphVisualizerProps> = ({
   const cardShell = (
     <Card
       className={`w-full min-w-0 rounded-xl overflow-hidden border border-border bg-card flex flex-col relative p-0 shadow-2xs ${
-        embedded ? "h-[420px] sm:h-[560px]" : "h-[560px] sm:h-[700px]"
+        embedded ? "h-[520px] sm:h-[560px]" : "h-[580px] sm:h-[700px]"
       }`}
     >
       {/* Top Control Bar */}
       <div className="p-3 sm:p-4 border-b border-border bg-card flex flex-col gap-2.5 z-10 min-w-0">
         <div className="flex items-start sm:items-center justify-between gap-2.5 flex-wrap min-w-0">
-          <div className="flex items-start sm:items-center gap-2.5 sm:gap-3 min-w-[200px] flex-1">
+          <div className="flex items-start sm:items-center gap-2.5 sm:gap-3 min-w-[min(100%,240px)] flex-1">
             <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
-              <Network className="w-4 h-4" />
+              <Network className="w-4 h-4" aria-hidden="true" />
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2 min-w-0">
-                <h2 className="text-sm font-bold text-foreground tracking-tight whitespace-nowrap">
+                <h2 className="text-sm font-bold text-foreground tracking-tight">
                   全景多频图谱拓扑
                 </h2>
                 <Badge
@@ -209,18 +239,42 @@ export const GraphVisualizer: React.FC<GraphVisualizerProps> = ({
             </div>
           </div>
 
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleResetZoom}
-            aria-label="适应屏幕"
-            className="text-xs h-8 bg-card border-border text-foreground hover:bg-muted whitespace-nowrap shrink-0"
-            title="重置居中"
-          >
-            <RefreshCw className="w-3.5 h-3.5 mr-1 shrink-0" />
-            <span>适应屏幕</span>
-          </Button>
+          <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleZoomBy(1.35)}
+              aria-label="放大图谱"
+              title="放大"
+              className="text-xs min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 sm:h-8 sm:w-8 p-0 bg-card border-border text-foreground hover:bg-muted shrink-0"
+            >
+              <ZoomIn className="w-3.5 h-3.5" aria-hidden="true" />
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleZoomBy(0.75)}
+              aria-label="缩小图谱"
+              title="缩小"
+              className="text-xs min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 sm:h-8 sm:w-8 p-0 bg-card border-border text-foreground hover:bg-muted shrink-0"
+            >
+              <ZoomOut className="w-3.5 h-3.5" aria-hidden="true" />
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleResetZoom}
+              aria-label="适应屏幕"
+              className="text-xs min-h-[44px] sm:min-h-0 sm:h-8 bg-card border-border text-foreground hover:bg-muted whitespace-nowrap shrink-0"
+              title="重置居中"
+            >
+              <RefreshCw className="w-3.5 h-3.5 mr-1 shrink-0" aria-hidden="true" />
+              <span>适应屏幕</span>
+            </Button>
+          </div>
         </div>
 
         {/* Graph Legend */}
@@ -262,7 +316,14 @@ export const GraphVisualizer: React.FC<GraphVisualizerProps> = ({
         className="flex-1 min-w-0 min-h-0 w-full overflow-hidden bg-slate-50/70 relative"
         style={{ cursor: hoveredNode ? "pointer" : "grab" }}
       >
-        {dimensions.width > 0 && dimensions.height > 0 && (
+        {graphData.nodes.length === 0 ? (
+          <div className="h-full w-full flex flex-col items-center justify-center gap-2 px-4 text-center text-xs text-slate-500">
+            <Network className="w-7 h-7 text-slate-400" aria-hidden="true" />
+            <span>当前辖区暂无可展示的图谱关联节点数据</span>
+          </div>
+        ) : (
+          dimensions.width > 0 &&
+          dimensions.height > 0 && (
           <ForceGraph2D
             ref={fgRef}
             width={dimensions.width}
@@ -283,6 +344,9 @@ export const GraphVisualizer: React.FC<GraphVisualizerProps> = ({
             linkWidth={(link: any) => (link?.isFakeClosure ? 1.8 : 1.2)}
             onNodeClick={handleNodeClick}
             onNodeHover={(node: any) => setHoveredNode((node as GraphNode) || null)}
+            onRenderFramePre={() => {
+              placedLabelBoxesRef.current = [];
+            }}
             onEngineTick={() => {
               if (!forcesAppliedRef.current && fgRef.current && applyForces(fgRef.current)) {
                 forcesAppliedRef.current = true;
@@ -291,7 +355,7 @@ export const GraphVisualizer: React.FC<GraphVisualizerProps> = ({
             onEngineStop={() => {
               if (!hasFittedRef.current && fgRef.current && graphData.nodes.length > 0) {
                 hasFittedRef.current = true;
-                fgRef.current.zoomToFit(450, 44);
+                fgRef.current.zoomToFit(prefersReducedMotion() ? 0 : 450, fitPadding);
               }
             }}
             nodePointerAreaPaint={(node: any, color: string, ctx: CanvasRenderingContext2D) => {
@@ -385,6 +449,17 @@ export const GraphVisualizer: React.FC<GraphVisualizerProps> = ({
               const pillH = fontSize + padY * 2;
               const pillX = node.x - pillW / 2;
               const pillY = node.y + radius + 4.5 / effectiveScale;
+              const gap = 3 / effectiveScale;
+              const isPriority = node.type === "THEME" || isHovered || isSelected;
+              const collides = placedLabelBoxesRef.current.some(
+                (b) =>
+                  pillX - gap < b.x + b.w &&
+                  pillX + pillW + gap > b.x &&
+                  pillY - gap < b.y + b.h &&
+                  pillY + pillH + gap > b.y
+              );
+              if (!isPriority && collides) return;
+              placedLabelBoxesRef.current.push({ x: pillX, y: pillY, w: pillW, h: pillH });
 
               drawRoundedRect(ctx, pillX, pillY, pillW, pillH, pillH / 2);
               ctx.fillStyle =
@@ -403,11 +478,16 @@ export const GraphVisualizer: React.FC<GraphVisualizerProps> = ({
               ctx.fillText(label, node.x, pillY + pillH / 2);
             }}
           />
+          )
         )}
 
         {/* Node Inspector Overlay */}
         {selectedNode && (
-          <div className="absolute inset-x-3 bottom-3 sm:inset-x-auto sm:left-4 sm:bottom-4 sm:max-w-sm bg-card/95 backdrop-blur-sm border border-border p-3.5 sm:p-4 rounded-xl shadow-xl text-xs z-20 space-y-2">
+          <div
+            role="region"
+            aria-label="节点详情"
+            className="absolute inset-x-3 bottom-3 sm:inset-x-auto sm:left-4 sm:bottom-4 sm:max-w-sm bg-card/95 backdrop-blur-sm border border-border p-3.5 sm:p-4 rounded-xl shadow-xl text-xs z-20 space-y-2"
+          >
             <div className="flex items-center justify-between gap-2">
               <span className="font-bold text-primary uppercase text-[10px] tracking-wide whitespace-nowrap">
                 {NODE_TYPE_LABELS[selectedNode.type] || selectedNode.type} 节点详情
@@ -416,9 +496,9 @@ export const GraphVisualizer: React.FC<GraphVisualizerProps> = ({
                 type="button"
                 onClick={() => setSelectedNode(null)}
                 aria-label="关闭节点详情"
-                className="w-7 h-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer transition-colors"
+                className="min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 sm:w-7 sm:h-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer transition-colors"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
             </div>
             <div className="font-semibold text-foreground text-sm break-words">

@@ -23,6 +23,7 @@ export async function POST(req: Request) {
       subject?: unknown;
       address?: unknown;
       contactPhone?: unknown;
+      contactEmail?: unknown;
       source?: unknown;
       skipAutoCluster?: unknown;
       regionId?: unknown;
@@ -38,6 +39,8 @@ export async function POST(req: Request) {
     const content = typeof body.content === "string" ? body.content.trim() : "";
     const subdistrict = typeof body.subdistrict === "string" ? body.subdistrict.trim() : "";
     const category = typeof body.category === "string" ? body.category.trim() : "";
+    const contactPhone = typeof body.contactPhone === "string" ? body.contactPhone.trim() : "";
+    const contactEmail = typeof body.contactEmail === "string" ? body.contactEmail.trim() : "";
 
     if (content.length < 6) {
       return NextResponse.json(
@@ -70,6 +73,45 @@ export async function POST(req: Request) {
       );
     }
 
+    const normalizedPhone = contactPhone.replace(/[\s-]/g, "");
+    const phoneOk =
+      !contactPhone ||
+      /^1[3-9]\d{9}$/.test(normalizedPhone) ||
+      /^0\d{2,3}-?\d{7,8}$/.test(contactPhone.replace(/\s+/g, ""));
+    if (!phoneOk) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "INVALID_PARAMS",
+          error: "联系电话格式不正确，请输入 11 位手机号或区号座机",
+        },
+        { status: 400 }
+      );
+    }
+
+    const emailOk = !contactEmail || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail);
+    if (!emailOk) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "INVALID_PARAMS",
+          error: "电子邮箱格式不正确，请核对后重试",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (!contactPhone && !contactEmail) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "INVALID_PARAMS",
+          error: "请至少填写联系电话或电子邮箱，以便工作人员跟进回访",
+        },
+        { status: 400 }
+      );
+    }
+
     const regionId = await resolveRequestRegionId(
       req,
       typeof body.regionId === "string" ? body.regionId : undefined
@@ -85,7 +127,8 @@ export async function POST(req: Request) {
       category,
       subject: typeof body.subject === "string" ? body.subject : undefined,
       address: typeof body.address === "string" ? body.address : undefined,
-      contactPhone: typeof body.contactPhone === "string" ? body.contactPhone : undefined,
+      contactPhone: contactPhone || undefined,
+      contactEmail: contactEmail || undefined,
       source: body.source === "AGENT_VOICE" ? "AGENT_VOICE" : "FORM",
       skipAutoCluster: body.skipAutoCluster === true,
     });

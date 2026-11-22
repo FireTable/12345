@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import {
   Building2,
@@ -129,8 +129,11 @@ export default function AdminRegionsPage() {
   // SVG 地图上传模态框
   const [uploadModalRegion, setUploadModalRegion] = useState<RegionWithStats | null>(null);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [svgDragOver, setSvgDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [previewSvgUrl, setPreviewSvgUrl] = useState<string | null>(null);
+  const regionsControllerRef = useRef<AbortController | null>(null);
+  const mcpControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     return () => {
@@ -139,6 +142,13 @@ export default function AdminRegionsPage() {
       }
     };
   }, [previewSvgUrl]);
+
+  useEffect(() => {
+    return () => {
+      regionsControllerRef.current?.abort();
+      mcpControllerRef.current?.abort();
+    };
+  }, []);
 
   // 删除站点确认弹窗
   const [deletingRegion, setDeletingRegion] = useState<RegionWithStats | null>(null);
@@ -152,28 +162,46 @@ export default function AdminRegionsPage() {
   } | null>(null);
 
   const fetchRegions = async () => {
+    regionsControllerRef.current?.abort();
+    const controller = new AbortController();
+    regionsControllerRef.current = controller;
     try {
       setLoading(true);
-      const res = await fetch("/api/admin/regions");
-      const raw = await res.json();
-      const list = raw.data?.regions || raw.regions;
+      const res = await fetch("/api/admin/regions", { signal: controller.signal });
+      const raw = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(raw?.error || `HTTP ${res.status}`);
+      }
+      if (controller.signal.aborted) return;
+      const list = raw?.data?.regions || raw?.regions;
       if (Array.isArray(list)) {
         setRegions(list);
       }
     } catch (err: any) {
+      if (err?.name === "AbortError" || controller.signal.aborted) return;
       toast.error("获取地区站点列表失败");
     } finally {
-      setLoading(false);
+      if (regionsControllerRef.current === controller) {
+        setLoading(false);
+      }
     }
   };
 
   const fetchMcpClients = async () => {
+    mcpControllerRef.current?.abort();
+    const controller = new AbortController();
+    mcpControllerRef.current = controller;
     try {
-      const res = await fetch("/api/admin/mcp-clients");
-      const raw = await res.json();
-      const list = raw.data?.clients;
+      const res = await fetch("/api/admin/mcp-clients", { signal: controller.signal });
+      const raw = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(raw?.error || `HTTP ${res.status}`);
+      }
+      if (controller.signal.aborted) return;
+      const list = raw?.data?.clients;
       setMcpClients(Array.isArray(list) ? list : []);
-    } catch {
+    } catch (err: any) {
+      if (err?.name === "AbortError" || controller.signal.aborted) return;
       toast.error("获取已接入的 Agent 失败");
     }
   };
@@ -358,10 +386,9 @@ export default function AdminRegionsPage() {
   };
 
   // SVG 地图上传处理
-  const handleMapFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const applySelectedSvgFile = (file: File | undefined) => {
     if (!file) return;
-    if (!file.name.endsWith(".svg")) {
+    if (!file.name.toLowerCase().endsWith(".svg")) {
       toast.error("请选择 .svg 格式的矢量地图文件");
       return;
     }
@@ -371,6 +398,10 @@ export default function AdminRegionsPage() {
       if (prev) URL.revokeObjectURL(prev);
       return nextUrl;
     });
+  };
+
+  const handleMapFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    applySelectedSvgFile(e.target.files?.[0]);
   };
 
   const handleUploadMapSubmit = async () => {
@@ -501,7 +532,7 @@ export default function AdminRegionsPage() {
                     </span>
                   )}
                 </div>
-                <div className="text-[11px] text-slate-400 font-mono mt-0.5 truncate">
+                <div className="text-[11px] text-slate-500 font-mono mt-0.5 truncate">
                   Schema: {r.schemaName}
                 </div>
               </div>
@@ -513,7 +544,7 @@ export default function AdminRegionsPage() {
                   type="button"
                   onClick={() => handleSetDefault(r)}
                   aria-label={`将 ${r.name} 设为系统默认站点`}
-                  className="min-h-[44px] min-w-[44px] sm:min-h-[32px] sm:min-w-[32px] p-1.5 inline-flex items-center justify-center text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-md transition-colors cursor-pointer"
+                  className="min-h-[44px] min-w-[44px] sm:min-h-[32px] sm:min-w-[32px] p-1.5 inline-flex items-center justify-center text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-md transition-colors cursor-pointer"
                   title="设为系统默认站点"
                 >
                   <Star className="h-3.5 w-3.5" aria-hidden="true" />
@@ -523,7 +554,7 @@ export default function AdminRegionsPage() {
                 type="button"
                 onClick={() => setDeletingRegion(r)}
                 aria-label={`释放 ${r.name} 物理 Schema`}
-                className="min-h-[44px] min-w-[44px] sm:min-h-[32px] sm:min-w-[32px] p-1.5 inline-flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
+                className="min-h-[44px] min-w-[44px] sm:min-h-[32px] sm:min-w-[32px] p-1.5 inline-flex items-center justify-center text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
                 title="释放站点物理 Schema"
               >
                 <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
@@ -592,7 +623,7 @@ export default function AdminRegionsPage() {
                   title="从官方权威测绘源在线拉取区县级高精边界并存放在站点中"
                 >
                   {fetchingBoundaryId === r.id ? (
-                    <Loader2 className="h-3 w-3 animate-spin text-blue-600 shrink-0" aria-hidden="true" />
+                    <Loader2 className="h-3 w-3 motion-safe:animate-spin text-blue-600 shrink-0" aria-hidden="true" />
                   ) : (
                     <Compass className="h-3 w-3 text-blue-600 shrink-0" aria-hidden="true" />
                   )}
@@ -694,12 +725,12 @@ export default function AdminRegionsPage() {
       {/* 头部导航与操作栏 */}
       <div className="page-hero">
         <div className="min-w-0">
-          <div className="page-hero__title flex items-center gap-2 flex-wrap">
+          <h1 className="page-hero__title flex items-center gap-2 flex-wrap">
             <span>{isEcommerceOnly ? "电商客诉多租户与算力控制台" : "12345 站点纳管与多租户控制台"}</span>
             <span className="rounded-full bg-blue-50 border border-blue-200/80 px-2 py-0.5 text-[11px] font-semibold text-blue-700 whitespace-nowrap">
               SuperAdmin 物理 Schema 隔离
             </span>
-          </div>
+          </h1>
           <div className="page-hero__desc">
             {isEcommerceOnly
               ? "全渠道电商客诉租户纳管 · PostgreSQL Schema 物理隔离 · 渠道仓网词典与 Colab GPU 算力热插拔"
@@ -791,7 +822,7 @@ export default function AdminRegionsPage() {
             <h2 className="text-sm font-bold text-slate-900">已接入的 Agent</h2>
             <span className="text-xs text-slate-500 font-mono tabular-nums">({mcpClients.length})</span>
           </div>
-          <span className="text-xs text-slate-400">
+          <span className="text-xs text-slate-500">
             MCP 地址 /api/mcp · 已登录后打开 /mcp/authorize 签发 access key
           </span>
         </div>
@@ -832,7 +863,7 @@ export default function AdminRegionsPage() {
                 ({govRegions.length} 个独立 PostgreSQL Schema)
               </span>
             </div>
-            <span className="text-xs text-slate-400">
+            <span className="text-xs text-slate-500">
               各政务区县具有独立的工单库、多频聚类库、镇街网格字典与 GIS 地图配置
             </span>
           </div>
@@ -858,7 +889,7 @@ export default function AdminRegionsPage() {
                 ({ecomRegions.length} 个独立行业 Schema)
               </span>
             </div>
-            <span className="text-xs text-slate-400">
+            <span className="text-xs text-slate-500">
               {govRegions.length > 0
                 ? "复用平台多租户 Schema、PII 脱敏、假闭环与多频聚类引擎，独立口径不计入政务 12345 总量"
                 : "各电商客诉租户具有独立的工单库、多频案卷库与全渠道仓网词典"}
@@ -920,8 +951,8 @@ export default function AdminRegionsPage() {
                 目标行政区划与标识
               </div>
               <span className="text-slate-300" aria-hidden="true">➔</span>
-              <div className={`flex items-center gap-1.5 ${scoutStep === 2 ? "text-blue-600 font-bold" : "text-slate-400"}`}>
-                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${scoutStep === 2 ? "bg-blue-600 text-white" : "bg-slate-200 text-slate-500"}`}>
+              <div className={`flex items-center gap-1.5 ${scoutStep === 2 ? "text-blue-600 font-bold" : "text-slate-500"}`}>
+                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${scoutStep === 2 ? "bg-blue-600 text-white" : "bg-slate-200 text-slate-600"}`}>
                   2
                 </span>
                 AI 提取字典底座核验与创建
@@ -932,15 +963,23 @@ export default function AdminRegionsPage() {
           {/* Modal 内容区 */}
           <div className="p-4 sm:p-6 overflow-y-auto flex-1">
             {scoutStep === 1 && (
-              <div className="space-y-4">
+              <form
+                id="scout-step1-form"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void handleRunAiScout();
+                }}
+                className="space-y-4"
+              >
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
                   <div>
                     <label htmlFor="scout-province" className="text-xs font-semibold text-slate-700 mb-1 block">
-                      所属省份 / 直辖市 <span className="text-rose-500">*</span>
+                      所属省份 / 直辖市 <span className="text-rose-500" aria-hidden="true">*</span>
                     </label>
                     <input
                       id="scout-province"
                       type="text"
+                      required
                       value={scoutForm.province}
                       onChange={(e) => setScoutForm({ ...scoutForm, province: e.target.value })}
                       placeholder="例如：广东省、浙江省"
@@ -949,11 +988,12 @@ export default function AdminRegionsPage() {
                   </div>
                   <div>
                     <label htmlFor="scout-city" className="text-xs font-semibold text-slate-700 mb-1 block">
-                      所属地级市 <span className="text-rose-500">*</span>
+                      所属地级市 <span className="text-rose-500" aria-hidden="true">*</span>
                     </label>
                     <input
                       id="scout-city"
                       type="text"
+                      required
                       value={scoutForm.city}
                       onChange={(e) => setScoutForm({ ...scoutForm, city: e.target.value })}
                       placeholder="例如：广州市、深圳市、佛山市"
@@ -962,11 +1002,12 @@ export default function AdminRegionsPage() {
                   </div>
                   <div>
                     <label htmlFor="scout-district" className="text-xs font-semibold text-slate-700 mb-1 block">
-                      管辖区县 / 县级市 <span className="text-rose-500">*</span>
+                      管辖区县 / 县级市 <span className="text-rose-500" aria-hidden="true">*</span>
                     </label>
                     <input
                       id="scout-district"
                       type="text"
+                      required
                       value={scoutForm.district}
                       onChange={(e) => handleDistrictChange(e.target.value)}
                       placeholder="例如：天河区、海珠区、南山区"
@@ -978,17 +1019,22 @@ export default function AdminRegionsPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-2">
                   <div>
                     <label htmlFor="scout-schema-id" className="text-xs font-semibold text-slate-700 mb-1 block">
-                      站点英文唯一标识 (Schema ID) <span className="text-rose-500">*</span>
+                      站点英文唯一标识 (Schema ID) <span className="text-rose-500" aria-hidden="true">*</span>
                     </label>
                     <input
                       id="scout-schema-id"
                       type="text"
+                      required
+                      aria-describedby="scout-schema-hint"
+                      autoCorrect="off"
+                      autoCapitalize="none"
+                      spellCheck={false}
                       value={scoutForm.id}
                       onChange={(e) => setScoutForm({ ...scoutForm, id: e.target.value })}
                       placeholder="如: gz_tianhe, sz_nanshan"
                       className="w-full min-h-[44px] sm:min-h-0 rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs font-mono text-slate-800 focus:border-blue-500 focus:bg-white focus:outline-none"
                     />
-                    <span className="text-[11px] text-slate-400 mt-1 block">
+                    <span id="scout-schema-hint" className="text-[11px] text-slate-500 mt-1 block">
                       将在 PostgreSQL 自动创建独立 Schema：<code className="text-blue-600 font-mono">region_{scoutForm.id}</code>
                     </span>
                   </div>
@@ -1008,7 +1054,7 @@ export default function AdminRegionsPage() {
 
                 {/* 推荐热门区县快捷填充 */}
                 <div className="pt-2">
-                  <span className="text-[11px] text-slate-400 block mb-1.5">快捷示范填入：</span>
+                  <span className="text-[11px] text-slate-500 block mb-1.5">快捷示范填入：</span>
                   <div className="flex flex-wrap gap-2">
                     {[
                       { city: "广州市", district: "天河区", id: "gz_tianhe" },
@@ -1028,7 +1074,7 @@ export default function AdminRegionsPage() {
                             id: item.id,
                           });
                         }}
-                        className="min-h-[44px] sm:min-h-0 px-2.5 py-1 text-[11px] rounded bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-600 border border-slate-200/80 transition-colors cursor-pointer"
+                        className="min-h-[44px] sm:min-h-[24px] px-2.5 py-1 text-[11px] rounded bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-600 border border-slate-200/80 transition-colors cursor-pointer"
                       >
                         {item.city} {item.district}
                       </button>
@@ -1039,7 +1085,7 @@ export default function AdminRegionsPage() {
                 {/* AI 运行中状态 */}
                 {scoutLoading && (
                   <div className="p-8 rounded-xl bg-blue-50/60 border border-blue-100 flex flex-col items-center justify-center text-center">
-                    <Loader2 className="h-8 w-8 text-blue-600 animate-spin mb-3" aria-hidden="true" />
+                    <Loader2 className="h-8 w-8 text-blue-600 motion-safe:animate-spin mb-3" aria-hidden="true" />
                     <div className="text-sm font-bold text-slate-800 mb-1">
                       SuperAgent 正在智能梳理【{scoutForm.province} {scoutForm.city} {scoutForm.district}】...
                     </div>
@@ -1048,7 +1094,7 @@ export default function AdminRegionsPage() {
                     </div>
                   </div>
                 )}
-              </div>
+              </form>
             )}
 
             {scoutStep === 2 && scoutResult && (
@@ -1065,7 +1111,7 @@ export default function AdminRegionsPage() {
                   <button
                     type="button"
                     onClick={() => setScoutStep(1)}
-                    className="min-h-[44px] sm:min-h-0 text-xs text-emerald-700 hover:underline cursor-pointer"
+                    className="min-h-[44px] sm:min-h-[24px] px-2 py-1 text-xs text-emerald-700 hover:underline cursor-pointer"
                   >
                     重新调整区划
                   </button>
@@ -1075,16 +1121,35 @@ export default function AdminRegionsPage() {
                 <div
                   role="tablist"
                   aria-label="AI 梳理结果预览分类"
+                  onKeyDown={(e) => {
+                    const keys = ["townships", "departments", "categories"] as const;
+                    const idx = keys.indexOf(scoutActiveTab);
+                    let next: (typeof keys)[number] | null = null;
+                    if (e.key === "ArrowRight") next = keys[(idx + 1) % keys.length];
+                    else if (e.key === "ArrowLeft") next = keys[(idx - 1 + keys.length) % keys.length];
+                    else if (e.key === "Home") next = keys[0];
+                    else if (e.key === "End") next = keys[keys.length - 1];
+                    if (next) {
+                      e.preventDefault();
+                      setScoutActiveTab(next);
+                      window.requestAnimationFrame(() => {
+                        document.getElementById(`scout-tab-${next}`)?.focus();
+                      });
+                    }
+                  }}
                   className="flex items-center gap-2 border-b border-slate-200 pb-2 overflow-x-auto whitespace-nowrap"
                 >
                   <button
                     type="button"
                     role="tab"
+                    id="scout-tab-townships"
+                    aria-controls="scout-panel-townships"
                     aria-selected={scoutActiveTab === "townships"}
+                    tabIndex={scoutActiveTab === "townships" ? 0 : -1}
                     onClick={() => setScoutActiveTab("townships")}
-                    className={`min-h-[44px] sm:min-h-0 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors shrink-0 cursor-pointer ${scoutActiveTab === "townships"
-                      ? "bg-blue-600 text-white"
-                      : "text-slate-600 hover:bg-slate-100"
+                    className={`min-h-[44px] sm:min-h-0 px-3 py-1.5 text-xs font-semibold rounded-md border-b-2 transition-colors shrink-0 cursor-pointer ${scoutActiveTab === "townships"
+                      ? "bg-blue-600 text-white border-blue-900"
+                      : "text-slate-600 hover:bg-slate-100 border-transparent"
                       }`}
                   >
                     法定镇街区划 ({scoutResult.townships.length})
@@ -1092,11 +1157,14 @@ export default function AdminRegionsPage() {
                   <button
                     type="button"
                     role="tab"
+                    id="scout-tab-departments"
+                    aria-controls="scout-panel-departments"
                     aria-selected={scoutActiveTab === "departments"}
+                    tabIndex={scoutActiveTab === "departments" ? 0 : -1}
                     onClick={() => setScoutActiveTab("departments")}
-                    className={`min-h-[44px] sm:min-h-0 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors shrink-0 cursor-pointer ${scoutActiveTab === "departments"
-                      ? "bg-blue-600 text-white"
-                      : "text-slate-600 hover:bg-slate-100"
+                    className={`min-h-[44px] sm:min-h-0 px-3 py-1.5 text-xs font-semibold rounded-md border-b-2 transition-colors shrink-0 cursor-pointer ${scoutActiveTab === "departments"
+                      ? "bg-blue-600 text-white border-blue-900"
+                      : "text-slate-600 hover:bg-slate-100 border-transparent"
                       }`}
                   >
                     协同承办部门 ({scoutResult.departments.length})
@@ -1104,11 +1172,14 @@ export default function AdminRegionsPage() {
                   <button
                     type="button"
                     role="tab"
+                    id="scout-tab-categories"
+                    aria-controls="scout-panel-categories"
                     aria-selected={scoutActiveTab === "categories"}
+                    tabIndex={scoutActiveTab === "categories" ? 0 : -1}
                     onClick={() => setScoutActiveTab("categories")}
-                    className={`min-h-[44px] sm:min-h-0 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors shrink-0 cursor-pointer ${scoutActiveTab === "categories"
-                      ? "bg-blue-600 text-white"
-                      : "text-slate-600 hover:bg-slate-100"
+                    className={`min-h-[44px] sm:min-h-0 px-3 py-1.5 text-xs font-semibold rounded-md border-b-2 transition-colors shrink-0 cursor-pointer ${scoutActiveTab === "categories"
+                      ? "bg-blue-600 text-white border-blue-900"
+                      : "text-slate-600 hover:bg-slate-100 border-transparent"
                       }`}
                   >
                     民生分类与科室 ({scoutResult.categories.length})
@@ -1117,7 +1188,13 @@ export default function AdminRegionsPage() {
 
                 {/* Tab 内容 1: 镇街 */}
                 {scoutActiveTab === "townships" && (
-                  <div className="max-h-[360px] overflow-y-auto space-y-2 pr-1">
+                  <div
+                    role="tabpanel"
+                    id="scout-panel-townships"
+                    aria-labelledby="scout-tab-townships"
+                    tabIndex={0}
+                    className="max-h-[360px] overflow-y-auto space-y-2 pr-1"
+                  >
                     {scoutResult.townships.map((t, idx) => (
                       <div
                         key={idx}
@@ -1126,15 +1203,15 @@ export default function AdminRegionsPage() {
                         <div className="flex items-center justify-between gap-2 flex-wrap mb-1.5">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-bold text-slate-900 text-xs">{t.fullName}</span>
-                            <span className="text-slate-400 font-mono text-[11px]">简称: {t.name}</span>
+                            <span className="text-slate-500 font-mono text-[11px]">简称: {t.name}</span>
                           </div>
-                          <span className="text-[10px] text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200/60 font-medium">
+                          <span className="text-[10px] text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200/60 font-medium tabular-nums">
                             {t.communities?.length || 0} 个重点社区
                           </span>
                         </div>
                         {t.aliases && t.aliases.length > 0 && (
-                          <div className="text-[11px] text-slate-500 mb-1 flex items-center gap-1 flex-wrap">
-                            <span className="text-slate-400">俗称 / 别名: </span>
+                          <div className="text-[11px] text-slate-600 mb-1 flex items-center gap-1 flex-wrap">
+                            <span className="text-slate-500">俗称 / 别名: </span>
                             {t.aliases.map((a, i) => (
                               <span key={i} className="bg-amber-50 text-amber-800 border border-amber-200/60 px-1.5 py-0.2 rounded font-mono text-[10px]">
                                 {a}
@@ -1143,8 +1220,8 @@ export default function AdminRegionsPage() {
                           </div>
                         )}
                         {t.landmarks && t.landmarks.length > 0 && (
-                          <div className="text-[11px] text-slate-500 flex items-center gap-1 flex-wrap">
-                            <span className="text-slate-400">核心地标:</span>
+                          <div className="text-[11px] text-slate-600 flex items-center gap-1 flex-wrap">
+                            <span className="text-slate-500">核心地标:</span>
                             {t.landmarks.map((lm, i) => (
                               <span key={i} className="bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded text-[10px]">
                                 📍 {lm}
@@ -1159,7 +1236,13 @@ export default function AdminRegionsPage() {
 
                 {/* Tab 内容 2: 部门 */}
                 {scoutActiveTab === "departments" && (
-                  <div className="max-h-[360px] overflow-y-auto space-y-2 pr-1">
+                  <div
+                    role="tabpanel"
+                    id="scout-panel-departments"
+                    aria-labelledby="scout-tab-departments"
+                    tabIndex={0}
+                    className="max-h-[360px] overflow-y-auto space-y-2 pr-1"
+                  >
                     {scoutResult.departments.map((d, idx) => (
                       <div
                         key={idx}
@@ -1167,7 +1250,7 @@ export default function AdminRegionsPage() {
                       >
                         <div>
                           <div className="font-bold text-slate-800">{d.fullName}</div>
-                          <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+                          <div className="text-[11px] text-slate-500 font-mono mt-0.5">
                             简称: {d.name} · 代号: {d.code}
                           </div>
                         </div>
@@ -1181,7 +1264,13 @@ export default function AdminRegionsPage() {
 
                 {/* Tab 内容 3: 诉求分类 */}
                 {scoutActiveTab === "categories" && (
-                  <div className="max-h-[360px] overflow-y-auto space-y-2 pr-1">
+                  <div
+                    role="tabpanel"
+                    id="scout-panel-categories"
+                    aria-labelledby="scout-tab-categories"
+                    tabIndex={0}
+                    className="max-h-[360px] overflow-y-auto space-y-2 pr-1"
+                  >
                     {scoutResult.categories.map((c, idx) => (
                       <div
                         key={idx}
@@ -1215,7 +1304,7 @@ export default function AdminRegionsPage() {
           <DialogFooter className="px-4 sm:px-6 py-4 border-t border-slate-100 flex flex-row items-center justify-between gap-2 flex-wrap bg-slate-50/60 shrink-0">
             <button
               type="button"
-              className="btn btn--default"
+              className="btn btn--default min-h-[44px] sm:min-h-0"
               onClick={() => {
                 setShowScoutModal(false);
                 setScoutStep(1);
@@ -1228,14 +1317,14 @@ export default function AdminRegionsPage() {
 
             {scoutStep === 1 ? (
               <button
-                type="button"
-                className="btn btn--primary"
-                onClick={handleRunAiScout}
+                type="submit"
+                form="scout-step1-form"
+                className="btn btn--primary min-h-[44px] sm:min-h-0"
                 disabled={scoutLoading}
               >
                 {scoutLoading ? (
                   <>
-                    <Loader2 className="h-4 w-4 mr-1.5 animate-spin" aria-hidden="true" />
+                    <Loader2 className="h-4 w-4 mr-1.5 motion-safe:animate-spin" aria-hidden="true" />
                     AI 智能梳理中...
                   </>
                 ) : (
@@ -1248,13 +1337,13 @@ export default function AdminRegionsPage() {
             ) : (
               <button
                 type="button"
-                className="btn btn--primary"
+                className="btn btn--primary min-h-[44px] sm:min-h-0"
                 onClick={handleCreateRegionConfirm}
                 disabled={savingNewRegion}
               >
                 {savingNewRegion ? (
                   <>
-                    <Loader2 className="h-4 w-4 mr-1.5 animate-spin" aria-hidden="true" />
+                    <Loader2 className="h-4 w-4 mr-1.5 motion-safe:animate-spin" aria-hidden="true" />
                     正在创建 Schema 并初始化字典...
                   </>
                 ) : (
@@ -1276,6 +1365,7 @@ export default function AdminRegionsPage() {
           if (!open && !uploading) {
             setUploadModalRegion(null);
             setUploadFile(null);
+            setSvgDragOver(false);
             setPreviewSvgUrl((prev) => {
               if (prev) URL.revokeObjectURL(prev);
               return null;
@@ -1304,12 +1394,28 @@ export default function AdminRegionsPage() {
           </DialogHeader>
 
           <div className="space-y-4">
-            <div className="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center hover:border-blue-500 transition-colors">
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setSvgDragOver(true);
+              }}
+              onDragLeave={() => setSvgDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setSvgDragOver(false);
+                applySelectedSvgFile(e.dataTransfer.files?.[0]);
+              }}
+              className={`border-2 border-dashed rounded-xl p-6 text-center transition-colors focus-within:ring-2 focus-within:ring-blue-500 ${
+                svgDragOver
+                  ? "border-blue-500 bg-blue-50/60"
+                  : "border-slate-200 hover:border-blue-500"
+              }`}
+            >
               <input
                 type="file"
                 accept=".svg"
                 id="svg-upload-input"
-                className="hidden"
+                className="sr-only"
                 onChange={handleMapFileChange}
               />
               <label htmlFor="svg-upload-input" className="cursor-pointer flex flex-col items-center">
@@ -1317,7 +1423,7 @@ export default function AdminRegionsPage() {
                 <span className="text-xs font-semibold text-slate-700">
                   {uploadFile ? uploadFile.name : "点击选择或拖拽 SVG 地图文件"}
                 </span>
-                <span className="text-[11px] text-slate-400 mt-1">仅支持 .svg 格式</span>
+                <span className="text-[11px] text-slate-500 mt-1">仅支持 .svg 格式</span>
               </label>
             </div>
 
@@ -1337,10 +1443,11 @@ export default function AdminRegionsPage() {
             <DialogFooter className="flex-row justify-end gap-2.5 pt-4 border-t border-slate-100">
               <button
                 type="button"
-                className="btn btn--default"
+                className="btn btn--default min-h-[44px] sm:min-h-0"
                 onClick={() => {
                   setUploadModalRegion(null);
                   setUploadFile(null);
+                  setSvgDragOver(false);
                   setPreviewSvgUrl((prev) => {
                     if (prev) URL.revokeObjectURL(prev);
                     return null;
@@ -1352,13 +1459,13 @@ export default function AdminRegionsPage() {
               </button>
               <button
                 type="button"
-                className="btn btn--primary"
+                className="btn btn--primary min-h-[44px] sm:min-h-0"
                 onClick={handleUploadMapSubmit}
                 disabled={!uploadFile || uploading}
               >
                 {uploading ? (
                   <>
-                    <Loader2 className="h-4 w-4 mr-1.5 animate-spin" aria-hidden="true" />
+                    <Loader2 className="h-4 w-4 mr-1.5 motion-safe:animate-spin" aria-hidden="true" />
                     上传中...
                   </>
                 ) : (

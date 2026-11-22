@@ -24,7 +24,7 @@ function ScreenInner() {
     return <div className="w-screen h-screen bg-[#020612]" />;
   }
 
-  return <CockpitView onClose={() => router.push("/")} />;
+  return <CockpitView modal={false} onClose={() => router.push("/")} />;
 }
 
 export default function BigScreenPage() {

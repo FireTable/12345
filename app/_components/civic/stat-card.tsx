@@ -91,10 +91,9 @@ export function StatCard({
 
   const cardContent = (
     <div
-      onClick={onClick}
       className={cn(
-        "relative flex items-center gap-2.5 sm:gap-3.5 p-3 sm:p-4 rounded-xl border border-[var(--c-border-card,rgba(15,23,42,0.08))] bg-[var(--c-surface)] shadow-[var(--sh-1)] transition-all duration-200 min-w-0",
-        isInteractive && "cursor-pointer group hover:shadow-[var(--sh-2)] hover:border-[var(--c-border)] hover:-translate-y-0.5",
+        "relative flex items-center gap-2.5 sm:gap-3.5 p-3 sm:p-4 rounded-xl border border-[var(--c-border-card,rgba(15,23,42,0.08))] bg-[var(--c-surface)] shadow-[var(--sh-1)] transition-all duration-200 motion-reduce:transition-none min-w-0",
+        isInteractive && "cursor-pointer group hover:shadow-[var(--sh-2)] hover:border-[var(--c-border)] hover:-translate-y-0.5 motion-reduce:hover:translate-y-0",
         styles.border,
         className
       )}
@@ -103,9 +102,9 @@ export function StatCard({
         <div
           aria-hidden="true"
           className={cn(
-            "w-9 h-9 sm:w-10.5 sm:h-10.5 rounded-xl border flex items-center justify-center shrink-0 transition-transform duration-200",
+            "w-9 h-9 sm:w-10.5 sm:h-10.5 rounded-xl border flex items-center justify-center shrink-0 transition-transform duration-200 motion-reduce:transition-none",
             styles.iconBg,
-            isInteractive && "group-hover:scale-105"
+            isInteractive && "group-hover:scale-105 motion-reduce:group-hover:scale-100"
           )}
         >
           {renderIcon()}
@@ -142,9 +141,24 @@ export function StatCard({
 
   if (href) {
     return (
-      <Link href={href} className="block no-underline focus:outline-none min-w-0">
+      <Link
+        href={href}
+        className="block no-underline rounded-xl focus-visible:outline-2 focus-visible:outline-[var(--c-brand)] focus-visible:outline-offset-2 min-w-0"
+      >
         {cardContent}
       </Link>
+    );
+  }
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="block w-full text-left bg-transparent border-0 p-0 rounded-xl focus-visible:outline-2 focus-visible:outline-[var(--c-brand)] focus-visible:outline-offset-2 min-w-0"
+      >
+        {cardContent}
+      </button>
     );
   }
 

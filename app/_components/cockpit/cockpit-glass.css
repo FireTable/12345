@@ -22,6 +22,65 @@
   background-color: #060911;
   color: #f1f5f9;
   overflow-wrap: break-word;
+  overscroll-behavior: contain;
+}
+
+/* 原生模态大屏 <dialog> 样式：display 严格限定在 [open]，并包含滚动穿透隔离 */
+.cockpit-dialog {
+  margin: 0;
+  padding: 0;
+  border: none;
+  max-width: none;
+  max-height: none;
+  width: 100dvw;
+  height: 100dvh;
+}
+
+.cockpit-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.cockpit-dialog:modal {
+  overscroll-behavior: contain;
+}
+
+.cockpit-dialog::backdrop {
+  background-color: rgba(2, 6, 18, 0.9);
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+/* 流水详情嵌套 <dialog> 样式 */
+.cockpit-stream-dialog {
+  color-scheme: only dark;
+  margin: auto;
+  padding: 0;
+  width: min(460px, calc(100dvw - 1.5rem));
+  max-width: calc(100dvw - 1.5rem);
+  max-height: min(85dvh, 560px);
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background-color: #090e1a;
+  color: #f1f5f9;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.72);
+}
+
+.cockpit-stream-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.cockpit-stream-dialog:modal {
+  overscroll-behavior: contain;
+}
+
+.cockpit-stream-dialog::backdrop {
+  background-color: rgba(2, 6, 18, 0.68);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  overflow: hidden;
+  overscroll-behavior: contain;
 }
 
 /* Obsidian 暗炭磨砂卡片基类 */
@@ -139,6 +198,17 @@
     content: "";
     position: absolute;
     inset: -6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cockpit-shell .cockpit-glass-card,
+  .cockpit-shell .cockpit-glass-subcard {
+    transition: none;
+  }
+
+  .cockpit-shell .animate-spin {
+    animation: none;
   }
 }
 

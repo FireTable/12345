@@ -32,6 +32,7 @@ export interface IntakeDraft {
   subject: string;
   address: string;
   contactPhone: string;
+  contactEmail?: string;
 }
 
 export interface IntakeChatMessage {
@@ -264,7 +265,83 @@ function isGenericSubject(value?: string | null): boolean {
   );
 }
 
-const PHONE_RE = /(?<!\d)(?:(?:\+|00)86)?(1[3-9]\d{9})(?!\d)|\b(0\d{2,3}-?\d{7,8})\b/;
+const MOBILE_FLEX_RE =
+  /(?<!\d)(?:(?:\+|00)86[\s-]*)?(1[3-9](?:[\s-]?\d){9})(?!\d)(?!-\d)/;
+const LANDLINE_FLEX_RE = /(?<!\d)(0\d{2,3})[\s-]?(\d{7,8})(?!\d)/;
+const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
+
+function normalizeContactChars(text: string): string {
+  return text
+    .replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0))
+    .replace(/[－—–﹣]/g, "-");
+}
+
+/**
+ * 从市民文本或语音转写中提取标准手机号（归一化连字符/空格/全角数字）或区号座机。
+ */
+export function extractPhoneFromText(raw: string): string {
+  const normalized = normalizeContactChars(raw);
+  const mobileMatch = normalized.match(MOBILE_FLEX_RE);
+  if (mobileMatch?.[1]) {
+    const digits = mobileMatch[1].replace(/[\s-]/g, "");
+    if (/^1[3-9]\d{9}$/.test(digits)) {
+      return digits;
+    }
+  }
+  const landlineMatch = normalized.match(LANDLINE_FLEX_RE);
+  if (landlineMatch?.[1] && landlineMatch?.[2]) {
+    return `${landlineMatch[1]}-${landlineMatch[2]}`;
+  }
+  return "";
+}
+
+/**
+ * 从文本中提取电子邮箱（兼容全角 ＠ / ．）。
+ */
+export function extractEmailFromText(raw: string): string {
+  const normalized = normalizeContactChars(raw)
+    .replace(/＠/g, "@")
+    .replace(/．/g, ".");
+  const match = normalized.match(EMAIL_RE);
+  return match?.[0] ?? "";
+}
+
+/**
+ * 判断本轮用户输入是否仅在提供/更正联系方式（电话或邮箱），避免污染「诉求内容」。
+ */
+export function isContactOnlyUtterance(raw: string): boolean {
+  const normalized = normalizeContactChars(raw)
+    .replace(/＠/g, "@")
+    .replace(/．/g, ".");
+  const hasPhone = MOBILE_FLEX_RE.test(normalized) || LANDLINE_FLEX_RE.test(normalized);
+  const hasEmail = EMAIL_RE.test(normalized);
+  if (!hasPhone && !hasEmail) {
+    return false;
+  }
+
+  const withoutContacts = normalized
+    .replace(new RegExp(MOBILE_FLEX_RE.source, "g"), " ")
+    .replace(new RegExp(LANDLINE_FLEX_RE.source, "g"), " ")
+    .replace(new RegExp(EMAIL_RE.source, "g"), " ");
+
+  const stripped = withoutContacts
+    .replace(
+      /我(?:们)?的?|留(?:个|一下)?|补充(?:一下)?|给(?:你|您)|改成|改为|换成|联系(?:方式|电话|手机|号码|邮箱)?|电话(?:号码)?|手机(?:号码|号)?|座机(?:号码)?|号码|电子?邮箱|邮箱(?:地址)?|邮件|微信同号|是|为|叫|号|啊|吧|哦|呢|哈|好的|好|行|可以|谢谢|麻烦了?|请|记一下|一下/g,
+      ""
+    )
+    .replace(/[\s，,。！？?!：:；;、~～()（）【】[\]""''"'·…\-—_]+/g, "")
+    .trim();
+
+  return stripped.length < 2;
+}
+
+function normalizePhonesForAnonymize(raw: string): string {
+  const normalized = normalizeContactChars(raw);
+  return normalized.replace(new RegExp(MOBILE_FLEX_RE.source, "g"), (full, group1: string) => {
+    const digits = group1.replace(/[\s-]/g, "");
+    return /^1[3-9]\d{9}$/.test(digits) ? digits : full;
+  });
+}
 const SKU_RE = /(?:^|[^A-Za-z0-9])(SKU[-_][A-Za-z0-9]{2,}(?:[-_][A-Za-z0-9]+)*|SKU[A-Za-z0-9]{3,})(?![A-Za-z0-9])/i;
 const LABELED_SKU_RE = /(?:SKU编号|SKU|货号|商品编号)\s*(?:是|为|[：:])\s*([A-Za-z0-9][A-Za-z0-9_-]{3,28})/i;
 const NEGATIVE_CALLBACK_RE =
@@ -585,14 +662,21 @@ export function maskContactForGovernance(
     if (res.spans.length > 0) {
       return res.text;
     }
+    const extracted = extractPhoneFromText(phone);
+    if (extracted) {
+      const extractedRes = anonymize(extracted, { categories: ["PHONE_NUMBER"] });
+      if (extractedRes.spans.length > 0) {
+        return extractedRes.text;
+      }
+    }
     if (/\{\{PHONE_NUMBER_\d+\}\}/.test(phone)) {
       return phone;
     }
   }
   if (rawContent) {
-    const match = rawContent.match(PHONE_RE);
-    if (match?.[0]) {
-      const res = anonymize(match[0], { categories: ["PHONE_NUMBER"] });
+    const extracted = extractPhoneFromText(rawContent);
+    if (extracted) {
+      const res = anonymize(extracted, { categories: ["PHONE_NUMBER"] });
       if (res.spans.length > 0) {
         return res.text;
       }
@@ -841,6 +925,9 @@ function matchChannelOrSubdistrict(
 }
 
 function inferGovCategory(text: string, allowed: string[]): string {
+  for (const cat of allowed) {
+    if (cat && text.includes(cat)) return cat;
+  }
   const profiled = profileTicket({ content: text }, []);
   if (profiled.category && allowed.includes(profiled.category)) {
     return profiled.category;
@@ -978,6 +1065,7 @@ function replyAddressesMissingFields(reply: string, missingFields: string[]): bo
     if (field.includes("SKU") || field.includes("商品")) return /SKU|sku|商品|店铺|品牌/.test(reply);
     if (field.includes("分类")) return /分类|类型/.test(reply);
     if (field.includes("描述")) return /描述|详情|经过|问题/.test(reply);
+    if (field.includes("联系") || field.includes("邮箱")) return /联系|电话|手机|邮箱|邮件/.test(reply);
     return false;
   });
 }
@@ -1001,6 +1089,9 @@ function computeMissingFields(draft: IntakeDraft, domainType: DomainType): strin
   }
   if (!draft.category.trim()) {
     missing.push("诉求分类");
+  }
+  if (!draft.contactPhone.trim() && !(draft.contactEmail || "").trim()) {
+    missing.push("联系电话或电子邮箱");
   }
   if (domainType === "GOV_12345" && !draft.address.trim()) {
     missing.push("具体路名门牌/地点");
@@ -1043,9 +1134,11 @@ export async function processIntakeChat(input: {
     .filter((m) => m.role === "user" && m.content.trim().length > 0)
     .map((m) => m.content.trim());
   const latestUserText = userTexts[userTexts.length - 1] || "";
+  const allUserText = userTexts.join("；");
+  const contentUserTexts = userTexts.filter((t) => !isContactOnlyUtterance(t));
 
-  // 汇总全部用户陈述（跨轮次去重，不重复拼接历史句）
-  const combinedRaw = mergeUniqueUserContent(input.draft?.content, userTexts);
+  // 汇总全部非纯联系方式的用户陈述（跨轮次去重，不重复拼接历史句）
+  const combinedRaw = mergeUniqueUserContent(input.draft?.content, contentUserTexts);
 
   // 保留既有已填槽位，绝不在后续轮次无意覆盖已确认的槽位
   const existingTitle = clampStr(input.draft?.title, 48);
@@ -1055,10 +1148,18 @@ export async function processIntakeChat(input: {
   const rawExistingSubject = clampStr(input.draft?.subject, 120);
   const existingSubject = isGenericSubject(rawExistingSubject) ? "" : rawExistingSubject;
   const existingPhone = clampStr(input.draft?.contactPhone, 32);
+  const existingEmail = clampStr(input.draft?.contactEmail, 120);
 
   // 1. 确定性中文规则抽取（永远保底可用）
-  const phoneMatch = latestUserText.match(PHONE_RE) || combinedRaw.match(PHONE_RE);
-  const extractedPhone = existingPhone || (phoneMatch?.[0] ?? "");
+  const latestPhone = extractPhoneFromText(latestUserText);
+  const historyPhone =
+    extractPhoneFromText(allUserText) || extractPhoneFromText(input.draft?.content || "");
+  const extractedPhone = latestPhone || existingPhone || historyPhone;
+
+  const latestEmail = extractEmailFromText(latestUserText);
+  const historyEmail =
+    extractEmailFromText(allUserText) || extractEmailFromText(input.draft?.content || "");
+  const extractedEmail = latestEmail || existingEmail || historyEmail;
 
   const ruleSubdistrict =
     existingSubdistrict ||
@@ -1092,8 +1193,10 @@ export async function processIntakeChat(input: {
   let llmPatch: Partial<IntakeDraft> = {};
 
   if (latestUserText.length > 0) {
-    const anonCombined = anonymize(combinedRaw);
-    const anonLatest = anonymize(latestUserText, { seedKeymap: anonCombined.keymap });
+    const anonCombined = anonymize(normalizePhonesForAnonymize(combinedRaw));
+    const anonLatest = anonymize(normalizePhonesForAnonymize(latestUserText), {
+      seedKeymap: anonCombined.keymap,
+    });
     const mergedKeymap = { ...anonCombined.keymap, ...anonLatest.keymap };
 
     const systemPrompt =
@@ -1101,13 +1204,19 @@ export async function processIntakeChat(input: {
         ? `你是电商平台「智能售后客服」。请从脱敏后的用户陈述中抽取结构化草稿，并返回严格 JSON：{ "reply": "1-2句亲切自然的中文口播回复", "title": "简短标题", "subdistrict": "匹配渠道/仓网名", "category": "匹配客诉分类", "subject": "SKU编号或涉事商品/店铺", "address": "订单号或仓网地点" }。可选渠道/仓网：${options.subdistricts.join("、")}；可选分类：${options.categories.join("、")}。未提及的字段留空字符串。`
         : `你是12345政务服务热线「智能语音受理员」。请从脱敏后的市民陈述中抽取结构化草稿，并返回严格 JSON：{ "reply": "1-2句亲切自然的中文口播回复", "title": "简短标题", "subdistrict": "匹配镇街名", "category": "匹配分类", "subject": "涉事主体/商铺/单位", "address": "具体路名门牌/地点" }。可选镇街：${options.subdistricts.join("、")}；可选分类：${options.categories.join("、")}。未提及的字段留空字符串。`;
 
+    const slotSummary = `当前已收集要素：分类=${ruleCategory || "待补充"}，${
+      domainType === "ECOMMERCE_CS" ? "渠道/仓网" : "所属镇街"
+    }=${ruleSubdistrict || "待补充"}，联系方式=${
+      extractedPhone || extractedEmail ? "已提供" : "待补充"
+    }`;
+
     const llmRes = await callSystemTwoJsonSafe(
       IntakeLlmSchema,
       [
         { role: "system", content: systemPrompt },
         {
           role: "user",
-          content: `历史累积陈述：${anonCombined.text}\n最新一句：${anonLatest.text}`,
+          content: `历史累积陈述：${anonCombined.text}\n最新一句：${anonLatest.text}\n${slotSummary}`,
         },
       ],
       480,
@@ -1151,6 +1260,7 @@ export async function processIntakeChat(input: {
     subject: existingSubject,
     address: existingAddress,
     contactPhone: existingPhone,
+    contactEmail: existingEmail,
   };
   const prevFirstClause =
     prevDraftForTitle.content.split(/[。！？；;\n]/)[0]?.trim().slice(0, 36) || "";
@@ -1187,6 +1297,7 @@ export async function processIntakeChat(input: {
       addressCandidate ||
       "",
     contactPhone: clampStr(extractedPhone, 32),
+    contactEmail: clampStr(extractedEmail, 120),
   };
 
   if (!mergedDraft.title) {
@@ -1198,10 +1309,16 @@ export async function processIntakeChat(input: {
     mergedDraft.content.trim().length >= 6 &&
     mergedDraft.subdistrict.trim().length > 0 &&
     mergedDraft.category.trim().length > 0 &&
+    (mergedDraft.contactPhone.trim().length > 0 || (mergedDraft.contactEmail || "").trim().length > 0) &&
     missingFields.length === 0;
 
+  const contactOnlyTurn = Boolean(latestPhone || latestEmail) && isContactOnlyUtterance(latestUserText);
   let reply = llmReply;
-  if (!reply || (!readyToSubmit && !replyAddressesMissingFields(reply, missingFields))) {
+  if (contactOnlyTurn) {
+    reply = readyToSubmit
+      ? "已记录您的联系方式，诉求要素已齐全，请核对下方草稿后点击确认提交。"
+      : `已为您记下联系方式，还需要补充${missingFields.join("和")}，您也可以直接在下方草稿卡片中选择或填写。`;
+  } else if (!reply || (!readyToSubmit && !replyAddressesMissingFields(reply, missingFields))) {
     if (readyToSubmit) {
       reply =
         domainType === "ECOMMERCE_CS"
@@ -1238,6 +1355,7 @@ export async function submitCitizenTicket(input: {
   subject?: string;
   address?: string;
   contactPhone?: string;
+  contactEmail?: string;
   source?: "FORM" | "AGENT_VOICE";
   skipAutoCluster?: boolean;
 }) {
@@ -1308,7 +1426,7 @@ export async function submitCitizenTicket(input: {
         subdistrict,
         sourceCategory: category,
         citizenName: clampStr(input.userName, 64) || (isEcommerce ? "买家用户" : "热线市民"),
-        citizenPhone: clampStr(input.contactPhone, 64),
+        citizenPhone: clampStr(input.contactPhone?.trim() || input.contactEmail?.trim(), 64),
         channel:
           input.source === "AGENT_VOICE"
             ? "AI语音受理"

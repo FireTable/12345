@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   ReactFlow,
   Background,
@@ -586,6 +586,24 @@ function InnerPipelineCanvas({
     [storageKey]
   );
 
+  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (resetTimerRef.current) {
+        clearTimeout(resetTimerRef.current);
+        resetTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const fitViewDuration = () =>
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ? 0
+      : 600;
+
   // 用户点击“复位标准排版”：清除本地位置并平滑回归默认 3列2行流向
   const handleResetLayout = useCallback(() => {
     if (typeof window !== "undefined") {
@@ -599,15 +617,16 @@ function InnerPipelineCanvas({
         position: DEFAULT_POSITIONS[n.id] || n.position,
       }))
     );
-    setTimeout(() => {
-      fitView({ padding: 0.12, duration: 600 });
+    if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+    resetTimerRef.current = setTimeout(() => {
+      fitView({ padding: 0.12, duration: fitViewDuration() });
     }, 50);
   }, [storageKey, setNodes, fitView]);
 
   // 挂载初始自动居中
   useEffect(() => {
     const timer = setTimeout(() => {
-      fitView({ padding: 0.12, duration: 600 });
+      fitView({ padding: 0.12, duration: fitViewDuration() });
     }, 150);
     return () => clearTimeout(timer);
   }, [fitView]);
@@ -633,10 +652,10 @@ function InnerPipelineCanvas({
         <button
           type="button"
           onClick={handleResetLayout}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white/95 hover:bg-white hover:text-slate-900 border border-slate-200/90 rounded-lg shadow-xs hover:shadow-md transition-all cursor-pointer backdrop-blur-md active:scale-95"
+          className="flex items-center gap-1.5 min-h-[44px] sm:min-h-0 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white/95 hover:bg-white hover:text-slate-900 border border-slate-200/90 rounded-lg shadow-xs hover:shadow-md transition-all cursor-pointer backdrop-blur-md active:scale-95"
           title="恢复 3列2行 蛇形无交叉标准排版并自适应居中"
         >
-          <RotateCcw size={12} className="text-slate-500" />
+          <RotateCcw size={12} className="text-slate-500" aria-hidden="true" />
           <span>复位标准排版</span>
         </button>
       </Panel>

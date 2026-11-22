@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   RotateCw,
   Maximize2,
@@ -23,10 +23,12 @@ import type { DomainProfile, RegionInfo } from "../civic/region-context";
 
 export function CockpitTitleCrown({
   title,
+  titleId,
   domainProfile,
   align = "center",
 }: {
   title: string;
+  titleId?: string;
   domainProfile?: DomainProfile | null;
   align?: "left" | "center" | "responsive";
 }) {
@@ -45,6 +47,7 @@ export function CockpitTitleCrown({
   return (
     <div className={`flex flex-col ${alignClasses} min-w-0 max-w-full select-none`}>
       <h1
+        id={titleId}
         className="cockpit-single-line font-semibold tracking-[0.03em] sm:tracking-[0.11em] bg-gradient-to-b from-white via-slate-100 to-slate-300 bg-clip-text text-transparent max-w-full leading-snug"
         style={{ fontSize: "clamp(0.875rem, 0.82rem + 0.45vw, 1.3rem)" }}
         title={`${title} · 智能研判全景指挥大屏`}
@@ -59,6 +62,7 @@ export function CockpitTitleCrown({
 }
 
 export interface CockpitHeaderProps {
+  titleId?: string;
   activeRegion: RegionInfo | null;
   regions: RegionInfo[];
   domainProfile?: DomainProfile | null;
@@ -73,6 +77,7 @@ export interface CockpitHeaderProps {
 }
 
 export function CockpitHeader({
+  titleId,
   activeRegion,
   regions,
   domainProfile,
@@ -86,11 +91,13 @@ export function CockpitHeader({
   onToggleFullscreen,
 }: CockpitHeaderProps) {
   const [dateTime, setDateTime] = useState<{ full: string; short: string }>({
-    full: "2026-11-20 00:00:00",
-    short: "00:00:00",
+    full: "—",
+    short: "—",
   });
   const [showRegionMenu, setShowRegionMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const listboxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const updateTime = () => {
@@ -108,8 +115,22 @@ export function CockpitHeader({
     return () => clearInterval(interval);
   }, []);
 
+  const closeMenuAndRestoreFocus = useCallback(() => {
+    setShowRegionMenu(false);
+    requestAnimationFrame(() => triggerRef.current?.focus());
+  }, []);
+
   useEffect(() => {
     if (!showRegionMenu) return;
+    // Focus currently selected (or first) option when listbox opens
+    requestAnimationFrame(() => {
+      const listbox = listboxRef.current;
+      if (!listbox) return;
+      const selected = listbox.querySelector<HTMLButtonElement>('[role="option"][aria-selected="true"]');
+      const first = listbox.querySelector<HTMLButtonElement>('[role="option"]');
+      (selected || first)?.focus();
+    });
+
     const onPointerDown = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setShowRegionMenu(false);
@@ -117,8 +138,9 @@ export function CockpitHeader({
     };
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        e.preventDefault();
         e.stopPropagation();
-        setShowRegionMenu(false);
+        closeMenuAndRestoreFocus();
       }
     };
     document.addEventListener("mousedown", onPointerDown);
@@ -127,7 +149,31 @@ export function CockpitHeader({
       document.removeEventListener("mousedown", onPointerDown);
       window.removeEventListener("keydown", onKeyDown, true);
     };
-  }, [showRegionMenu]);
+  }, [showRegionMenu, closeMenuAndRestoreFocus]);
+
+  const handleListboxKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const listbox = listboxRef.current;
+    if (!listbox) return;
+    const options = Array.from(listbox.querySelectorAll<HTMLButtonElement>('[role="option"]'));
+    if (!options.length) return;
+    const currentIdx = options.indexOf(document.activeElement as HTMLButtonElement);
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      options[(currentIdx + 1) % options.length]?.focus();
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      options[(currentIdx - 1 + options.length) % options.length]?.focus();
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      options[0]?.focus();
+    } else if (e.key === "End") {
+      e.preventDefault();
+      options[options.length - 1]?.focus();
+    } else if (e.key === "Tab") {
+      setShowRegionMenu(false);
+    }
+  };
 
   const { govRegions, ecomRegions } = useMemo(() => {
     const gov: RegionInfo[] = [];
@@ -196,6 +242,7 @@ export function CockpitHeader({
         <div className="col-start-1 row-start-1 xl:col-start-2 xl:row-start-1 xl:justify-self-center min-w-0">
           <CockpitTitleCrown
             title={activeRegion?.name || "天河区"}
+            titleId={titleId}
             domainProfile={domainProfile}
             align="responsive"
           />
@@ -238,7 +285,7 @@ export function CockpitHeader({
             type="button"
             onClick={onClose}
             aria-label="退出大屏返回数据总览"
-            title="退出大屏返回数据总览 (快捷键: 连续按两次 ESC)"
+            title="退出大屏返回数据总览 (ESC)"
             className="cockpit-action-btn inline-flex items-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-full border border-white/10 bg-[#0d1424]/85 text-slate-200 hover:border-rose-400/40 hover:bg-rose-500/15 hover:text-rose-200 transition-colors cursor-pointer text-xs font-medium backdrop-blur-xl whitespace-nowrap shrink-0"
           >
             <X size={14} aria-hidden="true" className="shrink-0" />
@@ -265,8 +312,15 @@ export function CockpitHeader({
             {/* 域/站点切换下拉胶囊 */}
             <div className="relative min-w-0" ref={menuRef}>
               <button
+                ref={triggerRef}
                 type="button"
                 onClick={() => setShowRegionMenu((prev) => !prev)}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowDown" && !showRegionMenu) {
+                    e.preventDefault();
+                    setShowRegionMenu(true);
+                  }
+                }}
                 aria-haspopup="listbox"
                 aria-expanded={showRegionMenu}
                 aria-label={`切换业务域或站点，当前为 ${regionDisplay}`}
@@ -289,13 +343,18 @@ export function CockpitHeader({
 
               {showRegionMenu && (
                 <div
+                  ref={listboxRef}
                   role="listbox"
                   aria-label="站点与业务域列表"
+                  onKeyDown={handleListboxKeyDown}
                   className="absolute top-full -left-14 sm:left-0 mt-2 w-[min(276px,calc(100dvw-1.5rem))] max-h-[65dvh] overflow-y-auto custom-cockpit-scrollbar py-1.5 rounded-xl bg-[#0b1120]/95 border border-white/15 shadow-2xl z-50 backdrop-blur-2xl"
                 >
                   {govRegions.length > 0 && (
-                    <div>
-                      <div className="px-3 py-1.5 text-[10px] text-slate-400 tracking-wider font-mono border-b border-white/[0.06] flex items-center justify-between">
+                    <div role="group" aria-labelledby="cockpit-region-group-gov">
+                      <div
+                        id="cockpit-region-group-gov"
+                        className="px-3 py-1.5 text-[10px] text-slate-400 tracking-wider font-mono border-b border-white/[0.06] flex items-center justify-between"
+                      >
                         <span>政务 12345 热线</span>
                         <span className="tabular-nums">{govRegions.length}</span>
                       </div>
@@ -310,9 +369,9 @@ export function CockpitHeader({
                               aria-selected={isCurrent}
                               onClick={() => {
                                 onSelectRegion(r.id);
-                                setShowRegionMenu(false);
+                                closeMenuAndRestoreFocus();
                               }}
-                              className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                              className={`w-full text-left px-3 py-2 min-h-[44px] sm:min-h-[34px] text-xs flex items-center justify-between gap-2 transition-colors cursor-pointer ${
                                 isCurrent
                                   ? "text-white font-semibold bg-white/[0.08]"
                                   : "text-slate-300 hover:bg-white/[0.05] hover:text-white"
@@ -332,8 +391,15 @@ export function CockpitHeader({
                   )}
 
                   {ecomRegions.length > 0 && (
-                    <div className={govRegions.length > 0 ? "border-t border-white/[0.08] mt-1 pt-1" : ""}>
-                      <div className="px-3 py-1.5 text-[10px] text-amber-300/90 tracking-wider font-mono border-b border-white/[0.06] flex items-center justify-between">
+                    <div
+                      role="group"
+                      aria-labelledby="cockpit-region-group-ecom"
+                      className={govRegions.length > 0 ? "border-t border-white/[0.08] mt-1 pt-1" : ""}
+                    >
+                      <div
+                        id="cockpit-region-group-ecom"
+                        className="px-3 py-1.5 text-[10px] text-amber-300/90 tracking-wider font-mono border-b border-white/[0.06] flex items-center justify-between"
+                      >
                         <span>{govRegions.length > 0 ? "跨行业示范 · 电商客诉" : "电商客诉站点"}</span>
                         <span className="tabular-nums">{ecomRegions.length}</span>
                       </div>
@@ -348,9 +414,9 @@ export function CockpitHeader({
                               aria-selected={isCurrent}
                               onClick={() => {
                                 onSelectRegion(r.id);
-                                setShowRegionMenu(false);
+                                closeMenuAndRestoreFocus();
                               }}
-                              className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                              className={`w-full text-left px-3 py-2 min-h-[44px] sm:min-h-[34px] text-xs flex items-center justify-between gap-2 transition-colors cursor-pointer ${
                                 isCurrent
                                   ? "text-white font-semibold bg-white/[0.08]"
                                   : "text-slate-300 hover:bg-white/[0.05] hover:text-white"

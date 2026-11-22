@@ -463,6 +463,7 @@ async function verifyCitizenJourneyForDomain(opts: {
         category: opts.expectedCategory,
         address: opts.expectedAddressFrag,
         subject: opts.expectedSubjectFrag,
+        contactEmail: "admin@civic.gov.cn",
         skipAutoCluster: true,
       },
     })

@@ -62,8 +62,9 @@ export function IngestNode({ data }: NodeProps<IngestNodeType>) {
       </div>
 
       {/* 快捷点击或拖拽触发工单导入弹窗 */}
-      <div
-        className={`pipeline-drop-zone cursor-pointer transition-colors ${isDragging ? "is-dragover" : ""}`}
+      <button
+        type="button"
+        className={`pipeline-drop-zone w-full text-center cursor-pointer transition-colors ${isDragging ? "is-dragover" : ""}`}
         onDragOver={(e) => {
           e.preventDefault();
           setIsDragging(true);
@@ -77,27 +78,27 @@ export function IngestNode({ data }: NodeProps<IngestNodeType>) {
         onClick={() => openUpload()}
         title="点击打开工单导入与追加"
       >
-        <div className="flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-700 whitespace-nowrap">
-          <Upload size={13} className="text-blue-600" />
+        <span className="flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-700 whitespace-nowrap">
+          <Upload size={13} className="text-blue-600" aria-hidden="true" />
           <span>点击或拖入文件追加导入工单</span>
-        </div>
-        <div className="text-[10px] text-slate-400 mt-0.5 whitespace-nowrap">支持 Excel/CSV 批量导入与单条录入</div>
-      </div>
+        </span>
+        <span className="block text-[10px] text-slate-500 mt-0.5 whitespace-nowrap">支持 Excel/CSV 批量导入与单条录入</span>
+      </button>
 
       {/* 最新导入工单预览 */}
       {data.recentTickets && data.recentTickets.length > 0 && (
         <div className="pipeline-snippet-box">
           <div className="pipeline-snippet-title">
             <span className="flex items-center gap-1.5 text-slate-700 whitespace-nowrap min-w-0">
-              <Clock size={11} className="shrink-0 text-blue-500" />
+              <Clock size={11} className="shrink-0 text-blue-500" aria-hidden="true" />
               <span>最新导入工单</span>
               {data.recentTickets[0]?.subdistrict && (
-                <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-200 text-slate-600 font-medium whitespace-nowrap">
+                <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-200 text-slate-700 font-medium whitespace-nowrap">
                   {data.recentTickets[0].subdistrict}
                 </span>
               )}
             </span>
-            <span className="font-mono text-[10px] text-slate-400 shrink-0 whitespace-nowrap">
+            <span className="font-mono text-[10px] text-slate-500 shrink-0 whitespace-nowrap">
               {data.recentTickets[0]?.ticketNo}
             </span>
           </div>

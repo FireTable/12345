@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Cpu,
@@ -123,15 +123,20 @@ export function ComputeNodesPanel({
   const [probingModal, setProbingModal] = useState(false);
   const [probeResult, setProbeResult] = useState<ProbeOutcome | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const fetchControllerRef = useRef<AbortController | null>(null);
 
   const fetchNodes = useCallback(async () => {
+    fetchControllerRef.current?.abort();
+    const controller = new AbortController();
+    fetchControllerRef.current = controller;
     setLoading(true);
     try {
-      const res = await fetch("/api/admin/compute-nodes");
+      const res = await fetch("/api/admin/compute-nodes", { signal: controller.signal });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) {
         throw new Error(json?.error || "获取算力节点列表失败");
       }
+      if (controller.signal.aborted) return;
       const payload = json.data || json;
       const nextEnv = Array.isArray(payload?.envNodes) ? (payload.envNodes as EnvComputeNode[]) : [];
       const nextNodes = Array.isArray(payload?.nodes) ? (payload.nodes as DynamicComputeNode[]) : [];
@@ -147,14 +152,20 @@ export function ComputeNodesPanel({
         });
       }
     } catch (err) {
+      if ((err as { name?: string })?.name === "AbortError" || controller.signal.aborted) return;
       toast.error(err instanceof Error ? err.message : "获取算力节点失败");
     } finally {
-      setLoading(false);
+      if (fetchControllerRef.current === controller) {
+        setLoading(false);
+      }
     }
   }, [onSummaryChange]);
 
   useEffect(() => {
     void fetchNodes();
+    return () => {
+      fetchControllerRef.current?.abort();
+    };
   }, [fetchNodes]);
 
   function resetModal() {
@@ -349,7 +360,7 @@ export function ComputeNodesPanel({
               ({envNodes.length} 基础 + {nodes.length} 动态挂载)
             </span>
           </div>
-          <p className="text-xs text-slate-400 mt-0.5">
+          <p className="text-xs text-slate-500 mt-0.5">
             支持热接入 Google Colab L4/T4 GPU（Cloudflare / Tailscale 隧道）与远程 OpenAI 兼容节点，Token 仅服务端加密/脱敏存储
           </p>
         </div>
@@ -359,9 +370,9 @@ export function ComputeNodesPanel({
             type="button"
             disabled={loading}
             onClick={() => void fetchNodes()}
-            className="btn btn--default h-[34px] sm:h-[32px] px-3 text-xs whitespace-nowrap"
+            className="btn btn--default min-h-[44px] sm:min-h-[32px] sm:h-[32px] px-3 text-xs whitespace-nowrap"
           >
-            <RefreshCw className={`h-3.5 w-3.5 shrink-0 ${loading ? "animate-spin" : ""}`} />
+            <RefreshCw className={`h-3.5 w-3.5 shrink-0 ${loading ? "motion-safe:animate-spin" : ""}`} aria-hidden="true" />
             <span>刷新节点</span>
           </button>
           <button
@@ -370,9 +381,9 @@ export function ComputeNodesPanel({
               resetModal();
               setAddOpen(true);
             }}
-            className="btn btn--primary h-[34px] sm:h-[32px] px-3.5 text-xs whitespace-nowrap"
+            className="btn btn--primary min-h-[44px] sm:min-h-[32px] sm:h-[32px] px-3.5 text-xs whitespace-nowrap"
           >
-            <Plus className="h-3.5 w-3.5 shrink-0" />
+            <Plus className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             <span>接入 Colab GPU / 算力节点</span>
           </button>
         </div>
@@ -382,16 +393,16 @@ export function ComputeNodesPanel({
         {/* 环境变量基础节点 */}
         <div className="px-4 sm:px-5 py-3 bg-slate-50/80 border-b border-slate-100 flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
-            <Server className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+            <Server className="h-3.5 w-3.5 text-slate-500 shrink-0" aria-hidden="true" />
             <span>环境变量基础节点（只读）</span>
           </div>
-          <span className="text-[11px] text-slate-400 font-mono break-all">
+          <span className="text-[11px] text-slate-500 font-mono break-all">
             SYSTEM_TWO_ENDPOINTS / EMBED_ENDPOINTS
           </span>
         </div>
 
         {envNodes.length === 0 ? (
-          <div className="px-4 sm:px-5 py-4 text-xs text-slate-400 border-b border-slate-100">
+          <div className="px-4 sm:px-5 py-4 text-xs text-slate-500 border-b border-slate-100">
             未检测到环境变量静态配置节点
           </div>
         ) : (
@@ -412,7 +423,7 @@ export function ComputeNodesPanel({
                       <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border whitespace-nowrap ${p.cls}`}>
                         {p.label}
                       </span>
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-100 text-slate-500 border border-slate-200 whitespace-nowrap">
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-100 text-slate-600 border border-slate-200 whitespace-nowrap">
                         只读 ENV
                       </span>
                     </div>
@@ -424,22 +435,22 @@ export function ComputeNodesPanel({
                   <div className="flex items-center gap-2 flex-wrap text-[11px] w-full sm:w-auto sm:shrink-0">
                     {env.hasApiKey && (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-50 border border-slate-200 text-slate-600 font-mono">
-                        <KeyRound className="h-3 w-3 text-slate-400 shrink-0" />
+                        <KeyRound className="h-3 w-3 text-slate-500 shrink-0" aria-hidden="true" />
                         {env.apiKeyHint || "已配置"}
                       </span>
                     )}
                     {env.lastStatus === "ONLINE" ? (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 font-medium tabular-nums">
-                        <CheckCircle2 className="h-3 w-3 shrink-0" />
+                        <CheckCircle2 className="h-3 w-3 shrink-0" aria-hidden="true" />
                         在线{env.lastLatencyMs != null ? ` ${env.lastLatencyMs}ms` : ""}
                       </span>
                     ) : env.lastStatus === "OFFLINE" ? (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-50 border border-rose-200 text-rose-700 font-medium">
-                        <XCircle className="h-3 w-3 shrink-0" />
+                        <XCircle className="h-3 w-3 shrink-0" aria-hidden="true" />
                         离线
                       </span>
                     ) : (
-                      <span className="text-slate-400">由运行态探活检测</span>
+                      <span className="text-slate-500">由运行态探活检测</span>
                     )}
                   </div>
                 </div>
@@ -451,16 +462,16 @@ export function ComputeNodesPanel({
         {/* 动态挂载算力节点 */}
         <div className="px-4 sm:px-5 py-3 bg-slate-50/80 border-b border-slate-100 flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
-            <Cloud className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+            <Cloud className="h-3.5 w-3.5 text-blue-600 shrink-0" aria-hidden="true" />
             <span>动态热插拔算力池</span>
           </div>
-          <span className="text-[11px] text-slate-400">
+          <span className="text-[11px] text-slate-500">
             新增、启停或删除后立即热更新算力调度池
           </span>
         </div>
 
         {loading && nodes.length === 0 ? (
-          <div className="px-5 py-6 text-xs text-slate-400 text-center">
+          <div className="px-5 py-6 text-xs text-slate-500 text-center">
             正在加载动态算力节点…
           </div>
         ) : nodes.length === 0 ? (
@@ -490,22 +501,22 @@ export function ComputeNodesPanel({
                         {p.label}
                       </span>
                       {!node.enabled && (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-200 text-slate-600 whitespace-nowrap">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-200 text-slate-700 whitespace-nowrap">
                           已停用
                         </span>
                       )}
                       {isOnline ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
-                          <CheckCircle2 className="h-3 w-3 shrink-0" />
+                          <CheckCircle2 className="h-3 w-3 shrink-0" aria-hidden="true" />
                           在线
                         </span>
                       ) : isOffline ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200 whitespace-nowrap">
-                          <XCircle className="h-3 w-3 shrink-0" />
+                          <XCircle className="h-3 w-3 shrink-0" aria-hidden="true" />
                           离线
                         </span>
                       ) : (
-                        <span className="px-2 py-0.5 rounded text-[10px] bg-slate-100 text-slate-500 border border-slate-200 whitespace-nowrap">
+                        <span className="px-2 py-0.5 rounded text-[10px] bg-slate-100 text-slate-600 border border-slate-200 whitespace-nowrap">
                           待探活
                         </span>
                       )}
@@ -524,7 +535,7 @@ export function ComputeNodesPanel({
                         <span className="text-slate-600 break-all">· 模型: {node.model}</span>
                       )}
                       <span className="inline-flex items-center gap-1 text-slate-500 whitespace-nowrap">
-                        <KeyRound className="h-3 w-3 text-slate-400 shrink-0" />
+                        <KeyRound className="h-3 w-3 text-slate-500 shrink-0" aria-hidden="true" />
                         {node.hasApiKey ? node.apiKeyHint || "已配置密钥" : "无密钥"}
                       </span>
                     </div>
@@ -534,15 +545,16 @@ export function ComputeNodesPanel({
                     <button
                       type="button"
                       disabled={togglingId === node.id}
+                      aria-pressed={node.enabled}
                       onClick={() => void handleToggleEnabled(node)}
-                      className={`btn h-[34px] sm:h-[30px] px-2.5 text-xs whitespace-nowrap ${
+                      className={`btn min-h-[44px] sm:min-h-[30px] sm:h-[30px] px-2.5 text-xs whitespace-nowrap ${
                         node.enabled
                           ? "btn--default text-emerald-700 border-emerald-200 hover:border-emerald-400"
                           : "btn--default text-slate-600"
                       }`}
                       title={node.enabled ? "点击停用此算力节点" : "点击启用此算力节点"}
                     >
-                      <Power className="h-3.5 w-3.5 shrink-0" />
+                      <Power className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                       <span>{node.enabled ? "已启用" : "已停用"}</span>
                     </button>
 
@@ -550,12 +562,12 @@ export function ComputeNodesPanel({
                       type="button"
                       disabled={probingId === node.id}
                       onClick={() => void handleProbeExisting(node)}
-                      className="btn btn--default h-[34px] sm:h-[30px] px-2.5 text-xs text-blue-700 border-blue-200 hover:border-blue-400 whitespace-nowrap"
+                      className="btn btn--default min-h-[44px] sm:min-h-[30px] sm:h-[30px] px-2.5 text-xs text-blue-700 border-blue-200 hover:border-blue-400 whitespace-nowrap"
                     >
                       {probingId === node.id ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+                        <Loader2 className="h-3.5 w-3.5 motion-safe:animate-spin shrink-0" aria-hidden="true" />
                       ) : (
-                        <Activity className="h-3.5 w-3.5 shrink-0" />
+                        <Activity className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                       )}
                       <span>{probingId === node.id ? "测速中" : "探活测速"}</span>
                     </button>
@@ -563,9 +575,9 @@ export function ComputeNodesPanel({
                     <button
                       type="button"
                       onClick={() => setDeletingNode(node)}
-                      className="btn h-[34px] sm:h-[30px] px-2.5 text-xs text-rose-700 border border-rose-200 bg-rose-50 hover:bg-rose-100 whitespace-nowrap"
+                      className="btn min-h-[44px] sm:min-h-[30px] sm:h-[30px] px-2.5 text-xs text-rose-700 border border-rose-200 bg-rose-50 hover:bg-rose-100 whitespace-nowrap"
                     >
-                      <Trash2 className="h-3.5 w-3.5 shrink-0" />
+                      <Trash2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                       <span>删除</span>
                     </button>
                   </div>
@@ -585,9 +597,9 @@ export function ComputeNodesPanel({
         }}
       >
         <DialogContent className="w-[calc(100vw-1.5rem)] max-w-[500px] max-h-[90dvh] overflow-y-auto gap-4 border-[var(--c-border)] bg-[var(--c-surface)] p-0 shadow-xl rounded-xl text-[var(--c-ink)]">
-          <DialogHeader className="space-y-1.5 px-5 pt-5 text-left">
+          <DialogHeader className="space-y-1.5 px-5 pt-5 pr-12 text-left">
             <DialogTitle className="text-[15px] font-semibold text-[var(--c-ink)] flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-blue-600 shrink-0" />
+              <Sparkles className="h-4 w-4 text-blue-600 shrink-0" aria-hidden="true" />
               <span>接入 Colab GPU / 远程算力节点</span>
             </DialogTitle>
             <DialogDescription className="text-[12px] text-[var(--c-ink-3)]">
@@ -597,28 +609,34 @@ export function ComputeNodesPanel({
 
           <form onSubmit={handleCreateNode} className="space-y-3 px-5">
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
-                节点名称 <span className="text-rose-500">*</span>
+              <label htmlFor="compute-node-name" className="block text-xs font-medium text-slate-700 mb-1">
+                节点名称 <span className="text-rose-500" aria-hidden="true">*</span>
               </label>
               <input
+                id="compute-node-name"
                 type="text"
+                required
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
                 placeholder="例如：Colab L4 GPU 节点"
-                className="w-full h-9 px-3 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
+                className="w-full min-h-[44px] sm:min-h-[36px] sm:h-9 px-3 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
               />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
+                <label htmlFor="compute-node-role" className="block text-xs font-medium text-slate-700 mb-1">
                   算力角色
                 </label>
                 <Select
                   value={formRole}
                   onValueChange={(v) => setFormRole(v as "SYSTEM_TWO" | "EMBEDDING")}
                 >
-                  <SelectTrigger className="w-full h-9 bg-white border-slate-200 text-xs text-slate-900 rounded-lg">
+                  <SelectTrigger
+                    id="compute-node-role"
+                    aria-label="算力角色"
+                    className="w-full min-h-[44px] sm:min-h-[36px] sm:h-9 bg-white border-slate-200 text-xs text-slate-900 rounded-lg"
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -628,7 +646,7 @@ export function ComputeNodesPanel({
                 </Select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
+                <label htmlFor="compute-node-provider" className="block text-xs font-medium text-slate-700 mb-1">
                   算力来源
                 </label>
                 <Select
@@ -637,7 +655,11 @@ export function ComputeNodesPanel({
                     setFormProvider(v as "COLAB" | "LOCAL" | "CLOUD")
                   }
                 >
-                  <SelectTrigger className="w-full h-9 bg-white border-slate-200 text-xs text-slate-900 rounded-lg">
+                  <SelectTrigger
+                    id="compute-node-provider"
+                    aria-label="算力来源"
+                    className="w-full min-h-[44px] sm:min-h-[36px] sm:h-9 bg-white border-slate-200 text-xs text-slate-900 rounded-lg"
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -650,42 +672,55 @@ export function ComputeNodesPanel({
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
-                Endpoint URL <span className="text-rose-500">*</span>
+              <label htmlFor="compute-node-endpoint" className="block text-xs font-medium text-slate-700 mb-1">
+                Endpoint URL <span className="text-rose-500" aria-hidden="true">*</span>
               </label>
               <input
+                id="compute-node-endpoint"
                 type="url"
+                required
+                autoCorrect="off"
+                autoCapitalize="none"
+                spellCheck={false}
                 value={formEndpoint}
                 onChange={(e) => setFormEndpoint(e.target.value)}
                 placeholder="例如：https://xxx.trycloudflare.com/v1"
-                className="w-full h-9 px-3 rounded-lg border border-slate-200 bg-white text-xs font-mono text-slate-900 focus:outline-none focus:border-blue-500"
+                className="w-full min-h-[44px] sm:min-h-[36px] sm:h-9 px-3 rounded-lg border border-slate-200 bg-white text-xs font-mono text-slate-900 focus:outline-none focus:border-blue-500"
               />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
+                <label htmlFor="compute-node-token" className="block text-xs font-medium text-slate-700 mb-1">
                   Bearer Token（密码输入）
                 </label>
                 <input
+                  id="compute-node-token"
                   type="password"
                   autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
                   value={formApiKey}
                   onChange={(e) => setFormApiKey(e.target.value)}
                   placeholder="输入脚本生成的 Bearer Token"
-                  className="w-full h-9 px-3 rounded-lg border border-slate-200 bg-white text-xs font-mono text-slate-900 focus:outline-none focus:border-blue-500"
+                  className="w-full min-h-[44px] sm:min-h-[36px] sm:h-9 px-3 rounded-lg border border-slate-200 bg-white text-xs font-mono text-slate-900 focus:outline-none focus:border-blue-500"
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
+                <label htmlFor="compute-node-model" className="block text-xs font-medium text-slate-700 mb-1">
                   模型名称（可选）
                 </label>
                 <input
+                  id="compute-node-model"
                   type="text"
+                  autoCorrect="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
                   value={formModel}
                   onChange={(e) => setFormModel(e.target.value)}
                   placeholder="留空则自动探测/默认"
-                  className="w-full h-9 px-3 rounded-lg border border-slate-200 bg-white text-xs font-mono text-slate-900 focus:outline-none focus:border-blue-500"
+                  className="w-full min-h-[44px] sm:min-h-[36px] sm:h-9 px-3 rounded-lg border border-slate-200 bg-white text-xs font-mono text-slate-900 focus:outline-none focus:border-blue-500"
                 />
               </div>
             </div>
@@ -693,6 +728,8 @@ export function ComputeNodesPanel({
             {/* 探活回显结果 */}
             {probeResult && (
               <div
+                role="status"
+                aria-live="polite"
                 className={`rounded-lg border p-2.5 text-xs space-y-1.5 ${
                   probeResult.online
                     ? "bg-emerald-50 border-emerald-200 text-emerald-900"
@@ -702,9 +739,9 @@ export function ComputeNodesPanel({
                 <div className="flex items-center justify-between font-semibold gap-2 flex-wrap">
                   <span className="flex items-center gap-1.5">
                     {probeResult.online ? (
-                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" aria-hidden="true" />
                     ) : (
-                      <XCircle className="h-3.5 w-3.5 text-rose-600 shrink-0" />
+                      <XCircle className="h-3.5 w-3.5 text-rose-600 shrink-0" aria-hidden="true" />
                     )}
                     {probeResult.online ? "连通性探测通过" : "节点连接失败"}
                   </span>
@@ -725,7 +762,7 @@ export function ComputeNodesPanel({
                         key={m}
                         type="button"
                         onClick={() => setFormModel(m)}
-                        className="px-2 py-0.5 rounded bg-white border border-emerald-300 text-[10px] font-mono text-emerald-800 hover:bg-emerald-100 cursor-pointer"
+                        className="min-h-[44px] sm:min-h-[24px] px-2.5 py-1 sm:px-2 sm:py-0.5 rounded bg-white border border-emerald-300 text-[10px] font-mono text-emerald-800 hover:bg-emerald-100 cursor-pointer"
                         title="点击填入此模型名称"
                       >
                         {m}
@@ -741,19 +778,19 @@ export function ComputeNodesPanel({
                 type="button"
                 disabled={probingModal || submitting || !formEndpoint.trim()}
                 onClick={() => void handleProbeTemp()}
-                className="btn btn--default text-xs text-blue-700 border-blue-200 hover:border-blue-400 justify-center"
+                className="btn btn--default min-h-[44px] sm:min-h-0 text-xs text-blue-700 border-blue-200 hover:border-blue-400 justify-center"
               >
                 {probingModal ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+                  <Loader2 className="h-3.5 w-3.5 motion-safe:animate-spin shrink-0" aria-hidden="true" />
                 ) : (
-                  <Activity className="h-3.5 w-3.5 shrink-0" />
+                  <Activity className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                 )}
                 <span>{probingModal ? "探测中…" : "先探测连通性"}</span>
               </button>
               <div className="flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  className="btn btn--default text-xs"
+                  className="btn btn--default min-h-[44px] sm:min-h-0 text-xs"
                   disabled={submitting}
                   onClick={() => {
                     setAddOpen(false);
@@ -764,7 +801,7 @@ export function ComputeNodesPanel({
                 </button>
                 <button
                   type="submit"
-                  className="btn btn--primary text-xs"
+                  className="btn btn--primary min-h-[44px] sm:min-h-0 text-xs"
                   disabled={submitting || !formName.trim() || !formEndpoint.trim()}
                 >
                   {submitting ? "加入中…" : "确认加入算力池"}

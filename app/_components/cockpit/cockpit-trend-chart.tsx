@@ -127,9 +127,9 @@ export function CockpitTrendChart({
       <div className="cockpit-glass-header flex items-center justify-between gap-2 pb-1.5 shrink-0 min-w-0">
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <TrendingUp size={14} aria-hidden="true" className="text-sky-400 shrink-0" />
-          <h3 className="text-xs font-semibold text-slate-100 tracking-wide cockpit-single-line">
+          <h2 className="text-xs font-semibold text-slate-100 tracking-wide cockpit-single-line">
             {isEcommerce ? "客诉时序走势与多频脉冲" : "工单时序走势与多频激增脉冲"}
-          </h3>
+          </h2>
         </div>
         <span className="text-[10px] font-mono text-slate-400 uppercase whitespace-nowrap shrink-0">
           WAVEFORM SURGE

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import {
@@ -69,10 +69,29 @@ export interface TicketVerdictData {
   isFakeClosure?: boolean;
 }
 
+function formatTicketTimestamp(raw?: string | null): string {
+  if (!raw) return "—";
+  if (/^\d{4}-\d{2}-\d{2}T/.test(raw)) {
+    const d = new Date(raw);
+    if (!Number.isNaN(d.getTime())) {
+      const pad = (n: number) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+  }
+  return raw;
+}
+
 /**
  * 1. AI 智能研判核心卡片 (现代扁平质感，无厚重边框)
  */
-export function AiVerdictCard({ data }: { data: TicketVerdictData }) {
+export function AiVerdictCard({
+  data,
+  headingLevel = "h2",
+}: {
+  data: TicketVerdictData;
+  headingLevel?: "h2" | "h3";
+}) {
+  const HeadingTag = headingLevel;
   const clusterId = data.cluster_info?.id || data.cluster_id || "";
   const clusterTitle = data.cluster_info?.title || data.cluster_name || (clusterId ? `多频主题 ${clusterId}` : "");
 
@@ -81,11 +100,11 @@ export function AiVerdictCard({ data }: { data: TicketVerdictData }) {
       {/* 头部：研判状态与置信度 */}
       <div className="flex items-center justify-between gap-2 flex-wrap pb-2.5 border-b border-slate-200/60">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="flex items-center gap-1.5 text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200/70">
+          <HeadingTag className="flex items-center gap-1.5 text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200/70 m-0">
             <Sparkles className="w-3.5 h-3.5 text-blue-600" aria-hidden="true" />
-            AI 智能研判解析
-          </span>
-          <span className="text-[11px] text-slate-500 font-medium">
+            <span>AI 智能研判解析</span>
+          </HeadingTag>
+          <span className="text-[11px] text-slate-600 font-medium tabular-nums">
             置信度 {data.confidence ?? 90}%
           </span>
         </div>
@@ -96,7 +115,7 @@ export function AiVerdictCard({ data }: { data: TicketVerdictData }) {
               涉稳预警
             </span>
           ) : (
-            <span className="text-[11px] font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
+            <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
               <ShieldCheck className="w-3 h-3" aria-hidden="true" />
               涉稳平稳
             </span>
@@ -110,7 +129,7 @@ export function AiVerdictCard({ data }: { data: TicketVerdictData }) {
       {/* 4 项核心研判结论 - 采用精致轻量信息块 */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
         <div className="bg-white p-2.5 rounded-lg border border-slate-200/70 shadow-2xs min-w-0">
-          <div className="text-slate-400 text-[11px] flex items-center gap-1.5 mb-1">
+          <div className="text-slate-500 text-[11px] flex items-center gap-1.5 mb-1">
             <Building2 className="w-3.5 h-3.5 text-blue-600 shrink-0" aria-hidden="true" />
             <span>涉事/责任主体</span>
           </div>
@@ -120,7 +139,7 @@ export function AiVerdictCard({ data }: { data: TicketVerdictData }) {
         </div>
 
         <div className="bg-white p-2.5 rounded-lg border border-slate-200/70 shadow-2xs min-w-0">
-          <div className="text-slate-400 text-[11px] flex items-center gap-1.5 mb-1">
+          <div className="text-slate-500 text-[11px] flex items-center gap-1.5 mb-1">
             <Tag className="w-3.5 h-3.5 text-indigo-600 shrink-0" aria-hidden="true" />
             <span>细分事件类型</span>
           </div>
@@ -130,7 +149,7 @@ export function AiVerdictCard({ data }: { data: TicketVerdictData }) {
         </div>
 
         <div className="sm:col-span-2 bg-white p-2.5 rounded-lg border border-slate-200/70 shadow-2xs min-w-0">
-          <div className="text-slate-400 text-[11px] flex items-center gap-1.5 mb-1">
+          <div className="text-slate-500 text-[11px] flex items-center gap-1.5 mb-1">
             <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" aria-hidden="true" />
             <span>微观事发地点</span>
           </div>
@@ -140,7 +159,7 @@ export function AiVerdictCard({ data }: { data: TicketVerdictData }) {
         </div>
 
         <div className="bg-white p-2.5 rounded-lg border border-slate-200/70 shadow-2xs min-w-0">
-          <div className="text-slate-400 text-[11px] flex items-center gap-1.5 mb-1">
+          <div className="text-slate-500 text-[11px] flex items-center gap-1.5 mb-1">
             <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" aria-hidden="true" />
             <span>建议办结时限</span>
           </div>
@@ -150,7 +169,7 @@ export function AiVerdictCard({ data }: { data: TicketVerdictData }) {
         </div>
 
         <div className="bg-white p-2.5 rounded-lg border border-slate-200/70 shadow-2xs min-w-0">
-          <div className="text-slate-400 text-[11px] flex items-center gap-1.5 mb-1">
+          <div className="text-slate-500 text-[11px] flex items-center gap-1.5 mb-1">
             <Layers className="w-3.5 h-3.5 text-purple-600 shrink-0" aria-hidden="true" />
             <span>多频聚类态势</span>
           </div>
@@ -164,13 +183,13 @@ export function AiVerdictCard({ data }: { data: TicketVerdictData }) {
       {clusterId && (
         <div className="bg-blue-50/70 border border-blue-200/80 rounded-lg p-2.5 flex items-center justify-between gap-2 text-xs">
           <div className="flex items-center gap-1.5 min-w-0">
-            <Layers className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+            <Layers className="w-3.5 h-3.5 text-blue-600 shrink-0" aria-hidden="true" />
             <span className="text-slate-600 shrink-0">多频专题：</span>
             <span className="font-bold text-blue-900 truncate">{clusterTitle}</span>
           </div>
           <Link
             href={`/themes/${clusterId}?ticketId=${encodeURIComponent(data.id)}&highlight=${encodeURIComponent(data.id)}#ticket-${encodeURIComponent(data.id)}`}
-            className="text-blue-600 hover:text-blue-800 font-semibold flex items-center shrink-0 hover:underline"
+            className="relative inline-flex items-center min-h-[28px] py-1 text-blue-600 hover:text-blue-800 font-semibold shrink-0 hover:underline after:content-[''] after:absolute after:-inset-y-[8px] after:-inset-x-[4px]"
           >
             <span>定位专题</span>
           </Link>
@@ -183,29 +202,57 @@ export function AiVerdictCard({ data }: { data: TicketVerdictData }) {
 /**
  * 2. 市民原始诉求正文展示
  */
-export function CitizenVoiceCard({ data }: { data: TicketVerdictData }) {
+export function CitizenVoiceCard({
+  data,
+  headingLevel = "h2",
+}: {
+  data: TicketVerdictData;
+  headingLevel?: "h2" | "h3";
+}) {
+  const HeadingTag = headingLevel;
   const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current !== null) {
+        window.clearTimeout(copyTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleCopy = () => {
-    if (!data.content) return;
-    navigator.clipboard.writeText(data.content);
-    setCopied(true);
-    toast.success("诉求原文已复制到剪贴板");
-    setTimeout(() => setCopied(false), 2000);
+    if (!data.content || !navigator.clipboard?.writeText) {
+      toast.error("当前环境不支持一键复制，请手动选取");
+      return;
+    }
+    navigator.clipboard
+      .writeText(data.content)
+      .then(() => {
+        setCopied(true);
+        toast.success("诉求原文已复制到剪贴板");
+        if (copyTimerRef.current !== null) {
+          window.clearTimeout(copyTimerRef.current);
+        }
+        copyTimerRef.current = window.setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => {
+        toast.error("复制失败，请手动选取复制");
+      });
   };
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2.5">
       <div className="flex items-center justify-between gap-2 flex-wrap text-xs">
-        <div className="flex items-center gap-1.5 font-bold text-slate-800">
+        <HeadingTag className="flex items-center gap-1.5 font-bold text-slate-800 m-0 text-xs">
           <MessageSquareQuote className="w-4 h-4 text-blue-600 shrink-0" aria-hidden="true" />
           <span>市民诉求原文</span>
-        </div>
-        <div className="flex items-center gap-3 flex-wrap text-slate-400">
-          <span>共 {(data.content || "").length} 字 · {data.channel || "市民服务热线"}</span>
+        </HeadingTag>
+        <div className="flex items-center gap-3 flex-wrap text-slate-500">
+          <span className="tabular-nums">共 {(data.content || "").length} 字 · {data.channel || "市民服务热线"}</span>
           <button
             type="button"
-            className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-700 font-medium cursor-pointer min-h-[44px] sm:min-h-0 px-2 sm:px-0"
+            className="relative inline-flex items-center gap-1 min-h-[28px] min-w-0 py-1 px-1.5 sm:px-0 text-blue-600 hover:text-blue-700 font-medium cursor-pointer after:content-[''] after:absolute after:-inset-y-[8px] after:-inset-x-[4px]"
             onClick={handleCopy}
             title="复制原文"
           >
@@ -215,7 +262,7 @@ export function CitizenVoiceCard({ data }: { data: TicketVerdictData }) {
         </div>
       </div>
       <div className="p-3 bg-slate-50 border-l-3 border-blue-600 rounded-r-lg text-slate-800 text-xs leading-relaxed whitespace-pre-wrap break-words max-h-[220px] overflow-y-auto">
-        {data.content || <span className="text-slate-400">暂无正文内容</span>}
+        {data.content || <span className="text-slate-500">暂无正文内容</span>}
       </div>
     </div>
   );
@@ -224,40 +271,47 @@ export function CitizenVoiceCard({ data }: { data: TicketVerdictData }) {
 /**
  * 3. 工单基本信息经办属性
  */
-export function TicketPropsGrid({ data }: { data: TicketVerdictData }) {
+export function TicketPropsGrid({
+  data,
+  headingLevel = "h2",
+}: {
+  data: TicketVerdictData;
+  headingLevel?: "h2" | "h3";
+}) {
+  const HeadingTag = headingLevel;
   const urgency = getUrgencyLabel(data.urgency);
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2.5">
       <div className="text-xs font-bold text-slate-800 pb-2 border-b border-slate-100 flex items-center justify-between gap-2 flex-wrap">
-        <span>工单经办与受理要素</span>
-        <span className="font-mono text-slate-400 text-[11px] break-all">{data.id}</span>
+        <HeadingTag className="text-xs font-bold text-slate-800 m-0">工单经办与受理要素</HeadingTag>
+        <span className="font-mono text-slate-500 text-[11px] break-all">{data.id}</span>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-2 gap-x-4 text-xs">
         <div className="flex items-center justify-between gap-2 py-0.5 min-w-0">
-          <span className="text-slate-400 shrink-0">所属镇街</span>
+          <span className="text-slate-500 shrink-0">所属镇街</span>
           <span className="font-medium text-slate-800 break-words text-right">{data.region || "—"}</span>
         </div>
         <div className="flex items-center justify-between gap-2 py-0.5 min-w-0">
-          <span className="text-slate-400 shrink-0">反映人员</span>
+          <span className="text-slate-500 shrink-0">反映人员</span>
           <span className="text-slate-800 font-medium break-words text-right">{data.caller_name || "热线市民"}</span>
         </div>
         <div className="flex items-center justify-between gap-2 py-0.5 min-w-0">
-          <span className="text-slate-400 shrink-0">联系电话</span>
+          <span className="text-slate-500 shrink-0">联系电话</span>
           <span className="font-mono text-slate-700 break-all text-right">{data.caller_phone || "—"}</span>
         </div>
         <div className="flex items-center justify-between gap-2 py-0.5 min-w-0">
-          <span className="text-slate-400 shrink-0">受理渠道</span>
+          <span className="text-slate-500 shrink-0">受理渠道</span>
           <span className="text-slate-800 break-words text-right">{data.channel || "市民服务热线"}</span>
         </div>
         <div className="flex items-center justify-between gap-2 py-0.5 min-w-0">
-          <span className="text-slate-400 shrink-0">紧急程度</span>
+          <span className="text-slate-500 shrink-0">紧急程度</span>
           <span className={`font-semibold ${data.urgency === "URGENT" ? "text-rose-600" : "text-slate-700"}`}>
             {urgency}
           </span>
         </div>
         <div className="flex items-center justify-between gap-2 py-0.5 min-w-0">
-          <span className="text-slate-400 shrink-0">登记时间</span>
-          <span className="font-mono text-slate-700 tabular-nums">{data.createdAt}</span>
+          <span className="text-slate-500 shrink-0">登记时间</span>
+          <span className="font-mono text-slate-700 tabular-nums">{formatTicketTimestamp(data.createdAt)}</span>
         </div>
       </div>
     </div>
@@ -267,7 +321,14 @@ export function TicketPropsGrid({ data }: { data: TicketVerdictData }) {
 /**
  * 4. 工单空间地理微观地点标注卡片 (天地图高精打点)
  */
-export function TicketGeoMapCard({ data }: { data: TicketVerdictData }) {
+export function TicketGeoMapCard({
+  data,
+  headingLevel = "h2",
+}: {
+  data: TicketVerdictData;
+  headingLevel?: "h2" | "h3";
+}) {
+  const HeadingTag = headingLevel;
   const { activeRegion } = useRegion();
   const [geo, setGeo] = React.useState<{
     lng?: number;
@@ -385,7 +446,7 @@ export function TicketGeoMapCard({ data }: { data: TicketVerdictData }) {
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
       <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between gap-2 flex-wrap bg-slate-50/60">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs font-bold text-slate-800">事发地点空间微观标注</span>
+          <HeadingTag className="text-xs font-bold text-slate-800 m-0">事发地点空间微观标注</HeadingTag>
           <span className="text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded font-medium border border-blue-100">
             天地图高精底图
           </span>
@@ -406,7 +467,7 @@ export function TicketGeoMapCard({ data }: { data: TicketVerdictData }) {
           <div className="leading-tight min-w-0 break-words">
             <span className="font-semibold text-slate-900">{queryAddress || "暂无详细地址"}</span>
             {geo.formattedAddress && geo.formattedAddress !== queryAddress && (
-              <span className="text-slate-400 text-[11px] block mt-0.5">标准解析：{geo.formattedAddress}</span>
+              <span className="text-slate-500 text-[11px] block mt-0.5">标准解析：{geo.formattedAddress}</span>
             )}
           </div>
         </div>
@@ -430,8 +491,8 @@ export function TicketGeoMapCard({ data }: { data: TicketVerdictData }) {
             />
           </div>
         ) : (
-          <div className="h-28 bg-slate-50 rounded-lg border border-dashed border-slate-200 flex flex-col items-center justify-center text-xs text-slate-400 gap-1.5">
-            <MapPin className="w-5 h-5 text-slate-300" aria-hidden="true" />
+          <div className="h-28 bg-slate-50 rounded-lg border border-dashed border-slate-200 flex flex-col items-center justify-center text-xs text-slate-500 gap-1.5">
+            <MapPin className="w-5 h-5 text-slate-400" aria-hidden="true" />
             <span>{geo.loading ? "正在精准定位事发空间位置..." : geo.error || "暂无坐标数据"}</span>
           </div>
         )}

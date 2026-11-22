@@ -253,10 +253,15 @@ export default function RootLayout({
         />
       </head>
       <body>
+        <a href="#main-content" className="skip-link">
+          跳转到主要内容
+        </a>
         <RegionProvider initialAppDomain={appDomain}>
           <CivicWorkflowProvider>
             <CivicNav />
-            <main className="main">{children}</main>
+            <main id="main-content" className="main">
+              {children}
+            </main>
             <Toaster />
           </CivicWorkflowProvider>
         </RegionProvider>

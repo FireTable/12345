@@ -18,6 +18,7 @@ import type {
  */
 export function useCockpitData(regionId: string) {
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isPolling, setIsPolling] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
@@ -47,19 +48,29 @@ export function useCockpitData(regionId: string) {
   const [hourlyDistribution, setHourlyDistribution] = useState<CockpitHourlyBucket[]>([]);
 
   const fetchRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
+  const isPollingRef = useRef(isPolling);
+  isPollingRef.current = isPolling;
+  const prevPollingRef = useRef(isPolling);
 
   const loadData = useCallback(async (isSilent = false) => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     const fetchId = ++fetchRef.current;
     if (!isSilent) setIsRefreshing(true);
 
     try {
       const regParam = regionId ? `?region=${encodeURIComponent(regionId)}` : "";
-      const payload = await fetch(`/api/cockpit${regParam}`)
-        .then((r) => (r.ok ? r.json() : null))
-        .catch(() => null);
+      const res = await fetch(`/api/cockpit${regParam}`, { signal: controller.signal });
+      if (!res.ok) {
+        throw new Error(`大屏数据接口异常 (${res.status})`);
+      }
+      const payload = await res.json();
 
-      if (fetchId !== fetchRef.current) return;
+      if (controller.signal.aborted || fetchId !== fetchRef.current) return;
 
+      setError(null);
       setRawOverview(payload?.overview || null);
       setRawTrend(payload?.trends || null);
       setRawClusters(
@@ -98,10 +109,12 @@ export function useCockpitData(regionId: string) {
       );
 
       setLastUpdated(new Date());
-    } catch (e) {
+    } catch (e: any) {
+      if (controller.signal.aborted || e?.name === "AbortError" || fetchId !== fetchRef.current) return;
       console.error("[Cockpit] Failed to load cockpit data:", e);
+      setError(e instanceof Error ? e.message : "大屏实时数据拉取失败");
     } finally {
-      if (fetchId === fetchRef.current) {
+      if (!controller.signal.aborted && fetchId === fetchRef.current) {
         setLoading(false);
         setIsRefreshing(false);
       }
@@ -109,16 +122,22 @@ export function useCockpitData(regionId: string) {
   }, [regionId]);
 
   useEffect(() => {
+    return () => {
+      fetchRef.current += 1;
+      abortRef.current?.abort();
+    };
+  }, []);
+
+  useEffect(() => {
     setSelectedTownship(null);
     setLoading(true);
+    setError(null);
     loadData(false);
   }, [regionId, loadData]);
 
-  // WS 推送：civic-data-refresh 信号触发 silent refetch（不带 loading 闪烁）。
-  // 替换之前 25s 轮询，节省 N 倍请求；只在真有数据变更时才拉。
-  // - task-progress 也会触发：研判完成后 dashboard 数据会变化
-  // - civic-data-refresh：上传 / 切区 / 其他模块主动通知
+  // WS 推送：civic-data-refresh 信号触发 silent refetch（受 isPolling 开关控制）
   useCivicSse(regionId, (msg) => {
+    if (!isPollingRef.current) return;
     if (
       msg.type === "civic-data-refresh" ||
       msg.type === "pipeline-state-refresh" ||
@@ -131,11 +150,13 @@ export function useCockpitData(regionId: string) {
     }
   });
 
-  // isPolling 现在等价于"是否还接受 WS 触发刷新"。保留 UI 切换让用户能暂停自动刷新，
-  // 但即便暂停，仍支持手动 refresh()。
+  // 从暂停切回开启实时流时，主动静默补拉一次最新数据
   useEffect(() => {
-    /* 旧的 25s setInterval 已删除，WS 信号驱动替换 */
-  }, [isPolling]);
+    if (isPolling && !prevPollingRef.current) {
+      loadData(true);
+    }
+    prevPollingRef.current = isPolling;
+  }, [isPolling, loadData]);
 
   // 1. KPI 真实计算
   const kpi = useMemo<CockpitKpiData>(() => {
@@ -250,6 +271,7 @@ export function useCockpitData(regionId: string) {
 
   return {
     loading,
+    error,
     isRefreshing,
     isPolling,
     setIsPolling,

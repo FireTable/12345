@@ -38,6 +38,10 @@ export function FlowingEdge({
 
   const isActive = data?.active ?? false;
   const isCompleted = data?.completed ?? false;
+  const reduceMotion =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   const strokeColor = isCompleted
     ? "#22C55E"
@@ -62,7 +66,7 @@ export function FlowingEdge({
       />
 
       {/* 运行时流动的科技脉冲光束 (Animated Beam Particle) */}
-      {isActive && (
+      {isActive && !reduceMotion && (
         <circle r="4" fill="#3B82F6" className="flowing-beam-circle">
           <animateMotion
             dur="1.8s"

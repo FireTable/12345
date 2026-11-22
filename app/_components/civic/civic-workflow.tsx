@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -81,12 +81,28 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
     loaded: boolean;
   }>({ total: 0, analyzed: 0, loaded: false });
 
+  const statusAbortRef = useRef<AbortController | null>(null);
+  const statusSeqRef = useRef(0);
+
   const loadTicketStatus = useCallback(async () => {
+    statusAbortRef.current?.abort();
+    const controller = new AbortController();
+    statusAbortRef.current = controller;
+    const seq = ++statusSeqRef.current;
+
+    const regId = activeRegion?.id;
+    const regParam = regId ? `?region=${encodeURIComponent(regId)}` : "";
+    const headers: Record<string, string> = regId ? { "x-region-id": regId } : {};
+
     try {
       // ponytail: 未登录态先打公开端点拿到工单数,登录态再升级到 /api/overview。
-      const pub = await fetch("/api/public/overview")
+      const pub = await fetch(`/api/public/overview${regParam}`, {
+        headers,
+        signal: controller.signal,
+      })
         .then((r) => (r.ok ? r.json() : null))
         .catch(() => null);
+      if (controller.signal.aborted || seq !== statusSeqRef.current) return;
       if (pub && typeof pub.totalWorkorders === "number") {
         setTicketStatus({
           total: pub.totalWorkorders,
@@ -96,8 +112,13 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
         return;
       }
       if (!isAdmin) return;
-      const res = await fetch("/api/overview");
+      const res = await fetch(`/api/overview${regParam}`, {
+        headers,
+        signal: controller.signal,
+      });
+      if (!res.ok) return;
       const data = await res.json();
+      if (controller.signal.aborted || seq !== statusSeqRef.current) return;
       if (data.success) {
         setTicketStatus({
           total: data.totalWorkorders || 0,
@@ -108,7 +129,14 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
     } catch {
       // silent
     }
-  }, [isAdmin]);
+  }, [isAdmin, activeRegion?.id]);
+
+  useEffect(() => {
+    return () => {
+      statusSeqRef.current += 1;
+      statusAbortRef.current?.abort();
+    };
+  }, []);
 
   const [taskProgress, setTaskProgress] = useState<TaskProgress | null>(null);
 

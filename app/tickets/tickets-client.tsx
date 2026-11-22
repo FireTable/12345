@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -139,8 +139,15 @@ export default function TicketsPage() {
   const [drawer, setDrawer] = useState<Row | null>(null);
   const drawerSeq = useRef(0);
   const drawerAbortRef = useRef<AbortController | null>(null);
+  const drawerDialogRef = useRef<HTMLDialogElement>(null);
+  const drawerPanelRef = useRef<HTMLDivElement>(null);
+  const drawerCloseBtnRef = useRef<HTMLButtonElement>(null);
+  const drawerPointerOutsideRef = useRef(false);
+  const drawerTitleId = useId();
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const loadSeqRef = useRef(0);
   const loadAbortRef = useRef<AbortController | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [data, setData] = useState<{
     total: number;
     data: Row[];
@@ -202,8 +209,15 @@ export default function TicketsPage() {
     if (category) q.set("category", category);
     if (cluster) q.set("cluster", cluster);
     if (time) q.set("time", time);
+    setLoadError(null);
     fetch(`/api/workorders?${q}`, { headers: regionHeaders(), signal: controller.signal })
-      .then((r) => r.json())
+      .then(async (r) => {
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          throw new Error(j?.error || `工单列表加载失败 (${r.status})`);
+        }
+        return j;
+      })
       .then((j) => {
         if (controller.signal.aborted || seq !== loadSeqRef.current) return;
         setData((prev) => ({
@@ -220,7 +234,10 @@ export default function TicketsPage() {
       })
       .catch((err) => {
         if (controller.signal.aborted || err?.name === "AbortError" || seq !== loadSeqRef.current) return;
+        const msg = err instanceof Error ? err.message : "工单列表加载失败";
+        setLoadError(msg);
         setData((prev) => ({ ...prev, total: 0, data: [] }));
+        toast.error(msg);
       })
       .finally(() => {
         if (controller.signal.aborted || seq !== loadSeqRef.current) return;
@@ -359,6 +376,19 @@ export default function TicketsPage() {
     }
   }
 
+  useEffect(() => {
+    const dialogEl = drawerDialogRef.current;
+    if (!dialogEl) return;
+    if (drawer) {
+      if (!dialogEl.open) {
+        dialogEl.showModal();
+        drawerCloseBtnRef.current?.focus({ preventScroll: true });
+      }
+    } else if (dialogEl.open) {
+      dialogEl.close();
+    }
+  }, [drawer]);
+
   if (isRolePending || !isAdmin) {
     return <SkTickets />;
   }
@@ -373,7 +403,48 @@ export default function TicketsPage() {
   function closeDrawer() {
     drawerSeq.current += 1;
     drawerAbortRef.current?.abort();
+    if (drawerDialogRef.current?.open) {
+      drawerDialogRef.current.close();
+    }
     setDrawer(null);
+  }
+
+  function isOutsideDrawerPanel(clientX: number, clientY: number) {
+    const panel = drawerPanelRef.current;
+    if (!panel) return false;
+    const r = panel.getBoundingClientRect();
+    return clientX < r.left || clientX > r.right || clientY < r.top || clientY > r.bottom;
+  }
+
+  function activateTab(nextKey: string, focusButton = false) {
+    setTab(nextKey);
+    setPage(1);
+    setReviewPage(1);
+    if (focusButton) {
+      const btn = tabRefs.current[nextKey];
+      if (btn) {
+        btn.focus();
+        btn.scrollIntoView({ block: "nearest", inline: "nearest" });
+      }
+    }
+  }
+
+  function handleTabKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    const idx = TABS.findIndex((t) => t.key === tab);
+    if (idx < 0) return;
+    if (e.key === "ArrowRight") {
+      e.preventDefault();
+      activateTab(TABS[(idx + 1) % TABS.length].key, true);
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      activateTab(TABS[(idx - 1 + TABS.length) % TABS.length].key, true);
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      activateTab(TABS[0].key, true);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      activateTab(TABS[TABS.length - 1].key, true);
+    }
   }
 
   function openDrawer(row: Row) {
@@ -470,9 +541,9 @@ export default function TicketsPage() {
     <>
       <div className="page-hero">
         <div>
-          <div className="page-hero__title">
+          <h1 className="page-hero__title">
             工单中心
-          </div>
+          </h1>
           <div className="page-hero__sub">
             {activeRegion ? `${activeRegion.name} · ` : ""}全部工单 · 实时同步
           </div>
@@ -554,7 +625,7 @@ export default function TicketsPage() {
           <div className="card list-card min-w-0 overflow-hidden">
             <div className="list-card__head">
               <div>
-                <div className="list-card__title">工单列表</div>
+                <h2 className="list-card__title m-0">工单列表</h2>
                 <div className="list-card__sub">点击行查看详情</div>
               </div>
             </div>
@@ -562,19 +633,20 @@ export default function TicketsPage() {
               className="filter-tabs flex items-center flex-nowrap overflow-x-auto whitespace-nowrap max-w-full"
               role="tablist"
               aria-label="工单筛选视图"
+              onKeyDown={handleTabKeyDown}
             >
               {TABS.map((t) => (
                 <button
                   key={t.key}
+                  ref={(el) => {
+                    tabRefs.current[t.key] = el;
+                  }}
                   type="button"
                   role="tab"
                   aria-selected={tab === t.key}
+                  tabIndex={tab === t.key ? 0 : -1}
                   className={`filter-tab whitespace-nowrap shrink-0${tab === t.key ? " is-active" : ""}`}
-                  onClick={() => {
-                    setTab(t.key);
-                    setPage(1);
-                    setReviewPage(1);
-                  }}
+                  onClick={() => activateTab(t.key)}
                 >
                   {t.label}
                   <span className="filter-tab__count tabular-nums">
@@ -663,14 +735,14 @@ export default function TicketsPage() {
                               className="min-w-[240px] whitespace-nowrap text-right"
                               onClick={(e) => e.stopPropagation()}
                             >
-                              <div className="inline-flex items-center justify-end gap-1.5 whitespace-nowrap">
+                              <div className="inline-flex items-center justify-end gap-2 whitespace-nowrap">
                                 <button
                                   type="button"
                                   disabled={Boolean(actingReviewId)}
                                   onClick={() =>
                                     void handleReviewAction(item, "REVIEWED")
                                   }
-                                  className="inline-flex items-center gap-1 px-2.5 min-h-[44px] sm:min-h-0 py-1 rounded-md text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 disabled:opacity-50 cursor-pointer whitespace-nowrap"
+                                  className="relative inline-flex items-center gap-1 px-2.5 min-h-[28px] min-w-0 py-1 rounded-md text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 disabled:opacity-50 cursor-pointer whitespace-nowrap after:content-[''] after:absolute after:-inset-y-[8px] after:inset-x-0"
                                 >
                                   <Check className="w-3 h-3 shrink-0" aria-hidden="true" />
                                   <span>{busy ? "处理中" : "确认无误"}</span>
@@ -681,14 +753,14 @@ export default function TicketsPage() {
                                   onClick={() =>
                                     void handleReviewAction(item, "DISMISSED")
                                   }
-                                  className="inline-flex items-center gap-1 px-2.5 min-h-[44px] sm:min-h-0 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 disabled:opacity-50 cursor-pointer whitespace-nowrap"
+                                  className="relative inline-flex items-center gap-1 px-2.5 min-h-[28px] min-w-0 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 disabled:opacity-50 cursor-pointer whitespace-nowrap after:content-[''] after:absolute after:-inset-y-[8px] after:inset-x-0"
                                 >
                                   <X className="w-3 h-3 shrink-0" aria-hidden="true" />
                                   <span>忽略</span>
                                 </button>
                                 <Link
                                   href={`/tickets/${encodeURIComponent(item.ticketId)}`}
-                                  className="inline-flex items-center gap-1 px-2.5 min-h-[44px] sm:min-h-0 py-1 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 whitespace-nowrap"
+                                  className="relative inline-flex items-center gap-1 px-2.5 min-h-[28px] py-1 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 whitespace-nowrap after:content-[''] after:absolute after:-inset-y-[8px] after:inset-x-0"
                                 >
                                   <Wrench className="w-3 h-3 shrink-0" aria-hidden="true" />
                                   <span>去纠偏</span>
@@ -745,7 +817,10 @@ export default function TicketsPage() {
                       setPage(1);
                     }}
                   >
-                    <SelectTrigger className="w-full sm:w-[156px] min-h-[44px] sm:min-h-0 sm:h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
+                    <SelectTrigger
+                      aria-label={`按${regionUnit}筛选`}
+                      className="w-full sm:w-[156px] min-h-[44px] sm:min-h-0 sm:h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg"
+                    >
                       <SelectValue placeholder={`${regionUnit}：全部`} />
                     </SelectTrigger>
                     <SelectContent>
@@ -765,7 +840,10 @@ export default function TicketsPage() {
                       setPage(1);
                     }}
                   >
-                    <SelectTrigger className="w-full sm:w-[152px] min-h-[44px] sm:min-h-0 sm:h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
+                    <SelectTrigger
+                      aria-label="按诉求类型筛选"
+                      className="w-full sm:w-[152px] min-h-[44px] sm:min-h-0 sm:h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg"
+                    >
                       <SelectValue placeholder="类型：全部" />
                     </SelectTrigger>
                     <SelectContent>
@@ -785,7 +863,10 @@ export default function TicketsPage() {
                       setPage(1);
                     }}
                   >
-                    <SelectTrigger className="w-full sm:w-[155px] min-h-[44px] sm:min-h-0 sm:h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
+                    <SelectTrigger
+                      aria-label="按聚类状态筛选"
+                      className="w-full sm:w-[155px] min-h-[44px] sm:min-h-0 sm:h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg"
+                    >
                       <SelectValue placeholder="聚类状态：全部" />
                     </SelectTrigger>
                     <SelectContent>
@@ -802,7 +883,10 @@ export default function TicketsPage() {
                       setPage(1);
                     }}
                   >
-                    <SelectTrigger className="w-full sm:w-[130px] min-h-[44px] sm:min-h-0 sm:h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
+                    <SelectTrigger
+                      aria-label="按时间范围筛选"
+                      className="w-full sm:w-[130px] min-h-[44px] sm:min-h-0 sm:h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg"
+                    >
                       <SelectValue placeholder="时间：全部" />
                     </SelectTrigger>
                     <SelectContent>
@@ -818,6 +902,21 @@ export default function TicketsPage() {
                   </Select>
                   <span className="filter-bar__summary tabular-nums">共 {data.total} 条结果</span>
                 </div>
+                {loadError && (
+                  <div
+                    role="alert"
+                    className="mx-3 sm:mx-5 my-3 rounded-lg border border-rose-200 bg-rose-50 px-3.5 py-2.5 flex items-center justify-between gap-3 flex-wrap text-xs text-rose-800"
+                  >
+                    <span>{loadError}</span>
+                    <button
+                      type="button"
+                      onClick={load}
+                      className="btn btn--default text-xs min-h-[44px] sm:min-h-[30px]"
+                    >
+                      重试加载
+                    </button>
+                  </div>
+                )}
                 <div
                   className="table-scroll overflow-x-auto max-w-full"
                   tabIndex={0}
@@ -897,7 +996,7 @@ export default function TicketsPage() {
                                 openDrawer(r);
                               }}
                               aria-label={`查看工单 ${r.id} 详情`}
-                              className="inline-flex items-center justify-end min-h-[44px] sm:min-h-0 px-2 sm:px-0 text-[var(--c-brand)] font-medium text-xs bg-transparent border-0 cursor-pointer hover:underline"
+                              className="relative inline-flex items-center justify-end min-h-[28px] min-w-0 py-1 px-2 sm:px-0 text-[var(--c-brand)] font-medium text-xs bg-transparent border-0 cursor-pointer hover:underline after:content-[''] after:absolute after:-inset-y-[8px] after:-inset-x-[4px]"
                             >
                               查看
                             </button>
@@ -927,11 +1026,55 @@ export default function TicketsPage() {
         </>
       )}
 
-      <div className={`drawer-mask${drawer ? " is-open" : ""}`} onClick={closeDrawer} />
-      <div className={`drawer${drawer ? " is-open" : ""}`}>
+      <style>{`
+        .civic-ticket-drawer:modal {
+          overscroll-behavior: contain;
+        }
+        .civic-ticket-drawer::backdrop {
+          overflow: hidden;
+          overscroll-behavior: contain;
+          background: rgba(15, 23, 42, 0.45);
+          backdrop-filter: blur(2px);
+        }
+        .civic-ticket-drawer[open] {
+          display: flex;
+        }
+      `}</style>
+      <dialog
+        ref={drawerDialogRef}
+        aria-labelledby={drawerTitleId}
+        {...({ closedby: "any" } as Record<string, string>)}
+        onPointerDown={(e) => {
+          if (e.pointerType === "mouse" && e.button !== 0) {
+            drawerPointerOutsideRef.current = false;
+            return;
+          }
+          drawerPointerOutsideRef.current = isOutsideDrawerPanel(e.clientX, e.clientY);
+        }}
+        onPointerUp={(e) => {
+          const startedOutside = drawerPointerOutsideRef.current;
+          drawerPointerOutsideRef.current = false;
+          if (!startedOutside) return;
+          if (e.pointerType === "mouse" && e.button !== 0) return;
+          if (!isOutsideDrawerPanel(e.clientX, e.clientY)) return;
+          const supportsClosedBy =
+            typeof HTMLDialogElement !== "undefined" &&
+            "closedBy" in HTMLDialogElement.prototype;
+          if (!supportsClosedBy) {
+            drawerDialogRef.current?.close();
+          }
+        }}
+        onPointerCancel={() => {
+          drawerPointerOutsideRef.current = false;
+        }}
+        onClose={() => {
+          closeDrawer();
+        }}
+        className="civic-ticket-drawer fixed inset-y-0 right-0 left-auto m-0 ml-auto w-[620px] max-w-[100dvw] sm:max-w-[calc(100vw-24px)] h-dvh max-h-dvh flex-col bg-white border-0 border-l border-slate-200 shadow-2xl p-0 text-slate-900 overflow-hidden"
+      >
         {drawer && (
-          <>
-            <div className="drawer__head">
+          <div ref={drawerPanelRef} className="flex flex-col w-full h-full min-h-0 overflow-hidden">
+            <div className="drawer__head gap-3">
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                   <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
@@ -957,43 +1100,52 @@ export default function TicketsPage() {
                     </span>
                   )}
                 </div>
-                <div className="drawer__title" style={{ wordBreak: "break-word", fontSize: 16 }}>
+                <h2 id={drawerTitleId} className="drawer__title m-0" style={{ wordBreak: "break-word", fontSize: 16 }}>
                   {drawer.title || "市民诉求"}
-                </div>
+                </h2>
                 {drawer.rawTitle && drawer.rawTitle !== drawer.title && (
                   <div style={{ fontSize: 12, color: "var(--c-ink-3)", marginTop: 2 }}>
                     市民原报原由：{drawer.rawTitle}
                   </div>
                 )}
               </div>
+              <button
+                ref={drawerCloseBtnRef}
+                type="button"
+                aria-label="关闭工单详情抽屉"
+                onClick={() => drawerDialogRef.current?.close()}
+                className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-200/60 transition-colors shrink-0 cursor-pointer min-h-[44px] min-w-[44px] sm:min-h-[32px] sm:min-w-[32px] flex items-center justify-center"
+              >
+                <X className="w-4 h-4" aria-hidden="true" />
+              </button>
             </div>
 
-            <div className="drawer__body space-y-4">
+            <div className="drawer__body space-y-4 overscroll-contain">
               {/* 1. AI 智能研判解析 */}
-              <AiVerdictCard data={drawer} />
+              <AiVerdictCard data={drawer} headingLevel="h3" />
 
               {drawer.detailLoaded ? (
-                <CitizenVoiceCard data={drawer} />
+                <CitizenVoiceCard data={drawer} headingLevel="h3" />
               ) : (
-                <div className="text-xs text-slate-400 px-1">
+                <div className="text-xs text-slate-500 px-1">
                   {drawer.detailError ? "原文加载失败" : "正在读取诉求原文…"}
                 </div>
               )}
 
               {/* 3. 空间地理高精打点 (天地图) */}
-              <TicketGeoMapCard data={drawer} />
+              <TicketGeoMapCard data={drawer} headingLevel="h3" />
 
               {/* 4. 经办基础属性 */}
-              <TicketPropsGrid data={drawer} />
+              <TicketPropsGrid data={drawer} headingLevel="h3" />
             </div>
 
-            {/* 4. 吸底操作栏 (固定底部，z-index: 1001，绝不被任何悬浮球遮挡) */}
+            {/* 4. 吸底操作栏 (固定底部) */}
             <div className="drawer__footer flex-wrap gap-2">
               <div>
                 {drawer.cluster_id ? (
                   <button
                     type="button"
-                    className="min-h-[44px] sm:min-h-0 text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                    className="relative min-h-[28px] sm:min-h-0 py-1 text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 cursor-pointer transition-colors after:content-[''] after:absolute after:-inset-y-[8px] after:-inset-x-[4px]"
                     onClick={() => {
                       const clusterId = drawer.cluster_id;
                       const ticketKey = drawer.id;
@@ -1005,14 +1157,14 @@ export default function TicketsPage() {
                     <span>查看所在多频专题</span>
                   </button>
                 ) : (
-                  <span className="text-xs text-slate-400">诉求已实时同步</span>
+                  <span className="text-xs text-slate-500">诉求已实时同步</span>
                 )}
               </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   className="btn btn--default text-xs"
-                  onClick={closeDrawer}
+                  onClick={() => drawerDialogRef.current?.close()}
                 >
                   关闭
                 </button>
@@ -1026,13 +1178,13 @@ export default function TicketsPage() {
                   }}
                 >
                   <span>打开完整详情</span>
-                  <ExternalLink className="h-3.5 w-3.5" />
+                  <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
               </div>
             </div>
-          </>
+          </div>
         )}
-      </div>
+      </dialog>
     </>
   );
 }

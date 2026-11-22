@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { Activity, Clock, ShieldAlert, Radio, X } from "lucide-react";
 import { getTownshipColor } from "@/lib/civic-cluster";
 import type { DomainProfile } from "../civic/region-context";
@@ -18,7 +18,50 @@ export function CockpitStream({
   domainProfile,
 }: CockpitStreamProps) {
   const [selectedTicket, setSelectedTicket] = useState<CockpitTicket | null>(null);
+  const detailDialogRef = useRef<HTMLDialogElement>(null);
+  const detailTitleId = useId();
   const isEcommerce = domainProfile?.domainType === "ECOMMERCE_CS";
+
+  useEffect(() => {
+    const dialog = detailDialogRef.current;
+    if (!dialog) return;
+
+    if (!selectedTicket) {
+      if (dialog.open) dialog.close();
+      return;
+    }
+
+    if (!dialog.open) {
+      dialog.showModal();
+    }
+
+    if (!("closedBy" in HTMLDialogElement.prototype)) {
+      const outside = (e: PointerEvent) => {
+        const r = dialog.getBoundingClientRect();
+        return (
+          e.clientX < r.left ||
+          e.clientX > r.right ||
+          e.clientY < r.top ||
+          e.clientY > r.bottom
+        );
+      };
+      let pressedOutside = false;
+      const onPointerDown = (e: PointerEvent) => {
+        pressedOutside = outside(e);
+      };
+      const onPointerUp = (e: PointerEvent) => {
+        if (pressedOutside && outside(e)) {
+          dialog.close();
+        }
+      };
+      dialog.addEventListener("pointerdown", onPointerDown);
+      dialog.addEventListener("pointerup", onPointerUp);
+      return () => {
+        dialog.removeEventListener("pointerdown", onPointerDown);
+        dialog.removeEventListener("pointerup", onPointerUp);
+      };
+    }
+  }, [selectedTicket]);
 
   const filtered = selectedTownship
     ? tickets.filter(
@@ -35,9 +78,9 @@ export function CockpitStream({
       <div className="cockpit-glass-header flex items-center justify-between gap-2 pb-2 shrink-0 min-w-0">
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <Activity size={14} aria-hidden="true" className="text-sky-400 shrink-0" />
-          <h3 className="text-xs font-semibold text-slate-100 tracking-wide cockpit-single-line">
+          <h2 className="text-xs font-semibold text-slate-100 tracking-wide cockpit-single-line">
             {isEcommerce ? "实时客诉接入流水" : "实时工单接入流水"}
-          </h3>
+          </h2>
           {selectedTownship && (
             <span className="text-[10px] px-2 py-0.5 rounded-md bg-sky-500/15 border border-sky-400/30 text-sky-200 whitespace-nowrap shrink-0 max-w-[110px] truncate">
               {selectedTownship}
@@ -119,68 +162,83 @@ export function CockpitStream({
         )}
       </div>
 
-      {selectedTicket && (
-        <div className="absolute inset-0 bg-[#090e1a]/96 backdrop-blur-xl p-4 flex flex-col justify-between z-30 rounded-2xl">
-          <div className="min-w-0 flex-1 flex flex-col min-h-0">
-            <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2 mb-3 shrink-0">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-xs font-mono tabular-nums font-bold text-slate-100 truncate">
-                  {selectedTicket.ticketNo}
-                </span>
-                {selectedTicket.isUrgent && (
-                  <span className="px-2 py-0.5 rounded bg-rose-500/15 text-rose-200 text-[10px] border border-rose-400/30 whitespace-nowrap shrink-0">
-                    高危预警
+      <dialog
+        ref={detailDialogRef}
+        aria-labelledby={detailTitleId}
+        {...({ closedby: "any" } as any)}
+        onClose={(e) => {
+          if (e.currentTarget.open) return;
+          setSelectedTicket(null);
+        }}
+        className="cockpit-stream-dialog"
+      >
+        {selectedTicket && (
+          <div className="p-4 sm:p-5 flex flex-col justify-between gap-4 min-h-0 flex-1">
+            <div className="min-w-0 flex-1 flex flex-col min-h-0">
+              <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2.5 mb-3 shrink-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <h3
+                    id={detailTitleId}
+                    className="text-sm font-mono tabular-nums font-bold text-slate-100 truncate"
+                  >
+                    {selectedTicket.ticketNo}
+                  </h3>
+                  {selectedTicket.isUrgent && (
+                    <span className="px-2 py-0.5 rounded bg-rose-500/15 text-rose-200 text-[10px] border border-rose-400/30 whitespace-nowrap shrink-0">
+                      高危预警
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  autoFocus
+                  aria-label="关闭工单详情"
+                  onClick={() => detailDialogRef.current?.close()}
+                  className="cockpit-action-btn inline-flex items-center justify-center w-8 h-8 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0"
+                >
+                  <X size={15} aria-hidden="true" />
+                </button>
+              </div>
+              <div className="space-y-2.5 text-xs text-slate-300 flex-1 min-h-0 flex flex-col">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-slate-400 shrink-0">
+                    {isEcommerce ? "渠道/仓网：" : "诉求地点："}
                   </span>
-                )}
-              </div>
-              <button
-                type="button"
-                aria-label="关闭工单详情"
-                onClick={() => setSelectedTicket(null)}
-                className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0"
-              >
-                <X size={14} aria-hidden="true" />
-              </button>
-            </div>
-            <div className="space-y-2 text-xs text-slate-300 flex-1 min-h-0 flex flex-col">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-slate-400 shrink-0">
-                  {isEcommerce ? "渠道/仓网：" : "诉求地点："}
-                </span>
-                <span className="text-slate-100 font-medium truncate">
-                  {selectedTicket.district || ""}{" "}
-                  {selectedTicket.subdistrict || (isEcommerce ? "未归属渠道" : "未归属")}
-                </span>
-              </div>
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-slate-400 shrink-0">
-                  {isEcommerce ? "进线时间：" : "受理时间："}
-                </span>
-                <span className="font-mono tabular-nums text-slate-200 truncate">
-                  {selectedTicket.createTime}
-                </span>
-              </div>
-              <div className="pt-1 flex-1 min-h-0 flex flex-col">
-                <span className="text-slate-400 block mb-1 shrink-0">
-                  {isEcommerce ? "客诉详情原貌：" : "市民诉求原貌："}
-                </span>
-                <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/10 text-slate-200 text-xs leading-relaxed overflow-y-auto custom-cockpit-scrollbar break-words flex-1">
-                  {selectedTicket.content}
+                  <span className="text-slate-100 font-medium truncate">
+                    {selectedTicket.district || ""}{" "}
+                    {selectedTicket.subdistrict || (isEcommerce ? "未归属渠道" : "未归属")}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-slate-400 shrink-0">
+                    {isEcommerce ? "进线时间：" : "受理时间："}
+                  </span>
+                  <span className="font-mono tabular-nums text-slate-200 truncate">
+                    {selectedTicket.createTime}
+                  </span>
+                </div>
+                <div className="pt-1 flex-1 min-h-0 flex flex-col">
+                  <span className="text-slate-400 block mb-1.5 shrink-0">
+                    {isEcommerce ? "客诉详情原貌：" : "市民诉求原貌："}
+                  </span>
+                  <div className="p-3 rounded-xl bg-white/[0.03] border border-white/10 text-slate-200 text-xs leading-relaxed overflow-y-auto custom-cockpit-scrollbar break-words flex-1 select-text">
+                    {selectedTicket.content}
+                  </div>
                 </div>
               </div>
             </div>
+            <div className="pt-3 border-t border-white/10 flex justify-end shrink-0">
+              <button
+                type="button"
+                onClick={() => detailDialogRef.current?.close()}
+                className="min-h-[44px] sm:min-h-[34px] px-4 py-1.5 rounded-lg bg-white/[0.08] border border-white/15 text-slate-100 hover:bg-white/[0.14] text-xs font-medium cursor-pointer transition-colors"
+              >
+                已阅返回
+              </button>
+            </div>
           </div>
-          <div className="pt-3 border-t border-white/10 flex justify-end shrink-0">
-            <button
-              type="button"
-              onClick={() => setSelectedTicket(null)}
-              className="px-3.5 py-1.5 rounded-lg bg-white/[0.08] border border-white/15 text-slate-100 hover:bg-white/[0.14] text-xs font-medium cursor-pointer transition-colors"
-            >
-              已阅返回
-            </button>
-          </div>
-        </div>
-      )}
+        )}
+      </dialog>
     </div>
   );
 }

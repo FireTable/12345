@@ -141,9 +141,9 @@ export function DomainChannelMatrix({
         <div className="cockpit-glass-header flex items-center justify-between gap-2 pb-2 shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             <Layers size={15} className="text-blue-400 shrink-0" aria-hidden="true" />
-            <h3 className="text-xs font-semibold text-slate-100 tracking-wider whitespace-nowrap overflow-hidden text-ellipsis min-w-0">
+            <h2 className="text-xs font-semibold text-slate-100 tracking-wider whitespace-nowrap overflow-hidden text-ellipsis min-w-0">
               {unitLabel}客诉热度与高风险分布矩阵
-            </h3>
+            </h2>
           </div>
           <span className="text-[10px] font-mono text-slate-400 uppercase tabular-nums whitespace-nowrap shrink-0">
             {rows.list.length} NODES · {rows.total.toLocaleString("zh-CN")} {ticketNoun}
@@ -254,6 +254,7 @@ export function DomainChannelMatrix({
                 <button
                   key={item.name}
                   type="button"
+                  aria-pressed={isSelected}
                   onClick={() => onSelect?.(item.name)}
                   className={`block w-full h-auto min-h-[76px] text-left rounded-xl p-3 border transition-all cursor-pointer min-w-0 ${
                     isSelected
@@ -315,6 +316,7 @@ export function DomainChannelMatrix({
             <button
               key={item.name}
               type="button"
+              aria-pressed={isSelected}
               onClick={() => onSelect?.(item.name)}
               className={`block w-full h-auto text-left rounded-xl border p-3 transition-all cursor-pointer min-w-0 ${
                 isSelected

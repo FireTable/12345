@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -19,7 +20,7 @@ const CivicMap = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="h-[420px] flex items-center justify-center text-xs text-slate-400">
+      <div className="h-[420px] flex items-center justify-center text-xs text-slate-500">
         正在加载地图组件…
       </div>
     ),
@@ -29,7 +30,7 @@ import { URGENCY_META, clusterStoryPenalty, type ClusterUrgency } from "@/lib/ci
 import { clampTimeRef, formatYmd, inTimeWindow } from "@/lib/civic-time";
 import { isTownLabel } from "@/lib/admin-area";
 import { HANDLING_STATUS, normalizeStatusCode } from "@/lib/civic-dto";
-import { Clock, TrendingUp, Flame, Layers } from "lucide-react";
+import { Clock, TrendingUp, Flame, Layers, AlertTriangle } from "lucide-react";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { SkMultifreq } from "@/app/_components/civic/skeletons";
 import { useRegion } from "@/app/_components/civic/region-context";
@@ -128,6 +129,7 @@ function MultifreqInner() {
   const [minCount, setMinCount] = useState(2);
   const [windowDays, setWindowDays] = useState(7);
   const [ready, setReady] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const loadAbortRef = useRef<AbortController | null>(null);
   const loadSeqRef = useRef(0);
 
@@ -136,7 +138,7 @@ function MultifreqInner() {
     setRegion((prev) => prev || urlTown);
   }, [regionLoading, hasGeoMap, urlTown]);
 
-  const load = useCallback(() => {
+  const load = useCallback(async () => {
     if (!isAdmin) return;
     loadAbortRef.current?.abort();
     const controller = new AbortController();
@@ -145,23 +147,30 @@ function MultifreqInner() {
 
     const headers: Record<string, string> = {};
     if (activeRegion?.id) headers["x-region-id"] = activeRegion.id;
-    Promise.all([
-      fetch("/api/clusters", { headers, signal: controller.signal }).then((r) => r.json()),
-      fetch("/api/overview", { headers, signal: controller.signal }).then((r) => r.json()),
-    ])
-      .then(([c, o]) => {
-        if (controller.signal.aborted || seq !== loadSeqRef.current) return;
-        setRows(c.topClusters || []);
-        setOv(o);
-      })
-      .catch((err) => {
-        if (controller.signal.aborted || err?.name === "AbortError" || seq !== loadSeqRef.current) return;
-        setRows([]);
-      })
-      .finally(() => {
-        if (controller.signal.aborted || seq !== loadSeqRef.current) return;
+    try {
+      const [clustersRes, overviewRes] = await Promise.all([
+        fetch("/api/clusters", { headers, signal: controller.signal }),
+        fetch("/api/overview", { headers, signal: controller.signal }),
+      ]);
+      if (!clustersRes.ok || !overviewRes.ok) {
+        throw new Error(`数据加载失败 (${!clustersRes.ok ? clustersRes.status : overviewRes.status})`);
+      }
+      const [c, o] = await Promise.all([clustersRes.json(), overviewRes.json()]);
+      if (controller.signal.aborted || seq !== loadSeqRef.current) return;
+      setRows(c?.topClusters || []);
+      setOv(o);
+      setLoadError(null);
+    } catch (err) {
+      if (controller.signal.aborted || (err as { name?: string })?.name === "AbortError" || seq !== loadSeqRef.current) {
+        return;
+      }
+      setRows([]);
+      setLoadError(err instanceof Error ? err.message : "多频工单数据拉取失败");
+    } finally {
+      if (!controller.signal.aborted && seq === loadSeqRef.current) {
         setReady(true);
-      });
+      }
+    }
   }, [isAdmin, activeRegion?.id]);
 
   useEffect(() => {
@@ -288,7 +297,10 @@ function MultifreqInner() {
               setRegion(val === "all" ? "" : val);
             }}
           >
-            <SelectTrigger className={`${hasGeoMap ? "w-full sm:w-[125px]" : "w-full sm:min-w-[138px] sm:w-auto"} min-h-[44px] sm:min-h-0 sm:h-[34px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg`}>
+            <SelectTrigger
+              aria-label="筛选镇街或业务区划"
+              className={`${hasGeoMap ? "w-full sm:w-[125px]" : "w-full sm:min-w-[138px] sm:w-auto"} min-h-[44px] sm:min-h-0 sm:h-[34px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg`}
+            >
               <SelectValue placeholder={hasGeoMap ? "全部镇街" : `全部${regionUnit}`} />
             </SelectTrigger>
             <SelectContent>
@@ -310,6 +322,24 @@ function MultifreqInner() {
         <SkMultifreq />
       ) : (
         <>
+          {loadError && (
+            <div
+              role="alert"
+              className="card border-rose-200 bg-rose-50/80 px-4 py-3 mb-4 flex items-center justify-between gap-3 flex-wrap"
+            >
+              <div className="flex items-center gap-2 text-xs text-rose-800 min-w-0">
+                <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" aria-hidden="true" />
+                <span className="break-words">{loadError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => void load()}
+                className="btn btn--default min-h-[44px] sm:min-h-0 text-xs text-rose-700 border-rose-300 hover:bg-rose-100 shrink-0"
+              >
+                重试加载
+              </button>
+            </div>
+          )}
           <StatCardGrid columns={4}>
             <StatCard
               icon={Clock}
@@ -344,11 +374,11 @@ function MultifreqInner() {
           <section className="split-row split-row--map">
             <div className="card">
               <div className="card__header">
-                <div className="card__title">
+                <h2 className="card__title">
                   {hasGeoMap
                     ? `${activeRegion ? activeRegion.name : "全区"}多频工单地理透势`
                     : `${activeRegion ? activeRegion.name : "当前站点"} · ${regionUnit}客诉热度与高风险分布矩阵`}
-                </div>
+                </h2>
                 <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>
                   {hasGeoMap ? "点击镇街筛选 · 悬停查看详情" : `点击${regionUnit}筛选 · 高亮展示高风险客诉节点`}
                 </div>
@@ -378,7 +408,7 @@ function MultifreqInner() {
             </div>
             <div className="card">
               <div className="card__header">
-                <div className="card__title">未处理群组 · 紧急 × 重要 四象限</div>
+                <h2 className="card__title">未处理群组 · 紧急 × 重要 四象限</h2>
                 <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>
                   共 <b style={{ color: "#1E5AFF" }}>{pending.length}</b> 个未处理群组
                 </div>
@@ -395,12 +425,16 @@ function MultifreqInner() {
 
           <section className="card" style={{ marginTop: 20 }}>
             <div className="top5-header flex-wrap gap-2">
-              <div className="top5-header__title">
+              <h2 className="top5-header__title">
                 <span style={{ color: "#F53F3F" }} aria-hidden="true">🔥</span>
                 TOP 5 多频聚类
                 <span style={{ fontSize: 12, color: "var(--c-ink-3)", fontWeight: 400, marginLeft: 6 }}>点击下钻到详情</span>
-              </div>
-              <button type="button" className="top5-header__more min-h-[44px] sm:min-h-0" onClick={() => router.push("/themes")}>
+              </h2>
+              <button
+                type="button"
+                className="top5-header__more inline-flex items-center min-h-[44px] sm:min-h-[24px] py-0.5"
+                onClick={() => router.push("/themes")}
+              >
                 查看全部 {filtered.length} 个聚类
               </button>
             </div>
@@ -453,12 +487,17 @@ function MultifreqInner() {
                           </div>
                         </td>
                         <td>
-                          <div
-                            style={{ maxWidth: "min(38vw, 520px)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600, color: "var(--c-ink)", fontSize: 13 }}
+                          <Link
+                            href={`/themes/${encodeURIComponent(c.id)}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center min-h-[44px] sm:min-h-[24px] py-0.5 max-w-full font-semibold text-[13px] text-[var(--c-ink)] hover:text-[var(--c-brand)] hover:underline"
+                            style={{ maxWidth: "min(38vw, 520px)" }}
                             title={c.title || c.sample_titles?.[0] || `${c.region} · ${c.type}`}
                           >
-                            {c.title || c.sample_titles?.[0] || `${c.region} · ${c.type}`}
-                          </div>
+                            <span className="truncate">
+                              {c.title || c.sample_titles?.[0] || `${c.region} · ${c.type}`}
+                            </span>
+                          </Link>
                           <div style={{ fontSize: 11, color: "var(--c-ink-3)", marginTop: 2, fontFamily: "ui-monospace, monospace" }}>
                             {c.first_date || "—"} ~ {c.last_date || "—"}
                           </div>
@@ -489,7 +528,7 @@ function MultifreqInner() {
                               router.push(`/themes/${c.id}`);
                             }}
                             aria-label={`查看聚类 ${c.title || c.code || c.id} 详情`}
-                            className="inline-flex items-center justify-end min-h-[44px] sm:min-h-0 px-2 sm:px-0 text-[var(--c-brand)] font-medium text-xs bg-transparent border-0 cursor-pointer hover:underline"
+                            className="inline-flex items-center justify-end min-h-[44px] min-w-[44px] sm:min-h-[24px] sm:min-w-[28px] px-2 sm:px-1 text-[var(--c-brand)] font-medium text-xs bg-transparent border-0 cursor-pointer hover:underline"
                           >
                             查看
                           </button>
@@ -507,7 +546,7 @@ function MultifreqInner() {
 
       <Dialog open={thresholdOpen} onOpenChange={setThresholdOpen}>
         <DialogContent className="max-w-[420px] gap-4 p-0 overflow-hidden">
-          <DialogHeader className="px-5 pt-5 text-left space-y-1">
+          <DialogHeader className="px-5 pt-5 pr-10 text-left space-y-1">
             <DialogTitle>AI 识别阈值</DialogTitle>
             <DialogDescription>
               调整多频聚类识别的最低置信度、最小工单数与时间窗口过滤条件
@@ -527,8 +566,9 @@ function MultifreqInner() {
                 min={50}
                 max={99}
                 value={confMin}
+                aria-valuetext={`${confMin}%`}
                 onChange={(e) => setConfMin(Number(e.target.value))}
-                className="w-full min-h-[44px] sm:min-h-0 cursor-pointer"
+                className="w-full min-h-[44px] sm:min-h-[24px] cursor-pointer"
               />
             </div>
             <div>
@@ -544,8 +584,9 @@ function MultifreqInner() {
                 min={2}
                 max={20}
                 value={minCount}
+                aria-valuetext={`${minCount} 件`}
                 onChange={(e) => setMinCount(Number(e.target.value))}
-                className="w-full min-h-[44px] sm:min-h-0 cursor-pointer"
+                className="w-full min-h-[44px] sm:min-h-[24px] cursor-pointer"
               />
             </div>
             <div>
@@ -561,18 +602,19 @@ function MultifreqInner() {
                 min={3}
                 max={90}
                 value={windowDays}
+                aria-valuetext={`${windowDays} 天`}
                 onChange={(e) => setWindowDays(Number(e.target.value))}
-                className="w-full min-h-[44px] sm:min-h-0 cursor-pointer"
+                className="w-full min-h-[44px] sm:min-h-[24px] cursor-pointer"
               />
             </div>
           </div>
           <DialogFooter className="flex-row justify-end gap-2 border-t border-[var(--c-border-soft)] px-5 py-3">
-            <button type="button" className="btn btn--default" onClick={() => setThresholdOpen(false)}>
+            <button type="button" className="btn btn--default min-h-[44px] sm:min-h-0" onClick={() => setThresholdOpen(false)}>
               取消
             </button>
             <button
               type="button"
-              className="btn btn--primary"
+              className="btn btn--primary min-h-[44px] sm:min-h-0"
               onClick={() => {
                 setTimeLabel(`近 ${windowDays} 天`);
                 setThresholdOpen(false);

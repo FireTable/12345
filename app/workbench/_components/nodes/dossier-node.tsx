@@ -56,9 +56,9 @@ export function DossierNode({ data }: NodeProps<DossierNodeType>) {
             <AlertTriangle size={12} className="text-amber-600 shrink-0" />
             假闭环与推诿风险
           </div>
-          <div className="text-lg font-bold font-mono text-amber-950 mt-1 whitespace-nowrap inline-flex items-baseline">
+          <div className="text-lg font-bold font-mono tabular-nums text-amber-950 mt-1 whitespace-nowrap inline-flex items-baseline">
             {pseudoLoop.toLocaleString()}
-            <span className="text-[11px] font-normal text-amber-700 ml-1 whitespace-nowrap">起</span>
+            <span className="text-[11px] font-normal text-amber-800 ml-1 whitespace-nowrap">起</span>
           </div>
         </div>
       </div>
@@ -77,28 +77,28 @@ export function DossierNode({ data }: NodeProps<DossierNodeType>) {
         <div className="grid grid-cols-2 gap-2 mt-2">
           <Link
             href="/screen"
-            className="flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md bg-white border border-slate-200 hover:border-blue-500 hover:text-blue-600 text-[11px] font-medium text-slate-700 transition-colors shadow-2xs"
+            className="flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 py-1.5 px-2 rounded-md bg-white border border-slate-200 hover:border-blue-500 hover:text-blue-600 text-[11px] font-medium text-slate-700 transition-colors shadow-2xs"
           >
-            <MonitorPlay size={12} className="text-blue-600" />
+            <MonitorPlay size={12} className="text-blue-600" aria-hidden="true" />
             指挥驾驶舱
           </Link>
           <Link
             href="/sandbox"
-            className="flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md bg-white border border-slate-200 hover:border-emerald-500 hover:text-emerald-600 text-[11px] font-medium text-slate-700 transition-colors shadow-2xs"
+            className="flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 py-1.5 px-2 rounded-md bg-white border border-slate-200 hover:border-emerald-500 hover:text-emerald-600 text-[11px] font-medium text-slate-700 transition-colors shadow-2xs"
           >
-            <Sparkles size={12} className="text-emerald-600" />
+            <Sparkles size={12} className="text-emerald-600" aria-hidden="true" />
             X-Ray 实时演练
           </Link>
         </div>
         <Link
           href="/multifreq"
-          className="mt-1.5 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md bg-white border border-slate-200 hover:border-slate-400 text-[11px] font-medium text-slate-600 transition-colors shadow-2xs"
+          className="mt-1.5 flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 py-1.5 px-2 rounded-md bg-white border border-slate-200 hover:border-slate-400 text-[11px] font-medium text-slate-600 transition-colors shadow-2xs"
         >
-          <FileSpreadsheet size={12} className="text-slate-500" />
+          <FileSpreadsheet size={12} className="text-slate-500" aria-hidden="true" />
           查看多频工单透势
         </Link>
 
-        <div className="text-[10px] text-slate-400 text-center pt-2">
+        <div className="text-[10px] text-slate-500 text-center pt-2">
           全流程贯通：诉求接入 ➔ 要素提取 ➔ 问题归集 ➔ 协同处置
         </div>
       </div>

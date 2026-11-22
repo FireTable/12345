@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
 import { Cpu, X, CheckCircle2, AlertCircle, ChevronUp } from "lucide-react";
 import { useCivicSse } from "@/app/_hooks/use-civic-sse";
@@ -31,6 +31,8 @@ export function PipelineDrawer() {
   const { activeRegion } = useRegion();
   const [pipelineData, setPipelineData] = useState<PipelineStateResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const pressedOutsideRef = useRef(false);
 
   const fetchState = useCallback(async () => {
     if (!isAdmin) return;
@@ -98,29 +100,25 @@ export function PipelineDrawer() {
 
   const isRunning = (pipelineData?.taskProgress?.status || "").toUpperCase() === "RUNNING";
 
-  // 抽屉打开时锁住背后页面滚动，避免手机上抽屉和页面一起滑
+  // 原生 <dialog>.showModal() 提供顶层、inert、焦点围栏、Esc 退出与焦点回返；
+  // 背景滚动隔离交给 tokens.css / components.css 中的 overscroll-behavior: contain，不修改 body.style.overflow。
   useEffect(() => {
-    if (!isAdmin || !pipelineDrawerOpen) return;
-    const prevBody = document.body.style.overflow;
-    const prevHtml = document.documentElement.style.overflow;
-    document.body.style.overflow = "hidden";
-    document.documentElement.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prevBody;
-      document.documentElement.style.overflow = prevHtml;
-    };
+    const dialog = dialogRef.current;
+    if (!dialog || !isAdmin) return;
+    if (pipelineDrawerOpen) {
+      if (!dialog.open) {
+        dialog.showModal();
+      }
+    } else if (dialog.open) {
+      dialog.close();
+    }
   }, [isAdmin, pipelineDrawerOpen]);
 
-  // ESC 键关闭抽屉
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && pipelineDrawerOpen) {
-        setPipelineDrawerOpen(false);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [pipelineDrawerOpen, setPipelineDrawerOpen]);
+  // Safari 等尚未支持 <dialog closedby="any"> 的浏览器降级为坐标点外点击关闭（按压与抬起均在面板外）
+  const isPointerOutsideDialog = (e: React.PointerEvent<HTMLDialogElement>, dialog: HTMLDialogElement) => {
+    const r = dialog.getBoundingClientRect();
+    return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+  };
 
   const unprocessed = pipelineData?.metrics.unprocessedTickets ?? 0;
   const isAllAnalyzed =
@@ -131,91 +129,97 @@ export function PipelineDrawer() {
   if (!isAdmin) return null;
 
   return (
-    <>
-      {/* 遮罩背景 (点击关闭) */}
-      <div
-        className={`pipeline-drawer-overlay${pipelineDrawerOpen ? " is-open" : ""}`}
-        onClick={() => setPipelineDrawerOpen(false)}
-        aria-hidden="true"
-      />
-
-      {/* 侧拉抽屉面板 */}
-      <aside
-        className={`pipeline-drawer${pipelineDrawerOpen ? " is-open" : ""}`}
-        aria-label="研判流水线工厂抽屉"
-        role="dialog"
-        aria-modal="true"
-      >
-        {/* 顶部流水线工厂调度控制栏 (无手动开启按钮，系统自动研判) */}
-        <header className="workbench-header">
-          <div className="workbench-title-group">
-            <span className="p-1.5 rounded-lg bg-blue-600 text-white shadow-sm flex items-center justify-center shrink-0">
-              <Cpu size={18} />
-            </span>
-            <div className="workbench-heading">
-              <h2 className="text-sm font-bold text-slate-900 leading-tight">
-                {activeRegion ? `${activeRegion.name} · ` : ""}全流程 AI 研判流水线工厂
-              </h2>
-              <p className="workbench-heading__sub text-[11px] text-slate-500 leading-tight mt-0.5">
-                端到端自动化工序：诉求接入 ➔ 要素初筛 ➔ 微观主体研判 ➔ 空间聚类 ➔ 案卷生成
-              </p>
-            </div>
+    <dialog
+      ref={dialogRef}
+      className={`pipeline-drawer${pipelineDrawerOpen ? " is-open" : ""}`}
+      aria-labelledby="pipeline-drawer-title"
+      {...({ closedby: "any" } as Record<string, string>)}
+      onClose={() => {
+        if (pipelineDrawerOpen) setPipelineDrawerOpen(false);
+      }}
+      onPointerDown={(e) => {
+        const dialog = dialogRef.current;
+        if (!dialog || "closedBy" in HTMLDialogElement.prototype) return;
+        pressedOutsideRef.current = isPointerOutsideDialog(e, dialog);
+      }}
+      onPointerUp={(e) => {
+        const dialog = dialogRef.current;
+        if (!dialog || "closedBy" in HTMLDialogElement.prototype) return;
+        const shouldClose = pressedOutsideRef.current && isPointerOutsideDialog(e, dialog);
+        pressedOutsideRef.current = false;
+        if (shouldClose) dialog.close();
+      }}
+    >
+      {/* 顶部流水线工厂调度控制栏 (无手动开启按钮，系统自动研判) */}
+      <header className="workbench-header">
+        <div className="workbench-title-group">
+          <span className="p-1.5 rounded-lg bg-blue-600 text-white shadow-sm flex items-center justify-center shrink-0" aria-hidden="true">
+            <Cpu size={18} />
+          </span>
+          <div className="workbench-heading">
+            <h2 id="pipeline-drawer-title" className="text-sm font-bold text-slate-900 leading-tight">
+              {activeRegion ? `${activeRegion.name} · ` : ""}全流程 AI 研判流水线工厂
+            </h2>
+            <p className="workbench-heading__sub text-[11px] text-slate-500 leading-tight mt-0.5">
+              端到端自动化工序：诉求接入 ➔ 要素初筛 ➔ 微观主体研判 ➔ 空间聚类 ➔ 案卷生成
+            </p>
           </div>
-
-          <div className="workbench-header__status">
-            {!pipelineData && loading ? (
-              <div className="workbench-badge workbench-badge--idle">
-                <span className="workbench-badge__text">正在读取流水线</span>
-              </div>
-            ) : isAllAnalyzed ? (
-              <div className="workbench-badge workbench-badge--idle">
-                <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
-                <span className="workbench-badge__text">全部工单已完成研判 ({pipelineData?.metrics.totalTickets?.toLocaleString()} 件)</span>
-              </div>
-            ) : !isRunning && unprocessed > 0 ? (
-              <div className="workbench-badge workbench-badge--busy">
-                <AlertCircle size={13} className="text-amber-600 shrink-0" />
-                <span className="workbench-badge__text">待研判积压：{unprocessed.toLocaleString()} 件工单</span>
-              </div>
-            ) : !isRunning ? (
-              <div className="workbench-badge workbench-badge--idle">
-                <span className="workbench-badge__text">系统就绪，暂无积压</span>
-              </div>
-            ) : null}
-          </div>
-
-          <div className="workbench-header__actions">
-            <button
-              type="button"
-              onClick={() => setPipelineDrawerOpen(false)}
-              className="workbench-close-btn flex items-center justify-center w-8 h-8 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
-              title="收起控制台 (ESC)"
-              aria-label="关闭控制台"
-            >
-              <X size={18} />
-            </button>
-          </div>
-        </header>
-
-        <div className="pipeline-drawer__body">
-          {pipelineDrawerOpen && (
-            <PipelineCanvas stateData={pipelineData} onRefresh={fetchState} pending={loading && !pipelineData} />
-          )}
         </div>
 
-        <button
-          type="button"
-          onClick={() => setPipelineDrawerOpen(false)}
-          className="pipeline-drawer__handle group"
-          title="点击向上收起控制台 (ESC)"
-        >
-          <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500 group-hover:text-blue-600 transition-colors">
-            <ChevronUp size={13} className="group-hover:-translate-y-0.5 transition-transform" />
-            <span>收起控制台</span>
-            <span className="text-[10px] text-slate-400 font-mono font-normal">ESC</span>
-          </div>
-        </button>
-      </aside>
-    </>
+        <div className="workbench-header__status">
+          {!pipelineData && loading ? (
+            <div className="workbench-badge workbench-badge--idle">
+              <span className="workbench-badge__text">正在读取流水线</span>
+            </div>
+          ) : isAllAnalyzed ? (
+            <div className="workbench-badge workbench-badge--idle">
+              <CheckCircle2 size={13} className="text-emerald-600 shrink-0" aria-hidden="true" />
+              <span className="workbench-badge__text">全部工单已完成研判 ({pipelineData?.metrics.totalTickets?.toLocaleString()} 件)</span>
+            </div>
+          ) : !isRunning && unprocessed > 0 ? (
+            <div className="workbench-badge workbench-badge--busy">
+              <AlertCircle size={13} className="text-amber-600 shrink-0" aria-hidden="true" />
+              <span className="workbench-badge__text">待研判积压：{unprocessed.toLocaleString()} 件工单</span>
+            </div>
+          ) : !isRunning ? (
+            <div className="workbench-badge workbench-badge--idle">
+              <span className="workbench-badge__text">系统就绪，暂无积压</span>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="workbench-header__actions">
+          <button
+            type="button"
+            autoFocus
+            onClick={() => setPipelineDrawerOpen(false)}
+            className="workbench-close-btn relative flex items-center justify-center w-8 h-8 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer after:content-[''] after:absolute after:-inset-[6px]"
+            title="收起控制台 (ESC)"
+            aria-label="关闭控制台"
+          >
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
+      </header>
+
+      <div className="pipeline-drawer__body">
+        {pipelineDrawerOpen && (
+          <PipelineCanvas stateData={pipelineData} onRefresh={fetchState} pending={loading && !pipelineData} />
+        )}
+      </div>
+
+      <button
+        type="button"
+        onClick={() => setPipelineDrawerOpen(false)}
+        className="pipeline-drawer__handle group"
+        title="点击向上收起控制台 (ESC)"
+      >
+        <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500 group-hover:text-blue-600 transition-colors">
+          <ChevronUp size={13} className="group-hover:-translate-y-0.5 motion-reduce:group-hover:translate-y-0 transition-transform" aria-hidden="true" />
+          <span>收起控制台</span>
+          <span className="text-[10px] text-slate-400 font-mono font-normal">ESC</span>
+        </div>
+      </button>
+    </dialog>
   );
 }

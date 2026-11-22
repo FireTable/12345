@@ -108,28 +108,31 @@ export function DisposalTimeline({
   title = "处置流转时间轴",
   emptyText = "暂无处置流转记录",
   className = "",
+  headingLevel = "h2",
 }: {
   logs: DisposalLogItem[];
   title?: string;
   emptyText?: string;
   className?: string;
+  headingLevel?: "h2" | "h3";
 }) {
+  const HeadingTag = headingLevel;
   return (
     <div className={`card ${className}`.trim()}>
       <div className="card__header">
-        <div className="card__title flex items-center gap-1.5">
-          <History className="h-4 w-4 text-blue-600" />
+        <HeadingTag className="card__title flex items-center gap-1.5 m-0">
+          <History className="h-4 w-4 text-blue-600 shrink-0" aria-hidden="true" />
           <span>{title}</span>
           {logs.length > 0 && (
-            <span className="text-xs font-normal text-slate-400">
+            <span className="text-xs font-normal text-slate-500 tabular-nums">
               ({logs.length})
             </span>
           )}
-        </div>
+        </HeadingTag>
       </div>
       <div className="card__body" style={{ padding: "12px 18px" }}>
         {logs.length === 0 ? (
-          <div className="py-5 text-center text-xs text-slate-400">
+          <div className="py-5 text-center text-xs text-slate-500">
             {emptyText}
           </div>
         ) : (
@@ -149,7 +152,7 @@ export function DisposalTimeline({
                   <span
                     className="absolute -left-4 top-1.5 w-2.5 h-2.5 rounded-full border-2 border-white"
                     style={{ backgroundColor: meta.dotColor }}
-                    aria-hidden
+                    aria-hidden="true"
                   />
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-1.5 flex-wrap">
@@ -161,7 +164,7 @@ export function DisposalTimeline({
                       {showTransition ? (
                         <span className="inline-flex items-center gap-1 text-[11px] text-slate-600 font-medium">
                           <span>{fromLabel}</span>
-                          <ArrowRight className="w-3 h-3 text-slate-400" />
+                          <ArrowRight className="w-3 h-3 text-slate-500" aria-hidden="true" />
                           <span className="text-slate-900">{toLabel}</span>
                         </span>
                       ) : toLabel ? (
@@ -170,22 +173,22 @@ export function DisposalTimeline({
                         </span>
                       ) : null}
                     </div>
-                    <span className="text-[11px] font-mono text-slate-400 shrink-0">
+                    <span className="text-[11px] font-mono tabular-nums text-slate-500 shrink-0">
                       {formatLogTime(log.createdAt)}
                     </span>
                   </div>
 
                   {(log.operator || log.owner) && (
-                    <div className="mt-1 flex items-center gap-3 flex-wrap text-[11px] text-slate-500">
+                    <div className="mt-1 flex items-center gap-3 flex-wrap text-[11px] text-slate-600">
                       {log.operator && (
                         <span className="inline-flex items-center gap-1">
-                          <User className="w-3 h-3 text-slate-400" />
+                          <User className="w-3 h-3 text-slate-500" aria-hidden="true" />
                           <span>操作人：{log.operator}</span>
                         </span>
                       )}
                       {log.owner && (
                         <span className="inline-flex items-center gap-1">
-                          <Building2 className="w-3 h-3 text-slate-400" />
+                          <Building2 className="w-3 h-3 text-slate-500" aria-hidden="true" />
                           <span>责任部门：{log.owner}</span>
                         </span>
                       )}

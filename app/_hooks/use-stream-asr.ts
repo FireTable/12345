@@ -1146,6 +1146,18 @@ export function createStreamAsrController(deps: StreamAsrControllerDeps): Stream
   };
 }
 
+/**
+ * 将语音识别片段拼接到既有输入框文本末尾；中英文混排时仅在相邻 ASCII 字母数字间补空格。
+ */
+export function appendRecognizedText(prev: string, segment: string): string {
+  const clean = segment.trim();
+  if (!clean) return prev;
+  const trimmedPrev = prev.trimEnd();
+  if (!trimmedPrev) return clean;
+  const needsSpace = /[A-Za-z0-9]$/.test(trimmedPrev) && /^[A-Za-z0-9]/.test(clean);
+  return needsSpace ? `${trimmedPrev} ${clean}` : `${trimmedPrev}${clean}`;
+}
+
 export function useStreamAsr(options?: UseStreamAsrOptions): UseStreamAsrResult {
   const [status, setStatus] = useState<AsrStatus>("idle");
   const [backend, setBackend] = useState<AsrBackendMode>("idle");

@@ -32,6 +32,14 @@ const PALETTE_FALLBACK = [
   "#10B981",
 ];
 
+function escapeHtml(text: string): string {
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function resolveCategoryColor(name: string, idx: number): string {
   const fromShared = categoryColor(name);
   if (fromShared && fromShared !== "#86909C") {
@@ -88,9 +96,11 @@ export function CockpitCategoryChart({
         formatter: (params: any) => {
           const pct = Math.round((params.value / divisor) * 1000) / 10;
           const countLabel = isEcommerce ? "客诉数量" : "工单数量";
+          const safeName = escapeHtml(params.name || "");
+          const safeColor = /^#[0-9a-fA-F]{3,8}$/.test(String(params.color || "")) ? params.color : "#38bdf8";
           return `
             <div style="font-family: sans-serif; padding: 2px;">
-              <span style="font-weight: 600; color: ${params.color};">${params.name}</span><br/>
+              <span style="font-weight: 600; color: ${safeColor};">${safeName}</span><br/>
               ${countLabel}：<b style="color: #fff;">${Number(params.value).toLocaleString()}</b> 件<br/>
               分类占比：<b style="color: #38bdf8;">${pct}%</b>
             </div>
@@ -156,9 +166,9 @@ export function CockpitCategoryChart({
       <div className="cockpit-glass-header flex items-center justify-between gap-2 pb-2 shrink-0 min-w-0">
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <PieIcon size={14} aria-hidden="true" className="text-sky-400 shrink-0" />
-          <h3 className="text-xs font-semibold text-slate-100 tracking-wide cockpit-single-line">
+          <h2 className="text-xs font-semibold text-slate-100 tracking-wide cockpit-single-line">
             {isEcommerce ? "七大电商客诉分类态势" : "七大民生诉求分类态势"}
-          </h3>
+          </h2>
         </div>
         <span className="text-[10px] font-mono text-slate-400 uppercase whitespace-nowrap shrink-0">
           CATEGORY RATIO

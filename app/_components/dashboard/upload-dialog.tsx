@@ -14,7 +14,7 @@ import {
   FileText,
   Trash2,
 } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
+import { motion, AnimatePresence, MotionConfig } from "motion/react";
 import { Button } from "@/app/_components/ui/button";
 import { Card } from "@/app/_components/ui/card";
 import {
@@ -58,6 +58,24 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
   const [pasteText, setPasteText] = useState<string>("");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileTabRef = useRef<HTMLButtonElement>(null);
+  const pasteTabRef = useRef<HTMLButtonElement>(null);
+
+  const handleIngestTabKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    const nextMap: Record<string, "file" | "paste"> = {
+      ArrowLeft: ingestTab === "file" ? "paste" : "file",
+      ArrowRight: ingestTab === "file" ? "paste" : "file",
+      Home: "file",
+      End: "paste",
+    };
+    const next = nextMap[e.key];
+    if (!next) return;
+    e.preventDefault();
+    setIngestTab(next);
+    requestAnimationFrame(() => {
+      (next === "file" ? fileTabRef.current : pasteTabRef.current)?.focus();
+    });
+  };
 
   useEffect(() => {
     if (!isOpen) {
@@ -248,6 +266,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
 
         {/* Modal Body */}
         <div className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1">
+          <MotionConfig reducedMotion="user">
           <AnimatePresence mode="wait">
             {/* STEP 1: SELECT FILE */}
             {step === "SELECT" && (
@@ -265,28 +284,36 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                   className="inline-flex p-0.5 rounded-lg border border-border bg-muted/40"
                 >
                   <button
+                    ref={fileTabRef}
+                    id="tab-upload-file"
                     type="button"
                     role="tab"
+                    tabIndex={ingestTab === "file" ? 0 : -1}
                     aria-selected={ingestTab === "file"}
                     onClick={() => setIngestTab("file")}
-                    className={`min-h-[44px] sm:min-h-0 sm:h-7 px-3 text-xs font-medium rounded-md flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    onKeyDown={handleIngestTabKeyDown}
+                    className={`min-h-[44px] sm:min-h-0 sm:h-7 px-3 text-xs font-medium rounded-md flex items-center gap-1.5 transition-colors cursor-pointer border-b-2 ${
                       ingestTab === "file"
-                        ? "bg-card text-foreground shadow-2xs"
-                        : "text-muted-foreground hover:text-foreground"
+                        ? "bg-card text-foreground shadow-2xs border-primary"
+                        : "text-muted-foreground hover:text-foreground border-transparent"
                     }`}
                   >
                     <FileSpreadsheet className="w-3.5 h-3.5" aria-hidden="true" />
                     上传文件
                   </button>
                   <button
+                    ref={pasteTabRef}
+                    id="tab-upload-paste"
                     type="button"
                     role="tab"
+                    tabIndex={ingestTab === "paste" ? 0 : -1}
                     aria-selected={ingestTab === "paste"}
                     onClick={() => setIngestTab("paste")}
-                    className={`min-h-[44px] sm:min-h-0 sm:h-7 px-3 text-xs font-medium rounded-md flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    onKeyDown={handleIngestTabKeyDown}
+                    className={`min-h-[44px] sm:min-h-0 sm:h-7 px-3 text-xs font-medium rounded-md flex items-center gap-1.5 transition-colors cursor-pointer border-b-2 ${
                       ingestTab === "paste"
-                        ? "bg-card text-foreground shadow-2xs"
-                        : "text-muted-foreground hover:text-foreground"
+                        ? "bg-card text-foreground shadow-2xs border-primary"
+                        : "text-muted-foreground hover:text-foreground border-transparent"
                     }`}
                   >
                     <ClipboardPaste className="w-3.5 h-3.5" aria-hidden="true" />
@@ -295,7 +322,8 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                 </div>
 
                 {ingestTab === "file" ? (
-                  !file ? (
+                  <div role="tabpanel" aria-labelledby="tab-upload-file">
+                  {!file ? (
                     <>
                       <input
                         ref={fileInputRef}
@@ -309,21 +337,14 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                           }
                         }}
                       />
-                      <div
-                        role="button"
-                        tabIndex={0}
+                      <button
+                        type="button"
                         aria-label="点击上传或将工单表格文件拖拽至此"
                         onDragOver={handleDragOver}
                         onDragLeave={handleDragLeave}
                         onDrop={handleDrop}
                         onClick={() => fileInputRef.current?.click()}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            fileInputRef.current?.click();
-                          }
-                        }}
-                        className={`border-2 border-dashed rounded-xl p-6 sm:p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                        className={`w-full border-2 border-dashed rounded-xl p-6 sm:p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-colors bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                           isDragging
                             ? "border-primary bg-primary/5"
                             : "border-border hover:border-primary/50 hover:bg-muted/40"
@@ -338,7 +359,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                         <p className="text-[11px] text-muted-foreground mt-1">
                           支持 Excel (.xlsx, .xls)、CSV (.csv) 或数据压缩包 (.zip)
                         </p>
-                      </div>
+                      </button>
                     </>
                   ) : (
                     <div className="border border-border rounded-xl p-4 flex items-center justify-between gap-2 bg-muted/20">
@@ -371,14 +392,16 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                         <Trash2 className="w-4 h-4" aria-hidden="true" />
                       </Button>
                     </div>
-                  )
+                  )}
+                  </div>
                 ) : (
-                  <div className="space-y-1.5">
-                    <label htmlFor="upload-paste-textarea" className="sr-only">
-                      粘贴工单诉求文本
+                  <div role="tabpanel" aria-labelledby="tab-upload-paste" className="space-y-1.5">
+                    <label htmlFor="upload-paste-textarea" className="block text-xs font-medium text-foreground">
+                      批量或单条诉求文本
                     </label>
                     <textarea
                       id="upload-paste-textarea"
+                      aria-describedby="upload-paste-hint"
                       value={pasteText}
                       onChange={(e) => setPasteText(e.target.value)}
                       placeholder={`在此直接输入或粘贴工单诉求文本...\n\n支持单条输入或每行一条批量录入，例如：\n【城管】大良街道清晖园附近商铺夜间高音喇叭噪音扰民\n市民反映容桂街道容里村路段有占道经营违规摆卖`}
@@ -386,8 +409,8 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                       className="w-full text-xs font-mono p-3 rounded-lg border border-border bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-y"
                     />
                     <div className="flex items-center justify-between gap-2 flex-wrap text-[11px] text-muted-foreground px-0.5">
-                      <span>每行一条诉求，缺失单号将由系统自动分配</span>
-                      <span>
+                      <span id="upload-paste-hint">每行一条诉求，缺失单号将由系统自动分配</span>
+                      <span className="tabular-nums">
                         已识别{" "}
                         {
                           pasteText
@@ -412,7 +435,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                 exit={{ opacity: 0 }}
                 className="py-6 flex flex-col items-center justify-center gap-3 text-center"
               >
-                <Loader2 className="w-6 h-6 animate-spin text-primary" aria-hidden="true" />
+                <Loader2 className="w-6 h-6 motion-safe:animate-spin text-primary" aria-hidden="true" />
                 <div className="space-y-1">
                   <p className="text-xs font-semibold text-foreground">
                     正在执行流式数据解析与 PostgreSQL 入库...
@@ -442,12 +465,12 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                         <h3 className="text-xs font-semibold">
                           {report.failedCount > 0 ? "部分工单入库成功" : "工单入库成功"}
                         </h3>
-                        <p className="text-[11px] text-emerald-700">
+                        <p className="text-[11px] text-emerald-700 tabular-nums">
                           解析 {report.totalParsed} 条，成功入库 {report.insertedCount} 条，耗时 {(report.durationMs / 1000).toFixed(2)} 秒
                         </p>
                       </div>
                     </div>
-                    <span className="font-mono text-xs font-semibold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded border border-emerald-300 shrink-0">
+                    <span className="font-mono text-xs font-semibold tabular-nums bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded border border-emerald-300 shrink-0">
                       {report.insertedCount} 条已入库
                     </span>
                   </div>
@@ -457,12 +480,12 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                       <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" aria-hidden="true" />
                       <div className="min-w-0">
                         <h3 className="text-xs font-semibold">未成功入库任何工单</h3>
-                        <p className="text-[11px] text-amber-700">
+                        <p className="text-[11px] text-amber-700 tabular-nums">
                           解析 {report.totalParsed} 条，成功 0 条（数据可能被截断、格式异常或重复过滤）
                         </p>
                       </div>
                     </div>
-                    <span className="font-mono text-xs font-semibold bg-amber-100 text-amber-800 px-2 py-0.5 rounded border border-amber-300 shrink-0">
+                    <span className="font-mono text-xs font-semibold tabular-nums bg-amber-100 text-amber-800 px-2 py-0.5 rounded border border-amber-300 shrink-0">
                       0 条入库
                     </span>
                   </div>
@@ -472,7 +495,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   <Card className="p-3 border-border bg-muted/20 space-y-0.5">
                     <span className="text-[11px] text-muted-foreground">成功入库</span>
-                    <p className="text-base font-bold font-mono text-foreground">
+                    <p className="text-base font-bold font-mono tabular-nums text-foreground">
                       {report.insertedCount.toLocaleString()}{" "}
                       <span className="text-[10px] font-normal text-muted-foreground">条</span>
                     </p>
@@ -480,7 +503,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
 
                   <Card className="p-3 border-border bg-muted/20 space-y-0.5">
                     <span className="text-[11px] text-muted-foreground">重复过滤</span>
-                    <p className="text-base font-bold font-mono text-foreground">
+                    <p className="text-base font-bold font-mono tabular-nums text-foreground">
                       {report.duplicateCount.toLocaleString()}{" "}
                       <span className="text-[10px] font-normal text-muted-foreground">条</span>
                     </p>
@@ -488,7 +511,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
 
                   <Card className="p-3 border-border bg-muted/20 space-y-0.5">
                     <span className="text-[11px] text-muted-foreground">格式异常</span>
-                    <p className="text-base font-bold font-mono text-foreground">
+                    <p className="text-base font-bold font-mono tabular-nums text-foreground">
                       {report.failedCount}{" "}
                       <span className="text-[10px] font-normal text-muted-foreground">条</span>
                     </p>
@@ -504,6 +527,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
+                role="alert"
                 className="py-4 flex flex-col items-center justify-center gap-2 text-center"
               >
                 <AlertTriangle className="w-6 h-6 text-destructive" aria-hidden="true" />
@@ -523,6 +547,7 @@ export const UploadDialog: React.FC<UploadDialogProps> = ({
               </motion.div>
             )}
           </AnimatePresence>
+          </MotionConfig>
         </div>
 
         {/* Modal Footer */}

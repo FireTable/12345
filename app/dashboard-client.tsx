@@ -76,6 +76,7 @@ export default function DashboardPage() {
   const [ov, setOv] = useState<Overview | null>(null);
   const [tr, setTr] = useState<Trends | null>(null);
   const [ready, setReady] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const loadAbortRef = useRef<AbortController | null>(null);
   const loadSeqRef = useRef(0);
   const exportAbortRef = useRef<AbortController | null>(null);
@@ -84,7 +85,7 @@ export default function DashboardPage() {
     return activeRegion?.id ? { "x-region-id": activeRegion.id } : {};
   }, [activeRegion?.id]);
 
-  const load = useCallback(() => {
+  const load = useCallback(async () => {
     if (!isAdmin) return;
     loadAbortRef.current?.abort();
     const controller = new AbortController();
@@ -93,23 +94,29 @@ export default function DashboardPage() {
 
     const regParam = activeRegion?.id ? `&region=${encodeURIComponent(activeRegion.id)}` : "";
     const headers = regionHeaders();
-    Promise.all([
-      fetch(`/api/overview?days=${daysRange}${regParam}`, { headers, signal: controller.signal }).then((r) => r.json()),
-      fetch(`/api/trends?days=${daysRange}${regParam}`, { headers, signal: controller.signal }).then((r) => r.json()),
-    ])
-      .then(([a, b]) => {
-        if (controller.signal.aborted || seq !== loadSeqRef.current) return;
-        setOv(a);
-        setTr(b);
-      })
-      .catch((err) => {
-        if (controller.signal.aborted || err?.name === "AbortError" || seq !== loadSeqRef.current) return;
-        setOv(null);
-      })
-      .finally(() => {
-        if (controller.signal.aborted || seq !== loadSeqRef.current) return;
+    try {
+      const [ovRes, trRes] = await Promise.all([
+        fetch(`/api/overview?days=${daysRange}${regParam}`, { headers, signal: controller.signal }),
+        fetch(`/api/trends?days=${daysRange}${regParam}`, { headers, signal: controller.signal }),
+      ]);
+      if (!ovRes.ok || !trRes.ok) {
+        throw new Error(`总览数据请求失败 (${!ovRes.ok ? ovRes.status : trRes.status})`);
+      }
+      const [a, b] = await Promise.all([ovRes.json(), trRes.json()]);
+      if (controller.signal.aborted || seq !== loadSeqRef.current) return;
+      setLoadError(null);
+      setOv(a);
+      setTr(b);
+    } catch (err: any) {
+      if (controller.signal.aborted || err?.name === "AbortError" || seq !== loadSeqRef.current) return;
+      setOv(null);
+      setTr(null);
+      setLoadError(err instanceof Error ? err.message : "总览数据加载失败，请重试");
+    } finally {
+      if (!controller.signal.aborted && seq === loadSeqRef.current) {
         setReady(true);
-      });
+      }
+    }
   }, [isAdmin, activeRegion?.id, daysRange, regionHeaders]);
 
   useEffect(() => {
@@ -203,9 +210,13 @@ export default function DashboardPage() {
       <section className="page-hero">
         <div>
           <h1 className="page-hero__title">数据总览</h1>
-          <div className="page-hero__sub flex items-center gap-2 flex-wrap">
-            <span className="status-dot status-dot--finished" style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#52C41A" }} />
-            <span>
+          <div className="page-hero__sub flex items-start gap-2">
+            <span
+              aria-hidden="true"
+              className="status-dot status-dot--finished shrink-0 mt-[6px]"
+              style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#52C41A" }}
+            />
+            <span className="min-w-0 leading-snug">
               {activeRegion ? `${activeRegion.city} · ${activeRegion.name}` : "当前辖区"} · 接口正常 · {ov?.dateRange || "全部时间"} · 工单已研判
             </span>
           </div>
@@ -233,7 +244,10 @@ export default function DashboardPage() {
             value={String(daysRange)}
             onValueChange={(val) => setDaysRange(Number(val))}
           >
-            <SelectTrigger className="w-[105px] min-h-[44px] sm:min-h-0 sm:h-[34px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
+            <SelectTrigger
+              aria-label="统计时间区间"
+              className="w-[105px] min-h-[44px] sm:min-h-0 sm:h-[34px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg"
+            >
               <SelectValue placeholder="统计区间" />
             </SelectTrigger>
             <SelectContent>
@@ -248,6 +262,26 @@ export default function DashboardPage() {
 
       {!ready ? (
         <SkDashboard />
+      ) : loadError ? (
+        <div
+          role="alert"
+          className="card p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-rose-200 bg-rose-50/70"
+        >
+          <div className="space-y-1 min-w-0">
+            <h2 className="text-sm font-semibold text-rose-900">数据总览加载失败</h2>
+            <p className="text-xs text-rose-700 break-words">{loadError}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setReady(false);
+              void load();
+            }}
+            className="btn btn--primary min-h-[44px] sm:min-h-0 px-4 text-xs shrink-0"
+          >
+            重试加载
+          </button>
+        </div>
       ) : (
         <>
           <StatCardGrid columns={4}>
@@ -286,10 +320,10 @@ export default function DashboardPage() {
 
           <section className="card" style={{ marginTop: 16 }}>
             <div className="card__header">
-              <div className="card__title" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <h2 className="card__title" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <span>工单透势</span>
                 <span style={{ fontSize: 11, fontWeight: 400, color: "var(--c-ink-3)" }}>由 AI 实时分析生成</span>
-              </div>
+              </h2>
             </div>
             <div className="card__body" style={{ padding: "14px 16px" }}>
               {ov?.insights && ov.insights.length > 0 ? (
@@ -313,7 +347,7 @@ export default function DashboardPage() {
           <section className="split-row split-row--main">
             <div className="card" style={{ display: "flex", flexDirection: "column" }}>
               <div className="card__header">
-                <div className="card__title">{daysRange === 0 ? "全周期" : `${daysRange} 天`}工单量与多频群组新增趋势</div>
+                <h2 className="card__title">{daysRange === 0 ? "全周期" : `${daysRange} 天`}工单量与多频群组新增趋势</h2>
                 <div className="chart-legend">
                   <span>
                     <i style={{ background: "#1677FF" }} /> 每日工单量
@@ -345,9 +379,9 @@ export default function DashboardPage() {
             </div>
             <div className="card">
               <div className="card__header">
-                <div className="card__title">
+                <h2 className="card__title">
                   {hasGeoMap ? "镇街工单量排行" : `${regionUnit}客诉热度分布矩阵`}
-                </div>
+                </h2>
                 <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>
                   {hasGeoMap
                     ? daysRange === 0
@@ -419,7 +453,7 @@ export default function DashboardPage() {
           <section className="split-row split-row--main" style={{ marginTop: 16 }}>
             <div className="card" style={{ display: "flex", flexDirection: "column" }}>
               <div className="card__header">
-                <div className="card__title">工单类型分布</div>
+                <h2 className="card__title">工单类型分布</h2>
                 <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>
                   已研判 <b>{ov?.analyzedCount || 0}</b> / {ov?.totalWorkorders || 0} 件
                 </div>
@@ -446,9 +480,9 @@ export default function DashboardPage() {
             </div>
             <div className="card">
               <div className="card__header">
-                <div className="card__title">
+                <h2 className="card__title">
                   {hasGeoMap ? "镇街 × 类型 工单数量" : `${regionUnit} × 类型 工单数量`}
-                </div>
+                </h2>
                 <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>色深表示工单数量</div>
               </div>
               <div

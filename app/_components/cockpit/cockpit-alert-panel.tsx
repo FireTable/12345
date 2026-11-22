@@ -37,9 +37,9 @@ export function CockpitAlertPanel({
       <div className="cockpit-glass-header flex items-center justify-between gap-2 pb-2 shrink-0 min-w-0">
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <Flame size={14} aria-hidden="true" className="text-rose-400 shrink-0" />
-          <h3 className="text-xs font-semibold text-slate-100 tracking-wide cockpit-single-line">
+          <h2 className="text-xs font-semibold text-slate-100 tracking-wide cockpit-single-line">
             {isEcommerce ? "高风险客诉预警" : "高风险群诉"}
-          </h3>
+          </h2>
         </div>
         <span className="px-2 py-0.5 rounded-md bg-rose-500/12 border border-rose-400/25 text-[10px] font-mono tabular-nums text-rose-200 whitespace-nowrap shrink-0">
           {loading ? "读取中" : `${displayList.length} 起需跟进`}
@@ -95,12 +95,12 @@ export function CockpitAlertPanel({
                     {alert.createTime}
                   </span>
                 </div>
-                <h4
+                <h3
                   className="text-xs font-medium text-slate-100 cockpit-single-line"
                   title={alert.title}
                 >
                   {alert.title}
-                </h4>
+                </h3>
                 {alert.desc && (
                   <p className="text-[11px] text-slate-400 cockpit-single-line mt-0.5 tabular-nums">
                     {alert.desc}

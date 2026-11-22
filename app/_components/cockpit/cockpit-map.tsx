@@ -120,13 +120,14 @@ export function CockpitMap({
   // 1. 获取镇街多边形数据
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     async function loadBoundary() {
       try {
         setLoading(true);
         // 优先数据库第四级镇街
-        const res = await fetch(`/api/regions/${regionId}/boundary?level=subdistricts`).then((r) =>
-          r.ok ? r.json() : null
-        );
+        const res = await fetch(`/api/regions/${regionId}/boundary?level=subdistricts`, {
+          signal: controller.signal,
+        }).then((r) => (r.ok ? r.json() : null));
         if (cancelled) return;
         if (res?.data?.geojson?.features && res.data.geojson.features.length > 0) {
           setGeoData(res.data.geojson);
@@ -135,9 +136,9 @@ export function CockpitMap({
         }
 
         // 本地静态兜底
-        const localRes = await fetch(`/civic/${regionId}-townships.geojson`).then((r) =>
-          r.ok ? r.json() : null
-        );
+        const localRes = await fetch(`/civic/${regionId}-townships.geojson`, {
+          signal: controller.signal,
+        }).then((r) => (r.ok ? r.json() : null));
         if (cancelled) return;
         if (localRes?.features && localRes.features.length > 0) {
           setGeoData(localRes);
@@ -146,14 +147,15 @@ export function CockpitMap({
         }
 
         // 区级兜底
-        const fallbackRes = await fetch(`/api/regions/${regionId}/boundary?level=district`).then((r) =>
-          r.ok ? r.json() : null
-        );
+        const fallbackRes = await fetch(`/api/regions/${regionId}/boundary?level=district`, {
+          signal: controller.signal,
+        }).then((r) => (r.ok ? r.json() : null));
         if (cancelled) return;
         if (fallbackRes?.data?.geojson) {
           setGeoData(fallbackRes.data.geojson);
         }
-      } catch (e) {
+      } catch (e: any) {
+        if (controller.signal.aborted || e?.name === "AbortError") return;
         console.error("[CockpitMap] Failed to load geojson:", e);
       } finally {
         if (!cancelled) setLoading(false);
@@ -163,6 +165,7 @@ export function CockpitMap({
     loadBoundary();
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [regionId]);
 
@@ -477,7 +480,11 @@ export function CockpitMap({
   }, [mapInstance, geoData, counts, selectedTownship, onSelectTownship, activeRegion, totalCount, regionId]);
 
   return (
-    <div className={`relative w-full h-full overflow-hidden bg-[#060911] ${className}`}>
+    <div
+      role="region"
+      aria-label="辖区态势地理分布图"
+      className={`relative w-full h-full overflow-hidden bg-[#060911] ${className}`}
+    >
       {/* 科技暗夜地图专属 CSS 过滤器：GPU 硬件加速合成层 */}
       <style jsx global>{`
         .cockpit-dark-map .leaflet-tile-pane {

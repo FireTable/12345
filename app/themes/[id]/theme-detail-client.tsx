@@ -162,6 +162,18 @@ const STEPS = [
   { key: "archive", name: "已办结" },
 ];
 
+function formatMemberTime(raw?: string | null): string {
+  if (!raw) return "—";
+  if (/^\d{4}-\d{2}-\d{2}T/.test(raw)) {
+    const d = new Date(raw);
+    if (!Number.isNaN(d.getTime())) {
+      const pad = (n: number) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+  }
+  return raw;
+}
+
 function asMode(m?: string): CivicMode {
   if (m === "repeat" || m === "diverge" || m === "aggregate") return m;
   return "aggregate";
@@ -217,6 +229,10 @@ function ThemeDetailInner() {
   const [escalateNote, setEscalateNote] = useState("");
   const [detachTarget, setDetachTarget] = useState<Member | null>(null);
   const [leftTab, setLeftTab] = useState<"members" | "graph">("members");
+  const membersTabRef = useRef<HTMLButtonElement>(null);
+  const graphTabRef = useRef<HTMLButtonElement>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [graphLoading, setGraphLoading] = useState(false);
   const [graphError, setGraphError] = useState<string | null>(null);
@@ -303,6 +319,7 @@ function ThemeDetailInner() {
     if (isRolePending || !isAdmin) return;
     membersAbortRef.current?.abort();
     setLoad("pending");
+    setLoadError(null);
     setRow(null);
     setExtraMember(null);
     setMemberRows([]);
@@ -327,7 +344,13 @@ function ThemeDetailInner() {
       headers: regionHeaders(),
       signal: controller.signal,
     })
-      .then((r) => r.json())
+      .then(async (r) => {
+        const j = await r.json().catch(() => null);
+        if (!r.ok && r.status !== 404) {
+          throw new Error(j?.error || `群组详情加载失败 (${r.status})`);
+        }
+        return j;
+      })
       .then((j) => {
         if (controller.signal.aborted) return;
         setRow(j);
@@ -336,6 +359,7 @@ function ThemeDetailInner() {
       .catch((err) => {
         if (controller.signal.aborted || err?.name === "AbortError") return;
         setRow(null);
+        setLoadError(err instanceof Error ? err.message : "群组详情加载失败");
         setLoad("error");
       });
     if (!isUnknown) void loadMembers();
@@ -343,7 +367,7 @@ function ThemeDetailInner() {
       controller.abort();
       membersAbortRef.current?.abort();
     };
-  }, [params.id, targetTicketId, loadMembers, isRolePending, isAdmin, regionHeaders]);
+  }, [params.id, targetTicketId, loadMembers, isRolePending, isAdmin, regionHeaders, reloadNonce]);
 
   useEffect(() => {
     if (isRolePending || !isAdmin) return;
@@ -483,6 +507,15 @@ function ThemeDetailInner() {
   }, [memberRows, extraMember]);
 
   const [copiedAdvice, setCopiedAdvice] = useState(false);
+  const copyAdviceTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyAdviceTimerRef.current !== null) {
+        window.clearTimeout(copyAdviceTimerRef.current);
+      }
+    };
+  }, []);
 
   const adviceText = segmentAdvice(row?.mode_advice || meta.rule || "");
 
@@ -494,7 +527,10 @@ function ThemeDetailInner() {
       .then(() => {
         setCopiedAdvice(true);
         toast.success("已复制协同处置建议！");
-        setTimeout(() => setCopiedAdvice(false), 2000);
+        if (copyAdviceTimerRef.current !== null) {
+          window.clearTimeout(copyAdviceTimerRef.current);
+        }
+        copyAdviceTimerRef.current = window.setTimeout(() => setCopiedAdvice(false), 2000);
       })
       .catch(() => {
         toast.error("复制失败，请手动选取复制");
@@ -749,7 +785,29 @@ function ThemeDetailInner() {
           <span>/</span>
           <span>详情</span>
         </div>
-        <div className="empty-hint">未找到该群组</div>
+        {load === "error" || loadError ? (
+          <div
+            role="alert"
+            className="bg-rose-50 rounded-xl border border-rose-200 p-6 text-center space-y-3"
+          >
+            <h1 className="text-base font-bold text-rose-900 m-0">群组详情加载失败</h1>
+            <p className="text-xs text-rose-700 m-0">{loadError || "请检查网络或稍后重试"}</p>
+            <button
+              type="button"
+              onClick={() => setReloadNonce((n) => n + 1)}
+              className="btn btn--default text-xs min-h-[44px] sm:min-h-[34px]"
+            >
+              重新加载
+            </button>
+          </div>
+        ) : (
+          <div className="empty-hint">
+            <h1 className="text-base font-semibold text-slate-800 mb-2">未找到该群组</h1>
+            <Link href="/themes" className="text-xs text-blue-600 hover:underline">
+              返回多频工单列表
+            </Link>
+          </div>
+        )}
       </>
     );
   }
@@ -785,7 +843,7 @@ function ThemeDetailInner() {
             <div className="cluster-hero__row">
               <div className="cluster-hero__icon">{meta.icon}</div>
               <div className="cluster-hero__main">
-                <div className="cluster-hero__title">
+                <h1 className="cluster-hero__title m-0">
                   <span>
                     {cluster.region} · {cluster.type}
                   </span>
@@ -816,7 +874,7 @@ function ThemeDetailInner() {
                       疑似假闭环 {row.fakeClosureCount} 件
                     </span>
                   )}
-                </div>
+                </h1>
                 <div className="cluster-hero__sub">
                   {meta.tagline}
                   {row.title ? ` · ${row.title}` : ""}
@@ -902,8 +960,8 @@ function ThemeDetailInner() {
         <div className="card min-w-0">
           <div className="card__header flex items-center justify-between gap-3 flex-wrap">
             <div className="min-w-0">
-              <div className="card__title flex items-center gap-2 flex-wrap">
-                <span>{leftTab === "graph" ? "🕸️" : "📑"}</span>
+              <h2 className="card__title flex items-center gap-2 flex-wrap m-0">
+                <span aria-hidden="true">{leftTab === "graph" ? "🕸️" : "📑"}</span>
                 <span>{leftTab === "graph" ? "实体与工单关系图谱" : "群组成员工单明细"}</span>
                 <span className="text-xs text-slate-500 font-normal tabular-nums whitespace-nowrap">
                   {leftTab === "graph"
@@ -912,8 +970,8 @@ function ThemeDetailInner() {
                       : ""
                     : `(共 ${row.count} 件 · 已加载 ${members.length} 件)`}
                 </span>
-              </div>
-              <div className="text-[11px] text-slate-400 mt-0.5">
+              </h2>
+              <div className="text-[11px] text-slate-500 mt-0.5">
                 {leftTab === "graph"
                   ? "展示当前专题与涉事主体、事发地点及关联工单（含假闭环复发边）拓扑"
                   : "点击单条工单可展开详细诉求正文、涉事地址与提取要素"}
@@ -922,14 +980,41 @@ function ThemeDetailInner() {
             <div className="flex items-center gap-2 flex-wrap">
               {targetTicketId && leftTab === "members" && (
                 <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-200 shadow-2xs">
-                  <Target className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                  <Target className="h-3.5 w-3.5 text-blue-600 shrink-0" aria-hidden="true" />
                   <span>目标工单定位: #{targetTicketId}</span>
                 </div>
               )}
               {!cluster.ungrouped && (
-                <div className="inline-flex items-center rounded-lg bg-slate-100 p-0.5 border border-slate-200 text-xs max-w-full overflow-x-auto">
+                <div
+                  role="tablist"
+                  aria-label="专题详情视图"
+                  onKeyDown={(e) => {
+                    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+                      e.preventDefault();
+                      const next = leftTab === "members" ? "graph" : "members";
+                      setLeftTab(next);
+                      const targetRef = next === "members" ? membersTabRef : graphTabRef;
+                      targetRef.current?.focus();
+                      targetRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+                    } else if (e.key === "Home") {
+                      e.preventDefault();
+                      setLeftTab("members");
+                      membersTabRef.current?.focus();
+                    } else if (e.key === "End") {
+                      e.preventDefault();
+                      setLeftTab("graph");
+                      graphTabRef.current?.focus();
+                    }
+                  }}
+                  className="inline-flex items-center rounded-lg bg-slate-100 p-0.5 border border-slate-200 text-xs max-w-full overflow-x-auto"
+                >
                   <button
+                    ref={membersTabRef}
+                    id="tab-theme-members"
                     type="button"
+                    role="tab"
+                    aria-selected={leftTab === "members"}
+                    tabIndex={leftTab === "members" ? 0 : -1}
                     onClick={() => setLeftTab("members")}
                     className={`inline-flex items-center gap-1 px-2.5 py-1.5 sm:py-1 rounded-md font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
                       leftTab === "members"
@@ -937,11 +1022,16 @@ function ThemeDetailInner() {
                         : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
-                    <FileText className="w-3.5 h-3.5 shrink-0" />
+                    <FileText className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                     <span>成员工单明细</span>
                   </button>
                   <button
+                    ref={graphTabRef}
+                    id="tab-theme-graph"
                     type="button"
+                    role="tab"
+                    aria-selected={leftTab === "graph"}
+                    tabIndex={leftTab === "graph" ? 0 : -1}
                     onClick={() => setLeftTab("graph")}
                     className={`inline-flex items-center gap-1 px-2.5 py-1.5 sm:py-1 rounded-md font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
                       leftTab === "graph"
@@ -949,7 +1039,7 @@ function ThemeDetailInner() {
                         : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
-                    <Network className="w-3.5 h-3.5 shrink-0" />
+                    <Network className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                     <span>实体关系图谱</span>
                   </button>
                 </div>
@@ -957,7 +1047,18 @@ function ThemeDetailInner() {
             </div>
           </div>
 
-          <div className="card__body min-w-0" style={{ padding: leftTab === "graph" ? "12px" : "14px 18px" }}>
+          <div
+            className="card__body min-w-0"
+            role={cluster.ungrouped ? undefined : "tabpanel"}
+            aria-labelledby={
+              cluster.ungrouped
+                ? undefined
+                : leftTab === "graph"
+                  ? "tab-theme-graph"
+                  : "tab-theme-members"
+            }
+            style={{ padding: leftTab === "graph" ? "12px" : "14px 18px" }}
+          >
             {leftTab === "graph" ? (
               graphLoading ? (
                 <div className="empty-hint">正在加载实体关系图谱…</div>
@@ -1059,12 +1160,12 @@ function ThemeDetailInner() {
                     )}
                     {m.isFakeClosure && (
                       <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md">
-                        <AlertTriangle className="h-3 w-3" />
+                        <AlertTriangle className="h-3 w-3" aria-hidden="true" />
                         疑似假闭环
                       </span>
                     )}
-                    <span className="ml-auto text-xs text-slate-400 font-mono">
-                      {m.createdAt}
+                    <span className="ml-auto text-xs text-slate-500 font-mono tabular-nums">
+                      {formatMemberTime(m.createdAt)}
                     </span>
                   </div>
 
@@ -1090,33 +1191,33 @@ function ThemeDetailInner() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] text-slate-600 bg-white p-2.5 rounded-md border border-slate-200/80 mb-2.5">
                       {m.caller_name && (
                         <div className="flex items-center gap-1.5">
-                          <User className="h-3.5 w-3.5 text-slate-400" />
+                          <User className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
                           <span>诉求人：<b className="text-slate-800 font-medium">{m.caller_name}</b></span>
                         </div>
                       )}
                       {m.address && (
                         <div className="flex items-center gap-1.5">
-                          <MapPin className="h-3.5 w-3.5 text-slate-400" />
+                          <MapPin className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
                           <span>事发地址：<b className="text-slate-800 font-medium">{m.address}</b></span>
                         </div>
                       )}
                     </div>
                   )}
 
-                  <div className="member-item__why flex items-center justify-between gap-2 flex-wrap text-xs text-slate-500 pt-1.5 border-t border-slate-100/80">
+                  <div className="member-item__why flex items-center justify-between gap-2 flex-wrap text-xs text-slate-600 pt-1.5 border-t border-slate-100/80">
                     <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                      <span className="shrink-0">🔎</span>
+                      <span className="shrink-0" aria-hidden="true">🔎</span>
                       <span className="truncate">
                         归入依据：<b className="text-slate-800 font-medium">{memberWhy(m)}</b>
                       </span>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0">
+                    <div className="flex flex-wrap items-center gap-3 min-w-0">
                       <Link
                         href={`/tickets/${encodeURIComponent(m.ticketId || m.id)}`}
                         onClick={(e) => e.stopPropagation()}
-                        className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600 hover:text-blue-600 whitespace-nowrap transition-colors"
+                        className="relative inline-flex items-center gap-1 min-h-[28px] py-1 text-[11px] font-medium text-slate-600 hover:text-blue-600 whitespace-nowrap transition-colors after:content-[''] after:absolute after:-inset-y-[8px] after:-inset-x-[4px]"
                       >
-                        <ExternalLink className="h-3 w-3 shrink-0" />
+                        <ExternalLink className="h-3 w-3 shrink-0" aria-hidden="true" />
                         <span>查看工单详情</span>
                       </Link>
                       {!cluster.ungrouped && (
@@ -1129,25 +1230,35 @@ function ThemeDetailInner() {
                             if (!isAdmin) return;
                             setDetachTarget(m);
                           }}
-                          className="inline-flex items-center gap-1 text-[11px] font-medium text-rose-600 hover:text-rose-700 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                          className="relative inline-flex items-center gap-1 min-h-[28px] min-w-0 py-1 text-[11px] font-medium text-rose-600 hover:text-rose-700 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer after:content-[''] after:absolute after:-inset-y-[8px] after:-inset-x-[4px]"
                         >
-                          <Trash2 className="h-3 w-3 shrink-0" />
+                          <Trash2 className="h-3 w-3 shrink-0" aria-hidden="true" />
                           <span>移出群组</span>
                         </button>
                       )}
-                      <div className="flex items-center gap-1 text-blue-600 font-semibold text-[11px] whitespace-nowrap">
+                      <button
+                        type="button"
+                        aria-expanded={isExpanded}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void toggleExpand(m);
+                        }}
+                        className="relative inline-flex items-center gap-1 min-h-[28px] min-w-0 py-1 text-blue-600 font-semibold text-[11px] whitespace-nowrap bg-transparent border-0 cursor-pointer hover:text-blue-700 after:content-[''] after:absolute after:-inset-y-[8px] after:-inset-x-[4px]"
+                      >
                         {openingId === (m.ticketId || m.id) ? (
                           <span>正在读取全文</span>
                         ) : isExpanded ? (
                           <>
-                            收起详情 <ChevronUp className="h-3.5 w-3.5" />
+                            <span>收起详情</span>
+                            <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
                           </>
                         ) : (
                           <>
-                            展开详情 <ChevronDown className="h-3.5 w-3.5" />
+                            <span>展开详情</span>
+                            <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
                           </>
                         )}
-                      </div>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -1179,7 +1290,7 @@ function ThemeDetailInner() {
         <div className="min-w-0">
           <div className="card" style={{ marginBottom: 14 }}>
             <div className="card__header">
-              <div className="card__title">📌 群组基本信息</div>
+              <h2 className="card__title m-0">📌 群组基本信息</h2>
             </div>
             <div className="card__body" style={{ padding: "8px 18px" }}>
               <div className="info-row">
@@ -1213,7 +1324,7 @@ function ThemeDetailInner() {
 
           <div className="card" style={{ marginBottom: 14 }}>
             <div className="card__header">
-              <div className="card__title">🤖 AI 聚类研判依据</div>
+              <h2 className="card__title m-0">🤖 AI 聚类研判依据</h2>
             </div>
             <div className="card__body" style={{ padding: "8px 18px 14px" }}>
               {cluster.ungrouped ? (
@@ -1270,7 +1381,7 @@ function ThemeDetailInner() {
           {/* 5 阶段处置进度可视化卡片（完全采用同事的原生进度条设计） */}
           <div className="card" style={{ marginBottom: 14 }}>
             <div className="card__header flex items-center justify-between gap-2 flex-wrap">
-              <div className="card__title">
+              <h2 className="card__title m-0">
                 ⏱ 群组处理进度
                 <span
                   style={{
@@ -1284,7 +1395,7 @@ function ThemeDetailInner() {
                 >
                   {row.status?.label || "未处理"}
                 </span>
-              </div>
+              </h2>
               {!isRolePending && !isAdmin && (
                 <span className="text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded whitespace-nowrap">
                   只读受限态
@@ -1355,8 +1466,16 @@ function ThemeDetailInner() {
           {/* 底部操作工具栏：真闭环处置 + 导出报告 */}
           {!isRolePending && !isAdmin && !cluster.ungrouped && (
             <div className="mt-3.5 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-800 flex items-center gap-1.5">
-              <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
+              <ShieldAlert className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
               <span>需管理员权限可执行派单、推进、升级、办结、重开或移出工单处置</span>
+            </div>
+          )}
+          {!cluster.ungrouped && (row.fakeClosureCount ?? 0) > 0 && row.status?.code === "RESOLVED" && (
+            <div className="mt-3.5 rounded-lg border border-amber-200 bg-amber-50/90 px-3 py-2 text-xs text-amber-900 flex items-center gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-700 shrink-0" aria-hidden="true" />
+              <span>
+                本专题关联 {row.fakeClosureCount} 件疑似假闭环工单，建议点击「重开督办」恢复跟进。
+              </span>
             </div>
           )}
           <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 mb-3.5 mt-3.5">
@@ -1470,7 +1589,7 @@ function ThemeDetailInner() {
                 value={dispatchOwner}
                 onChange={(e) => setDispatchOwner(e.target.value)}
                 placeholder="例如：区城市管理和综合执法局（留空自动取默认值）"
-                className="w-full h-11 sm:h-9 px-3 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
+                className="w-full h-11 sm:h-9 px-3 rounded-lg border border-slate-200 bg-white text-base sm:text-xs text-slate-900 focus:outline-none focus:border-blue-500"
               />
             </div>
             <div>
@@ -1482,7 +1601,7 @@ function ThemeDetailInner() {
                 type="date"
                 value={dispatchEta}
                 onChange={(e) => setDispatchEta(e.target.value)}
-                className="w-full h-11 sm:h-9 px-3 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
+                className="w-full h-11 sm:h-9 px-3 rounded-lg border border-slate-200 bg-white text-base sm:text-xs text-slate-900 focus:outline-none focus:border-blue-500"
               />
             </div>
             <div>
@@ -1495,7 +1614,7 @@ function ThemeDetailInner() {
                 value={dispatchNote}
                 onChange={(e) => setDispatchNote(e.target.value)}
                 placeholder="填写现场核查要求、协同部门或督办意见（可选）"
-                className="w-full p-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500 resize-none"
+                className="w-full p-2.5 rounded-lg border border-slate-200 bg-white text-base sm:text-xs text-slate-900 focus:outline-none focus:border-blue-500 resize-none"
               />
             </div>
             <DialogFooter className="flex-row justify-end gap-2 border-t border-[var(--c-border-soft)] -mx-5 px-5 py-3">
@@ -1555,7 +1674,7 @@ function ThemeDetailInner() {
                 value={escalateNote}
                 onChange={(e) => setEscalateNote(e.target.value)}
                 placeholder="请填写升级督办的具体原因或整改时限要求…"
-                className="w-full p-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500 resize-none"
+                className="w-full p-2.5 rounded-lg border border-slate-200 bg-white text-base sm:text-xs text-slate-900 focus:outline-none focus:border-blue-500 resize-none"
               />
             </div>
             <DialogFooter className="flex-row justify-end gap-2 border-t border-[var(--c-border-soft)] -mx-5 px-5 py-3">
@@ -1570,7 +1689,7 @@ function ThemeDetailInner() {
               <button
                 type="submit"
                 className="btn btn--primary"
-                style={{ background: "#F53F3F", borderColor: "#F53F3F" }}
+                style={{ background: "#DC2626", borderColor: "#DC2626" }}
                 disabled={!isAdmin || actionPending}
               >
                 {actionPending ? "提交中…" : "确认升级督办"}
