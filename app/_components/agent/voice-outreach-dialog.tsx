@@ -9,12 +9,10 @@ import {
   ExternalLink,
   Loader2,
   Mic,
-  MicOff,
   PhoneCall,
   Send,
   ShieldCheck,
   Sparkles,
-  Volume2,
   X,
 } from "lucide-react";
 import { appendRecognizedText, useStreamAsr } from "@/app/_hooks/use-stream-asr";
@@ -166,6 +164,17 @@ function toSpokenOutreachText(raw: string): string {
     .trim();
 }
 
+/** 展示用外呼文本：将原始占位符（如 `(来电号码 {{PHONE_NUMBER_1}})`）替换为友好隐私提示。 */
+function toDisplayOutreachText(raw: string): string {
+  return raw
+    .replace(
+      /[（(]\s*(?:来电号码|联系方式|联系电话|手机号|号码)?\s*[:：]?\s*\{\{[A-Z0-9_]+\}\}\s*[）)]/g,
+      "（号码已隐私保护）"
+    )
+    .replace(/\{\{[A-Z0-9_]+\}\}/g, "（已隐私保护）")
+    .trim();
+}
+
 export function VoiceOutreachDialog({
   open,
   onOpenChange,
@@ -198,6 +207,7 @@ export function VoiceOutreachDialog({
   const [turns, setTurns] = useState<ConversationTurn[]>([]);
   const [textInput, setTextInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [caption, setCaption] = useState("");
   const [completed, setCompleted] = useState(false);
   const [extractedPatch, setExtractedPatch] = useState<Record<string, unknown> | null>(null);
@@ -276,7 +286,7 @@ export function VoiceOutreachDialog({
           {
             id: `a-${Date.now()}`,
             role: "agent",
-            text: aiReply,
+            text: toDisplayOutreachText(aiReply),
             time: new Date().toLocaleTimeString(),
           },
         ]);
@@ -377,7 +387,7 @@ export function VoiceOutreachDialog({
       {
         id: `init-${task.id}`,
         role: "agent",
-        text: greeting,
+        text: toDisplayOutreachText(greeting),
         time: new Date().toLocaleTimeString(),
       },
     ]);
@@ -386,6 +396,7 @@ export function VoiceOutreachDialog({
     setCompleted(task.status === "EXECUTED");
     completedRef.current = task.status === "EXECUTED";
     refreshedOnCloseRef.current = false;
+    setConfirming(false);
     setExtractedPatch(null);
     setTriggeredFakeClosure(false);
     setReopenedThemeId(null);
@@ -420,6 +431,7 @@ export function VoiceOutreachDialog({
   const handleCloseCleanup = useCallback(() => {
     pointerDownOnBackdropRef.current = false;
     validBackdropClickRef.current = false;
+    setConfirming(false);
     stopAsr();
     stageRef.current?.stop();
     if (dialogRef.current) {
@@ -439,18 +451,20 @@ export function VoiceOutreachDialog({
     return clientX < r.left || clientX > r.right || clientY < r.top || clientY > r.bottom;
   }, []);
 
-  const handleConfirmAndRefresh = useCallback(async () => {
+  const handleConfirmAndRefresh = useCallback(() => {
+    if (confirming) return;
+    setConfirming(true);
     const latest = updatedTask || task || undefined;
-    if (completed && !refreshedOnCloseRef.current && onCompleted) {
-      refreshedOnCloseRef.current = true;
-      await onCompleted(latest);
-    }
     if (dialogRef.current?.open) {
       dialogRef.current.close("confirmed");
     } else {
       handleCloseCleanup();
     }
-  }, [completed, onCompleted, updatedTask, task, handleCloseCleanup]);
+    if ((completed || completedRef.current) && !refreshedOnCloseRef.current && onCompleted) {
+      refreshedOnCloseRef.current = true;
+      void onCompleted(latest);
+    }
+  }, [confirming, completed, onCompleted, updatedTask, task, handleCloseCleanup]);
 
   const patchEntries = useMemo(() => {
     if (!extractedPatch) return [];
@@ -467,25 +481,57 @@ export function VoiceOutreachDialog({
         ref={micButtonRef}
         type="button"
         aria-pressed={asr.isRecording}
+        aria-label={
+          asr.isRecording
+            ? "正在聆听，点击暂停语音应答"
+            : asr.status === "initializing" || asr.status === "downloading"
+              ? "语音识别准备中，点击取消"
+              : completed
+                ? "外呼已完成"
+                : "点击开始语音应答"
+        }
         disabled={sending || completed}
         onClick={() => {
-          if (asr.isRecording) {
+          if (asr.isRecording || asr.status === "initializing" || asr.status === "downloading") {
             asr.stop();
           } else {
             stageRef.current?.stop();
             void asr.start();
           }
         }}
-        className={`w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold inline-flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+        className={`w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold inline-flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
           asr.isRecording
-            ? "bg-rose-600 text-white hover:bg-rose-700 shadow-xs"
-            : "bg-blue-600 text-white hover:bg-blue-700 shadow-xs"
+            ? "bg-rose-600 text-white hover:bg-rose-700 ring-2 ring-rose-300/75 shadow-xs"
+            : asr.status === "initializing" || asr.status === "downloading"
+              ? "bg-blue-50 text-blue-700 border border-blue-200"
+              : "bg-blue-600 text-white hover:bg-blue-700 shadow-xs"
         }`}
       >
         {asr.isRecording ? (
           <>
-            <MicOff className="w-4 h-4 shrink-0" aria-hidden="true" />
-            <span>停止语音输入</span>
+            <span className="inline-flex items-center justify-center gap-[2.5px] h-3.5" aria-hidden="true">
+              {[0.65, 1, 0.75].map((scale, idx) => (
+                <span
+                  key={idx}
+                  className="w-[2.5px] rounded-full bg-current transition-all duration-75 motion-safe:animate-pulse"
+                  style={{
+                    height: `${Math.round(
+                      (5 + Math.min(1, Math.max(0.2, asr.audioLevel * 1.8)) * 8) * scale
+                    )}px`,
+                  }}
+                />
+              ))}
+            </span>
+            <span>正在聆听…</span>
+          </>
+        ) : asr.status === "initializing" || asr.status === "downloading" ? (
+          <>
+            <Loader2 className="w-4 h-4 motion-safe:animate-spin shrink-0" aria-hidden="true" />
+            <span>
+              {asr.status === "downloading"
+                ? `准备本地语音 ${Math.round(asr.downloadPercent)}%`
+                : "正在打开麦克风…"}
+            </span>
           </>
         ) : (
           <>
@@ -495,40 +541,25 @@ export function VoiceOutreachDialog({
         )}
       </button>
 
-      {/* ASR Status & Audio Meter */}
-      <div className="rounded-lg border border-slate-200/80 bg-slate-50 px-2.5 py-2 text-[11px] text-slate-600 space-y-1.5">
-        <div className="flex items-center justify-between gap-2">
-          <span className="inline-flex items-center gap-1 font-medium text-slate-700 truncate">
-            <Volume2 className="w-3.5 h-3.5 text-blue-600 shrink-0" aria-hidden="true" />
-            <span className="truncate">{asr.statusHint || "语音引擎就绪"}</span>
-          </span>
+      {(asr.status === "downloading" || Boolean(asr.error)) && (
+        <div className="rounded-lg border border-slate-200/80 bg-slate-50 px-2.5 py-2 text-[11px] text-slate-600 space-y-1">
           {asr.status === "downloading" && (
-            <span className="font-mono tabular-nums text-blue-600 shrink-0">
-              {Math.round(asr.downloadPercent)}%
-            </span>
+            <div className="flex items-center justify-between gap-2">
+              <span className="truncate font-medium text-slate-700">
+                正在准备本地语音识别…
+              </span>
+              <span className="font-mono tabular-nums text-blue-600 shrink-0">
+                {Math.round(asr.downloadPercent)}%
+              </span>
+            </div>
+          )}
+          {asr.error && (
+            <p className="text-[11px] text-amber-700 break-words">
+              语音提示：{asr.error}（可使用快捷回复或文字输入）
+            </p>
           )}
         </div>
-        {asr.isRecording && (
-          <div className="space-y-1">
-            <div className="h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
-              <div
-                className="h-full bg-blue-600 transition-all duration-100"
-                style={{ width: `${Math.min(100, Math.max(6, Math.round(asr.audioLevel * 100)))}%` }}
-              />
-            </div>
-            {asr.interimText && (
-              <p className="text-[11px] text-blue-700 break-words">
-                识别中：{asr.interimText}
-              </p>
-            )}
-          </div>
-        )}
-        {asr.error && (
-          <p className="text-[11px] text-amber-700 break-words">
-            语音提示：{asr.error}（可使用快捷回复或文字输入）
-          </p>
-        )}
-      </div>
+      )}
     </div>
   );
 
@@ -824,9 +855,13 @@ export function VoiceOutreachDialog({
                         placeholder={
                           completed
                             ? "本次外呼核实已完结"
-                            : isEcommerce
-                            ? "输入补充的店铺/SKU或满意度反馈…"
-                            : "输入补充的门牌地址/主体或满意度反馈…"
+                            : asr.isRecording
+                              ? asr.interimText
+                                ? `实时转写：${asr.interimText}`
+                                : "正在聆听，请直接说话…"
+                              : isEcommerce
+                                ? "输入补充的店铺/SKU或满意度反馈…"
+                                : "输入补充的门牌地址/主体或满意度反馈…"
                         }
                         className="flex-1 min-w-0 min-h-[44px] px-3 rounded-lg border border-slate-200 bg-white text-base sm:text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 focus-visible:border-blue-600 disabled:bg-slate-50"
                       />
@@ -927,8 +962,9 @@ export function VoiceOutreachDialog({
                 {completed && (
                   <button
                     type="button"
-                    onClick={() => void handleConfirmAndRefresh()}
-                    className="btn btn--primary min-h-[44px] sm:min-h-[38px] text-xs"
+                    disabled={confirming}
+                    onClick={handleConfirmAndRefresh}
+                    className="btn btn--primary min-h-[44px] sm:min-h-[38px] text-xs disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     确认完成并刷新队列
                   </button>

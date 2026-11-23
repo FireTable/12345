@@ -9,16 +9,23 @@ import { useAuthRole } from "@/lib/auth/use-role";
 function ScreenInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { switchRegion, activeRegion } = useRegion();
+  const { switchRegion, activeRegion, regions, isLoading: regionLoading } = useRegion();
   const { isAdmin, isPending: isRolePending } = useAuthRole();
   const regionParam = searchParams.get("region");
+  const appliedRegionParamRef = React.useRef<string | null>(null);
 
   useEffect(() => {
-    if (isRolePending || !isAdmin) return;
-    if (regionParam && activeRegion?.id !== regionParam) {
+    if (isRolePending || !isAdmin || regionLoading) return;
+    if (!regionParam) {
+      appliedRegionParamRef.current = null;
+      return;
+    }
+    if (appliedRegionParamRef.current === regionParam) return;
+    appliedRegionParamRef.current = regionParam;
+    if (activeRegion?.id !== regionParam && regions.some((r) => r.id === regionParam)) {
       switchRegion(regionParam);
     }
-  }, [regionParam, activeRegion?.id, switchRegion, isRolePending, isAdmin]);
+  }, [regionParam, regionLoading, regions, activeRegion?.id, switchRegion, isRolePending, isAdmin]);
 
   if (isRolePending || !isAdmin) {
     return <div className="w-screen h-screen bg-[#020612]" />;

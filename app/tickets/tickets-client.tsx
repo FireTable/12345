@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { Suspense, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { buildSafeCsv } from "@/lib/export-csv";
 import {
@@ -22,13 +22,17 @@ import {
   Check,
   X,
   Wrench,
+  Bot,
+  Loader2,
 } from "lucide-react";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { SkTickets } from "@/app/_components/civic/skeletons";
 import { PageHeaderActions } from "@/app/_components/civic/page-header-actions";
+import { VoiceOutreachDialog, type AgentTaskItem } from "@/app/_components/agent/voice-outreach-dialog";
 import { isTownLabel } from "@/lib/admin-area";
 import {
-  normalizeStatusCode,
+  normalizeTicketStatus,
+  ticketStatusLabel,
   getCategoryBadgeClass,
   getUrgencyLabel,
   categoryBadgeStyle,
@@ -73,6 +77,7 @@ type Row = {
   canonicalSubject?: string;
   eventType?: string;
   isFakeClosure?: boolean;
+  missingSlots?: string[];
   detailLoaded?: boolean;
   detailError?: boolean;
   cluster_info?: { id: string; title: string; mode_name?: string } | null;
@@ -88,6 +93,7 @@ type Stats = {
   multifreq: number;
   single: number;
   fakeClosure?: number;
+  missingInfo?: number;
   pendingReview?: number;
 };
 
@@ -107,31 +113,55 @@ type ReviewRow = {
 
 const TABS = [
   { key: "all", label: "全部" },
-  { key: "pending", label: "待处理" },
+  { key: "pending", label: "待派单" },
   { key: "progress", label: "处理中" },
   { key: "urgent", label: "紧急" },
   { key: "multifreq", label: "多频聚类" },
   { key: "single", label: "单发诉求" },
+  { key: "missing_info", label: "缺资料" },
   { key: "fake_closure", label: "疑似假闭环" },
   { key: "review", label: "待人工复核" },
 ] as const;
 
-export default function TicketsPage() {
+const VALID_TAB_KEYS = new Set<string>(TABS.map((t) => t.key));
+
+function normalizeTabParam(raw: string | null): string {
+  const key = (raw || "").trim().toLowerCase();
+  return VALID_TAB_KEYS.has(key) ? key : "all";
+}
+
+function TicketsClientInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { activeRegion, isLoading: regionLoading } = useRegion();
   const { isAdmin, isPending: isRolePending } = useAuthRole();
   const isEcommerce = activeRegion?.domainProfile?.domainType === "ECOMMERCE_CS";
-  const rawRegionUnit = activeRegion?.domainProfile?.terminology?.regionUnit || "镇街";
+  const hasGeoMap = activeRegion?.domainProfile?.hasGeoMap !== false;
+  const terminology = activeRegion?.domainProfile?.terminology;
+  const rawRegionUnit = terminology?.regionUnit || "镇街";
   const regionUnit = isEcommerce
     ? rawRegionUnit
     : rawRegionUnit === "所属镇街"
       ? "镇街"
       : rawRegionUnit;
+  const fakeClosureLabel = terminology?.fakeClosureLabel || "疑似假闭环";
+  const subjectLabel = isEcommerce ? "商品/店铺" : "主体";
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(20);
   const [keyword, setKeyword] = useState("");
   const [debouncedKeyword, setDebouncedKeyword] = useState("");
-  const [tab, setTab] = useState("all");
+  const urlTab = normalizeTabParam(searchParams.get("tab"));
+  const [tab, setTab] = useState(() => urlTab);
+  const prevUrlTabRef = useRef(urlTab);
+
+  useEffect(() => {
+    if (urlTab !== prevUrlTabRef.current) {
+      prevUrlTabRef.current = urlTab;
+      setTab(urlTab);
+      setPage(1);
+      setReviewPage(1);
+    }
+  }, [urlTab]);
   const [region, setRegion] = useState("");
   const [category, setCategory] = useState("");
   const [cluster, setCluster] = useState("");
@@ -166,10 +196,14 @@ export default function TicketsPage() {
       multifreq: 0,
       single: 0,
       fakeClosure: 0,
+      missingInfo: 0,
       pendingReview: 0,
     },
     facets: { regions: [], categories: [] },
   });
+  const [outreachTask, setOutreachTask] = useState<AgentTaskItem | null>(null);
+  const [outreachOpen, setOutreachOpen] = useState(false);
+  const [followUpPendingId, setFollowUpPendingId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [reviewRows, setReviewRows] = useState<ReviewRow[]>([]);
   const [reviewTotal, setReviewTotal] = useState<number | null>(null);
@@ -384,10 +418,14 @@ export default function TicketsPage() {
         dialogEl.showModal();
         drawerCloseBtnRef.current?.focus({ preventScroll: true });
       }
+      const targetId = drawer.ticketId || drawer.id;
+      if (targetId) {
+        router.prefetch(`/tickets/${encodeURIComponent(targetId)}`);
+      }
     } else if (dialogEl.open) {
       dialogEl.close();
     }
-  }, [drawer]);
+  }, [drawer, router]);
 
   if (isRolePending || !isAdmin) {
     return <SkTickets />;
@@ -397,16 +435,55 @@ export default function TicketsPage() {
   const pages = Math.max(1, Math.ceil(data.total / size));
   const reviewTotalCount = reviewTotal ?? reviewRows.length;
   const reviewPages = Math.max(1, Math.ceil(reviewTotalCount / reviewSize));
-  const pendingShare = s.total ? (((s.pending + s.progress) / s.total) * 100).toFixed(1) : "0";
+  const pendingShare = s.total ? ((s.pending / s.total) * 100).toFixed(1) : "0";
   const finishShare = s.total ? ((s.finished / s.total) * 100).toFixed(0) : "0";
 
   function closeDrawer() {
     drawerSeq.current += 1;
-    drawerAbortRef.current?.abort();
+    if (drawerAbortRef.current) {
+      drawerAbortRef.current.abort();
+      drawerAbortRef.current = null;
+    }
     if (drawerDialogRef.current?.open) {
       drawerDialogRef.current.close();
     }
-    setDrawer(null);
+    setDrawer((prev) => (prev ? null : prev));
+  }
+
+  async function handleAgentFollowUp(target: Row) {
+    const ticketKey = target.ticketId || target.id;
+    if (!isAdmin || !ticketKey || followUpPendingId) return;
+    setFollowUpPendingId(ticketKey);
+    try {
+      const res = await fetch("/api/agent/tasks", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...regionHeaders(),
+        },
+        body: JSON.stringify({
+          ticketId: ticketKey,
+          regionId: activeRegion?.id,
+        }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        task?: AgentTaskItem;
+        error?: string;
+      };
+      if (!res.ok || !json.success || !json.task) {
+        throw new Error(json.error || `发起 Agent 跟进失败 (${res.status})`);
+      }
+      if (drawer) {
+        closeDrawer();
+      }
+      setOutreachTask(json.task);
+      setOutreachOpen(true);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "发起 Agent 跟进失败");
+    } finally {
+      setFollowUpPendingId(null);
+    }
   }
 
   function isOutsideDrawerPanel(clientX: number, clientY: number) {
@@ -502,6 +579,7 @@ export default function TicketsPage() {
             canonicalSubject: j.canonicalSubject,
             eventType: j.eventType,
             isFakeClosure: j.isFakeClosure,
+            missingSlots: Array.isArray(j.missingSlots) ? j.missingSlots : current.missingSlots,
             detailLoaded: true,
           };
         });
@@ -597,15 +675,15 @@ export default function TicketsPage() {
             <StatCard
               icon={Clock}
               tone="blue"
-              label="待处理"
-              value={s.pending + s.progress}
+              label="待派单"
+              value={s.pending}
               sub={`占总数 ${pendingShare}%`}
               onClick={() => {
                 setTab("pending");
                 setPage(1);
                 setReviewPage(1);
               }}
-              className={tab === "pending" || tab === "progress" ? "ring-2 ring-blue-500/30" : ""}
+              className={tab === "pending" ? "ring-2 ring-blue-500/30" : ""}
             />
             <StatCard
               icon={Flame}
@@ -635,25 +713,35 @@ export default function TicketsPage() {
               aria-label="工单筛选视图"
               onKeyDown={handleTabKeyDown}
             >
-              {TABS.map((t) => (
-                <button
-                  key={t.key}
-                  ref={(el) => {
-                    tabRefs.current[t.key] = el;
-                  }}
-                  type="button"
-                  role="tab"
-                  aria-selected={tab === t.key}
-                  tabIndex={tab === t.key ? 0 : -1}
-                  className={`filter-tab whitespace-nowrap shrink-0${tab === t.key ? " is-active" : ""}`}
-                  onClick={() => activateTab(t.key)}
-                >
-                  {t.label}
-                  <span className="filter-tab__count tabular-nums">
-                    {tabCount(t.key, s, reviewTotal)}
-                  </span>
-                </button>
-              ))}
+              {TABS.map((t) => {
+                const tabLabel =
+                  t.key === "single"
+                    ? isEcommerce
+                      ? "单发客诉"
+                      : t.label
+                    : t.key === "fake_closure"
+                      ? fakeClosureLabel
+                      : t.label;
+                return (
+                  <button
+                    key={t.key}
+                    ref={(el) => {
+                      tabRefs.current[t.key] = el;
+                    }}
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === t.key}
+                    tabIndex={tab === t.key ? 0 : -1}
+                    className={`filter-tab whitespace-nowrap shrink-0${tab === t.key ? " is-active" : ""}`}
+                    onClick={() => activateTab(t.key)}
+                  >
+                    {tabLabel}
+                    <span className="filter-tab__count tabular-nums">
+                      {tabCount(t.key, s, reviewTotal)}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
             {tab === "review" ? (
               <>
@@ -676,7 +764,7 @@ export default function TicketsPage() {
                     <thead>
                       <tr>
                         <th scope="col" className="min-w-[140px] whitespace-nowrap">工单号</th>
-                        <th scope="col" className="min-w-[200px]">诉求标题</th>
+                        <th scope="col" className="min-w-[200px]">{isEcommerce ? "客诉标题" : "诉求标题"}</th>
                         <th scope="col" className="min-w-[104px] whitespace-nowrap">{regionUnit}</th>
                         <th scope="col" className="min-w-[88px] whitespace-nowrap">置信度</th>
                         <th scope="col" className="min-w-[160px] whitespace-nowrap">复核原因</th>
@@ -691,7 +779,7 @@ export default function TicketsPage() {
                           item.district ||
                           "—";
                         const titleText =
-                          item.summarizeTitle || item.title || "市民诉求";
+                          item.summarizeTitle || item.title || (isEcommerce ? "售后客诉" : "市民诉求");
                         const busy = actingReviewId === item.id;
                         return (
                           <tr
@@ -728,7 +816,7 @@ export default function TicketsPage() {
                             </td>
                             <td className="min-w-[160px] whitespace-nowrap">
                               <span className="text-xs text-slate-600 whitespace-nowrap">
-                                {formatReviewReason(item.reason)}
+                                {formatReviewReason(item.reason, isEcommerce)}
                               </span>
                             </td>
                             <td
@@ -841,7 +929,7 @@ export default function TicketsPage() {
                     }}
                   >
                     <SelectTrigger
-                      aria-label="按诉求类型筛选"
+                      aria-label={isEcommerce ? "按客诉类型筛选" : "按诉求类型筛选"}
                       className="w-full sm:w-[152px] min-h-[44px] sm:min-h-0 sm:h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg"
                     >
                       <SelectValue placeholder="类型：全部" />
@@ -872,7 +960,9 @@ export default function TicketsPage() {
                     <SelectContent>
                       <SelectItem value="all">聚类状态：全部</SelectItem>
                       <SelectItem value="multifreq">多频聚类工单</SelectItem>
-                      <SelectItem value="single">单发诉求 (未聚类)</SelectItem>
+                      <SelectItem value="single">
+                        {isEcommerce ? "单发客诉 (未聚类)" : "单发诉求 (未聚类)"}
+                      </SelectItem>
                     </SelectContent>
                   </Select>
 
@@ -928,13 +1018,13 @@ export default function TicketsPage() {
                     <thead>
                       <tr>
                         <th scope="col" className="min-w-[140px] whitespace-nowrap">工单号</th>
-                        <th scope="col" className="min-w-[220px]">诉求标题</th>
+                        <th scope="col" className="min-w-[220px]">{isEcommerce ? "客诉标题" : "诉求标题"}</th>
                         <th scope="col" className="min-w-[104px] whitespace-nowrap">{regionUnit}</th>
                         <th scope="col" className="min-w-[128px] whitespace-nowrap">类型</th>
                         <th scope="col" className="min-w-[84px] whitespace-nowrap">紧急度</th>
                         <th scope="col" className="min-w-[116px] whitespace-nowrap">时间</th>
                         <th scope="col" className="min-w-[88px] whitespace-nowrap">状态</th>
-                        <th scope="col" className="min-w-[72px] whitespace-nowrap text-right">操作</th>
+                        <th scope="col" className="min-w-[140px] whitespace-nowrap text-right">操作</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -949,6 +1039,14 @@ export default function TicketsPage() {
                                   多频
                                 </span>
                               )}
+                              {r.missingSlots && r.missingSlots.length > 0 && (
+                                <span
+                                  className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-medium bg-amber-50 text-amber-800 border border-amber-200 shrink-0 whitespace-nowrap"
+                                  title={`缺失：${r.missingSlots.join("、")}`}
+                                >
+                                  缺资料
+                                </span>
+                              )}
                               {r.isFakeClosure && (
                                 <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-medium bg-amber-50 text-amber-800 border border-amber-200 shrink-0 whitespace-nowrap" title="办结后短期内再次投诉">
                                   假闭环
@@ -958,8 +1056,11 @@ export default function TicketsPage() {
                             <div className="col-title__desc flex items-center gap-2 min-w-0" style={{ marginTop: 2 }}>
                               {r.address ? <span className="truncate" title={r.address}>{r.address}</span> : null}
                               {r.canonicalSubject ? (
-                                <span className="text-[11px] text-gray-500 font-normal truncate" title={`研判主体: ${r.canonicalSubject}`}>
-                                  · 主体: {r.canonicalSubject}
+                                <span
+                                  className="text-[11px] text-gray-500 font-normal truncate"
+                                  title={`研判${subjectLabel}: ${r.canonicalSubject}`}
+                                >
+                                  · {subjectLabel}: {r.canonicalSubject}
                                 </span>
                               ) : null}
                             </div>
@@ -988,18 +1089,40 @@ export default function TicketsPage() {
                               {statusLabel(r.status)}
                             </span>
                           </td>
-                          <td className="min-w-[72px] whitespace-nowrap text-right">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openDrawer(r);
-                              }}
-                              aria-label={`查看工单 ${r.id} 详情`}
-                              className="relative inline-flex items-center justify-end min-h-[28px] min-w-0 py-1 px-2 sm:px-0 text-[var(--c-brand)] font-medium text-xs bg-transparent border-0 cursor-pointer hover:underline after:content-[''] after:absolute after:-inset-y-[8px] after:-inset-x-[4px]"
-                            >
-                              查看
-                            </button>
+                          <td className="min-w-[140px] whitespace-nowrap text-right">
+                            <div className="inline-flex items-center justify-end gap-2.5">
+                              {isAdmin && r.missingSlots && r.missingSlots.length > 0 && (
+                                <button
+                                  type="button"
+                                  disabled={followUpPendingId === (r.ticketId || r.id)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void handleAgentFollowUp(r);
+                                  }}
+                                  aria-label={`让 Agent 跟进工单 ${r.id}`}
+                                  title={`一键让 Agent 外呼补全：${r.missingSlots.join("、")}`}
+                                  className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 min-h-[26px] text-[11px] font-semibold text-amber-800 hover:bg-amber-100 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  {followUpPendingId === (r.ticketId || r.id) ? (
+                                    <Loader2 className="w-3 h-3 animate-spin shrink-0" aria-hidden="true" />
+                                  ) : (
+                                    <Bot className="w-3 h-3 shrink-0" aria-hidden="true" />
+                                  )}
+                                  <span>Agent 跟进</span>
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openDrawer(r);
+                                }}
+                                aria-label={`查看工单 ${r.id} 详情`}
+                                className="relative inline-flex items-center justify-end min-h-[28px] min-w-0 py-1 px-2 sm:px-0 text-[var(--c-brand)] font-medium text-xs bg-transparent border-0 cursor-pointer hover:underline after:content-[''] after:absolute after:-inset-y-[8px] after:-inset-x-[4px]"
+                              >
+                                查看
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -1094,18 +1217,26 @@ export default function TicketsPage() {
                   <span className={`badge-pill ${drawer.urgency === "URGENT" ? "badge-pill--danger" : "badge-pill--default"}`}>
                     {urgencyLabel(drawer.urgency)}
                   </span>
+                  {drawer.missingSlots && drawer.missingSlots.length > 0 && (
+                    <span
+                      className="badge-pill badge-pill--warning"
+                      title={`缺失：${drawer.missingSlots.join("、")}`}
+                    >
+                      缺资料
+                    </span>
+                  )}
                   {drawer.isFakeClosure && (
                     <span className="badge-pill badge-pill--danger">
-                      疑似假闭环
+                      {fakeClosureLabel}
                     </span>
                   )}
                 </div>
                 <h2 id={drawerTitleId} className="drawer__title m-0" style={{ wordBreak: "break-word", fontSize: 16 }}>
-                  {drawer.title || "市民诉求"}
+                  {drawer.title || (isEcommerce ? "售后客诉" : "市民诉求")}
                 </h2>
                 {drawer.rawTitle && drawer.rawTitle !== drawer.title && (
                   <div style={{ fontSize: 12, color: "var(--c-ink-3)", marginTop: 2 }}>
-                    市民原报原由：{drawer.rawTitle}
+                    {isEcommerce ? "买家原报原由：" : "市民原报原由："}{drawer.rawTitle}
                   </div>
                 )}
               </div>
@@ -1128,12 +1259,12 @@ export default function TicketsPage() {
                 <CitizenVoiceCard data={drawer} headingLevel="h3" />
               ) : (
                 <div className="text-xs text-slate-500 px-1">
-                  {drawer.detailError ? "原文加载失败" : "正在读取诉求原文…"}
+                  {drawer.detailError ? "原文加载失败" : isEcommerce ? "正在读取客诉原文…" : "正在读取诉求原文…"}
                 </div>
               )}
 
               {/* 3. 空间地理高精打点 (天地图) */}
-              <TicketGeoMapCard data={drawer} headingLevel="h3" />
+              {hasGeoMap && <TicketGeoMapCard data={drawer} headingLevel="h3" />}
 
               {/* 4. 经办基础属性 */}
               <TicketPropsGrid data={drawer} headingLevel="h3" />
@@ -1154,13 +1285,30 @@ export default function TicketsPage() {
                     }}
                   >
                     <Layers className="h-3.5 w-3.5 text-blue-600" aria-hidden="true" />
-                    <span>查看所在多频专题</span>
+                    <span>查看所在{isEcommerce ? "多频案卷" : "多频专题"}</span>
                   </button>
                 ) : (
-                  <span className="text-xs text-slate-500">诉求已实时同步</span>
+                  <span className="text-xs text-slate-500">
+                    {isEcommerce ? "客诉已实时同步" : "诉求已实时同步"}
+                  </span>
                 )}
               </div>
               <div className="flex items-center gap-2">
+                {isAdmin && drawer.missingSlots && drawer.missingSlots.length > 0 && (
+                  <button
+                    type="button"
+                    disabled={followUpPendingId === (drawer.ticketId || drawer.id)}
+                    onClick={() => void handleAgentFollowUp(drawer)}
+                    className="btn btn--default flex items-center gap-1.5 text-xs border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {followUpPendingId === (drawer.ticketId || drawer.id) ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" aria-hidden="true" />
+                    ) : (
+                      <Bot className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    )}
+                    <span>Agent 跟进</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   className="btn btn--default text-xs"
@@ -1172,9 +1320,10 @@ export default function TicketsPage() {
                   type="button"
                   className="btn btn--primary flex items-center gap-1.5 text-xs shadow-xs"
                   onClick={() => {
-                    const ticketId = drawer.ticketId;
+                    const ticketId = drawer.ticketId || drawer.id;
+                    if (!ticketId) return;
                     closeDrawer();
-                    router.push(`/tickets/${ticketId}`);
+                    router.push(`/tickets/${encodeURIComponent(ticketId)}`);
                   }}
                 >
                   <span>打开完整详情</span>
@@ -1185,7 +1334,29 @@ export default function TicketsPage() {
           </div>
         )}
       </dialog>
+
+      <VoiceOutreachDialog
+        open={outreachOpen}
+        onOpenChange={setOutreachOpen}
+        task={outreachTask}
+        domainType={activeRegion?.domainProfile?.domainType}
+        regionId={activeRegion?.id}
+        onCompleted={async () => {
+          load();
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new Event("civic-data-refresh"));
+          }
+        }}
+      />
     </>
+  );
+}
+
+export default function TicketsPage() {
+  return (
+    <Suspense fallback={<SkTickets />}>
+      <TicketsClientInner />
+    </Suspense>
   );
 }
 
@@ -1197,17 +1368,18 @@ function tabCount(key: string, s: Stats, reviewTotal: number | null) {
   if (key === "urgent") return s.urgent;
   if (key === "multifreq") return s.multifreq;
   if (key === "single") return s.single ?? Math.max(0, s.total - s.multifreq);
+  if (key === "missing_info") return s.missingInfo ?? 0;
   if (key === "fake_closure") return s.fakeClosure ?? 0;
   if (key === "review") return reviewTotal ?? s.pendingReview ?? 0;
   return 0;
 }
 
-function formatReviewReason(reason?: string | null): string {
+function formatReviewReason(reason?: string | null, isEcommerce = false): string {
   if (!reason) return "低置信度待复核";
   const r = reason.trim();
   if (r === "LOW_CONFIDENCE") return "AI 抽取置信度较低";
-  if (r === "MISSING_SUBJECT") return "涉事主体提取缺失";
-  if (r === "MISSING_LOCATION") return "事发地点不明确";
+  if (r === "MISSING_SUBJECT") return isEcommerce ? "涉事SKU/店铺提取缺失" : "涉事主体提取缺失";
+  if (r === "MISSING_LOCATION") return isEcommerce ? "订单/仓网地点不明确" : "事发地点不明确";
   return r;
 }
 
@@ -1216,22 +1388,20 @@ function urgencyLabel(u: string) {
 }
 
 function statusLabel(s: string) {
-  const code = normalizeStatusCode(s);
-  if (code === "RESOLVED") return "已办结";
-  if (code === "IN_PROGRESS") return "处理中";
-  return "待处理";
+  return ticketStatusLabel(s);
 }
 
 function statusDot(s: string) {
-  const code = normalizeStatusCode(s);
+  const code = normalizeTicketStatus(s);
   if (code === "RESOLVED") return "finished";
-  if (code === "IN_PROGRESS") return "progress";
+  if (code === "DISPATCHED" || code === "IN_PROGRESS") return "progress";
   return "pending";
 }
 
 function statusTag(s: string) {
-  const code = normalizeStatusCode(s);
+  const code = normalizeTicketStatus(s);
   if (code === "RESOLVED") return "done";
+  if (code === "DISPATCHED") return "dispatched";
   if (code === "IN_PROGRESS") return "progress";
   return "pending";
 }

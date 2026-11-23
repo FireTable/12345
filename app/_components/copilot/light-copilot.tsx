@@ -3,12 +3,11 @@
 import React, { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
 import {
   X,
-  Send,
   Sparkles,
   BotMessageSquare,
   Brain,
@@ -17,15 +16,13 @@ import {
   ExternalLink,
   Play,
   Loader2,
-  Mic,
-  MicOff,
+  Download,
   Volume2,
   RotateCcw,
 } from "lucide-react";
-import { Button } from "@/app/_components/ui/button";
-import { Input } from "@/app/_components/ui/input";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/app/_components/ui/tooltip";
 import { useRegion } from "@/app/_components/civic/region-context";
+import { VoiceChatComposer } from "@/app/_components/civic/voice-chat-composer";
 import { useAuthRole } from "@/lib/auth/use-role";
 import { appendRecognizedText, useStreamAsr } from "@/app/_hooks/use-stream-asr";
 import { XiaochunStage, type XiaochunStageHandle } from "@/app/_components/agent/xiaochun-stage";
@@ -47,6 +44,22 @@ const COPILOT_ACTION_LABELS: Record<string, string> = {
   RESOLVE: "办结归档",
   REOPEN: "重开督办",
   ADVANCE: "推进阶段",
+};
+
+const COPILOT_MD_COMPONENTS: Components = {
+  th: ({ node: _node, scope, ...props }) => (
+    <th scope={scope ?? "col"} {...props} />
+  ),
+  table: ({ node: _node, ...props }) => (
+    <div
+      role="region"
+      tabIndex={0}
+      aria-label="研判数据表格"
+      className="copilot-md__table-wrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+    >
+      <table {...props} />
+    </div>
+  ),
 };
 
 function extractCivicActions(
@@ -117,7 +130,7 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
   const inputId = useId();
   const prefersReducedMotion = useReducedMotion();
   const dialogRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
   const openerWasFabRef = useRef(false);
   const wasOpenRef = useRef(false);
@@ -359,6 +372,25 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
     setMessages([createGreetingMessage()]);
   };
 
+  const handleExportMessageMarkdown = (msg: Message, cleanText: string) => {
+    const content = cleanText.trim();
+    if (!content) return;
+    const header = activeRegion
+      ? `# ${activeRegion.city} · ${activeRegion.name} AI 研判简报\n\n`
+      : "";
+    const blob = new Blob([`${header}${content}\n`], {
+      type: "text/markdown;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const safeDate = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `copilot-brief-${safeDate}-${msg.id}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("已导出 Markdown 研判简报");
+  };
+
   const handleSend = async (customText?: string) => {
     const rawText =
       customText ??
@@ -547,7 +579,7 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
           role="dialog"
           aria-modal="true"
           aria-labelledby={titleId}
-          className="w-full max-w-lg shrink-0 h-full bg-white sm:border-l border-slate-200 shadow-2xl flex flex-col overflow-hidden overscroll-contain text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+          className="w-full sm:max-w-xl lg:max-w-2xl shrink-0 h-full bg-white sm:border-l border-slate-200 shadow-2xl flex flex-col overflow-hidden overscroll-contain text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
           onClick={(e) => e.stopPropagation()}
           initial={prefersReducedMotion ? { x: 0 } : { x: "100%" }}
           animate={{ x: 0 }}
@@ -732,10 +764,10 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
                 }`}
               >
                 <div
-                  className={`max-w-[88%] rounded-xl p-3.5 text-xs leading-relaxed ${
+                  className={`min-w-0 rounded-xl p-3.5 text-xs leading-relaxed ${
                     m.role === "user"
-                      ? "bg-blue-600 text-white rounded-br-none shadow-xs"
-                      : "bg-slate-100 text-slate-900 border border-slate-200 rounded-bl-none shadow-2xs"
+                      ? "max-w-[85%] bg-blue-600 text-white rounded-br-none shadow-xs"
+                      : "max-w-[94%] bg-slate-100 text-slate-900 border border-slate-200 rounded-bl-none shadow-2xs"
                   }`}
                 >
                   {m.content || streaming || m.think ? (
@@ -799,7 +831,9 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
                           ) : (
                             <>
                               {parsed.cleanText ? (
-                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{parsed.cleanText}</ReactMarkdown>
+                                <ReactMarkdown remarkPlugins={[remarkGfm]} components={COPILOT_MD_COMPONENTS}>
+                                  {parsed.cleanText}
+                                </ReactMarkdown>
                               ) : null}
                               {streaming && !parsed.pendingBlock ? <span className="copilot-caret" aria-hidden /> : null}
                               {parsed.pendingBlock ? (
@@ -919,9 +953,26 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
                     <span className="text-slate-500">…</span>
                   )}
                 </div>
-                <span className="text-[10px] text-slate-500 mt-1 px-1 font-mono">
-                  {m.timestamp}
-                </span>
+                <div className="mt-1 px-1 flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] text-slate-500 font-mono">
+                    {m.timestamp}
+                  </span>
+                  {m.role === "assistant" &&
+                    !streaming &&
+                    m.id !== "m-init" &&
+                    parsed.cleanText.trim().length > 0 &&
+                    !parsed.cleanText.startsWith("研判失败") && (
+                      <button
+                        type="button"
+                        onClick={() => handleExportMessageMarkdown(m, parsed.cleanText)}
+                        aria-label="导出此条回复为 Markdown"
+                        className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 min-h-[28px] text-[10px] font-medium text-slate-600 hover:text-blue-700 hover:bg-blue-50 transition-colors cursor-pointer"
+                      >
+                        <Download className="w-3 h-3 shrink-0" aria-hidden="true" />
+                        <span>导出 Markdown</span>
+                      </button>
+                    )}
+                </div>
               </div>
             );
           })}
@@ -942,103 +993,32 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
         </div>
 
         {/* Input Bar */}
-        <div className="p-3 border-t border-slate-200 bg-white space-y-1.5 shrink-0">
-          {(asr.isRecording || asr.status === "downloading" || asr.status === "initializing" || asr.error) && (
-            <div
-              role={asr.error ? "status" : undefined}
-              aria-live={asr.error ? "polite" : undefined}
-              className="flex items-center justify-between gap-2 px-1 text-[11px] text-slate-600"
-            >
-              <span className={`truncate ${asr.error ? "text-amber-700" : "text-blue-700"}`}>
-                {asr.error
-                  ? `语音提示：${asr.error}`
-                  : asr.interimText
-                  ? `识别中：${asr.interimText}`
-                  : asr.statusHint || "语音识别就绪"}
-              </span>
-              {asr.status === "downloading" && (
-                <span className="font-mono tabular-nums shrink-0 text-blue-600">
-                  {Math.round(asr.downloadPercent)}%
-                </span>
-              )}
-            </div>
-          )}
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void handleSend();
-            }}
-            className="flex items-center gap-2"
-          >
-            <Button
-              type="button"
-              size="icon"
-              variant="outline"
-              disabled={isTyping}
-              aria-label={
-                asr.isRecording || asr.status === "initializing" || asr.status === "downloading"
-                  ? "停止语音输入"
-                  : "开始语音输入"
-              }
-              aria-pressed={asr.isRecording}
-              onClick={() => {
-                if (asr.isRecording || asr.status === "initializing" || asr.status === "downloading") {
-                  asr.stop();
-                } else {
-                  stageRef.current?.stop();
-                  void asr.start();
-                }
-              }}
-              className={`h-11 w-11 sm:h-9 sm:w-9 shrink-0 ${
-                asr.isRecording
-                  ? "bg-rose-50 border-rose-300 text-rose-600 hover:bg-rose-100"
-                  : "bg-slate-50 border-slate-200 text-slate-600 hover:text-blue-600"
-              }`}
-            >
-              {asr.isRecording ? (
-                <MicOff className="w-4 h-4" aria-hidden="true" />
-              ) : (
-                <Mic className="w-4 h-4" aria-hidden="true" />
-              )}
-            </Button>
-            <label htmlFor={inputId} className="sr-only">
-              输入研判提问
-            </label>
-            <Input
-              ref={inputRef}
-              id={inputId}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  if (e.nativeEvent.isComposing || e.keyCode === 229) {
-                    e.preventDefault();
-                    return;
-                  }
-                  e.preventDefault();
-                  if (!isTyping && (input.trim() || (asr.isRecording && asr.interimText.trim()))) {
-                    void handleSend();
-                  }
-                }
-              }}
-              placeholder={
-                isEcommerce
-                  ? "询问客诉态势、渠道/SKU 或红线…"
-                  : "询问工单态势、镇街或处置建议…"
-              }
-              className="text-base sm:text-xs min-h-11 h-auto sm:h-9 bg-slate-50 border-slate-200 text-slate-900 placeholder:text-slate-500 focus-visible:ring-blue-500"
-            />
-            <Button
-              type="submit"
-              size="sm"
-              aria-label="发送提问"
-              disabled={isTyping || !(input.trim() || (asr.isRecording && asr.interimText.trim()))}
-              className="h-11 min-w-11 px-3 sm:h-9 sm:min-w-0 bg-blue-600 text-white hover:bg-blue-700 shrink-0 shadow-xs"
-            >
-              <Send className="w-3.5 h-3.5" aria-hidden="true" />
-            </Button>
-          </form>
-        </div>
+        <VoiceChatComposer
+          inputId={inputId}
+          label="输入研判提问"
+          value={input}
+          onChange={setInput}
+          onSubmit={() => void handleSend()}
+          placeholder={
+            isEcommerce
+              ? "询问客诉态势、渠道/SKU 或红线…"
+              : "询问工单态势、镇街或处置建议…"
+          }
+          disabled={isTyping}
+          micDisabled={isTyping}
+          asr={asr}
+          onVoiceToggle={() => {
+            if (asr.isRecording || asr.status === "initializing" || asr.status === "downloading") {
+              asr.stop();
+            } else {
+              stageRef.current?.stop();
+              void asr.start();
+            }
+          }}
+          inputRef={inputRef}
+          submitAriaLabel="发送提问"
+          compact
+        />
         </motion.div>
       </motion.div>
       )}

@@ -77,11 +77,18 @@ const ACTION_META: Record<
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  PENDING: "待处理",
-  IN_PROGRESS: "处置中",
+  PENDING: "待派单",
+  DISPATCHED: "已派单",
+  IN_PROGRESS: "处理中",
+  PROCESSING: "处理中",
   RESOLVED: "已办结",
+  CLOSED: "已办结",
   FINISHED: "已办结",
   REOPENED: "已重开",
+  APPROVED: "已批准",
+  EXECUTED: "已执行",
+  REJECTED: "已驳回",
+  BLOCKED: "已阻断",
   HIGH: "高危督办",
   MEDIUM: "中风险",
   LOW: "常规",
@@ -89,10 +96,32 @@ const STATUS_LABELS: Record<string, string> = {
   DISMISSED: "复核忽略",
 };
 
+const TASK_TYPE_LABELS: Record<string, string> = {
+  MISSING_INFO: "要素补全",
+  REOPEN_CALLBACK: "满意度回访",
+  SLA_OVERDUE: "超期催办",
+  REDLINE_BLOCK: "红线熔断",
+};
+
 function formatStatus(value?: string | null): string {
   if (!value) return "";
   const upper = value.trim().toUpperCase();
   return STATUS_LABELS[upper] || value;
+}
+
+function formatLogNote(note: string): string {
+  return note
+    .replace(
+      /工单状态变更为\s+(PENDING|DISPATCHED|IN_PROGRESS|PROCESSING|RESOLVED|CLOSED|FINISHED|REOPENED)\b/g,
+      (_full, code: string) => `工单状态变更为「${STATUS_LABELS[code] || code}」`
+    )
+    .replace(
+      /\b(MISSING_INFO|REOPEN_CALLBACK|SLA_OVERDUE|REDLINE_BLOCK)\b/g,
+      (code: string) => TASK_TYPE_LABELS[code] || code
+    )
+    .replace(/\baddress=/g, "具体地址=")
+    .replace(/\bcanonicalSubject=/g, "涉事主体=")
+    .replace(/\bsubdistrict=/g, "所属镇街=");
 }
 
 function formatLogTime(raw: string): string {
@@ -197,7 +226,7 @@ export function DisposalTimeline({
 
                   {log.note && (
                     <div className="mt-1.5 text-xs text-slate-700 bg-slate-50 border border-slate-200/70 rounded-md px-2.5 py-1.5 leading-relaxed whitespace-pre-wrap break-words">
-                      {log.note}
+                      {formatLogNote(log.note)}
                     </div>
                   )}
                 </div>

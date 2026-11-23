@@ -13,22 +13,29 @@ import {
   ChevronUp,
   CheckCircle2,
   Clock,
-  RotateCcw,
+  Play,
+  Send,
   Wrench,
   AlertTriangle,
   ShieldAlert,
   Trash2,
+  Bot,
+  Loader2,
 } from "lucide-react";
 import { SkTicketDetail } from "@/app/_components/civic/skeletons";
 import {
   categoryBadgeStyle,
   getCategoryBadgeClass,
   getUrgencyLabel,
-  normalizeStatusCode,
+  normalizeTicketStatus,
+  ticketStatusLabel,
+  type TicketStatusCode,
 } from "@/lib/civic-dto";
+import { detectMissingTicketSlots, isTicketResolvedStatus } from "@/lib/civic-missing";
 import { CIVIC_CATEGORIES } from "@/lib/civic-cluster";
 import { AiVerdictCard, CitizenVoiceCard, TicketPropsGrid } from "@/app/_components/civic/ticket-verdict-view";
 import { DisposalTimeline, type DisposalLogItem } from "@/app/_components/civic/disposal-timeline";
+import { VoiceOutreachDialog, type AgentTaskItem } from "@/app/_components/agent/voice-outreach-dialog";
 import { useRegion } from "@/app/_components/civic/region-context";
 import { useAuthRole } from "@/lib/auth/use-role";
 import { ConfirmDialog } from "@/app/_components/ui/confirm-dialog";
@@ -41,18 +48,48 @@ import {
 } from "@/app/_components/ui/select";
 
 function statusLabel(s: string) {
-  const code = normalizeStatusCode(s);
-  if (code === "RESOLVED") return "已办结";
-  if (code === "IN_PROGRESS") return "处理中";
-  return "待处理";
+  return ticketStatusLabel(s);
 }
 
 function statusTag(s: string) {
-  const code = normalizeStatusCode(s);
+  const code = normalizeTicketStatus(s);
   if (code === "RESOLVED") return "done";
+  if (code === "DISPATCHED") return "dispatched";
   if (code === "IN_PROGRESS") return "progress";
   return "pending";
 }
+
+const TICKET_STATUS_ACTIONS: ReadonlyArray<{
+  code: TicketStatusCode;
+  label: string;
+  Icon: typeof Clock;
+  activeClass: string;
+}> = [
+  {
+    code: "PENDING",
+    label: "待派单",
+    Icon: Clock,
+    activeClass: "border-amber-300 bg-amber-50 text-amber-800 font-semibold",
+  },
+  {
+    code: "DISPATCHED",
+    label: "已派单",
+    Icon: Send,
+    activeClass: "border-sky-300 bg-sky-50 text-sky-800 font-semibold",
+  },
+  {
+    code: "IN_PROGRESS",
+    label: "处理中",
+    Icon: Play,
+    activeClass: "border-blue-300 bg-blue-50 text-blue-800 font-semibold",
+  },
+  {
+    code: "RESOLVED",
+    label: "已办结",
+    Icon: CheckCircle2,
+    activeClass: "border-emerald-300 bg-emerald-50 text-emerald-800 font-semibold",
+  },
+];
 
 function formatLocalDate(raw?: string | null): string {
   if (!raw) return "";
@@ -123,6 +160,11 @@ export default function TicketDetailPage() {
   // 移出群组确认弹窗
   const [detachConfirmOpen, setDetachConfirmOpen] = useState(false);
 
+  // 一键让 Agent 跟进（要素补全外呼弹窗）
+  const [outreachTask, setOutreachTask] = useState<AgentTaskItem | null>(null);
+  const [outreachOpen, setOutreachOpen] = useState(false);
+  const [followUpPending, setFollowUpPending] = useState(false);
+
   function syncCorrectionForm(data: any) {
     if (!data) return;
     setSubdistrict(data.subdistrict ?? (data.region && data.region !== "未知" ? data.region : ""));
@@ -172,7 +214,7 @@ export default function TicketDetailPage() {
   async function patchWorkorder(
     payload: {
       action: "UPDATE_STATUS" | "CORRECT_ENTITY" | "DETACH_THEME";
-      status?: "PENDING" | "IN_PROGRESS" | "RESOLVED";
+      status?: TicketStatusCode;
       note?: string;
       correction?: {
         subdistrict?: string;
@@ -232,8 +274,8 @@ export default function TicketDetailPage() {
     }
   }
 
-  async function handleStatusChange(nextStatus: "PENDING" | "IN_PROGRESS" | "RESOLVED") {
-    const label = nextStatus === "RESOLVED" ? "已办结" : nextStatus === "IN_PROGRESS" ? "处理中" : "待处理";
+  async function handleStatusChange(nextStatus: TicketStatusCode) {
+    const label = ticketStatusLabel(nextStatus);
     const ok = await patchWorkorder(
       {
         action: "UPDATE_STATUS",
@@ -291,6 +333,42 @@ export default function TicketDetailPage() {
       "已将该工单移出当前群组"
     );
     if (ok) setDetachConfirmOpen(false);
+  }
+
+  async function handleAgentFollowUp() {
+    if (!isAdmin) {
+      toast.error("需管理员权限可执行 Agent 跟进");
+      return;
+    }
+    const targetId = row?.ticketId || row?.id || params.id;
+    if (!targetId || followUpPending) return;
+    setFollowUpPending(true);
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (activeRegion?.id) headers["x-region-id"] = activeRegion.id;
+      const res = await fetch("/api/agent/tasks", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          ticketId: targetId,
+          regionId: activeRegion?.id,
+        }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        task?: AgentTaskItem;
+        error?: string;
+      };
+      if (!res.ok || !json.success || !json.task) {
+        throw new Error(json.error || `发起 Agent 跟进失败 (${res.status})`);
+      }
+      setOutreachTask(json.task);
+      setOutreachOpen(true);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "发起 Agent 跟进失败");
+    } finally {
+      setFollowUpPending(false);
+    }
   }
 
   if (isRolePending || !isAdmin) {
@@ -355,7 +433,7 @@ export default function TicketDetailPage() {
   }
 
   const clusterId = row.cluster_info?.id || row.cluster_id || "";
-  const currentStatus = normalizeStatusCode(row.status);
+  const currentStatus = normalizeTicketStatus(row.status);
   const logs: DisposalLogItem[] = Array.isArray(row.disposalLogs) ? row.disposalLogs : [];
   const isEcommerce = activeRegion?.domainProfile?.domainType === "ECOMMERCE_CS";
   const unitLabel = activeRegion?.domainProfile?.terminology?.regionUnit || "所属镇街";
@@ -364,6 +442,17 @@ export default function TicketDetailPage() {
   const categoryOptions = sourceCategory && !baseCategories.includes(sourceCategory as any)
     ? [sourceCategory, ...baseCategories]
     : baseCategories;
+  const missingSlots = isTicketResolvedStatus(row.status)
+    ? []
+    : detectMissingTicketSlots(
+        {
+          address: row.address,
+          canonicalSubject: row.canonicalSubject,
+          subdistrict: row.subdistrict,
+          confidence: row.confidence,
+        },
+        isEcommerce
+      );
 
   return (
     <>
@@ -481,7 +570,29 @@ export default function TicketDetailPage() {
             {row.isFakeClosure && currentStatus === "RESOLVED" && (
               <div className="rounded-lg border border-rose-200 bg-rose-50/80 px-2.5 py-2 text-[11px] text-rose-800 flex items-center gap-1.5">
                 <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" aria-hidden="true" />
-                <span>该工单疑似假闭环，建议点击「重开处理」恢复处置并核查整改情况。</span>
+                <span>该工单疑似假闭环，建议切换为「处理中」或「待派单」恢复处置并核查整改情况。</span>
+              </div>
+            )}
+
+            {missingSlots.length > 0 && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50/80 px-2.5 py-2 text-[11px] text-amber-900 flex items-center justify-between gap-2 flex-wrap">
+                <span className="min-w-0 font-medium">
+                  缺失要素：{missingSlots.join("、")}
+                </span>
+                <button
+                  type="button"
+                  disabled={!isAdmin || followUpPending}
+                  title={!isAdmin ? "需管理员权限可执行 Agent 跟进" : "生成跟进任务并打开外呼补全窗口"}
+                  onClick={() => void handleAgentFollowUp()}
+                  className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white px-2.5 py-1 min-h-[44px] sm:min-h-[28px] text-[11px] font-semibold text-amber-800 hover:bg-amber-100 transition-colors shrink-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {followUpPending ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" aria-hidden="true" />
+                  ) : (
+                    <Bot className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                  )}
+                  <span>{followUpPending ? "正在发起…" : "一键让 Agent 跟进"}</span>
+                </button>
               </div>
             )}
 
@@ -499,55 +610,30 @@ export default function TicketDetailPage() {
                 placeholder={isAdmin ? "填写本次处置说明或办结情况（可选）" : "需管理员权限可填写处置备注"}
                 className="w-full h-11 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-slate-50/70 text-base sm:text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-blue-500 disabled:opacity-60 disabled:cursor-not-allowed"
               />
-              <div className="grid grid-cols-3 gap-1.5">
-                <button
-                  type="button"
-                  disabled={!isAdmin || actionPending || currentStatus === "PENDING"}
-                  title={!isAdmin ? "需管理员权限可执行处置" : undefined}
-                  onClick={() => void handleStatusChange("PENDING")}
-                  className={`btn justify-center text-xs min-h-[44px] sm:min-h-[32px] py-1.5 px-2 min-w-0 whitespace-nowrap ${
-                    currentStatus === "PENDING"
-                      ? "bg-amber-50 text-amber-700 border-amber-200 cursor-default"
-                      : "btn--default"
-                  } disabled:opacity-60 disabled:cursor-not-allowed`}
-                >
-                  <Clock className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                  <span>待处理</span>
-                </button>
-                <button
-                  type="button"
-                  disabled={!isAdmin || actionPending || (currentStatus === "IN_PROGRESS" && !statusNote.trim())}
-                  title={!isAdmin ? "需管理员权限可执行处置" : undefined}
-                  onClick={() => void handleStatusChange("IN_PROGRESS")}
-                  className={`btn justify-center text-xs min-h-[44px] sm:min-h-[32px] py-1.5 px-2 min-w-0 whitespace-nowrap ${
-                    currentStatus === "IN_PROGRESS"
-                      ? "bg-blue-50 text-blue-700 border-blue-200"
-                      : "btn--default"
-                  } disabled:opacity-60 disabled:cursor-not-allowed`}
-                >
-                  {currentStatus === "RESOLVED" ? (
-                    <>
-                      <RotateCcw className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                      <span>重开处理</span>
-                    </>
-                  ) : (
-                    <span>处理中</span>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  disabled={!isAdmin || actionPending || currentStatus === "RESOLVED"}
-                  title={!isAdmin ? "需管理员权限可执行处置" : undefined}
-                  onClick={() => void handleStatusChange("RESOLVED")}
-                  className={`btn justify-center text-xs min-h-[44px] sm:min-h-[32px] py-1.5 px-2 min-w-0 whitespace-nowrap ${
-                    currentStatus === "RESOLVED"
-                      ? "bg-emerald-50 text-emerald-700 border-emerald-200 cursor-default"
-                      : "btn--primary"
-                  } disabled:opacity-60 disabled:cursor-not-allowed`}
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                  <span>一键办结</span>
-                </button>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                {TICKET_STATUS_ACTIONS.map(({ code, label, Icon, activeClass }) => {
+                  const isActive = currentStatus === code;
+                  const canReapplyProgress = code === "IN_PROGRESS" && Boolean(statusNote.trim());
+                  const isDisabled = !isAdmin || actionPending || (isActive && !canReapplyProgress);
+                  return (
+                    <button
+                      key={code}
+                      type="button"
+                      aria-pressed={isActive}
+                      disabled={isDisabled}
+                      title={!isAdmin ? "需管理员权限可执行处置" : undefined}
+                      onClick={() => void handleStatusChange(code)}
+                      className={`inline-flex items-center justify-center gap-1 rounded-lg border text-xs min-h-[44px] sm:min-h-[34px] px-2 py-1.5 min-w-0 whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 ${
+                        isActive
+                          ? `${activeClass} cursor-default disabled:cursor-default${!isAdmin || actionPending ? " opacity-60" : ""}`
+                          : "border-slate-200 bg-white text-slate-700 font-medium hover:bg-slate-50 hover:border-slate-300 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      }`}
+                    >
+                      <Icon className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                      <span>{label}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -802,6 +888,20 @@ export default function TicketDetailPage() {
         pending={actionPending}
         onConfirm={() => void handleConfirmDetachTheme()}
         onOpenChange={setDetachConfirmOpen}
+      />
+
+      <VoiceOutreachDialog
+        open={outreachOpen}
+        onOpenChange={setOutreachOpen}
+        task={outreachTask}
+        domainType={activeRegion?.domainProfile?.domainType}
+        regionId={activeRegion?.id}
+        onCompleted={() => {
+          setReloadNonce((n) => n + 1);
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new Event("civic-data-refresh"));
+          }
+        }}
       />
     </>
   );

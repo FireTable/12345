@@ -36,6 +36,18 @@ export interface CivicChatCompletionParams {
   enable_thinking?: boolean;
   stream?: boolean;
   signal?: AbortSignal;
+  /**
+   * 本地集群流式首包最大等待毫秒数；超时仅中止本次本地尝试的内部 signal（不触动调用方 signal，不误标节点不健康），并切换至 cloudFallback。
+   */
+  localWaitTimeoutMs?: number;
+  /**
+   * 当本地健康节点全部已有在途请求且配置了 cloudFallback 时，直接走云端流式避免交互被本地批处理长尾饿死。
+   */
+  preferCloudWhenLocalBusy?: boolean;
+  /**
+   * 为 true 且已配置 cloudFallback 时，直接走云端流式（跳过本地慢节点等待，若云端失败再回退本地）。
+   */
+  preferCloudDirect?: boolean;
 }
 
 export interface CivicChatStreamChunk {

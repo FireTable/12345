@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { and, desc, eq } from "drizzle-orm";
 import { headers } from "next/headers";
 import { getRegionDb, sql } from "@/db/client";
@@ -172,7 +173,7 @@ export async function recordDisposalLog(input: RecordDisposalLogInput): Promise<
   await ensureDisposalLogsTable(input.regionId);
   const { db } = await getRegionDb(input.regionId);
 
-  const id = `dl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const id = `dl-${Date.now()}-${randomUUID().replace(/-/g, "").slice(0, 12)}`;
   const metaJson =
     typeof input.meta === "string"
       ? input.meta

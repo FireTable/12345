@@ -157,7 +157,7 @@ type ClusterDetail = {
 const STEPS = [
   { key: "collect", name: "已收集" },
   { key: "dispatch", name: "已派单" },
-  { key: "process", name: "处置中" },
+  { key: "process", name: "处理中" },
   { key: "feedback", name: "待回访" },
   { key: "archive", name: "已办结" },
 ];
@@ -724,7 +724,7 @@ function ThemeDetailInner() {
       `整合工单: ${row.count} 件${(row.fakeClosureCount ?? 0) > 0 ? `（含疑似假闭环 ${row.fakeClosureCount} 件）` : ""}`,
       `时空脉络: ${row.first_date || "—"} 至 ${row.last_date || "—"}（跨度 ${days} 天）`,
       `AI 聚类置信度: ${row.ai_confidence ?? "—"}%`,
-      `当前处置状态: ${row.status?.label || "未处理"} (进度 ${row.status?.progress ?? 0}%)`,
+      `当前处置状态: ${row.status?.label || "待派单"} (进度 ${row.status?.progress ?? 0}%)`,
       `牵头承办部门: ${row.status?.owner || `${regionName}热线督办组`}`,
       `预计办结时限: ${row.status?.eta || "—"}`,
       `协同处置建议:\n${adviceText.join("\n")}`,
@@ -1393,7 +1393,7 @@ function ThemeDetailInner() {
                     color: row.status?.color || "#1677FF",
                   }}
                 >
-                  {row.status?.label || "未处理"}
+                  {row.status?.label || "待派单"}
                 </span>
               </h2>
               {!isRolePending && !isAdmin && (
@@ -1575,7 +1575,7 @@ function ThemeDetailInner() {
               {row.status?.owner || row.status?.code !== "PENDING" ? "重新指派责任部门" : "采纳建议并派单处置"}
             </DialogTitle>
             <DialogDescription className="text-[12px] text-[var(--c-ink-3)]">
-              提交后将更新群组与成员工单状态为处置中，并记录处置流转日志。
+              提交后将更新群组与成员工单状态为处理中，并记录处置流转日志。
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleDispatchSubmit} className="space-y-3 px-5">

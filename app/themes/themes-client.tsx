@@ -46,8 +46,8 @@ type Cluster = {
 
 const TABS = [
   { key: "all", label: "全部" },
-  { key: "pending", label: "未处理" },
-  { key: "progress", label: "处置中" },
+  { key: "pending", label: "待派单" },
+  { key: "progress", label: "处理中" },
   { key: "urgent", label: "紧急" },
 ] as const;
 
@@ -55,6 +55,16 @@ export default function ThemesPage() {
   const router = useRouter();
   const { activeRegion, isLoading: regionLoading } = useRegion();
   const { isAdmin, isPending: isRolePending } = useAuthRole();
+  const isEcommerce = activeRegion?.domainProfile?.domainType === "ECOMMERCE_CS";
+  const rawRegionUnit = activeRegion?.domainProfile?.terminology?.regionUnit || "镇街";
+  const regionUnit = isEcommerce
+    ? rawRegionUnit
+    : rawRegionUnit === "所属镇街"
+      ? "镇街"
+      : rawRegionUnit;
+  const themeNoun =
+    activeRegion?.domainProfile?.terminology?.themeNoun ||
+    (isEcommerce ? "多频客诉案卷" : "多频工单");
   const [rows, setRows] = useState<Cluster[]>([]);
   const [regions, setRegions] = useState<string[]>([]);
   const [tab, setTab] = useState("all");
@@ -69,6 +79,7 @@ export default function ThemesPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const loadAbortRef = useRef<AbortController | null>(null);
   const loadSeqRef = useRef(0);
+  const prevRegionIdRef = useRef<string | undefined>(undefined);
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   const load = useCallback(() => {
@@ -94,7 +105,11 @@ export default function ThemesPage() {
       .then((j) => {
         if (controller.signal.aborted || seq !== loadSeqRef.current) return;
         setRows(j.topClusters || []);
-        setRegions((j.facets?.regions || []).filter((r: string) => isTownLabel(r) || r === "未知"));
+        setRegions(
+          (j.facets?.regions || []).filter((r: string) =>
+            isEcommerce ? Boolean(r && r.trim()) : isTownLabel(r) || r === "未知"
+          )
+        );
       })
       .catch((err) => {
         if (controller.signal.aborted || err?.name === "AbortError" || seq !== loadSeqRef.current) return;
@@ -107,7 +122,7 @@ export default function ThemesPage() {
         if (controller.signal.aborted || seq !== loadSeqRef.current) return;
         setReady(true);
       });
-  }, [isAdmin, activeRegion?.id]);
+  }, [isAdmin, activeRegion?.id, isEcommerce]);
 
   useEffect(() => {
     return () => {
@@ -118,6 +133,13 @@ export default function ThemesPage() {
 
   useEffect(() => {
     if (regionLoading || isRolePending || !isAdmin) return;
+    if (prevRegionIdRef.current && activeRegion?.id && prevRegionIdRef.current !== activeRegion.id) {
+      setRegion("");
+      setPage(1);
+    }
+    if (activeRegion?.id) {
+      prevRegionIdRef.current = activeRegion.id;
+    }
     load();
   }, [activeRegion?.id, regionLoading, isRolePending, isAdmin, load]);
 
@@ -208,7 +230,7 @@ export default function ThemesPage() {
   }
 
   function exportCsv() {
-    const header = ["编号", "模式", "镇街", "类型", "代表标题", "工单数", "未处理", "紧急度", "持续天数", "置信度", "状态"];
+    const header = ["编号", "模式", regionUnit, "类型", "代表标题", "工单数", "待派单", "紧急度", "持续天数", "置信度", "状态"];
     const csvRows = filtered.map((g) => [
       g.code,
       g.mode_name,
@@ -230,16 +252,19 @@ export default function ThemesPage() {
     a.download = "multi-frequency-themes.csv";
     a.click();
     URL.revokeObjectURL(url);
-    toast.success(`已导出 ${filtered.length} 个群组`);
+    toast.success(`已导出 ${filtered.length} 个${isEcommerce ? "案卷" : "群组"}`);
   }
 
   return (
     <>
       <section className="page-hero">
         <div>
-          <h1 className="page-hero__title">多频工单</h1>
+          <h1 className="page-hero__title">{isEcommerce ? themeNoun : "多频工单"}</h1>
           <div className="page-hero__sub">
-            {activeRegion ? `${activeRegion.name} · ` : ""}AI 识别的多频工单群组 · 每行为一个群组，包含多条关联工单
+            {activeRegion ? `${activeRegion.name} · ` : ""}
+            {isEcommerce
+              ? `AI 识别的${themeNoun} · 每行为一个案卷，包含多条关联客诉工单`
+              : "AI 识别的多频工单群组 · 每行为一个群组，包含多条关联工单"}
           </div>
         </div>
         <PageHeaderActions
@@ -256,9 +281,9 @@ export default function ThemesPage() {
             <StatCard
               icon={FolderKanban}
               tone="blue"
-              label="总群组数"
+              label={isEcommerce ? "总案卷数" : "总群组数"}
               value={counts.all}
-              sub="已识别多频主题"
+              sub={isEcommerce ? `已识别${themeNoun}` : "已识别多频主题"}
               onClick={() => {
                 setTab("all");
                 setTodayOnly(false);
@@ -270,7 +295,7 @@ export default function ThemesPage() {
               tone="orange"
               label="今日新增"
               value={counts.today}
-              sub={todayOnly ? "正在查看今日群组" : "数据最新一日"}
+              sub={todayOnly ? (isEcommerce ? "正在查看今日案卷" : "正在查看今日群组") : "数据最新一日"}
               onClick={() => {
                 setTodayOnly(!todayOnly);
                 setTab("all");
@@ -280,9 +305,9 @@ export default function ThemesPage() {
             <StatCard
               icon={Clock}
               tone="blue"
-              label="未处理"
+              label="待派单"
               value={counts.pending}
-              sub="待处置群组"
+              sub={isEcommerce ? "待处置案卷" : "待处置群组"}
               onClick={() => {
                 setTab("pending");
                 setTodayOnly(false);
@@ -292,9 +317,9 @@ export default function ThemesPage() {
             <StatCard
               icon={Flame}
               tone="red"
-              label="紧急群组"
+              label={isEcommerce ? "紧急案卷" : "紧急群组"}
               value={counts.urgent}
-              sub="高关注度共性诉求"
+              sub={isEcommerce ? "高关注度共性客诉" : "高关注度共性诉求"}
               onClick={() => {
                 setTab("urgent");
                 setTodayOnly(false);
@@ -306,15 +331,19 @@ export default function ThemesPage() {
           <div className="card list-card">
             <div className="list-card__head">
               <div>
-                <h2 className="list-card__title m-0">多频工单群组列表</h2>
-                <div className="list-card__sub">点击行进入群组全景研判视图</div>
+                <h2 className="list-card__title m-0">
+                  {isEcommerce ? `${themeNoun}列表` : "多频工单群组列表"}
+                </h2>
+                <div className="list-card__sub">
+                  {isEcommerce ? "点击行进入案卷全景研判视图" : "点击行进入群组全景研判视图"}
+                </div>
               </div>
             </div>
 
             <div
               className="filter-tabs"
               role="tablist"
-              aria-label="多频工单群组状态筛选"
+              aria-label={isEcommerce ? `${themeNoun}状态筛选` : "多频工单群组状态筛选"}
               onKeyDown={handleTabKeyDown}
             >
               {TABS.map((t) => (
@@ -340,8 +369,8 @@ export default function ThemesPage() {
               <div className="search-input">
                 <span aria-hidden="true">⌕</span>
                 <input
-                  aria-label="搜索群组关键词"
-                  placeholder="搜索群组 · 镇街 / 类型 / 标题关键词"
+                  aria-label={isEcommerce ? "搜索案卷关键词" : "搜索群组关键词"}
+                  placeholder={`搜索${isEcommerce ? "案卷" : "群组"} · ${regionUnit} / 类型 / 标题关键词`}
                   value={kw}
                   onChange={(e) => {
                     setKw(e.target.value);
@@ -358,13 +387,13 @@ export default function ThemesPage() {
                 }}
               >
                 <SelectTrigger
-                  aria-label="按镇街筛选"
-                  className="w-full sm:w-[130px] min-h-[44px] sm:min-h-0 sm:h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg"
+                  aria-label={`按${regionUnit}筛选`}
+                  className={`${isEcommerce ? "w-full sm:min-w-[146px] sm:w-auto" : "w-full sm:w-[130px]"} min-h-[44px] sm:min-h-0 sm:h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg`}
                 >
-                  <SelectValue placeholder="镇街：全部" />
+                  <SelectValue placeholder={`${regionUnit}：全部`} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">镇街：全部</SelectItem>
+                  <SelectItem value="all">{regionUnit}：全部</SelectItem>
                   {regions.map((r) => (
                     <SelectItem key={r} value={r}>
                       {r}
@@ -436,17 +465,23 @@ export default function ThemesPage() {
               className="table-scroll overflow-x-auto max-w-full"
               tabIndex={0}
               role="region"
-              aria-label="多频工单群组列表"
+              aria-label={isEcommerce ? `${themeNoun}列表` : "多频工单群组列表"}
             >
               <table className="group-table">
-                <caption className="sr-only">多频工单群组列表</caption>
+                <caption className="sr-only">
+                  {isEcommerce ? `${themeNoun}列表` : "多频工单群组列表"}
+                </caption>
                 <thead>
                   <tr>
-                    <th scope="col" style={{ width: 90, minWidth: 80 }}>群组编号</th>
+                    <th scope="col" style={{ width: 90, minWidth: 80 }}>
+                      {isEcommerce ? "案卷编号" : "群组编号"}
+                    </th>
                     <th scope="col" style={{ width: 130, minWidth: 120 }}>研判模式</th>
-                    <th scope="col" style={{ width: 130, minWidth: 130 }}>辖区 · 业务</th>
-                    <th scope="col">代表性诉求标题</th>
-                    <th scope="col" style={{ width: 110, textAlign: "center" }}>待处理 / 总数</th>
+                    <th scope="col" style={{ width: 130, minWidth: 130 }}>
+                      {isEcommerce ? `${regionUnit} · 业务` : "辖区 · 业务"}
+                    </th>
+                    <th scope="col">{isEcommerce ? "代表性客诉标题" : "代表性诉求标题"}</th>
+                    <th scope="col" style={{ width: 110, textAlign: "center" }}>待派单 / 总数</th>
                     <th scope="col" style={{ width: 80, textAlign: "center" }}>紧急度</th>
                     <th scope="col" style={{ width: 85, textAlign: "right" }}>持续天数</th>
                     <th scope="col" style={{ width: 85 }}>处置状态</th>
@@ -524,7 +559,11 @@ export default function ThemesPage() {
                 </tbody>
               </table>
             </div>
-            {filtered.length === 0 && <div className="empty-hint">暂无群组。请先触发聚类研判。</div>}
+            {filtered.length === 0 && (
+              <div className="empty-hint">
+                {isEcommerce ? "暂无案卷。请先触发聚类研判。" : "暂无群组。请先触发聚类研判。"}
+              </div>
+            )}
             {filtered.length > 0 && (
               <TablePager
                 page={currentPage}
@@ -532,7 +571,7 @@ export default function ThemesPage() {
                 total={filtered.length}
                 pageSize={pageSize}
                 pageSizeOptions={[10, 15, 20, 50]}
-                itemLabel="个多频群组"
+                itemLabel={isEcommerce ? "个多频案卷" : "个多频群组"}
                 onPageChange={setPage}
                 onPageSizeChange={(n) => {
                   setPageSize(n);

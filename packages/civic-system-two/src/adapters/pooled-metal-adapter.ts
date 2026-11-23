@@ -236,9 +236,9 @@ export class PooledMetalAdapter implements ISystemTwoAdapter {
       throw createAbortError(signal);
     }
 
-    // 0. 自动重试探活：对当前被标记为不健康的节点，若距离上次检查超过 3 秒，尝试探活复位
+    // 0. 自动重试探活：对当前被标记为不健康的节点，若距离上次检查超过 60 秒，尝试探活复位
     for (const node of this.nodes) {
-      if (!node.isHealthy && Date.now() - node.lastChecked > 3000) {
+      if (!node.isHealthy && Date.now() - node.lastChecked > 60_000) {
         node.lastChecked = Date.now();
         node.adapter.isAvailable().then((ok) => {
           if (ok) {

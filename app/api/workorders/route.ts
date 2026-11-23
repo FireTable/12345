@@ -3,6 +3,7 @@ import { getRegionDb } from "@/db/client";
 import { ticketsTable } from "@/db/schema";
 import { and, desc, eq, gte, ilike, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { toWorkorderDto, UNKNOWN_TOWN } from "@/lib/civic-dto";
+import { buildUnresolvedMissingInfoSql } from "@/lib/civic-missing";
 import { isTownLabel } from "@/lib/admin-area";
 import { clampPage, clampSize } from "@/lib/api-bounds";
 import { cacheGetOrLoad } from "@/lib/civic-cache";
@@ -92,12 +93,16 @@ export async function GET(req: NextRequest) {
     const effectiveStatus = status || (tab === "pending" || tab === "progress" || tab === "finished" ? tab : "");
     if (effectiveStatus === "RESOLVED" || effectiveStatus === "finished") {
       filters.push(inArray(ticketsTable.status, ["RESOLVED", "FINISHED"]));
+    } else if (effectiveStatus === "DISPATCHED") {
+      filters.push(eq(ticketsTable.status, "DISPATCHED"));
     } else if (effectiveStatus === "IN_PROGRESS" || effectiveStatus === "progress") {
       filters.push(
         inArray(ticketsTable.status, ["DISPATCHED", "VERIFIED", "IN_PROGRESS", "PROCESSING"])
       );
     } else if (effectiveStatus === "PENDING" || effectiveStatus === "pending") {
-      filters.push(eq(ticketsTable.status, "PENDING"));
+      filters.push(inArray(ticketsTable.status, ["PENDING", "REOPENED"]));
+    } else if (effectiveStatus === "REOPENED") {
+      filters.push(eq(ticketsTable.status, "REOPENED"));
     }
 
     if (urgency === "URGENT" || tab === "urgent") {
@@ -105,6 +110,9 @@ export async function GET(req: NextRequest) {
     }
     if (tab === "fake_closure") {
       filters.push(eq(ticketsTable.isFakeClosure, true));
+    }
+    if (tab === "missing_info") {
+      filters.push(sql.raw(buildUnresolvedMissingInfoSql("", isEcommerce)));
     }
     if (cluster === "1" || cluster === "multifreq" || tab === "multifreq") {
       filters.push(isNotNull(ticketsTable.primaryThemeId));
@@ -135,6 +143,22 @@ export async function GET(req: NextRequest) {
     }
 
     const where = filters.length ? and(...filters) : undefined;
+    const orderBys =
+      effectiveStatus === "pending" || effectiveStatus === "PENDING"
+        ? [
+            sql`CASE WHEN ${ticketsTable.status} = 'REOPENED' THEN 0 WHEN ${ticketsTable.isFakeClosure} IS TRUE THEN 1 ELSE 2 END ASC`,
+            sql`CASE WHEN ${ticketsTable.status} = 'REOPENED' OR ${ticketsTable.isFakeClosure} IS TRUE THEN ${ticketsTable.updatedAt} END DESC NULLS LAST`,
+            desc(ticketsTable.createTime),
+            desc(ticketsTable.id),
+          ]
+        : tab === "fake_closure"
+          ? [
+              sql`CASE WHEN ${ticketsTable.status} = 'REOPENED' THEN 0 ELSE 1 END ASC`,
+              sql`${ticketsTable.updatedAt} DESC NULLS LAST`,
+              desc(ticketsTable.createTime),
+              desc(ticketsTable.id),
+            ]
+          : [desc(ticketsTable.createTime), desc(ticketsTable.id)];
     const countQ = tenantDb.select({ count: sql<number>`count(*)::int` }).from(ticketsTable);
     // 表格和导出只用这些列。正文、电话在打开抽屉时走 GET /api/workorders/[id]。
     const listQ = tenantDb
@@ -160,7 +184,7 @@ export async function GET(req: NextRequest) {
         isFakeClosure: ticketsTable.isFakeClosure,
       })
       .from(ticketsTable)
-      .orderBy(desc(ticketsTable.createTime), desc(ticketsTable.id))
+      .orderBy(...orderBys)
       .limit(size)
       .offset(offset);
     const [snapRes, countRes, rows] = await Promise.all([
@@ -175,7 +199,7 @@ export async function GET(req: NextRequest) {
       page,
       size,
       total: countRes ? Number(countRes[0]?.count || 0) : stats.total,
-      data: rows.map((r) => toWorkorderDto(r)),
+      data: rows.map((r) => toWorkorderDto(r, { isEcommerce })),
       stats,
       facets,
     });

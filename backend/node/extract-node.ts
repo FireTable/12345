@@ -493,8 +493,8 @@ export async function extractNode(
           ticket.systemOneConfidence = decision.categoryProbability;
 
           const s1Township =
-            canonicalizeTownship(decision.township, regionVocab) ||
             canonicalizeTownship(ticket.subdistrict, regionVocab) ||
+            canonicalizeTownship(decision.township, regionVocab) ||
             matchTownshipName((ticket.title || "") + " " + (ticket.content || ""), regionVocab.townships) ||
             null;
           ticket.systemOneTownship = s1Township || undefined;
@@ -582,11 +582,12 @@ export async function extractNode(
         extractionMap.set(key, val);
 
         const orig = normalizedRawTickets[key];
-        // 严格白名单校验与规范化：绝不允许跳出目标辖区的法定镇街白名单
+        // 严格白名单校验与规范化：优先保留市民或上游已确认的合法镇街，绝不允许 LLM 猜错覆盖
         const validTownship =
+          canonicalizeTownship(orig?.subdistrict, regionVocab) ||
+          canonicalizeTownship(orig?.systemOneTownship, regionVocab) ||
           canonicalizeTownship(val.township, regionVocab) ||
           canonicalizeTownship(val.location, regionVocab) ||
-          canonicalizeTownship(orig?.subdistrict, regionVocab) ||
           null;
 
         // 单条实时持久化至目标 Schema 对应的 PostgreSQL 数据库，保证中途关闭或刷新永不丢失进度
@@ -703,10 +704,10 @@ export async function extractNode(
     const area = adminFromLocation(canonicalLocation, ticket);
     const fromLlm = llmTicketIndexes.has(index);
     const validTownship =
-      canonicalizeTownship(aiExtracted?.township, regionVocab) ||
-      canonicalizeTownship(fromLlm ? aiExtracted?.location : ticket.address, regionVocab) ||
+      canonicalizeTownship(ticket.subdistrict, regionVocab) ||
       canonicalizeTownship(ticket.systemOneTownship, regionVocab) ||
-      canonicalizeTownship(ticket.subdistrict, regionVocab);
+      canonicalizeTownship(aiExtracted?.township, regionVocab) ||
+      canonicalizeTownship(fromLlm ? aiExtracted?.location : ticket.address, regionVocab);
     const subdistrict = validTownship || undefined;
 
     const extractionFailed = !hasStoredExtraction(ticket) && !llmTicketIndexes.has(index);

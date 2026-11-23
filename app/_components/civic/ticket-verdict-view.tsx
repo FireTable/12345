@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { getUrgencyLabel } from "@/lib/civic-dto";
-import { useRegion } from "./region-context";
+import { type DomainProfile, useRegion } from "./region-context";
 import {
   geocodeAddressClient,
   isValidCoordinate,
@@ -87,13 +87,22 @@ function formatTicketTimestamp(raw?: string | null): string {
 export function AiVerdictCard({
   data,
   headingLevel = "h2",
+  domainProfile,
 }: {
   data: TicketVerdictData;
   headingLevel?: "h2" | "h3";
+  domainProfile?: DomainProfile | null;
 }) {
   const HeadingTag = headingLevel;
+  const { activeRegion } = useRegion();
+  const profile = domainProfile ?? activeRegion?.domainProfile ?? null;
+  const isEcommerce = profile?.domainType === "ECOMMERCE_CS";
+  const terminology = profile?.terminology;
   const clusterId = data.cluster_info?.id || data.cluster_id || "";
-  const clusterTitle = data.cluster_info?.title || data.cluster_name || (clusterId ? `多频主题 ${clusterId}` : "");
+  const clusterTitle =
+    data.cluster_info?.title ||
+    data.cluster_name ||
+    (clusterId ? `${isEcommerce ? "多频案卷" : "多频主题"} ${clusterId}` : "");
 
   return (
     <div className="bg-slate-50/90 rounded-xl p-4 border border-slate-200/90 space-y-3.5">
@@ -112,12 +121,12 @@ export function AiVerdictCard({
           {data.stabilityRisk ? (
             <span className="text-[11px] font-semibold text-rose-600 bg-rose-50 px-2 py-0.5 rounded border border-rose-200 flex items-center gap-1">
               <ShieldAlert className="w-3 h-3" aria-hidden="true" />
-              涉稳预警
+              {isEcommerce ? "合规风险预警" : "涉稳预警"}
             </span>
           ) : (
             <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
               <ShieldCheck className="w-3 h-3" aria-hidden="true" />
-              涉稳平稳
+              {isEcommerce ? "风险平稳" : "涉稳平稳"}
             </span>
           )}
           <span className="text-[11px] font-medium text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">
@@ -131,10 +140,10 @@ export function AiVerdictCard({
         <div className="bg-white p-2.5 rounded-lg border border-slate-200/70 shadow-2xs min-w-0">
           <div className="text-slate-500 text-[11px] flex items-center gap-1.5 mb-1">
             <Building2 className="w-3.5 h-3.5 text-blue-600 shrink-0" aria-hidden="true" />
-            <span>涉事/责任主体</span>
+            <span>{terminology?.subject || "涉事/责任主体"}</span>
           </div>
           <div className="font-semibold text-slate-900 leading-snug break-words">
-            {data.canonicalSubject || "通用民生主体"}
+            {data.canonicalSubject || (isEcommerce ? "通用商品/店铺" : "通用民生主体")}
           </div>
         </div>
 
@@ -144,17 +153,24 @@ export function AiVerdictCard({
             <span>细分事件类型</span>
           </div>
           <div className="font-semibold text-slate-900 leading-snug break-words">
-            {data.eventType || data.category || "综合民生"}
+            {data.eventType || data.category || (isEcommerce ? "综合客诉" : "综合民生")}
           </div>
         </div>
 
         <div className="sm:col-span-2 bg-white p-2.5 rounded-lg border border-slate-200/70 shadow-2xs min-w-0">
           <div className="text-slate-500 text-[11px] flex items-center gap-1.5 mb-1">
             <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" aria-hidden="true" />
-            <span>微观事发地点</span>
+            <span>{isEcommerce ? "订单号 / 仓网地点" : "微观事发地点"}</span>
           </div>
           <div className="font-semibold text-slate-900 leading-snug break-words">
-            {data.address || (data.region ? `${data.region}辖区` : "待研判定位")}
+            {data.address ||
+              (data.region
+                ? isEcommerce
+                  ? data.region
+                  : `${data.region}辖区`
+                : isEcommerce
+                  ? "待补充订单/仓网信息"
+                  : "待研判定位")}
           </div>
         </div>
 
@@ -174,7 +190,13 @@ export function AiVerdictCard({
             <span>多频聚类态势</span>
           </div>
           <div className="font-semibold text-slate-900 leading-snug break-words">
-            {clusterId ? "已归入多频专题" : "独立分散诉求"}
+            {clusterId
+              ? isEcommerce
+                ? "已归入多频案卷"
+                : "已归入多频专题"
+              : isEcommerce
+                ? "独立分散客诉"
+                : "独立分散诉求"}
           </div>
         </div>
       </div>
@@ -184,14 +206,14 @@ export function AiVerdictCard({
         <div className="bg-blue-50/70 border border-blue-200/80 rounded-lg p-2.5 flex items-center justify-between gap-2 text-xs">
           <div className="flex items-center gap-1.5 min-w-0">
             <Layers className="w-3.5 h-3.5 text-blue-600 shrink-0" aria-hidden="true" />
-            <span className="text-slate-600 shrink-0">多频专题：</span>
+            <span className="text-slate-600 shrink-0">{isEcommerce ? "多频案卷：" : "多频专题："}</span>
             <span className="font-bold text-blue-900 truncate">{clusterTitle}</span>
           </div>
           <Link
             href={`/themes/${clusterId}?ticketId=${encodeURIComponent(data.id)}&highlight=${encodeURIComponent(data.id)}#ticket-${encodeURIComponent(data.id)}`}
             className="relative inline-flex items-center min-h-[28px] py-1 text-blue-600 hover:text-blue-800 font-semibold shrink-0 hover:underline after:content-[''] after:absolute after:-inset-y-[8px] after:-inset-x-[4px]"
           >
-            <span>定位专题</span>
+            <span>{isEcommerce ? "定位案卷" : "定位专题"}</span>
           </Link>
         </div>
       )}
@@ -205,11 +227,16 @@ export function AiVerdictCard({
 export function CitizenVoiceCard({
   data,
   headingLevel = "h2",
+  domainProfile,
 }: {
   data: TicketVerdictData;
   headingLevel?: "h2" | "h3";
+  domainProfile?: DomainProfile | null;
 }) {
   const HeadingTag = headingLevel;
+  const { activeRegion } = useRegion();
+  const profile = domainProfile ?? activeRegion?.domainProfile ?? null;
+  const isEcommerce = profile?.domainType === "ECOMMERCE_CS";
   const [copied, setCopied] = useState(false);
   const copyTimerRef = useRef<number | null>(null);
 
@@ -230,7 +257,7 @@ export function CitizenVoiceCard({
       .writeText(data.content)
       .then(() => {
         setCopied(true);
-        toast.success("诉求原文已复制到剪贴板");
+        toast.success(isEcommerce ? "客诉原文已复制到剪贴板" : "诉求原文已复制到剪贴板");
         if (copyTimerRef.current !== null) {
           window.clearTimeout(copyTimerRef.current);
         }
@@ -246,10 +273,13 @@ export function CitizenVoiceCard({
       <div className="flex items-center justify-between gap-2 flex-wrap text-xs">
         <HeadingTag className="flex items-center gap-1.5 font-bold text-slate-800 m-0 text-xs">
           <MessageSquareQuote className="w-4 h-4 text-blue-600 shrink-0" aria-hidden="true" />
-          <span>市民诉求原文</span>
+          <span>{isEcommerce ? "买家客诉原文" : "市民诉求原文"}</span>
         </HeadingTag>
         <div className="flex items-center gap-3 flex-wrap text-slate-500">
-          <span className="tabular-nums">共 {(data.content || "").length} 字 · {data.channel || "市民服务热线"}</span>
+          <span className="tabular-nums">
+            共 {(data.content || "").length} 字 ·{" "}
+            {data.channel || (isEcommerce ? "线上售后渠道" : "市民服务热线")}
+          </span>
           <button
             type="button"
             className="relative inline-flex items-center gap-1 min-h-[28px] min-w-0 py-1 px-1.5 sm:px-0 text-blue-600 hover:text-blue-700 font-medium cursor-pointer after:content-[''] after:absolute after:-inset-y-[8px] after:-inset-x-[4px]"
@@ -274,11 +304,17 @@ export function CitizenVoiceCard({
 export function TicketPropsGrid({
   data,
   headingLevel = "h2",
+  domainProfile,
 }: {
   data: TicketVerdictData;
   headingLevel?: "h2" | "h3";
+  domainProfile?: DomainProfile | null;
 }) {
   const HeadingTag = headingLevel;
+  const { activeRegion } = useRegion();
+  const profile = domainProfile ?? activeRegion?.domainProfile ?? null;
+  const isEcommerce = profile?.domainType === "ECOMMERCE_CS";
+  const terminology = profile?.terminology;
   const urgency = getUrgencyLabel(data.urgency);
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2.5">
@@ -288,12 +324,14 @@ export function TicketPropsGrid({
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-2 gap-x-4 text-xs">
         <div className="flex items-center justify-between gap-2 py-0.5 min-w-0">
-          <span className="text-slate-500 shrink-0">所属镇街</span>
+          <span className="text-slate-500 shrink-0">{terminology?.regionUnit || "所属镇街"}</span>
           <span className="font-medium text-slate-800 break-words text-right">{data.region || "—"}</span>
         </div>
         <div className="flex items-center justify-between gap-2 py-0.5 min-w-0">
-          <span className="text-slate-500 shrink-0">反映人员</span>
-          <span className="text-slate-800 font-medium break-words text-right">{data.caller_name || "热线市民"}</span>
+          <span className="text-slate-500 shrink-0">{isEcommerce ? "反馈买家" : "反映人员"}</span>
+          <span className="text-slate-800 font-medium break-words text-right">
+            {data.caller_name || (isEcommerce ? "平台买家" : "热线市民")}
+          </span>
         </div>
         <div className="flex items-center justify-between gap-2 py-0.5 min-w-0">
           <span className="text-slate-500 shrink-0">联系电话</span>
@@ -301,7 +339,9 @@ export function TicketPropsGrid({
         </div>
         <div className="flex items-center justify-between gap-2 py-0.5 min-w-0">
           <span className="text-slate-500 shrink-0">受理渠道</span>
-          <span className="text-slate-800 break-words text-right">{data.channel || "市民服务热线"}</span>
+          <span className="text-slate-800 break-words text-right">
+            {data.channel || (isEcommerce ? "线上售后渠道" : "市民服务热线")}
+          </span>
         </div>
         <div className="flex items-center justify-between gap-2 py-0.5 min-w-0">
           <span className="text-slate-500 shrink-0">紧急程度</span>
@@ -329,7 +369,8 @@ export function TicketGeoMapCard({
   headingLevel?: "h2" | "h3";
 }) {
   const HeadingTag = headingLevel;
-  const { activeRegion } = useRegion();
+  const { activeRegion, isLoading: regionLoading } = useRegion();
+  const hasGeoMap = !regionLoading && activeRegion?.domainProfile?.hasGeoMap !== false;
   const [geo, setGeo] = React.useState<{
     lng?: number;
     lat?: number;
@@ -347,6 +388,10 @@ export function TicketGeoMapCard({
   // 1. 解析当前工单主地点
   React.useEffect(() => {
     const controller = new AbortController();
+    if (!hasGeoMap) {
+      setGeo({ loading: false });
+      return () => controller.abort();
+    }
     if (!queryAddress || queryAddress === "辖区" || queryAddress === "未指定") {
       setGeo({ loading: false, error: "暂无有效微观地址" });
       return () => controller.abort();
@@ -379,12 +424,12 @@ export function TicketGeoMapCard({
     return () => {
       controller.abort();
     };
-  }, [queryAddress, data.region, activeRegion?.id]);
+  }, [hasGeoMap, queryAddress, data.region, activeRegion?.id]);
 
   // 2. 若属于多频聚类群组，拉取同专题关联工单的空间位置（有界并发地理编码）
   React.useEffect(() => {
     const controller = new AbortController();
-    if (!clusterId) {
+    if (!hasGeoMap || !clusterId) {
       setRelatedPoints([]);
       return () => controller.abort();
     }
@@ -440,7 +485,11 @@ export function TicketGeoMapCard({
     return () => {
       controller.abort();
     };
-  }, [clusterId, data.id, data.ticketId, activeRegion?.id]);
+  }, [hasGeoMap, clusterId, data.id, data.ticketId, activeRegion?.id]);
+
+  if (!hasGeoMap) {
+    return null;
+  }
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">

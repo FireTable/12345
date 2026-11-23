@@ -10,12 +10,41 @@ import { recordNodeMetric } from '../metrics';
 import { createAbortError, linkAbortSignals } from './abort-utils';
 import { readOpenAISseStream } from './sse-stream';
 
+const CLOUD_ID_CARD_RE =
+  /(?<!\d)[1-9]\d{5}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx](?!\d)/g;
+const CLOUD_BANK_CARD_RE = /(?<!\d)(?:62\d{14,17}|[45]\d{15})(?!\d)/g;
+const CLOUD_MOBILE_RE = /(?<!\d)(?:\+?86[\s-]?)?1[3-9]\d[\s-]?\d{4}[\s-]?\d{4}(?!\d)/g;
+const CLOUD_LANDLINE_RE = /(?<!\d)0\d{2,3}-\d{7,8}(?!\d)/g;
+const CLOUD_EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+
+export function scrubCloudPiiText(text: string): string {
+  if (!text) return text;
+  return text
+    .replace(CLOUD_ID_CARD_RE, '{{ID_CARD_CLOUD}}')
+    .replace(CLOUD_BANK_CARD_RE, '{{BANK_CARD_CLOUD}}')
+    .replace(CLOUD_MOBILE_RE, '{{PHONE_NUMBER_CLOUD}}')
+    .replace(CLOUD_LANDLINE_RE, '{{PHONE_NUMBER_CLOUD}}')
+    .replace(CLOUD_EMAIL_RE, '{{EMAIL_CLOUD}}');
+}
+
+function sanitizeMessagesForCloud(
+  messages: CivicChatCompletionParams['messages']
+): CivicChatCompletionParams['messages'] {
+  return messages.map((msg) => {
+    if (msg.role === 'system' || !msg.content) return msg;
+    const scrubbed = scrubCloudPiiText(msg.content);
+    return scrubbed === msg.content ? msg : { ...msg, content: scrubbed };
+  });
+}
+
 export class CloudOpenAIAdapter implements ISystemTwoAdapter {
   readonly name = 'CloudOpenAIAdapter (Remote OpenAI-compatible)';
   private endpoint: string;
   private apiKey: string;
   private model: string;
   private timeoutMs: number;
+  private availabilityCache: { ok: boolean; expiresAt: number } | null = null;
+  private availabilityProbePromise: Promise<boolean> | null = null;
 
   constructor(config: CloudFallbackConfig, timeoutMs = 600000) {
     this.endpoint = config.endpoint.replace(/\/+$/, '');
@@ -28,29 +57,51 @@ export class CloudOpenAIAdapter implements ISystemTwoAdapter {
     if (!this.endpoint || !this.apiKey) {
       return false;
     }
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 3000);
-      const res = await fetch(`${this.endpoint}/models`, {
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-        },
-        signal: controller.signal,
-      }).catch(() => null);
-
-      clearTimeout(timer);
-      return !!(res && (res.ok || res.status === 401 || res.status === 403));
-    } catch {
-      return false;
+    const now = Date.now();
+    if (this.availabilityCache && now < this.availabilityCache.expiresAt) {
+      return this.availabilityCache.ok;
     }
+    if (this.availabilityProbePromise) {
+      return this.availabilityProbePromise;
+    }
+
+    const probe = (async () => {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 3000);
+        const res = await fetch(`${this.endpoint}/models`, {
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`,
+          },
+          signal: controller.signal,
+        }).catch(() => null);
+
+        clearTimeout(timer);
+        const ok = !!(res && (res.ok || res.status === 401 || res.status === 403));
+        this.availabilityCache = {
+          ok,
+          expiresAt: Date.now() + (ok ? 30_000 : 5_000),
+        };
+        return ok;
+      } catch {
+        this.availabilityCache = { ok: false, expiresAt: Date.now() + 5_000 };
+        return false;
+      } finally {
+        this.availabilityProbePromise = null;
+      }
+    })();
+
+    this.availabilityProbePromise = probe;
+    return probe;
   }
 
   async chatCompletions(params: CivicChatCompletionParams): Promise<CivicChatCompletion> {
     const url = `${this.endpoint}/chat/completions`;
+    const safeMessages = sanitizeMessagesForCloud(params.messages);
 
     const payload: Record<string, unknown> = {
       model: params.model || this.model,
-      messages: params.messages,
+      messages: safeMessages,
       temperature: params.temperature ?? 0.2,
       max_tokens: params.max_tokens ?? 2048,
       stream: false,
@@ -177,10 +228,11 @@ export class CloudOpenAIAdapter implements ISystemTwoAdapter {
     params: CivicChatCompletionParams
   ): AsyncGenerator<CivicChatStreamChunk> {
     const url = `${this.endpoint}/chat/completions`;
+    const safeMessages = sanitizeMessagesForCloud(params.messages);
 
     const payload: Record<string, unknown> = {
       model: params.model || this.model,
-      messages: params.messages,
+      messages: safeMessages,
       temperature: params.temperature ?? 0.2,
       max_tokens: params.max_tokens ?? 2048,
       stream: true,

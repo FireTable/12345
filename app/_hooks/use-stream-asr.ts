@@ -596,7 +596,7 @@ export function createStreamAsrController(deps: StreamAsrControllerDeps): Stream
       setVadState("SILENCE");
       setStatus((prev) => (prev === "error" ? "error" : "idle"));
       setStatusHint((prev) =>
-        prev.includes("权限") || prev.includes("异常") ? prev : "语音识别已结束"
+        prev.includes("权限") || prev.includes("异常") ? prev : "点击麦克风继续语音输入"
       );
     };
 

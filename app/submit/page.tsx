@@ -2,8 +2,6 @@
 
 import React, { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
-  Mic,
-  Send,
   CheckCircle2,
   AlertCircle,
   FileText,
@@ -11,10 +9,10 @@ import {
   RefreshCw,
   ChevronDown,
   RotateCcw,
-  ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useRegion } from "@/app/_components/civic/region-context";
+import { VoiceChatComposer } from "@/app/_components/civic/voice-chat-composer";
 import { appendRecognizedText, useStreamAsr } from "@/app/_hooks/use-stream-asr";
 import {
   XiaochunStage,
@@ -127,12 +125,13 @@ const DEFAULT_ECOM_CATEGORIES = [
 ];
 
 const STATUS_LABELS: Record<string, string> = {
-  PENDING: "待研判分派",
-  IN_PROGRESS: "处置办理中",
-  PROCESSING: "处置办理中",
-  DISPATCHED: "已派单处理",
+  PENDING: "待派单",
+  DISPATCHED: "已派单",
+  IN_PROGRESS: "处理中",
+  PROCESSING: "处理中",
   RESOLVED: "已办结",
   CLOSED: "已办结",
+  FINISHED: "已办结",
   REOPENED: "重开核查中",
 };
 
@@ -150,16 +149,48 @@ const LOG_ACTION_LABELS: Record<string, string> = {
   ESCALATE: "升级督办",
   RESOLVE: "已办结",
   REOPEN: "重开核查",
+  UPDATE_STATUS: "状态变更",
   CORRECT_ENTITY: "信息补全",
+  DETACH_THEME: "移出群组",
+  DETACH_TICKET: "移出群组",
+  REVIEW_APPROVE: "复核通过",
+  REVIEW_DISMISS: "复核忽略",
 };
+
+const LOG_TASK_TYPE_LABELS: Record<string, string> = {
+  MISSING_INFO: "要素补全",
+  REOPEN_CALLBACK: "满意度回访",
+  SLA_OVERDUE: "超期催办",
+  REDLINE_BLOCK: "红线熔断",
+};
+
+function formatSubmitLogNote(note: string): string {
+  return note
+    .replace(
+      /工单状态变更为\s+(PENDING|DISPATCHED|IN_PROGRESS|PROCESSING|RESOLVED|CLOSED|FINISHED|REOPENED)\b/g,
+      (_full, code: string) => `工单状态变更为「${STATUS_LABELS[code] || code}」`
+    )
+    .replace(
+      /\b(MISSING_INFO|REOPEN_CALLBACK|SLA_OVERDUE|REDLINE_BLOCK)\b/g,
+      (code: string) => LOG_TASK_TYPE_LABELS[code] || code
+    )
+    .replace(/\baddress=/g, "具体地址=")
+    .replace(/\bcanonicalSubject=/g, "涉事主体=")
+    .replace(/\bsubdistrict=/g, "所属镇街=");
+}
 
 function formatLatestLog(log: CitizenTicketLogDto | string | null | undefined): string | null {
   if (!log) return null;
-  if (typeof log === "string") return log;
-  const actionLabel = LOG_ACTION_LABELS[log.action] || log.action;
+  if (typeof log === "string") return formatSubmitLogNote(log);
+  const actionKey = (log.action || "").trim().toUpperCase();
+  const actionLabel = LOG_ACTION_LABELS[actionKey] || log.action;
   const parts = [actionLabel];
-  if (log.note) parts.push(log.note);
-  else if (log.toStatus) parts.push(STATUS_LABELS[log.toStatus] || log.toStatus);
+  if (log.note) {
+    parts.push(formatSubmitLogNote(log.note));
+  } else if (log.toStatus) {
+    const toKey = log.toStatus.trim().toUpperCase();
+    parts.push(STATUS_LABELS[toKey] || log.toStatus);
+  }
   return parts.join(" · ");
 }
 
@@ -172,11 +203,31 @@ function isTicketResolved(t: MyTicketItem): boolean {
   return s === "RESOLVED" || s === "CLOSED" || c === "RESOLVED" || c === "CLOSED" || t.closureStatus === "已办结";
 }
 
-function isValidPhone(value: string): boolean {
+function normalizePhoneInput(value: string): {
+  normalized: string;
+  isValid: boolean;
+} {
   const trimmed = value.trim();
-  if (!trimmed) return false;
-  const compact = trimmed.replace(/[\s-]/g, "");
-  return /^1[3-9]\d{9}$/.test(compact) || /^0\d{2,3}-?\d{7,8}$/.test(trimmed.replace(/\s+/g, ""));
+  if (!trimmed) return { normalized: "", isValid: false };
+  const asciiPhone = trimmed
+    .replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0))
+    .replace(/[－—–﹣]/g, "-")
+    .replace(/＋/g, "+");
+  const strippedPrefixPhone = asciiPhone.replace(/^(?:\+|00)86[\s-]*/, "");
+  const compactMobile = strippedPrefixPhone.replace(/[\s-]/g, "");
+  const compactLandline = strippedPrefixPhone.replace(/\s+/g, "");
+  const isMobile = /^1[3-9]\d{9}$/.test(compactMobile);
+  const isLandline = /^0\d{2,3}-?\d{7,8}$/.test(compactLandline);
+  const normalized = isMobile
+    ? compactMobile
+    : isLandline
+      ? compactLandline
+      : asciiPhone;
+  return { normalized, isValid: isMobile || isLandline };
+}
+
+function isValidPhone(value: string): boolean {
+  return normalizePhoneInput(value).isValid;
 }
 
 function isValidEmail(value: string): boolean {
@@ -244,7 +295,7 @@ async function scrollIntoViewAsync(
 }
 
 export default function SubmitPage() {
-  const { activeRegion, appDomain } = useRegion();
+  const { activeRegion, appDomain, isLoading: regionLoading } = useRegion();
   const datalistId = useId();
 
   const [mode, setMode] = useState<SubmitMode>("voice");
@@ -338,6 +389,7 @@ export default function SubmitPage() {
   }, []);
 
   const resetFormState = useCallback(() => {
+    formDirtyRef.current = false;
     setFormValues(EMPTY_DRAFT);
     setInteracted({});
     setFieldErrors({});
@@ -383,6 +435,7 @@ export default function SubmitPage() {
   );
 
   const updateFormField = (name: keyof IntakeDraft, value: string) => {
+    formDirtyRef.current = true;
     const nextValues = { ...formValues, [name]: value };
     setFormValues(nextValues);
     if (name === "contactPhone" || name === "contactEmail") {
@@ -447,6 +500,9 @@ export default function SubmitPage() {
 
   // ----------------- 语音 Agent & 对话状态 -----------------
   const stageRef = useRef<XiaochunStageHandle>(null);
+  const lastSpokenWelcomeIdRef = useRef<string | null>(null);
+  const voiceDirtyRef = useRef<boolean>(false);
+  const formDirtyRef = useRef<boolean>(false);
   const [voiceMessages, setVoiceMessages] = useState<ChatMessage[]>([]);
   const [voiceDraft, setVoiceDraft] = useState<IntakeDraft>(EMPTY_DRAFT);
   const [missingFields, setMissingFields] = useState<string[]>([]);
@@ -466,11 +522,12 @@ export default function SubmitPage() {
     [isEcommerce]
   );
 
-  // 初始化欢迎词随业务域变化（仅当尚无用户消息时刷新，避免选项异步加载冲掉进行中的对话）
+  // 初始化欢迎词随业务域变化（仅当尚无用户消息时刷新，保留既有欢迎消息 ID，避免覆盖重置/切区新 ID）
   useEffect(() => {
     setVoiceMessages((prev) => {
       if (prev.length <= 1) {
-        return [createWelcomeMessage()];
+        const existingId = prev[0]?.role === "assistant" ? prev[0].id : undefined;
+        return [createWelcomeMessage(existingId || "welcome")];
       }
       return prev;
     });
@@ -575,7 +632,9 @@ export default function SubmitPage() {
           category: payload.category.trim(),
           subject: payload.subject.trim() || undefined,
           address: payload.address.trim() || undefined,
-          contactPhone: payload.contactPhone.trim() || undefined,
+          contactPhone: payload.contactPhone.trim()
+            ? normalizePhoneInput(payload.contactPhone).normalized
+            : undefined,
           contactEmail: payload.contactEmail.trim() || undefined,
           source,
         }),
@@ -604,6 +663,7 @@ export default function SubmitPage() {
       if (source === "FORM") {
         resetFormState();
       } else {
+        voiceDirtyRef.current = false;
         setVoiceDraft(EMPTY_DRAFT);
         setMissingFields([]);
         setReadyToSubmit(false);
@@ -612,7 +672,7 @@ export default function SubmitPage() {
           ...prev,
           { id: `ack-${Date.now()}`, role: "assistant", content: ackText },
         ]);
-        void stageRef.current?.say(ackText);
+        void stageRef.current?.say(ackText)?.catch(() => {});
       }
       return true;
     } catch (err: unknown) {
@@ -719,6 +779,7 @@ export default function SubmitPage() {
           return;
         }
 
+        voiceDirtyRef.current = true;
         setVoiceDraft((prev) => ({
           title: data.draft?.title ?? prev.title,
           content: data.draft?.content ?? prev.content,
@@ -738,7 +799,7 @@ export default function SubmitPage() {
           ...prev,
           { id: `a-${Date.now()}`, role: "assistant", content: replyText },
         ]);
-        void stageRef.current?.say(replyText);
+        void stageRef.current?.say(replyText)?.catch(() => {});
       } catch (err: unknown) {
         if (controller.signal.aborted || (err instanceof DOMException && err.name === "AbortError")) {
           return;
@@ -779,11 +840,13 @@ export default function SubmitPage() {
       progressScrollSeqRef.current += 1;
       asrStopRef.current();
       stageRef.current?.stop();
+      voiceDirtyRef.current = false;
+      formDirtyRef.current = false;
       setVoiceDraft(EMPTY_DRAFT);
       setMissingFields([]);
       setReadyToSubmit(false);
       setChatInput("");
-      setVoiceMessages([createWelcomeMessage()]);
+      setVoiceMessages([createWelcomeMessage(`welcome-region-${nextId}-${Date.now()}`)]);
       setReceipt(null);
       setReopenTargetId(null);
       setReopenReason("");
@@ -793,6 +856,37 @@ export default function SubmitPage() {
       prevRegionIdRef.current = nextId;
     }
   }, [activeRegion?.id, createWelcomeMessage, resetFormState]);
+
+  // 进入 /submit、切区或清空重说后，待区域与选项就绪自动触发欢迎语音播报一次
+  useEffect(() => {
+    if (
+      regionLoading ||
+      optionsLoading ||
+      mode !== "voice" ||
+      asr.isRecording ||
+      asr.status === "initializing" ||
+      asr.status === "downloading" ||
+      chatPending
+    ) {
+      return;
+    }
+    if (voiceMessages.length !== 1) return;
+    const welcomeMsg = voiceMessages[0];
+    if (!welcomeMsg || welcomeMsg.role !== "assistant") return;
+    if (welcomeMsg.content !== createWelcomeMessage(welcomeMsg.id).content) return;
+    if (lastSpokenWelcomeIdRef.current === welcomeMsg.id) return;
+    lastSpokenWelcomeIdRef.current = welcomeMsg.id;
+    void stageRef.current?.say(welcomeMsg.content)?.catch(() => {});
+  }, [
+    regionLoading,
+    optionsLoading,
+    mode,
+    asr.isRecording,
+    asr.status,
+    chatPending,
+    voiceMessages,
+    createWelcomeMessage,
+  ]);
 
   const handleVoiceToggle = async () => {
     if (asr.isRecording || asr.status === "initializing" || asr.status === "downloading") {
@@ -809,21 +903,6 @@ export default function SubmitPage() {
         ? appendRecognizedText(chatInput, asr.interimText)
         : chatInput;
     void sendVoiceTurn(pendingText);
-  };
-
-  const handleVoiceTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      if (e.nativeEvent.isComposing || e.keyCode === 229) {
-        return;
-      }
-      submitComposerInput();
-    }
-  };
-
-  const handleVoiceChatFormSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    submitComposerInput();
   };
 
   const handleVoiceDraftSubmit = async () => {
@@ -880,27 +959,49 @@ export default function SubmitPage() {
 
   // ----------------- Mode Tabs 键盘交互 -----------------
   const switchMode = (next: SubmitMode, focusTab = false) => {
-    if (
-      next === "form" &&
-      mode !== "form" &&
-      hasAnyVoiceDraft &&
-      !formValues.content.trim() &&
-      !formValues.category.trim() &&
-      !formValues.subdistrict.trim()
-    ) {
-      setFormValues((prev) => ({
-        title: voiceDraft.title || prev.title,
-        content: voiceDraft.content || prev.content,
-        subdistrict: voiceDraft.subdistrict || prev.subdistrict,
-        category: voiceDraft.category || prev.category,
-        subject: voiceDraft.subject || prev.subject,
-        address: voiceDraft.address || prev.address,
-        contactPhone: voiceDraft.contactPhone || prev.contactPhone,
-        contactEmail: voiceDraft.contactEmail || prev.contactEmail,
-      }));
-      setInteracted({});
-      setFieldErrors({});
-      clearFormCustomValidities();
+    if (next === "form" && mode !== "form") {
+      if (voiceDirtyRef.current || (hasAnyVoiceDraft && !formDirtyRef.current)) {
+        setFormValues((prev) => ({
+          title: voiceDraft.title.trim() ? voiceDraft.title : prev.title,
+          content: voiceDraft.content,
+          subdistrict: voiceDraft.subdistrict,
+          category: voiceDraft.category,
+          subject: voiceDraft.subject,
+          address: voiceDraft.address,
+          contactPhone: voiceDraft.contactPhone,
+          contactEmail: voiceDraft.contactEmail,
+        }));
+        setInteracted({});
+        setFieldErrors({});
+        clearFormCustomValidities();
+        voiceDirtyRef.current = false;
+        formDirtyRef.current = false;
+      }
+    } else if (next === "voice" && mode !== "voice") {
+      const hasAnyFormValue = Boolean(
+        formValues.title.trim() ||
+          formValues.content.trim() ||
+          formValues.subdistrict.trim() ||
+          formValues.category.trim() ||
+          formValues.subject.trim() ||
+          formValues.address.trim() ||
+          formValues.contactPhone.trim() ||
+          formValues.contactEmail.trim()
+      );
+      if (formDirtyRef.current || (hasAnyFormValue && !voiceDirtyRef.current)) {
+        setVoiceDraft((prev) => ({
+          title: formValues.title.trim() ? formValues.title : prev.title,
+          content: formValues.content,
+          subdistrict: formValues.subdistrict,
+          category: formValues.category,
+          subject: formValues.subject,
+          address: formValues.address,
+          contactPhone: formValues.contactPhone,
+          contactEmail: formValues.contactEmail,
+        }));
+        formDirtyRef.current = false;
+        voiceDirtyRef.current = false;
+      }
     }
     setMode(next);
     requestAnimationFrame(() => {
@@ -1032,6 +1133,7 @@ export default function SubmitPage() {
     [...voiceMessages].reverse().find((m) => m.role === "assistant")?.content || "";
 
   const updateVoiceDraftField = (name: keyof IntakeDraft, value: string) => {
+    voiceDirtyRef.current = true;
     setVoiceDraft((prev) => ({ ...prev, [name]: value }));
   };
 
@@ -1041,11 +1143,12 @@ export default function SubmitPage() {
     chatAbortRef.current = null;
     asr.stop();
     stageRef.current?.stop();
+    voiceDirtyRef.current = false;
     setVoiceDraft(EMPTY_DRAFT);
     setMissingFields([]);
     setReadyToSubmit(false);
     setChatInput("");
-    setVoiceMessages([createWelcomeMessage(`welcome-${Date.now()}`)]);
+    setVoiceMessages([createWelcomeMessage(`welcome-reset-${Date.now()}`)]);
   };
 
   return (
@@ -1057,12 +1160,6 @@ export default function SubmitPage() {
 
       {/* 极简页头 */}
       <header className="submit-header">
-        <div className="submit-header__eyebrow">
-          <ShieldCheck size={14} aria-hidden="true" />
-          <span>
-            {activeRegion ? `${activeRegion.city} · ${activeRegion.name}` : "在线受理服务台"}
-          </span>
-        </div>
         <h1 className="submit-header__title">
           {isEcommerce ? "售后客诉提交与进度追踪" : "民生诉求提交与进度追踪"}
         </h1>
@@ -1714,35 +1811,41 @@ export default function SubmitPage() {
                           )}
                         </div>
 
-                        {voiceDraft.subject.trim() && (
-                          <div className="rounded-lg bg-white border border-slate-200/80 px-2.5 py-2 min-w-0">
-                            <label htmlFor="draft-subject-input" className="block text-[11px] text-slate-500">
-                              {subjectLabel}
-                            </label>
-                            <input
-                              id="draft-subject-input"
-                              type="text"
-                              value={voiceDraft.subject}
-                              onChange={(e) => updateVoiceDraftField("subject", e.target.value)}
-                              className="mt-1.5 w-full rounded-md border border-slate-200 bg-slate-50/70 px-2 py-1.5 min-h-[38px] sm:min-h-[30px] text-base sm:text-xs font-medium text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none"
-                            />
-                          </div>
-                        )}
+                        <div className="rounded-lg bg-white border border-slate-200/80 px-2.5 py-2 min-w-0">
+                          <label htmlFor="draft-subject-input" className="block text-[11px] text-slate-500">
+                            {subjectLabel}（选填）
+                          </label>
+                          <input
+                            id="draft-subject-input"
+                            type="text"
+                            value={voiceDraft.subject}
+                            onChange={(e) => updateVoiceDraftField("subject", e.target.value)}
+                            placeholder={isEcommerce ? "例如：SKU-GD2026-881 生鲜礼盒" : "例如：老广烧烤档"}
+                            className="mt-1.5 w-full rounded-md border border-slate-200 bg-slate-50/70 px-2 py-1.5 min-h-[40px] sm:min-h-[32px] text-base sm:text-xs font-medium text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none"
+                          />
+                        </div>
 
-                        {voiceDraft.address.trim() && (
-                          <div className="rounded-lg bg-white border border-slate-200/80 px-2.5 py-2 min-w-0">
-                            <label htmlFor="draft-address-input" className="block text-[11px] text-slate-500">
-                              {addressLabel}
-                            </label>
-                            <input
-                              id="draft-address-input"
-                              type="text"
-                              value={voiceDraft.address}
-                              onChange={(e) => updateVoiceDraftField("address", e.target.value)}
-                              className="mt-1.5 w-full rounded-md border border-slate-200 bg-slate-50/70 px-2 py-1.5 min-h-[38px] sm:min-h-[30px] text-base sm:text-xs font-medium text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none"
-                            />
-                          </div>
-                        )}
+                        <div className="rounded-lg bg-white border border-slate-200/80 px-2.5 py-2 min-w-0">
+                          <label htmlFor="draft-address-input" className="block text-[11px] text-slate-500">
+                            {addressLabel}（选填）
+                          </label>
+                          <input
+                            id="draft-address-input"
+                            type="text"
+                            value={voiceDraft.address}
+                            onChange={(e) => updateVoiceDraftField("address", e.target.value)}
+                            placeholder={
+                              isEcommerce
+                                ? "例如：订单 202611200081 / 广州市天河区"
+                                : isShunde
+                                  ? "例如：大良街道清晖路 88 号"
+                                  : isTianhe
+                                    ? "例如：天河南一路 88 号"
+                                    : "例如：新城路 88 号"
+                            }
+                            className="mt-1.5 w-full rounded-md border border-slate-200 bg-slate-50/70 px-2 py-1.5 min-h-[40px] sm:min-h-[32px] text-base sm:text-xs font-medium text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none"
+                          />
+                        </div>
 
                         <div className="rounded-lg bg-white border border-slate-200/80 px-2.5 py-2 sm:col-span-2 min-w-0">
                           <div className="flex items-center justify-between gap-1.5 text-[11px] text-slate-500">
@@ -1868,122 +1971,20 @@ export default function SubmitPage() {
                   )}
                 </div>
 
-                {/* 仅在模型下载或出现错误时轻量化显示；常规录音态与实时声波直接合入麦克风图标与输入框 */}
-                {(asr.status === "downloading" || Boolean(asr.error)) && (
-                  <div className="px-3.5 pt-2 shrink-0">
-                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 space-y-1.5">
-                      {asr.status === "downloading" && (
-                        <>
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="truncate font-medium text-slate-700">
-                              正在准备本地语音识别…
-                            </span>
-                            <span className="font-mono tabular-nums text-blue-600 shrink-0">
-                              {Math.round(asr.downloadPercent)}%
-                            </span>
-                          </div>
-                          <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
-                            <div
-                              className="h-full bg-blue-600 transition-all"
-                              style={{ width: `${asr.downloadPercent}%` }}
-                            />
-                          </div>
-                        </>
-                      )}
-                      {asr.error && <p className="text-amber-700 font-medium">{asr.error}</p>}
-                    </div>
-                  </div>
-                )}
-
-                {/* 底部一体化输入条（自适应输入框 + 右侧语音与发送操作组） */}
-                <form onSubmit={handleVoiceChatFormSubmit} className="voice-composer">
-                  <label htmlFor="voice-chat-input" className="visually-hidden">
-                    输入诉求内容
-                  </label>
-                  {asr.isRecording && asr.interimText.trim() && chatInput.trim() && (
-                    <p className="px-2 pb-1 text-[11px] text-slate-500 truncate" aria-live="polite">
-                      实时转写：{asr.interimText}
-                    </p>
-                  )}
-                  <div className="voice-composer__box">
-                    <textarea
-                      ref={voiceInputRef}
-                      id="voice-chat-input"
-                      rows={1}
-                      value={chatInput}
-                      onChange={(e) => setChatInput(e.target.value)}
-                      onKeyDown={handleVoiceTextareaKeyDown}
-                      placeholder={
-                        asr.isRecording
-                          ? asr.interimText
-                            ? `实时转写：${asr.interimText}`
-                            : "正在聆听，请直接说话…"
-                          : asr.status === "initializing"
-                            ? "正在打开麦克风…"
-                            : "说话或输入问题…"
-                      }
-                      className="voice-composer__input"
-                    />
-
-                    <div className="voice-composer__actions">
-                      <button
-                        type="button"
-                        onClick={() => void handleVoiceToggle()}
-                        aria-pressed={asr.isRecording}
-                        title={
-                          asr.isRecording || asr.status === "initializing" || asr.status === "downloading"
-                            ? "点击停止语音输入"
-                            : "点击开始语音输入"
-                        }
-                        aria-label={
-                          asr.isRecording || asr.status === "initializing" || asr.status === "downloading"
-                            ? "停止语音输入"
-                            : "点击开始语音输入"
-                        }
-                        style={
-                          asr.isRecording
-                            ? ({
-                                "--mic-level": String(
-                                  Math.min(1, Math.max(0.2, asr.audioLevel * 1.8)).toFixed(2)
-                                ),
-                              } as React.CSSProperties)
-                            : undefined
-                        }
-                        className={`voice-record-btn${
-                          asr.isRecording
-                            ? " is-recording"
-                            : asr.status === "initializing" || asr.status === "downloading"
-                              ? " is-initializing"
-                              : ""
-                        }`}
-                      >
-                        {asr.isRecording ? (
-                          <span className="voice-eq-bars" aria-hidden="true">
-                            <span />
-                            <span />
-                            <span />
-                          </span>
-                        ) : asr.status === "initializing" || asr.status === "downloading" ? (
-                          <RefreshCw size={15} className="motion-safe:animate-spin" aria-hidden="true" />
-                        ) : (
-                          <Mic size={17} aria-hidden="true" />
-                        )}
-                      </button>
-
-                      <button
-                        type="submit"
-                        disabled={
-                          chatPending || !(chatInput.trim() || (asr.isRecording && asr.interimText.trim()))
-                        }
-                        aria-label="发送消息"
-                        title="发送消息"
-                        className="voice-send-btn"
-                      >
-                        <Send size={15} aria-hidden="true" />
-                      </button>
-                    </div>
-                  </div>
-                </form>
+                {/* 底部统一语音/文本一体化输入条 */}
+                <VoiceChatComposer
+                  inputId="voice-chat-input"
+                  label="输入诉求内容"
+                  value={chatInput}
+                  onChange={setChatInput}
+                  onSubmit={submitComposerInput}
+                  placeholder="说话或输入问题…"
+                  disabled={chatPending}
+                  asr={asr}
+                  onVoiceToggle={handleVoiceToggle}
+                  inputRef={voiceInputRef}
+                  submitAriaLabel="发送消息"
+                />
               </div>
             </div>
           </div>
@@ -2043,7 +2044,7 @@ export default function SubmitPage() {
                   ticket.closureStatus === "REOPENED";
                 const statusLabel = reopened
                   ? "已重开核查"
-                  : STATUS_LABELS[ticket.status] || ticket.status;
+                  : STATUS_LABELS[(ticket.status || "").trim().toUpperCase()] || ticket.status;
                 const latestLogText = formatLatestLog(ticket.latestLog);
 
                 return (

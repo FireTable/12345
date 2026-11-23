@@ -29,8 +29,8 @@ export interface XiaochunStageProps {
   className?: string;
 }
 
-/** 大舞台取景：拉近镜头，让人物上半身占满留白（模块级常量，避免引用变化重建 iframe）。 */
-const STAGE_CAMERA = { distance: 1.7, height: 0.15 } as const;
+/** 大舞台取景：拉近镜头并微降高度偏移，减少头顶留白、放大半身比例（模块级常量，避免引用变化重建 iframe）。 */
+const STAGE_CAMERA = { distance: 1.62, height: 0.17 } as const;
 
 /** 首次说话时等待 3D 形象（含冷启动模型合成）就绪的最长时间。 */
 const READY_TIMEOUT_MS = 90_000;

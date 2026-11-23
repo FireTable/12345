@@ -301,8 +301,9 @@ export async function ingestNewTickets(job: ClusterJob): Promise<number> {
     newThemes,
     regionId: job.regionId,
   });
-  if (!summarized) {
-    await fillThemesMissingAdvice(job.regionId, job.taskId);
+  const touchedThemeIds = [...new Set([...attached.keys(), ...newThemes.map((t) => t.id)])];
+  if (!summarized && touchedThemeIds.length > 0) {
+    await fillThemesMissingAdvice(job.regionId, job.taskId, { themeIds: touchedThemeIds });
   }
   if (lowConfidence.length > 0) {
     await seedReviewQueue(lowConfidence, job.regionId);

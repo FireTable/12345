@@ -70,7 +70,7 @@ export function DisposalNode({ data }: NodeProps<DisposalNodeType>) {
         <div className="bg-blue-50/70 border border-blue-200/70 rounded-lg p-2">
           <div className="text-[10px] text-blue-700 flex items-center gap-1 whitespace-nowrap">
             <Send size={10} className="text-blue-600 shrink-0" aria-hidden="true" />
-            处置中
+            处理中
           </div>
           <div className="text-base font-bold font-mono tabular-nums text-blue-900 mt-0.5">
             {(data.inProgressThemes || 0).toLocaleString()}

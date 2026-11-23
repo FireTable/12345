@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRegionDb, type DB } from "@/db/client";
 import { aliasesTable, themesTable, ticketThemesTable, ticketsTable } from "@/db/schema";
 import { and, eq, or, sql } from "drizzle-orm";
-import { mapTicketStatus, toWorkorderDto } from "@/lib/civic-dto";
+import { normalizeTicketStatus, ticketStatusLabel, toWorkorderDto } from "@/lib/civic-dto";
 import { MODE_META, civicModeFromPattern } from "@/backend/theme-metrics";
 import type { CivicMode, PatternType } from "@/backend/state";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 import { listDisposalLogs, recordDisposalLog, resolveOperatorName } from "@/lib/disposal";
+import { parseDomainProfile } from "@/lib/domain-profile";
 import { invalidateCivicAggregates } from "@/lib/civic-cache";
 import { broadcastDataRefresh } from "@/lib/sse-broadcaster";
 import { requireAdmin } from "@/lib/auth/rbac";
@@ -30,7 +31,12 @@ type WorkorderPatchBody = {
   };
 };
 
-async function loadWorkorderDetailPayload(tenantDb: DB, regionId: string, key: string) {
+async function loadWorkorderDetailPayload(
+  tenantDb: DB,
+  regionId: string,
+  key: string,
+  isEcommerce = false
+) {
   const rows = await tenantDb
     .select()
     .from(ticketsTable)
@@ -68,7 +74,7 @@ async function loadWorkorderDetailPayload(tenantDb: DB, regionId: string, key: s
 
   return {
     success: true as const,
-    ...toWorkorderDto(row),
+    ...toWorkorderDto(row, { isEcommerce }),
     content: row.content,
     subdistrict: row.subdistrict || "",
     district: row.district || "",
@@ -88,9 +94,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     const { id } = await params;
     const regionId = await resolveRequestRegionId(req);
-    const { db: tenantDb } = await getRegionDb(regionId);
+    const { db: tenantDb, region: tenantRegion } = await getRegionDb(regionId);
+    const isEcommerce = parseDomainProfile(tenantRegion?.categoryConfigJson).domainType === "ECOMMERCE_CS";
 
-    const payload = await loadWorkorderDetailPayload(tenantDb, regionId, id);
+    const payload = await loadWorkorderDetailPayload(tenantDb, regionId, id, isEcommerce);
     if (!payload) return NextResponse.json({ success: false, error: "not found" }, { status: 404 });
 
     return NextResponse.json(payload);
@@ -107,7 +114,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     const { id } = await params;
     const regionId = await resolveRequestRegionId(req);
-    const { db: tenantDb } = await getRegionDb(regionId);
+    const { db: tenantDb, region: tenantRegion } = await getRegionDb(regionId);
+    const isEcommerce = parseDomainProfile(tenantRegion?.categoryConfigJson).domainType === "ECOMMERCE_CS";
 
     const rows = await tenantDb
       .select()
@@ -128,15 +136,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
 
     const operator = await resolveOperatorName(req);
-    const fromStatus = mapTicketStatus(row.status);
+    const fromStatus = normalizeTicketStatus(row.status);
     const note = typeof body.note === "string" ? body.note.trim() : "";
     const now = new Date();
 
     if (action === "UPDATE_STATUS") {
       const nextStatus = typeof body.status === "string" ? body.status.trim().toUpperCase() : "";
-      if (nextStatus !== "PENDING" && nextStatus !== "IN_PROGRESS" && nextStatus !== "RESOLVED") {
+      if (
+        nextStatus !== "PENDING" &&
+        nextStatus !== "DISPATCHED" &&
+        nextStatus !== "IN_PROGRESS" &&
+        nextStatus !== "RESOLVED"
+      ) {
         return NextResponse.json(
-          { success: false, error: "status must be PENDING, IN_PROGRESS, or RESOLVED" },
+          { success: false, error: "status must be PENDING, DISPATCHED, IN_PROGRESS, or RESOLVED" },
           { status: 400 }
         );
       }
@@ -162,7 +175,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           ? "RESOLVE"
           : fromStatus === "RESOLVED"
             ? "REOPEN"
-            : "UPDATE_STATUS";
+            : nextStatus === "DISPATCHED"
+              ? "DISPATCH"
+              : "UPDATE_STATUS";
 
       await recordDisposalLog({
         regionId,
@@ -178,7 +193,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             ? "单工单已办结"
             : fromStatus === "RESOLVED"
               ? "已办结工单重开流转"
-              : `工单状态变更为 ${nextStatus}`),
+              : nextStatus === "DISPATCHED"
+                ? "工单已派单分派"
+                : `工单状态变更为「${ticketStatusLabel(nextStatus)}」`),
       });
     } else if (action === "CORRECT_ENTITY") {
       const corr = body.correction;
@@ -327,7 +344,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     invalidateCivicAggregates(regionId);
     broadcastDataRefresh(regionId);
 
-    const updatedPayload = await loadWorkorderDetailPayload(tenantDb, regionId, row.id);
+    const updatedPayload = await loadWorkorderDetailPayload(tenantDb, regionId, row.id, isEcommerce);
     return NextResponse.json(updatedPayload);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Failed to update workorder";

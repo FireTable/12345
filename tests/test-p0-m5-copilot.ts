@@ -403,6 +403,72 @@ async function main() {
     );
   }
 
+  // 8. Challenger 1 regression: MAX_TOOL_ROUNDS 耗尽且第 4 轮仍输出工具 JSON 时强制无工具收敛，绝不回退空兜底文案
+  {
+    let round4SawConvergencePrompt = false;
+    let round5ResponseFormat: unknown = "unset";
+    let round5SawStrongPrompt = false;
+    let totalCalls = 0;
+
+    const engine = makeMockEngine(async function* (params, callIdx) {
+      totalCalls = callIdx;
+      if (callIdx <= 3) {
+        const calls = [
+          { action: "tool", name: "region_overview", args: {} },
+          { action: "tool", name: "list_townships", args: {} },
+          { action: "tool", name: "category_stats", args: {} },
+        ];
+        yield { deltaContent: JSON.stringify(calls[callIdx - 1]) };
+        return;
+      }
+      if (callIdx === 4) {
+        const lastMsg = params.messages[params.messages.length - 1];
+        round4SawConvergencePrompt =
+          lastMsg?.role === "user" &&
+          String(lastMsg.content).includes("工具检索已达上限") &&
+          !params.response_format;
+        // 模拟模型在 allowTools=false 仍固执吐出工具调用 JSON
+        yield { deltaContent: '{"action":"tool","name":"search_themes","args":{}}' };
+        return;
+      }
+      round5ResponseFormat = params.response_format;
+      const lastMsg = params.messages[params.messages.length - 1];
+      round5SawStrongPrompt =
+        lastMsg?.role === "user" && String(lastMsg.content).includes("禁止再调用任何工具");
+      yield { deltaContent: "# 测试区研判简报\n\n已根据三轮检索结果完成汇总分析。" };
+    });
+
+    const mockTools = [
+      tool(async () => '{"tickets":100}', { name: "region_overview", description: "r", schema: z.object({}).passthrough() }),
+      tool(async () => '{"towns":5}', { name: "list_townships", description: "t", schema: z.object({}).passthrough() }),
+      tool(async () => '{"cats":4}', { name: "category_stats", description: "c", schema: z.object({}).passthrough() }),
+      tool(async () => '{"themes":2}', { name: "search_themes", description: "s", schema: z.object({}).passthrough() }),
+    ];
+
+    const answerDeltas: string[] = [];
+    for await (const ev of streamCopilot({
+      regionId: "test_region",
+      regionLabel: "测试区",
+      domainType: "GOV_12345",
+      turns: [{ role: "user", content: "生成研判简报" }],
+      engine,
+      tools: mockTools as any,
+    })) {
+      if (ev.type === "answer") answerDeltas.push(ev.text);
+    }
+
+    const full = answerDeltas.join("");
+    assert(round4SawConvergencePrompt, "达到 MAX_TOOL_ROUNDS 后第 4 轮注入收敛指令且禁用 response_format");
+    assert(
+      totalCalls === 5 && !round5ResponseFormat && round5SawStrongPrompt,
+      "第 4 轮在 allowTools=false 仍输出工具 JSON 时触发第 5 轮显式无工具重试"
+    );
+    assert(
+      full.includes("# 测试区研判简报") && !full.includes("没有整理出答复"),
+      `MAX_TOOL_ROUNDS 耗尽后收敛到非空 Markdown 简报而非空兜底文案 (got: ${JSON.stringify(full)})`
+    );
+  }
+
   if (failures > 0) {
     process.exit(1);
   }

@@ -20,10 +20,16 @@
 .copilot-md h4 { font-size: 13px; }
 .copilot-md ul,
 .copilot-md ol {
-  margin: 0.4em 0;
-  padding-left: 1.25em;
+  margin: 0.45em 0;
+  padding-left: 1.35em;
 }
-.copilot-md li { margin: 0.15em 0; }
+.copilot-md ul {
+  list-style-type: disc;
+}
+.copilot-md ol {
+  list-style-type: decimal;
+}
+.copilot-md li { margin: 0.2em 0; }
 .copilot-md li > p { margin: 0.15em 0; }
 .copilot-md strong { font-weight: 700; }
 .copilot-md em { font-style: italic; }
@@ -53,17 +59,53 @@
   border-left: 3px solid currentColor;
   opacity: 0.88;
 }
+.copilot-md__table-wrap {
+  margin: 0.6em 0;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+}
 .copilot-md table {
   width: 100%;
   border-collapse: collapse;
-  margin: 0.5em 0;
-  font-size: 11px;
+  margin: 0.6em 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.45;
+  background: #ffffff;
+}
+.copilot-md__table-wrap > table {
+  margin: 0;
 }
 .copilot-md th,
 .copilot-md td {
-  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
-  padding: 4px 6px;
+  border-bottom: 1px solid #e2e8f0;
+  border-right: 1px solid #f1f5f9;
+  padding: 7px 10px;
   text-align: left;
+  vertical-align: top;
+}
+.copilot-md th:last-child,
+.copilot-md td:last-child {
+  border-right: 0;
+}
+.copilot-md thead th {
+  background: #f8fafc;
+  color: #334155;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.copilot-md tbody td {
+  color: #0f172a;
+}
+.copilot-md tbody tr:last-child td {
+  border-bottom: 0;
+}
+.copilot-md tbody tr:hover td {
+  background: #f8fafc;
 }
 .copilot-md hr {
   border: none;
@@ -74,6 +116,25 @@
 .copilot-md--user code,
 .copilot-md--user pre {
   background: rgba(255, 255, 255, 0.16);
+}
+.copilot-md--user .copilot-md__table-wrap {
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.08);
+}
+.copilot-md--user table {
+  background: transparent;
+}
+.copilot-md--user th,
+.copilot-md--user td {
+  border-color: rgba(255, 255, 255, 0.2);
+  color: inherit;
+}
+.copilot-md--user thead th {
+  background: rgba(255, 255, 255, 0.16);
+  color: inherit;
+}
+.copilot-md--user tbody tr:hover td {
+  background: rgba(255, 255, 255, 0.1);
 }
 .copilot-caret {
   display: inline-block;

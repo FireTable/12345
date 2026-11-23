@@ -6,7 +6,7 @@
 
 import { sql, getRegionDb } from "../db/client";
 import { themesTable, ticketsTable, vocabulariesTable } from "../db/schema";
-import { GOV_12345_PROFILE } from "../lib/domain-profile";
+import { ECOMMERCE_CS_PROFILE, GOV_12345_PROFILE } from "../lib/domain-profile";
 import {
   SQL_CORE_REDLINE_PATTERN,
   SQL_ECOM_REDLINE_PATTERN,
@@ -774,6 +774,16 @@ async function testSqlRedlineAndParity() {
     { text: "燃气管道发生爆炸", core: true, ecom: true },
     { text: "现场爆炸起火", core: true, ecom: true },
     { text: "化工厂车间爆炸", core: true, ecom: true },
+    { text: "化工厂并未违规但爆炸。", core: true, ecom: true },
+    { text: "化工厂并未违规但未爆炸", core: false, ecom: false },
+    { text: "化工厂并未违规但没爆炸", core: false, ecom: false },
+    { text: "化工厂设备老化但突然爆炸", core: false, ecom: false },
+    { text: "化工厂没爆炸", core: false, ecom: false },
+    { text: "燃气管道没爆炸", core: false, ecom: false },
+    { text: "医院氧气瓶发生爆炸", core: true, ecom: true },
+    { text: "钢瓶发生爆炸", core: true, ecom: true },
+    { text: "家里煤气瓶发生爆炸", core: false, ecom: false },
+    { text: "化工厂但不存在爆炸", core: false, ecom: false },
     { text: "菜市场发生持刀伤人恶性事件", core: true, ecom: true },
     { text: "高速路段发生重大交通事故连环相撞", core: true, ecom: true },
     { text: "举报涉黑涉恶团伙强迫交易保护费", core: true, ecom: true },
@@ -830,6 +840,24 @@ async function testSqlRedlineAndParity() {
     { text: "燃气管道发生爆炸", expected: true },
     { text: "现场爆炸起火", expected: true },
     { text: "化工厂车间爆炸", expected: true },
+    { text: "化工厂并未违规但爆炸。", expected: true },
+    { text: "化工厂并未违规但没爆炸", expected: false },
+    { text: "化工厂设备老化但突然爆炸", expected: false },
+    { text: "化工厂没爆炸", expected: false },
+    { text: "燃气管道没爆炸", expected: false },
+    { text: "医院氧气瓶发生爆炸", expected: true },
+    { text: "钢瓶发生爆炸", expected: true },
+    { text: "家里煤气瓶发生爆炸", expected: false },
+    { text: "没人处理扬言跳楼", expected: true },
+    { text: "现场没人伤亡", expected: false },
+    { text: "没法活了想跳楼", expected: true },
+    { text: "暴雨淹没路面塌陷", expected: true },
+    { text: "天雨路滑，易发生重大交通事故，建议加装防滑带。", expected: false },
+    { text: "护栏松动，或许会造成重大安全事故，请维修。", expected: false },
+    { text: "长期超载通行，难免酿成重大安全事故，请设限高杆。", expected: false },
+    { text: "小区电梯老化，存在重大安全事故的可能性。", expected: false },
+    { text: "未来可能引发重大安全事故，请加强巡查。", expected: false },
+    { text: "楼道充电的电瓶突然发生爆炸，请物业排查。", expected: false },
     { text: "菜市场发生持刀伤人恶性事件", expected: true },
     { text: "有人持菜刀砍伤两名群众，现场混乱", expected: true },
     { text: "高速路段发生重大交通事故连环相撞", expected: true },
@@ -853,6 +881,557 @@ async function testSqlRedlineAndParity() {
   );
 }
 
+async function testPatrolSlotParityAndEcomShortAddress() {
+  const { db } = await getRegionDb(REGION_ID);
+  const now = new Date();
+  const hoursAgo = (h: number) => new Date(now.getTime() - h * 3600_000);
+
+  // 1. GOV_12345 SQL/JS parity: generic subjects ("物业", "某餐厅", "NULL", " 涉事方 "),
+  //    missing subdistrict, trailing-space address === subdistrict, and 30 redline starvation guard.
+  await sql.unsafe(`TRUNCATE TABLE "${REGION_ID}".tickets, "${REGION_ID}".themes, "${REGION_ID}".agent_tasks CASCADE;`);
+  const govRows: Array<typeof ticketsTable.$inferInsert> = [
+    {
+      id: "tk-par-wuye",
+      ticketNo: "GV-PAR-01",
+      title: "通用主体物业待补全",
+      content: "小区路灯不亮。",
+      subdistrict: "天河南街道",
+      address: "天河南一路88号",
+      canonicalSubject: "物业",
+      confidence: 85,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(1),
+    },
+    {
+      id: "tk-par-canting",
+      ticketNo: "GV-PAR-02",
+      title: "通用主体某餐厅待补全",
+      content: "餐厅油烟扰民。",
+      subdistrict: "天河南街道",
+      address: "天河南二路12号",
+      canonicalSubject: "某餐厅",
+      confidence: 85,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(1),
+    },
+    {
+      id: "tk-par-nullstr",
+      ticketNo: "GV-PAR-03",
+      title: "通用主体NULL字符串待补全",
+      content: "夜间施工噪声。",
+      subdistrict: "天河南街道",
+      address: "体育西路50号",
+      canonicalSubject: "NULL",
+      confidence: 85,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(1),
+    },
+    {
+      id: "tk-par-space-subj",
+      ticketNo: "GV-PAR-04",
+      title: "带空格通用主体待补全",
+      content: "商铺占道经营。",
+      subdistrict: "天河南街道",
+      address: "体育东路10号",
+      canonicalSubject: " 涉事方 ",
+      confidence: 85,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(1),
+    },
+    {
+      id: "tk-par-no-subd",
+      ticketNo: "GV-PAR-05",
+      title: "缺失镇街待补全",
+      content: "排水井盖损坏。",
+      subdistrict: null,
+      address: "天河南一路88号",
+      canonicalSubject: "老广烧烤档",
+      confidence: 85,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(1),
+    },
+    {
+      id: "tk-par-addr-space",
+      ticketNo: "GV-PAR-06",
+      title: "地址含尾随空格等于镇街待补全",
+      content: "烧烤油烟问题。",
+      subdistrict: "石牌街道",
+      address: "石牌街道 ",
+      canonicalSubject: "老广烧烤档",
+      confidence: 85,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(1),
+    },
+    {
+      id: "tk-par-ws-tab-subj",
+      ticketNo: "GV-PAR-07",
+      title: "通用主体含制表符待补全",
+      content: "路灯故障。",
+      subdistrict: "天河南街道",
+      address: "天河南一路66号",
+      canonicalSubject: "物业\t",
+      confidence: 85,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(1),
+    },
+    {
+      id: "tk-par-ws-fw-subj",
+      ticketNo: "GV-PAR-08",
+      title: "通用主体含全角空格待补全",
+      content: "噪音投诉。",
+      subdistrict: "天河南街道",
+      address: "天河南二路66号",
+      canonicalSubject: "\u3000物业\u3000",
+      confidence: 85,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(1),
+    },
+    {
+      id: "tk-par-ws-tab-addr",
+      ticketNo: "GV-PAR-09",
+      title: "地址仅制表换行待补全",
+      content: "井盖异响。",
+      subdistrict: "天河南街道",
+      address: "\t\n\u3000",
+      canonicalSubject: "天河供电所",
+      confidence: 85,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(1),
+    },
+    {
+      id: "tk-par-ws-tab-subd",
+      ticketNo: "GV-PAR-10",
+      title: "镇街仅制表符待补全",
+      content: "垃圾清运。",
+      subdistrict: "\t",
+      address: "天河北路100号",
+      canonicalSubject: "天河环卫站",
+      confidence: 85,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(1),
+    },
+    {
+      id: "tk-par-nonred-nofood",
+      ticketNo: "GV-PAR-11",
+      title: "经检查无食物中毒仅空调异味",
+      content: "经检查无食物中毒，仅反映空调异味。",
+      subdistrict: "天河南街道",
+      address: null,
+      canonicalSubject: "老广烧烤档",
+      confidence: 85,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(1),
+    },
+    {
+      id: "tk-par-nonred-weivisit",
+      ticketNo: "GV-PAR-12",
+      title: "未上访仅咨询路灯维修",
+      content: "居民未上访未堵门，仅咨询路灯维修。",
+      subdistrict: "天河南街道",
+      address: null,
+      canonicalSubject: "路灯维护班",
+      confidence: 85,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(1),
+    },
+    {
+      id: "tk-par-nonred-prevent",
+      ticketNo: "GV-PAR-13",
+      title: "建议增设斑马线防止事故",
+      content: "行人经常横跨马路容易造成重大交通事故，建议增设斑马线。",
+      subdistrict: "天河南街道",
+      address: null,
+      canonicalSubject: "交通设施处",
+      confidence: 85,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(1),
+    },
+    {
+      id: "tk-par-nonred-hazard",
+      ticketNo: "GV-PAR-14",
+      title: "配电房安全隐患排查",
+      content: "小区配电房存在重大安全事故隐患，请核查。",
+      subdistrict: "天河南街道",
+      address: null,
+      canonicalSubject: "天河供电局",
+      confidence: 85,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(1),
+    },
+    {
+      id: "tk-par-nonred-heater",
+      ticketNo: "GV-PAR-15",
+      title: "热水器爆炸排查",
+      content: "家里热水器发生爆炸，希望排查质量问题。",
+      subdistrict: "天河南街道",
+      address: null,
+      canonicalSubject: "海尔售后中心",
+      confidence: 85,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(1),
+    },
+    {
+      id: "tk-par-kn-2",
+      ticketNo: "GV-PAR-KN2",
+      title: "路面防滑改造建议",
+      content: "天雨路滑，易发生重大交通事故，建议加装防滑带。",
+      subdistrict: "天河南街道",
+      address: null,
+      canonicalSubject: "市政设施所",
+      confidence: 85,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(1),
+    },
+    {
+      id: "tk-par-kn-3",
+      ticketNo: "GV-PAR-KN3",
+      title: "护栏松动维修请求",
+      content: "护栏松动，或许会造成重大安全事故，请维修。",
+      subdistrict: "天河南街道",
+      address: null,
+      canonicalSubject: "市政设施所",
+      confidence: 85,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(1),
+    },
+    {
+      id: "tk-par-kn-4",
+      ticketNo: "GV-PAR-KN4",
+      title: "限高杆设置建议",
+      content: "长期超载通行，难免酿成重大安全事故，请设限高杆。",
+      subdistrict: "天河南街道",
+      address: null,
+      canonicalSubject: "交通设施处",
+      confidence: 85,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(1),
+    },
+    {
+      id: "tk-par-kn-5",
+      ticketNo: "GV-PAR-KN5",
+      title: "电梯老化维保排查",
+      content: "小区电梯老化，存在重大安全事故的可能性。",
+      subdistrict: "天河南街道",
+      address: null,
+      canonicalSubject: "电梯维保单位",
+      confidence: 85,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(1),
+    },
+    {
+      id: "tk-par-kn-6",
+      ticketNo: "GV-PAR-KN6",
+      title: "楼道电瓶排查",
+      content: "楼道充电的电瓶突然发生爆炸，请物业排查。",
+      subdistrict: "天河南街道",
+      address: null,
+      canonicalSubject: "天河物管处",
+      confidence: 85,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(1),
+    },
+    {
+      id: "tk-par-kn-7",
+      ticketNo: "GV-PAR-KN7",
+      title: "老旧设施巡查建议",
+      content: "未来可能引发重大安全事故，请加强巡查。",
+      subdistrict: "天河南街道",
+      address: null,
+      canonicalSubject: "城管巡查队",
+      confidence: 85,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(1),
+    },
+    {
+      id: "tk-par-ws-nbsp-subj",
+      ticketNo: "GV-PAR-NBSP1",
+      title: "NBSP通用主体待补全",
+      content: "电梯异响。",
+      subdistrict: "天河南街道",
+      address: "天河南三路88号",
+      canonicalSubject: "\u00a0物业\u00a0",
+      confidence: 85,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(1),
+    },
+    {
+      id: "tk-par-ws-nbsp-subd",
+      ticketNo: "GV-PAR-NBSP2",
+      title: "NBSP空白镇街待补全",
+      content: "占道经营。",
+      subdistrict: "\u00a0",
+      address: "天河北路108号",
+      canonicalSubject: "个体摊档",
+      confidence: 85,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(1),
+    },
+    {
+      id: "tk-par-kn-11",
+      ticketNo: "GV-PAR-KN11",
+      title: "厂区突发情况",
+      content: "化工厂并未违规但爆炸。",
+      subdistrict: "天河南街道",
+      address: "天河化工路1号",
+      canonicalSubject: "天河化工厂",
+      confidence: 90,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(0.05),
+    },
+    {
+      id: "tk-par-o2-bottle",
+      ticketNo: "GV-PAR-O2",
+      title: "医院氧气瓶发生爆炸",
+      content: "医院氧气瓶发生爆炸，现场有烟雾。",
+      subdistrict: "天河南街道",
+      address: "天河东路100号",
+      canonicalSubject: "天河医院",
+      confidence: 90,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(0.04),
+    },
+    {
+      id: "tk-par-adv-long-bh",
+      ticketNo: "GV-PAR-ADVELONG",
+      title: "化工厂设备老化隐患",
+      content: "化工厂设备老化但突然爆炸",
+      subdistrict: "天河南街道",
+      address: null,
+      canonicalSubject: "天河化工厂",
+      confidence: 85,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(1),
+    },
+    {
+      id: "tk-par-adv-mei-neg",
+      ticketNo: "GV-PAR-ADVMEI",
+      title: "厂区排查通报",
+      content: "化工厂并未违规但没爆炸",
+      subdistrict: "天河南街道",
+      address: null,
+      canonicalSubject: "天河化工厂",
+      confidence: 85,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(1),
+    },
+    {
+      id: "tk-par-mei-neg",
+      ticketNo: "GV-PAR-MEINEG",
+      title: "厂区巡检情况",
+      content: "化工厂没爆炸",
+      subdistrict: "天河南街道",
+      address: null,
+      canonicalSubject: "天河化工厂",
+      confidence: 85,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(1),
+    },
+    {
+      id: "tk-par-ws-emspace-subj",
+      ticketNo: "GV-PAR-EMSP1",
+      title: "EMSPACE通用主体待补全",
+      content: "小区照明损坏。",
+      subdistrict: "天河南街道",
+      address: "天河南四路18号",
+      canonicalSubject: "\u2003物业\u2003",
+      confidence: 85,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(1),
+    },
+    // 30 newer stability_risk=false redline rows must NOT starve an older MISSING_INFO row
+    ...Array.from({ length: 30 }, (_, i) => ({
+      id: `tk-par-redstarve-${String(i + 1).padStart(2, "0")}`,
+      ticketNo: `GV-PAR-RED-${i + 1}`,
+      title: `红线防饿死测试 ${i + 1}`,
+      content: "投诉人扬言跳楼维权。",
+      subdistrict: "天河南街道",
+      address: null,
+      canonicalSubject: null,
+      confidence: 50,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(0.1),
+    })),
+    {
+      id: "tk-par-legit-miss",
+      ticketNo: "GV-PAR-LEGIT",
+      title: "应被正常召回的缺要素工单",
+      content: "小区消防通道被占用。",
+      subdistrict: "天河南街道",
+      address: null,
+      canonicalSubject: null,
+      confidence: 55,
+      status: "PENDING",
+      stabilityRisk: false,
+      createTime: hoursAgo(12),
+    },
+  ];
+  await db.insert(ticketsTable).values(govRows);
+
+  let parRes = await runAgentPatrol(REGION_ID);
+  for (let r = 0; r < 8 && parRes.createdCount > 0; r++) {
+    parRes = await runAgentPatrol(REGION_ID);
+  }
+  const parMissingIds = parRes.tasks
+    .filter((t) => t.taskType === "MISSING_INFO")
+    .map((t) => t.targetId);
+  const parRedlineIds = parRes.tasks
+    .filter((t) => t.taskType === "REDLINE_BLOCK")
+    .map((t) => t.targetId);
+  assert(
+    [
+      "tk-par-wuye",
+      "tk-par-canting",
+      "tk-par-nullstr",
+      "tk-par-space-subj",
+      "tk-par-no-subd",
+      "tk-par-addr-space",
+      "tk-par-ws-tab-subj",
+      "tk-par-ws-fw-subj",
+      "tk-par-ws-tab-addr",
+      "tk-par-ws-tab-subd",
+      "tk-par-nonred-nofood",
+      "tk-par-nonred-weivisit",
+      "tk-par-nonred-prevent",
+      "tk-par-nonred-hazard",
+      "tk-par-nonred-heater",
+      "tk-par-kn-2",
+      "tk-par-kn-3",
+      "tk-par-kn-4",
+      "tk-par-kn-5",
+      "tk-par-kn-6",
+      "tk-par-kn-7",
+      "tk-par-ws-nbsp-subj",
+      "tk-par-ws-nbsp-subd",
+      "tk-par-adv-long-bh",
+      "tk-par-adv-mei-neg",
+      "tk-par-mei-neg",
+      "tk-par-ws-emspace-subj",
+      "tk-par-legit-miss",
+    ].every((id) => parMissingIds.includes(id)) &&
+      parRedlineIds.includes("tk-par-kn-11") &&
+      !parMissingIds.includes("tk-par-kn-11") &&
+      parRedlineIds.includes("tk-par-o2-bottle") &&
+      !parMissingIds.includes("tk-par-o2-bottle"),
+    `Patrol SQL/JS 槽位对齐：通用主体/缺失镇街/空白字符(\\t\\n\\u3000\\u00a0\\u2003)/概率预防与电瓶非红线(p-kn-2..7)/转折爆炸红线(p-kn-11)/氧气瓶爆炸/没爆炸否定/红线防饿死全部对齐 (${parMissingIds.length} missing, kn11=${parRedlineIds.includes("tk-par-kn-11")}, o2=${parRedlineIds.includes("tk-par-o2-bottle")})`
+  );
+
+  // 2. ECOMMERCE_CS short-address (<= 6 chars) detection & prioritization
+  const ECOM_TEMP_ID = `${REGION_ID}_ecom`;
+  await sql.unsafe(`DROP SCHEMA IF EXISTS "${ECOM_TEMP_ID}" CASCADE;`);
+  await sql`DELETE FROM public.regions WHERE id = ${ECOM_TEMP_ID};`;
+  try {
+    await registerRegion(sql, {
+      id: ECOM_TEMP_ID,
+      name: "M4电商巡检临时区",
+      city: "线上平台",
+      province: "全国",
+      schemaName: ECOM_TEMP_ID,
+      isDefault: false,
+      categoryConfigJson: JSON.stringify({ domainProfile: ECOMMERCE_CS_PROFILE }),
+      description: "M4 ecom patrol verification ephemeral schema",
+    });
+    const { db: ecomDb } = await getRegionDb(ECOM_TEMP_ID);
+    const ecomRows: Array<typeof ticketsTable.$inferInsert> = [
+      ...Array.from({ length: 32 }, (_, i) => ({
+        id: `tk-ecom-oldconf-${String(i + 1).padStart(2, "0")}`,
+        ticketNo: `EC-OLD-${i + 1}`,
+        title: `旧低置信度客诉 ${i + 1}`,
+        content: "物流派送稍慢请跟进。",
+        subdistrict: "天猫旗舰店",
+        address: "订单 202611010001 / 上海仓",
+        canonicalSubject: "SKU-GD2026-100",
+        confidence: 55,
+        status: "PENDING",
+        stabilityRisk: false,
+        createTime: hoursAgo(20 + i),
+      })),
+      {
+        id: "tk-ecom-short",
+        ticketNo: "EC-SHORT-01",
+        title: "电商短地址缺订单号客诉",
+        content: "收到的货品包装破损。",
+        subdistrict: "天猫旗舰店",
+        address: "华东仓",
+        canonicalSubject: "SKU-GD2026-881",
+        confidence: 85,
+        status: "PENDING",
+        stabilityRisk: false,
+        createTime: hoursAgo(1),
+      },
+      {
+        id: "tk-ecom-nofake",
+        ticketNo: "EC-NOFAKE-01",
+        title: "无假货仅包装压扁客诉",
+        content: "经核实无假货无发霉，仅包装盒压扁。",
+        subdistrict: "天猫旗舰店",
+        address: "华东仓",
+        canonicalSubject: "SKU-GD2026-882",
+        confidence: 85,
+        status: "PENDING",
+        stabilityRisk: false,
+        createTime: hoursAgo(1),
+      },
+    ];
+    await ecomDb.insert(ticketsTable).values(ecomRows);
+
+    const ecomRes = await runAgentPatrol(ECOM_TEMP_ID);
+    const shortTask = ecomRes.tasks.find(
+      (t) => t.taskType === "MISSING_INFO" && t.targetId === "tk-ecom-short"
+    );
+    const nofakeTask = ecomRes.tasks.find(
+      (t) => t.taskType === "MISSING_INFO" && t.targetId === "tk-ecom-nofake"
+    );
+    assert(
+      Boolean(shortTask) &&
+        shortTask?.autonomyLevel === "L1_AUTO" &&
+        shortTask?.missingSlots.includes("订单号/收货仓网明细") &&
+        Boolean(nofakeTask) &&
+        nofakeTask?.autonomyLevel === "L1_AUTO",
+      `ECOMMERCE_CS 短地址 (<=6字) 与 "无假货" 非红线客诉均优先入队且准确提示 "订单号/收货仓网明细" (shortSlots=${JSON.stringify(shortTask?.missingSlots)}, nofake=${Boolean(nofakeTask)})`
+    );
+  } finally {
+    try {
+      await destroyRegionTenant(sql, ECOM_TEMP_ID);
+    } catch {
+      // ignore
+    }
+    await sql.unsafe(`DROP SCHEMA IF EXISTS "${ECOM_TEMP_ID}" CASCADE;`);
+    await sql`DELETE FROM public.regions WHERE id = ${ECOM_TEMP_ID};`;
+    invalidateAgentGovernanceCache(ECOM_TEMP_ID);
+    invalidateCivicAggregates(ECOM_TEMP_ID);
+  }
+}
+
 async function main() {
   await assertBaselineUnchanged("前置");
   await cleanup();
@@ -862,6 +1441,7 @@ async function main() {
     await testPromptAndSeedKeymap();
     await testSubmitCitizenTicketInterlock();
     await testPatrolDedupOrderingOverdueAndRedlineFallback();
+    await testPatrolSlotParityAndEcomShortAddress();
   } finally {
     await cleanup();
     await assertBaselineUnchanged("清理后");

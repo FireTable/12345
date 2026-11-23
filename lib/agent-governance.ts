@@ -17,6 +17,14 @@ import { getLlmPool } from "@/backend/llm-pool";
 import { profileTicket } from "@/backend/ticket-profile";
 import { invalidateCivicAggregates } from "@/lib/civic-cache";
 import { canonicalizeCategory, getRegionVocabulary, loadPresetVocabulary } from "@/lib/vocabulary";
+import { mapTicketStatus } from "@/lib/civic-dto";
+import {
+  buildMissingInfoSqlCondition,
+  buildMissingInfoSqlParts,
+  detectMissingTicketSlots,
+  isGenericSubject,
+  isTicketResolvedStatus,
+} from "@/lib/civic-missing";
 import { getRegionDomainProfile, type DomainProfile, type DomainType } from "@/lib/domain-profile";
 import { ensureDisposalLogsTable, recordDisposalLog } from "@/lib/disposal";
 import { evaluateEcommerceTicket } from "@/lib/ecommerce-triage";
@@ -143,20 +151,40 @@ const CORE_REDLINE_MIDDLE =
 const CORE_REDLINE_TAIL = "堵桥|封桥|阻断交通|堵门|围堵|拉横幅";
 const CORE_REDLINE_PATTERN = `${CORE_REDLINE_PREFIX}|堵路|${CORE_REDLINE_MIDDLE}|封路|${CORE_REDLINE_TAIL}`;
 const ECOM_REDLINE_PATTERN = `${CORE_REDLINE_PATTERN}|假货|假冒|变质|发霉`;
+const SQL_INDUSTRIAL_NOUNS = "(?:化工厂|厂房|车间|燃气管道|危化品|仓库|现场)";
+const SQL_EXPLOSION_NEG_TOKEN =
+  "(?:未(?!来|果)|没有|没(?:发生|出现|见|发现|造成|引发|酿成|导致|涉及|(?=爆炸|人爆炸))|无(?:任何|明显|实际|发生|人员|迹象|(?=爆炸|人爆炸))|并非|不是|排除|不存在|防止|预防|避免|谨防|严防|杜绝|谣言|辟谣|虚假|不涉及|不要|禁止)";
+const SQL_EXPLOSION_SAFE_CHAR = `(?:(?!${SQL_EXPLOSION_NEG_TOKEN})[^，。])`;
+const SQL_EXPLOSION_ADV1_BRANCH = [
+  `(?:但|却)${SQL_EXPLOSION_SAFE_CHAR}{0,5}`,
+  `[^，。](?:但|却)${SQL_EXPLOSION_SAFE_CHAR}{0,4}`,
+  `[^，。]{2}(?:但|却)${SQL_EXPLOSION_SAFE_CHAR}{0,3}`,
+  `[^，。]{3}(?:但|却)${SQL_EXPLOSION_SAFE_CHAR}{0,2}`,
+  `[^，。]{4}(?:但|却)${SQL_EXPLOSION_SAFE_CHAR}{0,1}`,
+  `[^，。]{5}(?:但|却)`,
+].join("|");
+const SQL_EXPLOSION_ADV2_BRANCH = [
+  `(?:不过|可是|然而)${SQL_EXPLOSION_SAFE_CHAR}{0,4}`,
+  `[^，。](?:不过|可是|然而)${SQL_EXPLOSION_SAFE_CHAR}{0,3}`,
+  `[^，。]{2}(?:不过|可是|然而)${SQL_EXPLOSION_SAFE_CHAR}{0,2}`,
+  `[^，。]{3}(?:不过|可是|然而)${SQL_EXPLOSION_SAFE_CHAR}{0,1}`,
+  `[^，。]{4}(?:不过|可是|然而)`,
+].join("|");
+const SQL_INDUSTRIAL_EXPLOSION_RE = `${SQL_INDUSTRIAL_NOUNS}(?:${SQL_EXPLOSION_SAFE_CHAR}{0,6}|${SQL_EXPLOSION_ADV1_BRANCH}|${SQL_EXPLOSION_ADV2_BRANCH})爆炸`;
 const SQL_CORE_REDLINE_MIDDLE = CORE_REDLINE_MIDDLE.replace(
   "(?:发生|突发|引发|造成)爆炸",
-  "(?:^|[^锅瓶未没无非不别勿有会]|(?:^|[^没])有|(?:^|[^不])会)(?:发生|突发|引发|造成)爆炸"
+  "(?:^|[^锅瓶未没无非不别勿有会]|(?:^|[^没])有|(?:^|[^不])会|(?:^|[^气])瓶|(?:^|[^煤])气瓶)(?:发生|突发|引发|造成)爆炸"
 )
   .replace(
     "(?:化工厂|厂房|车间|燃气管道|危化品|仓库|现场)[^，。]{0,6}爆炸",
-    "(?:化工厂|厂房|车间|燃气管道|危化品|仓库|现场)(?:(?!(?:未|没|无|并非|不是|排除))[^，。]){0,6}爆炸"
+    SQL_INDUSTRIAL_EXPLOSION_RE
   )
   .replace("人员重伤", "(?:^|[^无未没有]|(?:^|[^没])有)人员重伤");
 export const SQL_CORE_REDLINE_PATTERN = `${CORE_REDLINE_PREFIX}|(?:^|[^拥])堵路(?:[^况段]|$)|${SQL_CORE_REDLINE_MIDDLE}|(?:^|[^工]|(?:^|[^施])工)封路(?!施工)|${CORE_REDLINE_TAIL}`;
 export const SQL_ECOM_REDLINE_PATTERN = `${SQL_CORE_REDLINE_PATTERN}|假货|假冒|变质|发霉`;
 const REDLINE_ADVERSATIVE_GAP = "(?:(?!但|却|不过|可是|然而)[^，。！？；;\\n])";
 const REDLINE_NEGATION_PRE_RE = new RegExp(
-  `(?:(?:并非|不是|没有发生|未发生|没有|并未|未见|未出现|未(?!来|果)|不存在|已排除|排除|不涉及|防止|预防|杜绝|辟谣|谣言|虚假|避免|谨防|严防|切勿|不要|禁止)${REDLINE_ADVERSATIVE_GAP}{0,8}|无(?:任何|明显|实际|发生|人员|迹象)${REDLINE_ADVERSATIVE_GAP}{0,6}|无人|无)$`
+  `(?:(?:并非|不是|没有发生|未发生|没(?:有|发生|出现|见|发现|造成|引发|酿成|导致|涉及)|并未|未见|未出现|未(?!来|果)|不存在|已排除|排除|不涉及|防止|预防|杜绝|辟谣|谣言|虚假|避免|谨防|严防|切勿|不要|禁止)${REDLINE_ADVERSATIVE_GAP}{0,8}|无(?:任何|明显|实际|发生|人员|迹象)${REDLINE_ADVERSATIVE_GAP}{0,6}|无人|无|没人|(?<![淹沉埋吞])没)$`
 );
 const REDLINE_FOOD_SAFETY_CHAIN_NEG_RE =
   /(?:没有发生|未发生|没有|并未|未见|未出现|不存在|已排除|排除|不涉及|无)(?:(?:任何|明显|实际)的?)?(?:(?:食物中毒|群体中毒|(?:群体|集体)?(?:腹泻|呕吐))(?:及|和|或|与|、))+(?:群体|集体)?$/;
@@ -249,38 +277,125 @@ export function hasRedlineSignal(
   }
   return false;
 }
-const GENERIC_SUBJECT_RE =
-  /^(?:涉事方|相关主体|未知|不详|无|空|null|undefined|n\/a|市民|车主|商家|商铺|店铺|店主|单位|某单位|某店铺|某商家|某公司|某企业|某工厂|某餐厅|某餐馆|买家|卖家|消费者|顾客|客户|客服|外包客服|平台客服|当事人|反映人|诉求人|投诉人|业主|租客|物业|部门|相关单位|相关部门|涉事单位|涉事店铺|涉事商家|涉事主体|涉事车辆|车辆|司机|小贩|摊贩|咨询市民|催办诉求人|无名|不知名)$/i;
-const GENERIC_SUBJECT_SUFFIX_RE = /(?:涉事方|责任主体|责任对象)$/;
-const GENERIC_SUBJECT_WRAPPER_RE =
-  /^(?:某|该|这|那|一)?(?:家|位|个)?(?:我的|涉事|相关)?(?:单位|店铺|商铺|商店|商家|公司|企业|工厂|工地|餐厅|餐馆|饭店|超市|物业|快递|物流|商品|客服|卖家|买家|车主|市民|车辆)$/;
-
-function isGenericSubject(value?: string | null): boolean {
-  const s = (value || "").trim();
-  if (!s) return true;
-  return (
-    GENERIC_SUBJECT_RE.test(s) ||
-    GENERIC_SUBJECT_SUFFIX_RE.test(s) ||
-    GENERIC_SUBJECT_WRAPPER_RE.test(s)
-  );
-}
 
 const MOBILE_FLEX_RE =
   /(?<!\d)(?:(?:\+|00)86[\s-]*)?(1[3-9](?:[\s-]?\d){9})(?!\d)(?!-\d)/;
 const LANDLINE_FLEX_RE = /(?<!\d)(0\d{2,3})[\s-]?(\d{7,8})(?!\d)/;
 const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
+const EMAIL_FLEX_RE = /[A-Za-z0-9._%+-]+(?:@|＠)[A-Za-z0-9.．-]+(?:\.|．)[A-Za-z]{2,}/g;
+
+const SPOKEN_DIGIT_MAP: Record<string, string> = {
+  "0": "0",
+  零: "0",
+  〇: "0",
+  "1": "1",
+  一: "1",
+  幺: "1",
+  壹: "1",
+  "2": "2",
+  二: "2",
+  两: "2",
+  贰: "2",
+  "3": "3",
+  三: "3",
+  叁: "3",
+  "4": "4",
+  四: "4",
+  肆: "4",
+  "5": "5",
+  五: "5",
+  伍: "5",
+  "6": "6",
+  六: "6",
+  陆: "6",
+  "7": "7",
+  七: "7",
+  柒: "7",
+  "8": "8",
+  八: "8",
+  捌: "8",
+  "9": "9",
+  九: "9",
+  玖: "9",
+};
+
+const SPOKEN_PHONE_CHARS = "0-9零〇一幺壹二两贰三叁四肆五伍六陆七柒八捌九玖";
+const SPOKEN_SEP = "[\\s\\-、，。,.]{0,3}";
+const SPOKEN_PHONE_RE = new RegExp(
+  `(?<![${SPOKEN_PHONE_CHARS}])(?:(?:\\+|00)?86[\\s\\-、，。,.]*)?([1一幺壹]${SPOKEN_SEP}[3-9三四五六七八九叁肆伍陆柒捌玖](?:${SPOKEN_SEP}[${SPOKEN_PHONE_CHARS}]){9})(?![${SPOKEN_PHONE_CHARS}])(?!-\\d)`,
+  "g"
+);
 
 function normalizeContactChars(text: string): string {
   return text
     .replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0))
-    .replace(/[－—–﹣]/g, "-");
+    .replace(/[－—–﹣]/g, "-")
+    .replace(/＋/g, "+");
+}
+
+function normalizeEmailSymbols(text: string): string {
+  return normalizeContactChars(text).replace(
+    /([A-Za-z0-9._%+-]+)[＠@]([A-Za-z0-9.．-]+)[．.]([A-Za-z]{2,})/g,
+    (_full, local: string, host: string, tld: string) =>
+      `${local}@${host.replace(/．/g, ".")}.${tld}`
+  );
 }
 
 /**
- * 从市民文本或语音转写中提取标准手机号（归一化连字符/空格/全角数字）或区号座机。
+ * 将语音转写中的连续 11 位中文口语数字（不含十/百/千/万等数量词）规整为 ASCII 手机号。
+ */
+export function normalizeSpokenChinesePhones(raw: string): string {
+  return raw.replace(SPOKEN_PHONE_RE, (full, group1: string) => {
+    if (!/[零〇一幺壹二两贰三叁四肆五伍六陆七柒八捌九玖]/.test(group1)) {
+      return full;
+    }
+    let digits = "";
+    for (const ch of group1) {
+      const mapped = SPOKEN_DIGIT_MAP[ch];
+      if (mapped !== undefined) {
+        digits += mapped;
+      }
+    }
+    return /^1[3-9]\d{9}$/.test(digits) ? digits : full;
+  });
+}
+
+/**
+ * 在进入 `@civic/anonymizer` 前统一归一化全角、口语中文数字、分隔符手机号与全角邮箱符号，
+ * 先保护邮箱再规整分隔符电话，防止邮箱 local-part 被误改写。
+ */
+export function normalizeContactsForAnonymize(raw: string): string {
+  const emailNormalized = normalizeEmailSymbols(raw);
+  const protectedEmails: string[] = [];
+  const withEmailTokens = emailNormalized.replace(new RegExp(EMAIL_RE.source, "g"), (m) => {
+    const idx = protectedEmails.length;
+    protectedEmails.push(m);
+    return `\u0000EMAIL_${idx}\u0000`;
+  });
+
+  const spokenNormalized = normalizeSpokenChinesePhones(withEmailTokens);
+  const phoneCompact = spokenNormalized.replace(
+    new RegExp(MOBILE_FLEX_RE.source, "g"),
+    (full, group1: string) => {
+      const digits = group1.replace(/[\s-]/g, "");
+      return /^1[3-9]\d{9}$/.test(digits) ? digits : full;
+    }
+  );
+
+  return phoneCompact.replace(/\u0000EMAIL_(\d+)\u0000/g, (_m, idxStr: string) => {
+    return protectedEmails[Number(idxStr)] ?? "";
+  });
+}
+
+/**
+ * 从市民文本或语音转写中提取标准手机号（兼容连字符/空格/全角/中文数字）或区号座机。
+ * 先剥离邮箱子串，防止 QQ/163 数字邮箱被误提为手机号。
  */
 export function extractPhoneFromText(raw: string): string {
-  const normalized = normalizeContactChars(raw);
+  const withoutEmails = normalizeEmailSymbols(raw)
+    .replace(new RegExp(EMAIL_RE.source, "g"), " ")
+    .replace(EMAIL_FLEX_RE, " ");
+  const normalized = normalizeSpokenChinesePhones(withoutEmails);
   const mobileMatch = normalized.match(MOBILE_FLEX_RE);
   if (mobileMatch?.[1]) {
     const digits = mobileMatch[1].replace(/[\s-]/g, "");
@@ -299,30 +414,166 @@ export function extractPhoneFromText(raw: string): string {
  * 从文本中提取电子邮箱（兼容全角 ＠ / ．）。
  */
 export function extractEmailFromText(raw: string): string {
-  const normalized = normalizeContactChars(raw)
-    .replace(/＠/g, "@")
-    .replace(/．/g, ".");
+  const normalized = normalizeEmailSymbols(raw);
   const match = normalized.match(EMAIL_RE);
   return match?.[0] ?? "";
+}
+
+const THIRD_PARTY_ENTITY_PATTERN =
+  "商家|商户|店铺|门店|老板|店主|摊主|物业|开发商|房东|快递|客服|对方|涉事方?|投诉对象|卖家|店长|经理";
+const THIRD_PARTY_PHONE_CONTEXT_RE = new RegExp(
+  `(?:${THIRD_PARTY_ENTITY_PATTERN})(?:[^，,。！？；;\\n]{0,8}(?:电话|手机|号码|座机|联系))?`,
+  "g"
+);
+const CITIZEN_PHONE_OVERRIDE_RE = new RegExp(
+  `(?:我|本人|自己|市民|回访)(?:(?:(?!(?:${THIRD_PARTY_ENTITY_PATTERN}))[^，,。！？；;\\n]){0,6}(?:电话|手机|号码|座机|联系))?`,
+  "g"
+);
+
+function lastMatchEnd(re: RegExp, text: string): number {
+  re.lastIndex = 0;
+  let end = -1;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    end = m.index + m[0].length;
+  }
+  return end;
+}
+
+/**
+ * 结合前驱子句语境区分来电市民本人号码与涉事商家/第三方号码，防止第三方号码漏进市民联系槽位。
+ */
+export function classifyPhonesByContext(raw: string): {
+  citizenPhones: string[];
+  thirdPartyPhones: string[];
+} {
+  if (!raw) return { citizenPhones: [], thirdPartyPhones: [] };
+  const withoutEmails = normalizeEmailSymbols(raw)
+    .replace(new RegExp(EMAIL_RE.source, "g"), (m) => " ".repeat(m.length))
+    .replace(EMAIL_FLEX_RE, (m) => " ".repeat(m.length));
+  const normalized = normalizeSpokenChinesePhones(withoutEmails);
+
+  const matches: Array<{ phone: string; start: number; end: number }> = [];
+  const mobileRe = new RegExp(MOBILE_FLEX_RE.source, "g");
+  let maskedForLandline = normalized;
+  let m: RegExpExecArray | null;
+  while ((m = mobileRe.exec(normalized)) !== null) {
+    const digits = (m[1] || "").replace(/[\s-]/g, "");
+    if (/^1[3-9]\d{9}$/.test(digits)) {
+      const start = m.index;
+      const end = start + m[0].length;
+      matches.push({ phone: digits, start, end });
+      maskedForLandline =
+        maskedForLandline.slice(0, start) +
+        " ".repeat(m[0].length) +
+        maskedForLandline.slice(end);
+    }
+  }
+
+  const landlineRe = new RegExp(LANDLINE_FLEX_RE.source, "g");
+  while ((m = landlineRe.exec(maskedForLandline)) !== null) {
+    if (m[1] && m[2]) {
+      matches.push({
+        phone: `${m[1]}-${m[2]}`,
+        start: m.index,
+        end: m.index + m[0].length,
+      });
+    }
+  }
+
+  matches.sort((a, b) => a.start - b.start);
+
+  const citizenPhones: string[] = [];
+  const thirdPartyPhones: string[] = [];
+  let prevEnd = 0;
+
+  for (const item of matches) {
+    let clauseStart = 0;
+    for (let i = item.start - 1; i >= 0; i -= 1) {
+      if (/[，,。！？；;\n]/.test(normalized[i])) {
+        clauseStart = i + 1;
+        break;
+      }
+    }
+    const windowStart = Math.max(clauseStart, prevEnd, item.start - 28);
+    const preClause = normalized.slice(windowStart, item.start);
+    const thirdEnd = lastMatchEnd(THIRD_PARTY_PHONE_CONTEXT_RE, preClause);
+    const citizenEnd = lastMatchEnd(CITIZEN_PHONE_OVERRIDE_RE, preClause);
+
+    if (thirdEnd > citizenEnd) {
+      if (!thirdPartyPhones.includes(item.phone)) thirdPartyPhones.push(item.phone);
+    } else {
+      if (!citizenPhones.includes(item.phone)) citizenPhones.push(item.phone);
+    }
+    prevEnd = item.end;
+  }
+
+  return { citizenPhones, thirdPartyPhones };
+}
+
+/**
+ * 清理正文中的显式电话/邮箱及其引导词，用于 fast-path 兜底及 contentSafe 基线长度评估。
+ */
+function stripExplicitContactsFromContent(raw: string): string {
+  const normalized = normalizeSpokenChinesePhones(normalizeEmailSymbols(raw));
+  let hadContact = false;
+  const markContact = () => {
+    hadContact = true;
+    return " \u0000CONTACT\u0000 ";
+  };
+  let text = normalized
+    .replace(new RegExp(EMAIL_RE.source, "g"), markContact)
+    .replace(EMAIL_FLEX_RE, markContact)
+    .replace(new RegExp(MOBILE_FLEX_RE.source, "g"), markContact)
+    .replace(new RegExp(LANDLINE_FLEX_RE.source, "g"), markContact);
+
+  if (hadContact) {
+    text = text
+      .replace(
+        /(?:(?:和|及|与|还有|以及)\s*)?(?:(?:我(?:们)?|本人)?(?:先|想(?:先)?|先想|需要|要)?(?:留(?:个|一下)?|提供(?:一下)?|补充(?:一下)?|记(?:一下)?|给(?:你|您)|附上)?)?(?:我(?:们)?(?:本人)?的?)?(?:联系(?:方式|电话|手机|号码|邮箱)?|电话(?:号码)?|手机(?:号码|号)?|座机(?:号码)?|电子?邮箱|邮箱(?:地址)?|邮件|号码)(?:\s*(?:联系(?:方式|电话|手机|号码|邮箱)?|电话(?:号码)?|手机(?:号码|号)?|座机(?:号码)?|电子?邮箱|邮箱(?:地址)?|邮件|号码))*(?:\s*(?:是|为|叫|[：:]))?\s*\u0000CONTACT\u0000/g,
+        " "
+      )
+      .replace(/\u0000CONTACT\u0000\s*(?:和|及|与|还有|以及)(?=[，,。；;\s]|$)/g, " ")
+      .replace(/\u0000CONTACT\u0000/g, " ")
+      .replace(
+        /(?:^|[，,。；;\s])(?:(?:我(?:们)?|本人)?(?:先|想(?:先)?|先想|需要|要)?(?:留(?:个|一下)?|提供(?:一下)?|补充(?:一下)?|记(?:一下)?|给(?:你|您)|附上))?(?:我(?:们)?(?:本人)?的?)?(?:联系(?:方式|电话|手机|号码|邮箱)|电话(?:号码)?|手机(?:号码|号)?|座机(?:号码)?|电子?邮箱|邮箱(?:地址)?|邮件)(?:\s*(?:是|为|叫|[：:]))?(?=[，,。；;\s]|$)/g,
+        " "
+      )
+      .replace(/(?:^|(?<=[，,。；;\s]))(?:和|及|与|还有|以及)(?=[，,。；;\s]|$)/g, " ");
+  }
+
+  return text
+    .replace(/\s*([，,。；;！？])/g, "$1")
+    .replace(/([，,；;、])[，,；;、]+/g, "$1")
+    .replace(/^[，,；;、\s]+|[，,；;、\s]+$/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function stripPoliteGreetingsForBaseLen(text: string): string {
+  return text
+    .replace(
+      /^(?:(?:您好|你好|喂|请问(?:一下)?|不好意思|打扰(?:您)?了?|非常抱歉|抱歉|麻烦(?:您|帮忙)?了?|工作人员|客服(?:人员)?|受理员|在您?百忙之中(?:打扰(?:您)?了?)?|百忙之中打扰(?:您)?了?|我想(?:先)?(?:向您)?(?:反映|投诉|咨询|求助|说明)(?:一下)?)[，,。；;、!\s]*)+/,
+      ""
+    )
+    .trim();
 }
 
 /**
  * 判断本轮用户输入是否仅在提供/更正联系方式（电话或邮箱），避免污染「诉求内容」。
  */
 export function isContactOnlyUtterance(raw: string): boolean {
-  const normalized = normalizeContactChars(raw)
-    .replace(/＠/g, "@")
-    .replace(/．/g, ".");
-  const hasPhone = MOBILE_FLEX_RE.test(normalized) || LANDLINE_FLEX_RE.test(normalized);
+  const normalized = normalizeSpokenChinesePhones(normalizeEmailSymbols(raw));
   const hasEmail = EMAIL_RE.test(normalized);
+  const withoutEmails = normalized.replace(new RegExp(EMAIL_RE.source, "g"), " ");
+  const hasPhone = MOBILE_FLEX_RE.test(withoutEmails) || LANDLINE_FLEX_RE.test(withoutEmails);
   if (!hasPhone && !hasEmail) {
     return false;
   }
 
-  const withoutContacts = normalized
+  const withoutContacts = withoutEmails
     .replace(new RegExp(MOBILE_FLEX_RE.source, "g"), " ")
-    .replace(new RegExp(LANDLINE_FLEX_RE.source, "g"), " ")
-    .replace(new RegExp(EMAIL_RE.source, "g"), " ");
+    .replace(new RegExp(LANDLINE_FLEX_RE.source, "g"), " ");
 
   const stripped = withoutContacts
     .replace(
@@ -335,12 +586,27 @@ export function isContactOnlyUtterance(raw: string): boolean {
   return stripped.length < 2;
 }
 
-function normalizePhonesForAnonymize(raw: string): string {
-  const normalized = normalizeContactChars(raw);
-  return normalized.replace(new RegExp(MOBILE_FLEX_RE.source, "g"), (full, group1: string) => {
-    const digits = group1.replace(/[\s-]/g, "");
-    return /^1[3-9]\d{9}$/.test(digits) ? digits : full;
-  });
+/**
+ * 校验大模型语义归位出的电话/邮箱确属本次文本或已有草稿中的真实脱敏实体，严防幻觉编造。
+ */
+export function resolveVerifiedContactFromLlm(
+  restoredValue: string,
+  kind: "phone" | "email",
+  allowedValues: Iterable<string>
+): string {
+  const candidate =
+    kind === "phone"
+      ? extractPhoneFromText(restoredValue)
+      : extractEmailFromText(restoredValue);
+  if (!candidate) return "";
+  const normalizedAllowed = new Set<string>();
+  for (const val of allowedValues) {
+    const norm = kind === "phone" ? extractPhoneFromText(val) : extractEmailFromText(val);
+    if (norm) {
+      normalizedAllowed.add(norm);
+    }
+  }
+  return normalizedAllowed.has(candidate) ? candidate : "";
 }
 const SKU_RE = /(?:^|[^A-Za-z0-9])(SKU[-_][A-Za-z0-9]{2,}(?:[-_][A-Za-z0-9]+)*|SKU[A-Za-z0-9]{3,})(?![A-Za-z0-9])/i;
 const LABELED_SKU_RE = /(?:SKU编号|SKU|货号|商品编号)\s*(?:是|为|[：:])\s*([A-Za-z0-9][A-Za-z0-9_-]{3,28})/i;
@@ -1105,10 +1371,13 @@ function computeMissingFields(draft: IntakeDraft, domainType: DomainType): strin
 const IntakeLlmSchema = z.object({
   reply: z.string().optional().default(""),
   title: z.string().optional().default(""),
+  content: z.string().optional().default(""),
   subdistrict: z.string().optional().default(""),
   category: z.string().optional().default(""),
   subject: z.string().optional().default(""),
   address: z.string().optional().default(""),
+  contactPhone: z.string().optional().default(""),
+  contactEmail: z.string().optional().default(""),
 });
 
 export async function processIntakeChat(input: {
@@ -1135,10 +1404,16 @@ export async function processIntakeChat(input: {
     .map((m) => m.content.trim());
   const latestUserText = userTexts[userTexts.length - 1] || "";
   const allUserText = userTexts.join("；");
-  const contentUserTexts = userTexts.filter((t) => !isContactOnlyUtterance(t));
+  const hasExistingDraftContent = Boolean(input.draft?.content?.trim());
+  const latestContentTurn =
+    latestUserText && !isContactOnlyUtterance(latestUserText) ? [latestUserText] : [];
+  const contentUserTexts = hasExistingDraftContent
+    ? latestContentTurn
+    : userTexts.filter((t) => !isContactOnlyUtterance(t));
 
-  // 汇总全部非纯联系方式的用户陈述（跨轮次去重，不重复拼接历史句）
+  // 汇总非纯联系方式的用户陈述；已有整理稿时仅增量合并最新有效轮次
   const combinedRaw = mergeUniqueUserContent(input.draft?.content, contentUserTexts);
+  const strippedCombined = stripExplicitContactsFromContent(combinedRaw);
 
   // 保留既有已填槽位，绝不在后续轮次无意覆盖已确认的槽位
   const existingTitle = clampStr(input.draft?.title, 48);
@@ -1150,16 +1425,23 @@ export async function processIntakeChat(input: {
   const existingPhone = clampStr(input.draft?.contactPhone, 32);
   const existingEmail = clampStr(input.draft?.contactEmail, 120);
 
-  // 1. 确定性中文规则抽取（永远保底可用）
-  const latestPhone = extractPhoneFromText(latestUserText);
-  const historyPhone =
-    extractPhoneFromText(allUserText) || extractPhoneFromText(input.draft?.content || "");
-  const extractedPhone = latestPhone || existingPhone || historyPhone;
+  // 1. 确定性中文规则抽取（永远保底可用；第三方/涉事商家电话不得进入市民回访槽位）
+  const latestCitizenPhone = classifyPhonesByContext(latestUserText).citizenPhones[0] || "";
+  const historyCitizenPhones = uniqueNonEmpty(
+    [...userTexts, input.draft?.content || ""].flatMap(
+      (text) => classifyPhonesByContext(text).citizenPhones
+    )
+  );
+  const historyCitizenPhone = historyCitizenPhones[0] || "";
+  const rulePhone = latestCitizenPhone || existingPhone || historyCitizenPhone;
 
   const latestEmail = extractEmailFromText(latestUserText);
   const historyEmail =
     extractEmailFromText(allUserText) || extractEmailFromText(input.draft?.content || "");
-  const extractedEmail = latestEmail || existingEmail || historyEmail;
+  const ruleEmail = latestEmail || existingEmail || historyEmail;
+
+  const contactOnlyTurn =
+    Boolean(latestCitizenPhone || latestEmail) && isContactOnlyUtterance(latestUserText);
 
   const ruleSubdistrict =
     existingSubdistrict ||
@@ -1190,25 +1472,46 @@ export async function processIntakeChat(input: {
   // 2. 脱敏后再尝试 System-2 增强（12s 超时 + 严格 JSON 解析）
   let usedLlm = false;
   let llmReply = "";
+  let llmPhone = "";
+  let llmEmail = "";
+  let llmContent = "";
   let llmPatch: Partial<IntakeDraft> = {};
 
   if (latestUserText.length > 0) {
-    const anonCombined = anonymize(normalizePhonesForAnonymize(combinedRaw));
-    const anonLatest = anonymize(normalizePhonesForAnonymize(latestUserText), {
+    const preExistingContacts = [existingPhone, existingEmail].filter(Boolean).join(" ");
+    const anonExisting = anonymize(normalizeContactsForAnonymize(preExistingContacts));
+    const anonCombined = anonymize(normalizeContactsForAnonymize(combinedRaw), {
+      seedKeymap: anonExisting.keymap,
+    });
+    const anonLatest = anonymize(normalizeContactsForAnonymize(latestUserText), {
       seedKeymap: anonCombined.keymap,
     });
-    const mergedKeymap = { ...anonCombined.keymap, ...anonLatest.keymap };
+    const mergedKeymap = {
+      ...anonExisting.keymap,
+      ...anonCombined.keymap,
+      ...anonLatest.keymap,
+    };
 
     const systemPrompt =
       domainType === "ECOMMERCE_CS"
-        ? `你是电商平台「智能售后客服」。请从脱敏后的用户陈述中抽取结构化草稿，并返回严格 JSON：{ "reply": "1-2句亲切自然的中文口播回复", "title": "简短标题", "subdistrict": "匹配渠道/仓网名", "category": "匹配客诉分类", "subject": "SKU编号或涉事商品/店铺", "address": "订单号或仓网地点" }。可选渠道/仓网：${options.subdistricts.join("、")}；可选分类：${options.categories.join("、")}。未提及的字段留空字符串。`
-        : `你是12345政务服务热线「智能语音受理员」。请从脱敏后的市民陈述中抽取结构化草稿，并返回严格 JSON：{ "reply": "1-2句亲切自然的中文口播回复", "title": "简短标题", "subdistrict": "匹配镇街名", "category": "匹配分类", "subject": "涉事主体/商铺/单位", "address": "具体路名门牌/地点" }。可选镇街：${options.subdistricts.join("、")}；可选分类：${options.categories.join("、")}。未提及的字段留空字符串。`;
+        ? `你是电商平台「智能售后客服」。请从脱敏后的用户陈述中抽取结构化草稿，并返回严格 JSON：{ "reply": "1-2句亲切自然的中文口播回复", "title": "简短标题", "content": "整理后的干净诉求正文", "subdistrict": "匹配渠道/仓网名", "category": "匹配客诉分类", "subject": "SKU编号或涉事商品/店铺", "address": "订单号或仓网地点", "contactPhone": "买家本人电话占位符或空", "contactEmail": "买家本人邮箱占位符或空" }。要求：1) content 整合有效诉求事实，去除寒暄与买家个人联系电话/邮箱占位符；若本轮仅补充联系方式或未说明具体诉求则保留已有诉求事实或留空；2) contactPhone/contactEmail 仅当文本明确出现买家/来电人本人的电话或邮箱占位符（如 {{PHONE_NUMBER_1}}、{{EMAIL_1}}）时原样填入对应占位符，不要填入商家或第三方电话，严禁编造，未提及留空。可选渠道/仓网：${options.subdistricts.join("、")}；可选分类：${options.categories.join("、")}。未提及的字段留空字符串。`
+        : `你是12345政务服务热线「智能语音受理员」。请从脱敏后的市民陈述中抽取结构化草稿，并返回严格 JSON：{ "reply": "1-2句亲切自然的中文口播回复", "title": "简短标题", "content": "整理后的干净诉求正文", "subdistrict": "匹配镇街名", "category": "匹配分类", "subject": "涉事主体/商铺/单位", "address": "具体路名门牌/地点", "contactPhone": "市民本人电话占位符或空", "contactEmail": "市民本人邮箱占位符或空" }。要求：1) content 整合有效诉求事实，去除寒暄与市民个人联系电话/邮箱占位符；若本轮仅补充联系方式或未说明具体诉求则保留已有诉求事实或留空；2) contactPhone/contactEmail 仅当文本明确出现市民/来电人本人的电话或邮箱占位符（如 {{PHONE_NUMBER_1}}、{{EMAIL_1}}）时原样填入对应占位符，不要填入商家或第三方电话，严禁编造，未提及留空。可选镇街：${options.subdistricts.join("、")}；可选分类：${options.categories.join("、")}。未提及的字段留空字符串。`;
 
+    const existingPhoneToken = existingPhone
+      ? anonExisting.text.match(/\{\{PHONE_NUMBER_\d+\}\}/)?.[0]
+      : "";
+    const existingEmailToken = existingEmail
+      ? anonExisting.text.match(/\{\{EMAIL_\d+\}\}/)?.[0]
+      : "";
+    const contactSlotText =
+      existingPhoneToken || existingEmailToken
+        ? `已提供(${[existingPhoneToken, existingEmailToken].filter(Boolean).join(" / ")})`
+        : rulePhone || ruleEmail
+          ? "已提供"
+          : "待补充";
     const slotSummary = `当前已收集要素：分类=${ruleCategory || "待补充"}，${
       domainType === "ECOMMERCE_CS" ? "渠道/仓网" : "所属镇街"
-    }=${ruleSubdistrict || "待补充"}，联系方式=${
-      extractedPhone || extractedEmail ? "已提供" : "待补充"
-    }`;
+    }=${ruleSubdistrict || "待补充"}，联系方式=${contactSlotText}`;
 
     const llmRes = await callSystemTwoJsonSafe(
       IntakeLlmSchema,
@@ -1219,7 +1522,7 @@ export async function processIntakeChat(input: {
           content: `历史累积陈述：${anonCombined.text}\n最新一句：${anonLatest.text}\n${slotSummary}`,
         },
       ],
-      480,
+      560,
       input.signal
     );
 
@@ -1232,6 +1535,47 @@ export async function processIntakeChat(input: {
       const validSub = options.subdistricts.includes(subText) ? subText : "";
       const validCat = options.categories.includes(catText) ? catText : "";
       const llmSubj = clampStr(restored.subject, 120);
+
+      const allowedCitizenPhones = uniqueNonEmpty([existingPhone, ...historyCitizenPhones]);
+      const allowedEmailContacts = [
+        ...Object.values(mergedKeymap),
+        allUserText,
+        input.draft?.content || "",
+        existingEmail,
+      ];
+      llmPhone = resolveVerifiedContactFromLlm(
+        restored.contactPhone || "",
+        "phone",
+        allowedCitizenPhones
+      );
+      llmEmail = resolveVerifiedContactFromLlm(
+        restored.contactEmail || "",
+        "email",
+        allowedEmailContacts
+      );
+
+      const rawLlmContent = clampStr(restored.content, 2000);
+      const greetingStripped = stripPoliteGreetingsForBaseLen(strippedCombined);
+      const effectiveBaseLen =
+        greetingStripped.length > 0 ? greetingStripped.length : strippedCombined.length;
+      const minConciseLen =
+        effectiveBaseLen > 60
+          ? Math.min(18, Math.floor(effectiveBaseLen * 0.2))
+          : Math.min(6, effectiveBaseLen);
+      const hasUnmaskedContactPii = Boolean(
+        extractPhoneFromText(rawLlmContent) || extractEmailFromText(rawLlmContent)
+      );
+      const contentSafe =
+        !contactOnlyTurn &&
+        strippedCombined.length > 0 &&
+        !/\{\{[A-Z0-9_]+_\d+\}\}/.test(llmRes.data.content || "") &&
+        !/\{\{[A-Z0-9_]+_\d+\}\}/.test(rawLlmContent) &&
+        !hasUnmaskedContactPii &&
+        rawLlmContent.length >= minConciseLen;
+      if (contentSafe) {
+        llmContent = rawLlmContent;
+      }
+
       llmPatch = {
         title: clampStr(restored.title, 48),
         subdistrict: validSub,
@@ -1283,9 +1627,20 @@ export async function processIntakeChat(input: {
     latestUserText.includes(candidate as string) &&
     !(existing && latestUserText.includes(existing));
 
+  const fallbackContent = strippedCombined;
+  const fallbackPhone =
+    existingPhone || (contactOnlyTurn || !usedLlm ? rulePhone : "");
+  const fallbackEmail =
+    existingEmail || (contactOnlyTurn || !usedLlm ? ruleEmail : "");
+  const effectivePhone = existingPhone
+    ? latestCitizenPhone
+      ? llmPhone || latestCitizenPhone
+      : existingPhone
+    : llmPhone || fallbackPhone;
+
   const mergedDraft: IntakeDraft = {
     title: isPlaceholderTitle ? llmPatch.title || "" : existingTitle,
-    content: clampStr(combinedRaw, 2000),
+    content: llmContent || clampStr(fallbackContent, 2000),
     subdistrict: existingSubdistrict || llmPatch.subdistrict || ruleSubdistrict || "",
     category: existingCategory || llmPatch.category || ruleCategory || "",
     subject:
@@ -1296,8 +1651,8 @@ export async function processIntakeChat(input: {
       (explicitlyRestated(addressCandidate, existingAddress) ? addressCandidate : existingAddress) ||
       addressCandidate ||
       "",
-    contactPhone: clampStr(extractedPhone, 32),
-    contactEmail: clampStr(extractedEmail, 120),
+    contactPhone: clampStr(effectivePhone, 32),
+    contactEmail: clampStr(llmEmail || fallbackEmail, 120),
   };
 
   if (!mergedDraft.title) {
@@ -1312,7 +1667,6 @@ export async function processIntakeChat(input: {
     (mergedDraft.contactPhone.trim().length > 0 || (mergedDraft.contactEmail || "").trim().length > 0) &&
     missingFields.length === 0;
 
-  const contactOnlyTurn = Boolean(latestPhone || latestEmail) && isContactOnlyUtterance(latestUserText);
   let reply = llmReply;
   if (contactOnlyTurn) {
     reply = readyToSubmit
@@ -1799,24 +2153,7 @@ function detectMissingSlots(
   },
   isEcommerce: boolean
 ): string[] {
-  const slots: string[] = [];
-  const addr = (ticket.address || "").trim();
-  const sub = (ticket.subdistrict || "").trim();
-  const subj = (ticket.canonicalSubject || "").trim();
-
-  if (!addr || (isEcommerce && addr === sub)) {
-    slots.push(isEcommerce ? "订单号/收货仓网明细" : "具体路名门牌/地点");
-  }
-  if (!subj || isGenericSubject(subj)) {
-    slots.push(isEcommerce ? "涉事SKU/商品名称" : "涉事主体/商铺单位");
-  }
-  if (!sub) {
-    slots.push(isEcommerce ? "渠道/仓网" : "所属镇街");
-  }
-  if (slots.length === 0 && (ticket.confidence == null || ticket.confidence < 70)) {
-    slots.push("要素置信度待核验");
-  }
-  return slots;
+  return detectMissingTicketSlots(ticket, isEcommerce, { includeLowConfidence: true });
 }
 
 interface PatrolCandidate {
@@ -1834,6 +2171,9 @@ interface PatrolCandidate {
   reason: string;
 }
 
+const SQL_REDLINE_NEGATION_HINT =
+  "(?:并非|不是|没有发生|未发生|没有|没(?:发生|出现|见|发现|造成|引发|酿成|导致|涉及|人|爆炸|伤亡|堵路|封路|罢工|上访|跳楼|中毒|腹泻|呕吐)|并未|未见|未出现|未(?!来|果)|不存在|已排除|排除|不涉及|防止|预防|杜绝|辟谣|谣言|虚假|避免|谨防|严防|切勿|不要|禁止|担心|害怕|生怕|无(?:任何|明显|实际|发生|人员|迹象)|无人|无|易|可能|或许|也许|恐会?|难免|以免|以防|隐患|风险|苗头|锅|灯泡|热水器|烧水器|油烟机|消毒柜|燃气灶|煤气灶|煤气瓶|电瓶(?!车)|筒灯|玻璃|如果)";
+
 export async function runAgentPatrol(regionId: string): Promise<{
   domainType: DomainType;
   createdCount: number;
@@ -1845,14 +2185,43 @@ export async function runAgentPatrol(regionId: string): Promise<{
     getRegionDomainProfile(regionId),
   ]);
   const isEcommerce = profile.domainType === "ECOMMERCE_CS";
+  const sqlRedlinePattern = isEcommerce ? SQL_ECOM_REDLINE_PATTERN : SQL_CORE_REDLINE_PATTERN;
 
-  const genericSubjectSqlList =
-    "('涉事方', '相关主体', '未知', '不详', '无', '空', 'null', 'undefined', '市民', '车主', '商家', '某单位', '某店铺', '买家', '卖家', '客服', '当事人', '业主', '消费者', '顾客', '商铺', '店铺', '单位', '涉事单位', '涉事店铺', '涉事商家', '涉事主体')";
-  const missingCondition = isEcommerce
-    ? `(t.address IS NULL OR t.address = '' OR t.address = t.subdistrict OR char_length(coalesce(t.address, '')) <= 6 OR t.canonical_subject IS NULL OR t.canonical_subject = '' OR t.canonical_subject IN ${genericSubjectSqlList} OR t.confidence IS NULL OR t.confidence < 70)`
-    : `(t.address IS NULL OR t.address = '' OR t.canonical_subject IS NULL OR t.canonical_subject = '' OR t.canonical_subject IN ${genericSubjectSqlList} OR t.confidence IS NULL OR t.confidence < 70)`;
+  const {
+    genericSubjectSqlExpr,
+    missingAddressExpr,
+    missingSubdistrictExpr,
+  } = buildMissingInfoSqlParts("t.", isEcommerce);
+  const missingCondition = buildMissingInfoSqlCondition("t.", isEcommerce, {
+    includeLowConfidence: true,
+  });
 
-  const [existingRows, stabilityRows, missingRowsRaw, overdueThemeRowsRaw, resolvedThemeRows] =
+  const missingQuerySql = `
+        SELECT t.id, t.ticket_no, t.title, t.summarize_title, t.content, t.masked_content,
+               t.citizen_phone, t.subdistrict, t.source_category, t.address, t.canonical_subject, t.confidence, t.stability_risk
+        FROM "${schemaName}".tickets t
+        WHERE t.status = 'PENDING'
+          AND coalesce(t.stability_risk, false) = false
+          AND ${missingCondition}
+          AND NOT (
+            (coalesce(t.title, '') ~ $1 OR coalesce(t.content, '') ~ $1)
+            AND NOT (coalesce(t.title, '') ~ $2 OR coalesce(t.content, '') ~ $2)
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM "${schemaName}".agent_tasks at
+            WHERE at.target_type = 'TICKET'
+              AND at.target_id = t.id
+              AND at.task_type = 'MISSING_INFO'
+              AND at.status <> 'REJECTED'
+          )
+        ORDER BY
+          (CASE WHEN ${missingAddressExpr} OR ${genericSubjectSqlExpr} OR ${missingSubdistrictExpr} THEN 0 ELSE 1 END) ASC,
+          t.create_time DESC NULLS LAST,
+          t.id DESC
+        LIMIT 30 OFFSET $3
+      `;
+
+  const [existingRows, stabilityRows, missingRowsPage0, overdueThemeRowsRaw, resolvedThemeRows] =
     await Promise.all([
       sql.unsafe(
         `SELECT target_type, target_id, task_type FROM "${schemaName}".agent_tasks WHERE status <> 'REJECTED'`
@@ -1873,26 +2242,7 @@ export async function runAgentPatrol(regionId: string): Promise<{
         ORDER BY t.create_time DESC NULLS LAST, t.id DESC
         LIMIT 24
       `),
-      sql.unsafe(`
-        SELECT t.id, t.ticket_no, t.title, t.summarize_title, t.content, t.masked_content,
-               t.citizen_phone, t.subdistrict, t.source_category, t.address, t.canonical_subject, t.confidence, t.stability_risk
-        FROM "${schemaName}".tickets t
-        WHERE t.status = 'PENDING'
-          AND coalesce(t.stability_risk, false) = false
-          AND ${missingCondition}
-          AND NOT EXISTS (
-            SELECT 1 FROM "${schemaName}".agent_tasks at
-            WHERE at.target_type = 'TICKET'
-              AND at.target_id = t.id
-              AND at.task_type = 'MISSING_INFO'
-              AND at.status <> 'REJECTED'
-          )
-        ORDER BY
-          (CASE WHEN t.address IS NULL OR t.address = '' OR t.canonical_subject IS NULL OR t.canonical_subject = '' THEN 0 ELSE 1 END) ASC,
-          t.create_time DESC NULLS LAST,
-          t.id DESC
-        LIMIT 30
-      `),
+      sql.unsafe(missingQuerySql, [sqlRedlinePattern, SQL_REDLINE_NEGATION_HINT, 0]),
       sql.unsafe(`
         SELECT th.id, th.title, th.category, th.risk_level, th.ticket_count, th.time_span_hours,
                th.handling_owner, th.recommended_action, th.canonical_location
@@ -1943,7 +2293,6 @@ export async function runAgentPatrol(regionId: string): Promise<{
   }
 
   // 1. 扫描涉稳/合规红线工单 -> L3_BLOCKED (REDLINE_BLOCK)
-  const sqlRedlinePattern = isEcommerce ? SQL_ECOM_REDLINE_PATTERN : SQL_CORE_REDLINE_PATTERN;
   const redlineCandidates: PatrolCandidate[] = [];
   const pushRedlineCandidate = (r: Record<string, unknown>) => {
     const id = String(r.id);
@@ -2025,9 +2374,43 @@ export async function runAgentPatrol(regionId: string): Promise<{
   }
 
   // 2. 扫描要素缺失/低置信度待处置工单 -> MISSING_INFO (政务 L2_APPROVAL / 电商 L1_AUTO)
+  const missingRowsRaw: Array<Record<string, unknown>> = [
+    ...(missingRowsPage0 as Array<Record<string, unknown>>),
+  ];
+  let nonRedlineMissingCount = missingRowsRaw.filter(
+    (r) => !hasRedlineSignal(`${r.title || ""} ${r.content || ""}`, { isEcommerce })
+  ).length;
+  for (let page = 1; page < 5 && missingRowsPage0.length === 30 && nonRedlineMissingCount < 30; page++) {
+    const extraBatch = (await sql.unsafe(missingQuerySql, [
+      sqlRedlinePattern,
+      SQL_REDLINE_NEGATION_HINT,
+      page * 30,
+    ])) as Array<Record<string, unknown>>;
+    if (extraBatch.length === 0) break;
+    for (const r of extraBatch) {
+      missingRowsRaw.push(r);
+      if (!hasRedlineSignal(`${r.title || ""} ${r.content || ""}`, { isEcommerce })) {
+        nonRedlineMissingCount += 1;
+      }
+    }
+    if (extraBatch.length < 30) break;
+  }
+
   const missingRows = [...missingRowsRaw].sort((a, b) => {
-    const aMiss = !a.address || !a.canonical_subject ? 0 : 1;
-    const bMiss = !b.address || !b.canonical_subject ? 0 : 1;
+    const aAddr = String(a.address || "").trim();
+    const aSubd = String(a.subdistrict || "").trim();
+    const aAddrMiss = !aAddr || aAddr === aSubd || (isEcommerce && aAddr.length <= 6);
+    const aSubjMiss =
+      !a.canonical_subject || isGenericSubject(String(a.canonical_subject));
+    const aSubdMiss = !aSubd;
+    const bAddr = String(b.address || "").trim();
+    const bSubd = String(b.subdistrict || "").trim();
+    const bAddrMiss = !bAddr || bAddr === bSubd || (isEcommerce && bAddr.length <= 6);
+    const bSubjMiss =
+      !b.canonical_subject || isGenericSubject(String(b.canonical_subject));
+    const bSubdMiss = !bSubd;
+    const aMiss = aAddrMiss || aSubjMiss || aSubdMiss ? 0 : 1;
+    const bMiss = bAddrMiss || bSubjMiss || bSubdMiss ? 0 : 1;
     return aMiss - bMiss;
   });
 
@@ -2265,6 +2648,147 @@ export async function runAgentPatrol(regionId: string): Promise<{
   };
 }
 
+export async function createOrReuseMissingInfoTask(input: {
+  regionId: string;
+  ticketId: string;
+}): Promise<
+  | { ok: true; task: AgentTaskDto; reused: boolean; domainType: DomainType }
+  | { ok: false; status: 400 | 404 | 409; error: string }
+> {
+  const cleanKey = input.ticketId.trim();
+  if (!cleanKey) {
+    return { ok: false, status: 400, error: "缺少工单标识 ticketId" };
+  }
+
+  const [schemaName, profile] = await Promise.all([
+    ensureAgentGovernanceTables(input.regionId),
+    getRegionDomainProfile(input.regionId),
+  ]);
+  const isEcommerce = profile.domainType === "ECOMMERCE_CS";
+
+  const ticketRows = await sql.unsafe(
+    `
+    SELECT id, ticket_no, title, summarize_title, content, masked_content,
+           citizen_phone, subdistrict, address, canonical_subject, confidence,
+           stability_risk, status
+    FROM "${schemaName}".tickets
+    WHERE id = $1 OR ticket_no = $1
+    LIMIT 1
+    `,
+    [cleanKey]
+  );
+  const ticket = ticketRows[0] as Record<string, unknown> | undefined;
+  if (!ticket) {
+    return { ok: false, status: 404, error: "工单不存在" };
+  }
+
+  const resolvedId = String(ticket.id);
+  if (isTicketResolvedStatus(ticket.status as string | null)) {
+    return { ok: false, status: 400, error: "该工单已办结，无需发起补全外呼" };
+  }
+
+  const fullText = `${ticket.title || ""} ${ticket.content || ""}`;
+  if (ticket.stability_risk === true || hasRedlineSignal(fullText, { isEcommerce })) {
+    return {
+      ok: false,
+      status: 409,
+      error: "该工单命中涉稳/合规红线（L3 熔断），禁止自动外呼，请转人工专班处置",
+    };
+  }
+
+  const missingSlots = detectMissingSlots(
+    {
+      address: ticket.address as string | null,
+      canonicalSubject: ticket.canonical_subject as string | null,
+      subdistrict: ticket.subdistrict as string | null,
+      confidence: ticket.confidence == null ? null : Number(ticket.confidence),
+    },
+    isEcommerce
+  );
+  if (missingSlots.length === 0) {
+    return { ok: false, status: 400, error: "该工单核心要素已齐全，无需补全资料" };
+  }
+
+  const existingRows = await sql.unsafe(
+    `
+    SELECT * FROM "${schemaName}".agent_tasks
+    WHERE target_type = 'TICKET'
+      AND target_id = $1
+      AND task_type = 'MISSING_INFO'
+      AND status NOT IN ('REJECTED', 'EXECUTED')
+    ORDER BY created_at DESC, id DESC
+    LIMIT 1
+    `,
+    [resolvedId]
+  );
+  if (existingRows[0]) {
+    return {
+      ok: true,
+      task: toTaskDto(existingRows[0] as Record<string, unknown>),
+      reused: true,
+      domainType: profile.domainType,
+    };
+  }
+
+  const rawTitle = String(ticket.summarize_title || ticket.title || ticket.ticket_no || resolvedId);
+  const safeTitle = maskFreeText(rawTitle).slice(0, 140);
+  const maskedContact = maskContactForGovernance(
+    ticket.citizen_phone as string | null,
+    ticket.content as string | null
+  );
+  const slotLabel = missingSlots.join("、") || "关键要素";
+  const draftMessage = maskFreeText(
+    isEcommerce
+      ? `您好（联系方式 ${maskedContact}），关于您在「${ticket.subdistrict || "平台店铺"}」提交的「${safeTitle}」客诉，为加快核赔进度，请补充您的${slotLabel}（如订单号及SKU编号）。`
+      : `您好（来电号码 ${maskedContact}），这里是12345民声智能核实专席，关于您反映的「${safeTitle}」，为精准派单核查，请问方便补充一下${slotLabel}吗？`
+  );
+  const taskId = `at-${Date.now()}-${randomUUID().slice(0, 8)}`;
+  const nowIso = new Date().toISOString();
+  const targetTitle = `${ticket.ticket_no || resolvedId} · ${safeTitle}`;
+  const autonomyLevel: AutonomyLevel = isEcommerce ? "L1_AUTO" : "L2_APPROVAL";
+  const suggestedOwner = isEcommerce
+    ? "智能售后补全专员"
+    : `${ticket.subdistrict || "属地"}核查专员`;
+  const reason = `缺失核心槽位（${slotLabel}）或置信度偏低（${ticket.confidence ?? "未抽取"}）`;
+
+  const inserted = await sql.unsafe(
+    `
+    INSERT INTO "${schemaName}".agent_tasks (
+      id, task_type, autonomy_level, status, target_type, target_id, target_title,
+      channel, masked_contact, missing_slots_json, draft_message, suggested_owner,
+      reason, result_summary, created_at, updated_at
+    ) VALUES (
+      $1, 'MISSING_INFO', $2, 'PENDING', 'TICKET', $3, $4,
+      'VOICE_SIM', $5, $6, $7, $8,
+      $9, NULL, $10, $10
+    )
+    RETURNING *
+    `,
+    [
+      taskId,
+      autonomyLevel,
+      resolvedId,
+      targetTitle,
+      maskedContact,
+      JSON.stringify(missingSlots),
+      draftMessage,
+      suggestedOwner,
+      reason,
+      nowIso,
+    ]
+  );
+
+  invalidateCivicAggregates(input.regionId);
+  broadcastDataRefresh(input.regionId);
+
+  return {
+    ok: true,
+    task: toTaskDto(inserted[0] as Record<string, unknown>),
+    reused: false,
+    domainType: profile.domainType,
+  };
+}
+
 export async function applyAgentTaskAction(input: {
   regionId: string;
   taskId: string;
@@ -2352,11 +2876,18 @@ export async function applyAgentTaskAction(input: {
             ? "已记录 SMTP 催办适配日志并完成内部闭环"
             : "已通过内部闭环记录超期催办审计日志");
     } else {
+      const TASK_TYPE_LABELS: Record<string, string> = {
+        MISSING_INFO: "要素补全",
+        REOPEN_CALLBACK: "满意度回访",
+        SLA_OVERDUE: "超期催办",
+        REDLINE_BLOCK: "红线熔断",
+      };
+      const taskTypeLabel = TASK_TYPE_LABELS[task.taskType] || task.taskType;
       resultSummary =
         note ||
         (nextStatus === "EXECUTED"
-          ? `已完成 ${task.taskType} 主动治理执行闭环`
-          : `管理员已批准 ${task.taskType} 主动治理话术`);
+          ? `已完成「${taskTypeLabel}」主动治理执行闭环`
+          : `管理员已批准「${taskTypeLabel}」主动治理话术`);
     }
 
     await recordDisposalLog({
@@ -2555,8 +3086,13 @@ export async function processAgentVoiceTurn(input: {
         })
         .where(eq(ticketsTable.id, task.targetId));
 
+      const patchKeyLabels: Record<string, string> = {
+        address: isEcommerce ? "订单/仓网地点" : "具体地址",
+        canonicalSubject: isEcommerce ? "涉事商品/SKU" : "涉事主体",
+        subdistrict: isEcommerce ? "渠道/仓网" : "所属镇街",
+      };
       const patchDesc = Object.entries(patch)
-        .map(([k, v]) => `${k}=${v}`)
+        .map(([k, v]) => `${patchKeyLabels[k] || k}=${v}`)
         .join("，");
       const summary = `语音核查已补全要素：${patchDesc}`;
 
@@ -2663,7 +3199,17 @@ export async function processAgentVoiceTurn(input: {
         repTicketIds.push(...directTickets.map((t) => t.id));
       }
 
-      if (repTicketIds.length > 0) {
+      const uniqueRepTicketIds = Array.from(new Set(repTicketIds));
+      const prevStatusById = new Map<string, string>();
+      if (uniqueRepTicketIds.length > 0) {
+        const prevRows = await tenantDb
+          .select({ id: ticketsTable.id, status: ticketsTable.status })
+          .from(ticketsTable)
+          .where(inArray(ticketsTable.id, uniqueRepTicketIds));
+        for (const r of prevRows) {
+          prevStatusById.set(r.id, mapTicketStatus(r.status));
+        }
+
         await tenantDb
           .update(ticketsTable)
           .set({
@@ -2672,9 +3218,10 @@ export async function processAgentVoiceTurn(input: {
             closureStatus: "REOPENED",
             updatedAt: now,
           })
-          .where(inArray(ticketsTable.id, repTicketIds));
+          .where(inArray(ticketsTable.id, uniqueRepTicketIds));
       }
 
+      const operatorName = clampStr(input.operatorName, 64) || "admin";
       await recordDisposalLog({
         regionId: input.regionId,
         targetType: "THEME",
@@ -2683,10 +3230,30 @@ export async function processAgentVoiceTurn(input: {
         fromStatus: "RESOLVED",
         toStatus: "REOPENED",
         owner: task.suggestedOwner,
-        operator: clampStr(input.operatorName, 64) || "admin",
+        operator: operatorName,
         note: `[AI语音回访触发假闭环重开] 反馈内容：${anonTranscript.text.slice(0, 120)}`,
-        meta: { agentTaskId: task.id, repTicketIds },
+        meta: { agentTaskId: task.id, repTicketIds: uniqueRepTicketIds },
       });
+
+      const ticketReopenNote = `[AI语音回访触发假闭环重开] 关联专题 ${task.targetId} 复核未通过，反馈内容：${anonTranscript.text.slice(0, 120)}`;
+      for (const repTicketId of uniqueRepTicketIds) {
+        await recordDisposalLog({
+          regionId: input.regionId,
+          targetType: "TICKET",
+          targetId: repTicketId,
+          action: "REOPEN",
+          fromStatus: prevStatusById.get(repTicketId) || "RESOLVED",
+          toStatus: "REOPENED",
+          owner: task.suggestedOwner,
+          operator: operatorName,
+          note: ticketReopenNote,
+          meta: {
+            agentTaskId: task.id,
+            reopenedThemeId: task.targetId,
+            source: "THEME_REOPEN_CALLBACK",
+          },
+        });
+      }
     } else {
       const [tk] = await tenantDb
         .select({ primaryThemeId: ticketsTable.primaryThemeId })
@@ -2952,7 +3519,7 @@ export async function generateAgentReport(regionId: string): Promise<{
 
 | 核心指标 | 数值 | 说明 |
 | --- | ---: | --- |
-| 累计客诉工单总量 | ${stats.totalTickets.toLocaleString("zh-CN")} | 待处置 ${stats.pendingTickets} / 处置中 ${stats.inProgressTickets} / 已办结 ${stats.resolvedTickets} |
+| 累计客诉工单总量 | ${stats.totalTickets.toLocaleString("zh-CN")} | 待派单 ${stats.pendingTickets} / 处理中 ${stats.inProgressTickets} / 已办结 ${stats.resolvedTickets} |
 | 客诉多频案卷总数 | ${stats.totalThemes.toLocaleString("zh-CN")} | 高风险案卷 ${stats.highRiskThemes} 个 |
 | 合规/食安/12315 红线单 | ${stats.stabilityRiskTickets.toLocaleString("zh-CN")} | 强制 L3 人工接管，禁止自动外联 |
 | 疑似假闭环与重开单 | ${stats.fakeClosureTickets.toLocaleString("zh-CN")} | 含重开案卷 ${stats.reopenedThemes} 个 |
@@ -2984,7 +3551,7 @@ ${fakeMd}
 
 | 核心指标 | 数值 | 态势说明 |
 | --- | ---: | --- |
-| 累计民生工单总量 | ${stats.totalTickets.toLocaleString("zh-CN")} | 待处置 ${stats.pendingTickets} / 处置中 ${stats.inProgressTickets} / 已办结 ${stats.resolvedTickets} |
+| 累计民生工单总量 | ${stats.totalTickets.toLocaleString("zh-CN")} | 待派单 ${stats.pendingTickets} / 处理中 ${stats.inProgressTickets} / 已办结 ${stats.resolvedTickets} |
 | 多频研判专题总数 | ${stats.totalThemes.toLocaleString("zh-CN")} | 高风险专题 ${stats.highRiskThemes} 个 |
 | 涉稳红线预警工单 | ${stats.stabilityRiskTickets.toLocaleString("zh-CN")} | 触发 L3 熔断拦截，专班人工核查 |
 | 疑似假闭环重开记录 | ${stats.fakeClosureTickets.toLocaleString("zh-CN")} | 含重开专题 ${stats.reopenedThemes} 个 |

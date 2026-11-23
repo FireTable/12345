@@ -39,8 +39,19 @@ export async function POST(req: Request) {
     const content = typeof body.content === "string" ? body.content.trim() : "";
     const subdistrict = typeof body.subdistrict === "string" ? body.subdistrict.trim() : "";
     const category = typeof body.category === "string" ? body.category.trim() : "";
-    const contactPhone = typeof body.contactPhone === "string" ? body.contactPhone.trim() : "";
+    const rawContactPhone = typeof body.contactPhone === "string" ? body.contactPhone.trim() : "";
     const contactEmail = typeof body.contactEmail === "string" ? body.contactEmail.trim() : "";
+
+    const asciiPhone = rawContactPhone
+      .replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0))
+      .replace(/[－—–﹣]/g, "-")
+      .replace(/＋/g, "+");
+    const strippedPrefixPhone = asciiPhone.replace(/^(?:\+|00)86[\s-]*/, "");
+    const compactMobile = strippedPrefixPhone.replace(/[\s-]/g, "");
+    const compactLandline = strippedPrefixPhone.replace(/\s+/g, "");
+    const isMobile = /^1[3-9]\d{9}$/.test(compactMobile);
+    const isLandline = /^0\d{2,3}-?\d{7,8}$/.test(compactLandline);
+    const contactPhone = isMobile ? compactMobile : isLandline ? compactLandline : asciiPhone;
 
     if (content.length < 6) {
       return NextResponse.json(
@@ -73,11 +84,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const normalizedPhone = contactPhone.replace(/[\s-]/g, "");
-    const phoneOk =
-      !contactPhone ||
-      /^1[3-9]\d{9}$/.test(normalizedPhone) ||
-      /^0\d{2,3}-?\d{7,8}$/.test(contactPhone.replace(/\s+/g, ""));
+    const phoneOk = !rawContactPhone || isMobile || isLandline;
     if (!phoneOk) {
       return NextResponse.json(
         {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { guardAgentRequest } from "@/lib/security/agent-guard";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
-import { listAgentTasks } from "@/lib/agent-governance";
+import { createOrReuseMissingInfoTask, listAgentTasks } from "@/lib/agent-governance";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,6 +28,50 @@ export async function GET(req: Request) {
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Failed to load agent tasks";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}
+
+export async function POST(req: Request) {
+  try {
+    const guard = await guardAgentRequest(req, {
+      role: "admin",
+      scope: "agent-tasks-create",
+      maxPerMinute: 60,
+    });
+    if ("response" in guard) return guard.response;
+
+    const body = (await req.json().catch(() => null)) as {
+      ticketId?: unknown;
+      regionId?: unknown;
+    } | null;
+    const ticketId = typeof body?.ticketId === "string" ? body.ticketId.trim() : "";
+    if (!ticketId) {
+      return NextResponse.json(
+        { success: false, error: "缺少必填参数 ticketId" },
+        { status: 400 }
+      );
+    }
+
+    const explicitRegionId = typeof body?.regionId === "string" ? body.regionId.trim() : undefined;
+    const regionId = await resolveRequestRegionId(req, explicitRegionId || null);
+
+    const result = await createOrReuseMissingInfoTask({ regionId, ticketId });
+    if (!result.ok) {
+      return NextResponse.json(
+        { success: false, error: result.error },
+        { status: result.status }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      task: result.task,
+      reused: result.reused,
+      domainType: result.domainType,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to create agent task";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

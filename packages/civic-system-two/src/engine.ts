@@ -57,6 +57,8 @@ export class SystemTwoEngine {
   private readonly clusterSwitchbackCooldownMs: number;
   private lastClusterProbeAt: number;
   private clusterProbePromise: Promise<boolean> | null = null;
+  private lastLocalWaitTimeoutAt = 0;
+  private readonly localSlowCooldownMs = 45_000;
 
   // Per-endpoint 最近处理过的工单预览（in-memory，进程级单例；不落库）
   // 用于 workbench 按节点展示"该 endpoint 最新处理了哪些工单"。
@@ -162,6 +164,22 @@ export class SystemTwoEngine {
    */
   getActiveNodeCount(): number {
     return this.clusterAdapter.getActiveNodeCount();
+  }
+
+  /**
+   * 是否配置了云端灾备链路
+   */
+  hasCloudFallback(): boolean {
+    return Boolean(this.cloudAdapter);
+  }
+
+  /**
+   * 当前所有健康本地算力节点是否均已有在途请求（无空闲槽位）
+   */
+  isLocalClusterBusy(): boolean {
+    if (this.activeAdapter !== this.clusterAdapter) return false;
+    const healthyMetas = this.clusterAdapter.getNodeMetas().filter((n) => n.isHealthy);
+    return healthyMetas.length > 0 && healthyMetas.every((n) => n.inFlight > 0);
   }
 
   /**
@@ -305,26 +323,133 @@ export class SystemTwoEngine {
       throw createAbortError(params.signal);
     }
 
-    let hasYielded = false;
-    try {
-      for await (const chunk of this.streamFromAdapter(this.activeAdapter, params)) {
-        if (
-          chunk.deltaContent ||
-          chunk.deltaReasoning ||
-          (chunk.finishReason !== undefined && chunk.finishReason !== null)
-        ) {
-          hasYielded = true;
+    // 若要求直连云端、或本地节点全满/近期刚发生首包慢超时，不等待本地 6s，直走 cloudAdapter（失败再回退本地）
+    const inLocalSlowCooldown =
+      this.lastLocalWaitTimeoutAt > 0 &&
+      Date.now() - this.lastLocalWaitTimeoutAt < this.localSlowCooldownMs;
+    const shouldRouteCloudFast =
+      Boolean(params.preferCloudDirect) ||
+      Boolean(params.preferCloudWhenLocalBusy && (this.isLocalClusterBusy() || inLocalSlowCooldown));
+
+    if (
+      shouldRouteCloudFast &&
+      this.activeAdapter === this.clusterAdapter &&
+      this.cloudAdapter &&
+      (await this.cloudAdapter.isAvailable())
+    ) {
+      if (params.signal?.aborted) {
+        throw createAbortError(params.signal);
+      }
+      let fastCloudYielded = false;
+      try {
+        for await (const chunk of this.streamFromAdapter(this.cloudAdapter, params)) {
+          if (
+            chunk.deltaContent ||
+            chunk.deltaReasoning ||
+            (chunk.finishReason !== undefined && chunk.finishReason !== null)
+          ) {
+            fastCloudYielded = true;
+          }
+          yield chunk;
         }
-        yield chunk;
+        return;
+      } catch (fastCloudError: any) {
+        if (params.signal?.aborted || fastCloudYielded) {
+          throw fastCloudError;
+        }
+        console.warn(
+          `[SystemTwoEngine] 本地繁忙直切云端失败 (${fastCloudError?.message || fastCloudError})，回退本地链路尝试...`
+        );
       }
-      return;
-    } catch (error: any) {
-      if (params.signal?.aborted || hasYielded) {
-        throw error;
+    }
+
+    const useLocalWaitTimeout =
+      this.activeAdapter === this.clusterAdapter &&
+      Boolean(this.cloudAdapter) &&
+      typeof params.localWaitTimeoutMs === 'number' &&
+      Number.isFinite(params.localWaitTimeoutMs) &&
+      params.localWaitTimeoutMs > 0;
+
+    let hasYielded = false;
+    let localWaitTimedOut = false;
+
+    if (useLocalWaitTimeout) {
+      // 使用独立的内部 localAttemptController：首包等待超时只中止本次本地尝试，绝不污染调用方 params.signal
+      const localAttemptController = new AbortController();
+      const onCallerAbort = () => {
+        localAttemptController.abort(createAbortError(params.signal));
+      };
+      params.signal?.addEventListener('abort', onCallerAbort, { once: true });
+      let localWaitTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+        localWaitTimedOut = true;
+        const timeoutErr = new Error(
+          `Local System-2 first-chunk wait exceeded ${params.localWaitTimeoutMs}ms`
+        );
+        timeoutErr.name = 'AbortError';
+        localAttemptController.abort(timeoutErr);
+      }, params.localWaitTimeoutMs);
+
+      try {
+        for await (const chunk of this.streamFromAdapter(this.activeAdapter, {
+          ...params,
+          signal: localAttemptController.signal,
+        })) {
+          if (
+            chunk.deltaContent ||
+            chunk.deltaReasoning ||
+            (chunk.finishReason !== undefined && chunk.finishReason !== null)
+          ) {
+            hasYielded = true;
+            if (localWaitTimer) {
+              clearTimeout(localWaitTimer);
+              localWaitTimer = null;
+            }
+          }
+          yield chunk;
+        }
+        return;
+      } catch (error: any) {
+        if (params.signal?.aborted || hasYielded) {
+          throw error;
+        }
+        if (localWaitTimedOut) {
+          this.lastLocalWaitTimeoutAt = Date.now();
+          console.warn(
+            `[SystemTwoEngine] 本地集群首包等待超过 ${params.localWaitTimeoutMs}ms，快速切换至 CloudOpenAIAdapter...`
+          );
+        } else {
+          console.warn(
+            `[SystemTwoEngine] 主后端 (${this.activeAdapter.name}) 流式调用失败: ${error?.message || error}，正在尝试灾备链路...`
+          );
+        }
+      } finally {
+        if (localWaitTimer) {
+          clearTimeout(localWaitTimer);
+          localWaitTimer = null;
+        }
+        params.signal?.removeEventListener('abort', onCallerAbort);
       }
-      console.warn(
-        `[SystemTwoEngine] 主后端 (${this.activeAdapter.name}) 流式调用失败: ${error?.message || error}，正在尝试灾备链路...`
-      );
+    } else {
+      try {
+        for await (const chunk of this.streamFromAdapter(this.activeAdapter, params)) {
+          if (
+            chunk.deltaContent ||
+            chunk.deltaReasoning ||
+            (chunk.finishReason !== undefined && chunk.finishReason !== null)
+          ) {
+            hasYielded = true;
+          }
+          yield chunk;
+        }
+        return;
+      } catch (error: any) {
+        if (params.signal?.aborted || hasYielded) {
+          throw error;
+        }
+        console.warn(
+          `[SystemTwoEngine] 主后端 (${this.activeAdapter.name}) 流式调用失败: ${error?.message || error}，正在尝试灾备链路...`
+        );
+      }
     }
 
     if (
@@ -335,8 +460,11 @@ export class SystemTwoEngine {
       if (params.signal?.aborted) {
         throw createAbortError(params.signal);
       }
-      this.activeAdapter = this.cloudAdapter;
-      this.lastClusterProbeAt = Date.now();
+      // 仅当本地真实异常失败时切换全局 activeAdapter；若是本地排队繁忙导致的首包快切，保留 clusterAdapter 供批处理继续使用
+      if (!localWaitTimedOut) {
+        this.activeAdapter = this.cloudAdapter;
+        this.lastClusterProbeAt = Date.now();
+      }
       let cloudYielded = false;
       try {
         for await (const chunk of this.streamFromAdapter(this.cloudAdapter, params)) {

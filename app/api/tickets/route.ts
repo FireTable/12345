@@ -33,6 +33,7 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const tab = searchParams.get("tab") || "";
     const status = searchParams.get("status") || "";
+    const effectiveStatus = status || (tab === "pending" || tab === "progress" || tab === "finished" ? tab : "");
     const urgency = searchParams.get("urgency") || "";
     const regionQuery = (searchParams.get("region") || "").trim();
     const regionAllowedDirect =
@@ -95,7 +96,6 @@ export async function GET(req: Request) {
         filters.push(eq(ticketsTable.sourceCategory, category));
       }
 
-      const effectiveStatus = status || (tab === "pending" || tab === "progress" || tab === "finished" ? tab : "");
       if (effectiveStatus === "RESOLVED" || effectiveStatus === "finished") {
         filters.push(inArray(ticketsTable.status, ["RESOLVED", "FINISHED"]));
       } else if (effectiveStatus === "IN_PROGRESS" || effectiveStatus === "progress") {
@@ -103,7 +103,9 @@ export async function GET(req: Request) {
           inArray(ticketsTable.status, ["DISPATCHED", "VERIFIED", "IN_PROGRESS", "PROCESSING"])
         );
       } else if (effectiveStatus === "PENDING" || effectiveStatus === "pending") {
-        filters.push(eq(ticketsTable.status, "PENDING"));
+        filters.push(inArray(ticketsTable.status, ["PENDING", "REOPENED"]));
+      } else if (effectiveStatus === "REOPENED") {
+        filters.push(eq(ticketsTable.status, "REOPENED"));
       }
 
       if (urgency === "URGENT" || tab === "urgent") {
@@ -131,6 +133,22 @@ export async function GET(req: Request) {
       return filters.length ? and(...filters) : undefined;
     };
 
+    const orderBys =
+      effectiveStatus === "pending" || effectiveStatus === "PENDING"
+        ? [
+            sql`CASE WHEN ${ticketsTable.status} = 'REOPENED' THEN 0 WHEN ${ticketsTable.isFakeClosure} IS TRUE THEN 1 ELSE 2 END ASC`,
+            sql`CASE WHEN ${ticketsTable.status} = 'REOPENED' OR ${ticketsTable.isFakeClosure} IS TRUE THEN ${ticketsTable.updatedAt} END DESC NULLS LAST`,
+            desc(ticketsTable.createTime),
+            desc(ticketsTable.id),
+          ]
+        : tab === "fake_closure"
+          ? [
+              sql`CASE WHEN ${ticketsTable.status} = 'REOPENED' THEN 0 ELSE 1 END ASC`,
+              sql`${ticketsTable.updatedAt} DESC NULLS LAST`,
+              desc(ticketsTable.createTime),
+              desc(ticketsTable.id),
+            ]
+          : [desc(ticketsTable.createTime), desc(ticketsTable.id)];
     const countQ = tenantDb.select({ count: sql<number>`count(*)::int` }).from(ticketsTable);
     const listQ = tenantDb
       .select({
@@ -152,7 +170,7 @@ export async function GET(req: Request) {
         primaryThemeId: ticketsTable.primaryThemeId,
       })
       .from(ticketsTable)
-      .orderBy(desc(ticketsTable.createTime), desc(ticketsTable.id))
+      .orderBy(...orderBys)
       .limit(size)
       .offset(offset);
 

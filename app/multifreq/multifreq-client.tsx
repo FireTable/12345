@@ -207,7 +207,9 @@ function MultifreqInner() {
     });
   }, [rows, region, confMin, minCount, timeLabel]);
 
-  const pending = filtered.filter((r) => r.status.code ? r.status.code === "PENDING" : r.status.label === "未处理");
+  const pending = filtered.filter((r) =>
+    r.status.code ? r.status.code === "PENDING" : r.status.label === "待派单" || r.status.label === "未处理"
+  );
   const urgent = filtered.filter((r) => r.urgency === "urgent");
   const latestStr = rows.reduce((acc, r) => {
     const d = r.last_date || r.first_date || "";
@@ -344,7 +346,7 @@ function MultifreqInner() {
             <StatCard
               icon={Clock}
               tone="blue"
-              label="未处理"
+              label="待派单"
               value={pending.length}
               sub="待派单协同处置"
             />
@@ -408,14 +410,14 @@ function MultifreqInner() {
             </div>
             <div className="card">
               <div className="card__header">
-                <h2 className="card__title">未处理群组 · 紧急 × 重要 四象限</h2>
+                <h2 className="card__title">待派单群组 · 紧急 × 重要 四象限</h2>
                 <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>
-                  共 <b style={{ color: "#1E5AFF" }}>{pending.length}</b> 个未处理群组
+                  共 <b style={{ color: "#1E5AFF" }}>{pending.length}</b> 个待派单群组
                 </div>
               </div>
               <div className="card__body split-pane">
                 {pending.length === 0 ? (
-                  <div className="empty-hint">暂无未处理群组。请先启动 Agent 研判。</div>
+                  <div className="empty-hint">暂无待派单群组。请先启动 Agent 研判。</div>
                 ) : (
                   <QuadrantBoard clusters={filtered} />
                 )}
@@ -453,7 +455,7 @@ function MultifreqInner() {
                     <th scope="col" style={{ width: 130, minWidth: 120 }}>研判模式</th>
                     <th scope="col" style={{ width: 130, minWidth: 130 }}>{hasGeoMap ? "辖区 · 业务" : `${regionUnit} · 业务`}</th>
                     <th scope="col">代表性诉求标题</th>
-                    <th scope="col" style={{ width: 110, textAlign: "center" }}>待处理 / 总数</th>
+                    <th scope="col" style={{ width: 110, textAlign: "center" }}>待派单 / 总数</th>
                     <th scope="col" style={{ width: 80, textAlign: "center" }}>紧急度</th>
                     <th scope="col" style={{ width: 85, textAlign: "right" }}>持续天数</th>
                     <th scope="col" style={{ width: 85 }}>处置状态</th>

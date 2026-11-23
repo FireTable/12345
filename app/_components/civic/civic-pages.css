@@ -533,6 +533,7 @@
 .urgency-tag--medium { background: #E8FFEA; color: #166534; }
 .urgency-tag--low { background: #F0F1F3; color: #525E70; }
 .status-tag--pending { background: #FFF7E8; color: #AD4E00; }
+.status-tag--dispatched { background: #E0F2FE; color: #0369A1; }
 .status-tag--progress { background: #E8F3FF; color: #0958D9; }
 .status-tag--done { background: #E8FFEA; color: #166534; }
 

@@ -3,6 +3,7 @@ import { ticketsTable, themesTable, ticketThemesTable, reviewQueueTable } from "
 import { and, desc, eq, gte, isNotNull, lt, sql, type SQL } from "drizzle-orm";
 import { isTownLabel, parseAdminArea } from "@/lib/admin-area";
 import { regionLabel, toClusterDto, normalizeStatusCode, UNKNOWN_TOWN } from "@/lib/civic-dto";
+import { buildUnresolvedMissingInfoSql } from "@/lib/civic-missing";
 import { CIVIC_CATEGORIES, deriveClusterUrgency, spanDays, urgentCutFromUnprocessed } from "@/lib/civic-cluster";
 import {
   buildInsights,
@@ -279,6 +280,7 @@ export async function loadWorkorderStats(regionId?: string) {
         urgent: sql<number>`count(*) filter (where upper(coalesce(${ticketsTable.urgency}, '')) = 'URGENT')::int`,
         multifreq: sql<number>`count(*) filter (where ${ticketsTable.primaryThemeId} is not null)::int`,
         fakeClosure: sql<number>`count(*) filter (where ${ticketsTable.isFakeClosure} is true)::int`,
+        missingInfo: sql<number>`count(*) filter (where ${sql.raw(buildUnresolvedMissingInfoSql("", isEcommerce))})::int`,
       })
       .from(ticketsTable)
       .groupBy(ticketsTable.subdistrict, ticketsTable.sourceCategory),
@@ -296,6 +298,7 @@ export async function loadWorkorderStats(regionId?: string) {
   let urgent = 0;
   let multifreq = 0;
   let fakeClosure = 0;
+  let missingInfo = 0;
   const regionSet = new Set<string>();
   const categorySet = new Set<string>();
 
@@ -307,6 +310,7 @@ export async function loadWorkorderStats(regionId?: string) {
     urgent += asInt(row.urgent);
     multifreq += asInt(row.multifreq);
     fakeClosure += asInt(row.fakeClosure);
+    missingInfo += asInt(row.missingInfo);
 
     const label = normalizeTenantRegionLabel(row.subdistrict, isEcommerce);
     if (label && (isEcommerce || isTownLabel(label) || label === UNKNOWN_TOWN)) {
@@ -340,6 +344,7 @@ export async function loadWorkorderStats(regionId?: string) {
       multifreq,
       single: Math.max(0, total - multifreq),
       fakeClosure,
+      missingInfo,
       pendingReview,
     },
     latest,

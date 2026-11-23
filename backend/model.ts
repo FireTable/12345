@@ -75,18 +75,38 @@ export function isLocalSystemTwo(): boolean {
 }
 
 let lastMergedNodeCount = 0;
+let lastActiveNodeCount: number | null = null;
+let lastSystemTwoEngine: SystemTwoEngine | null = null;
 
 /**
  * 动态并发度调度：
  * 1. 若配置了环境变量 SYSTEM_TWO_CONCURRENCY，优先采用
- * 2. 否则按环境变量与数据库已启用节点总并发数自动调度
+ * 2. 否则优先按当前健康活跃节点数自动调度（避免离线 LAN 节点虚高并发拖垮单槽位本地服务）
  */
 export function systemTwoConcurrency(): number {
   const raw = Number(process.env.SYSTEM_TWO_CONCURRENCY);
   if (Number.isFinite(raw) && raw >= 1) return Math.trunc(raw);
 
+  if (lastSystemTwoEngine) {
+    return Math.max(1, lastSystemTwoEngine.getActiveNodeCount());
+  }
+  if (lastActiveNodeCount !== null) {
+    return Math.max(1, lastActiveNodeCount);
+  }
   const endpoints = getSystemTwoEndpoints();
   return Math.max(1, lastMergedNodeCount || endpoints.length);
+}
+
+async function syncLlmPoolFromEngine(engine: SystemTwoEngine): Promise<number> {
+  lastSystemTwoEngine = engine;
+  lastActiveNodeCount = Math.max(1, engine.getActiveNodeCount());
+  const concurrency = systemTwoConcurrency();
+  try {
+    const { syncLlmPoolConcurrency } = await import("./llm-pool");
+    return syncLlmPoolConcurrency(concurrency);
+  } catch {
+    return concurrency;
+  }
 }
 
 export function getChatModel(temperature: number = 0.2): ChatOpenAI {
@@ -313,7 +333,7 @@ export async function getSystemTwoEngine(): Promise<SystemTwoEngine> {
   systemTwoEnginePromise = (async () => {
     const specs = await buildSystemTwoNodeSpecs();
     const firstEndpoint = typeof specs[0] === "string" ? specs[0] : specs[0]?.endpoint;
-    return SystemTwoEngine.create({
+    const engine = await SystemTwoEngine.create({
       nodes: specs,
       endpoints: specs.map((s) => (typeof s === "string" ? s : s.endpoint)),
       endpoint: firstEndpoint,
@@ -326,8 +346,11 @@ export async function getSystemTwoEngine(): Promise<SystemTwoEngine> {
           }
         : undefined,
     });
+    await syncLlmPoolFromEngine(engine);
+    return engine;
   })().catch((err) => {
     systemTwoEnginePromise = null;
+    lastSystemTwoEngine = null;
     throw err;
   });
 
@@ -346,13 +369,7 @@ export async function reloadSystemTwoPool(): Promise<{
   const specs = await buildSystemTwoNodeSpecs();
   const engine = await getSystemTwoEngine();
   const reloaded = await engine.reloadClusterNodes(specs);
-  const concurrency = systemTwoConcurrency();
-  try {
-    const { getLlmPool } = await import("./llm-pool");
-    getLlmPool().concurrency = concurrency;
-  } catch {
-    // ignore pool resize error
-  }
+  const concurrency = await syncLlmPoolFromEngine(engine);
   return {
     ...reloaded,
     concurrency,

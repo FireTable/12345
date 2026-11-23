@@ -647,11 +647,15 @@ async function main() {
       const savedRerankKey = process.env.RERANK_API_KEY;
       const savedEmbedKey = process.env.EMBEDDING_API_KEY;
       const savedEmbedEndpoints = process.env.EMBEDDING_ENDPOINTS;
+      const savedEmbedBaseUrl = process.env.EMBEDDING_BASE_URL;
+      const savedOpenAiKey = process.env.OPENAI_API_KEY;
       const savedEmbedClients = globalThis.__civic_embed_clients;
       try {
         process.env.RERANK_API_KEY = "";
         process.env.EMBEDDING_API_KEY = "";
-        process.env.EMBEDDING_ENDPOINTS = "";
+        process.env.EMBEDDING_ENDPOINTS = "http://127.0.0.1:1/v1";
+        process.env.EMBEDDING_BASE_URL = "";
+        process.env.OPENAI_API_KEY = "";
         globalThis.__civic_embed_clients = new Map();
 
         const tailRecallRes = JSON.parse(
@@ -705,6 +709,10 @@ async function main() {
         else process.env.EMBEDDING_API_KEY = savedEmbedKey;
         if (savedEmbedEndpoints === undefined) delete process.env.EMBEDDING_ENDPOINTS;
         else process.env.EMBEDDING_ENDPOINTS = savedEmbedEndpoints;
+        if (savedEmbedBaseUrl === undefined) delete process.env.EMBEDDING_BASE_URL;
+        else process.env.EMBEDDING_BASE_URL = savedEmbedBaseUrl;
+        if (savedOpenAiKey === undefined) delete process.env.OPENAI_API_KEY;
+        else process.env.OPENAI_API_KEY = savedOpenAiKey;
         globalThis.__civic_embed_clients = savedEmbedClients;
       }
     }

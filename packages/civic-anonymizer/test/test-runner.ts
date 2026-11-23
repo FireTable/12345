@@ -195,4 +195,53 @@ if (
   throw new Error(`deanonymize __proto__ 原型保护失败: ${JSON.stringify(restoredProto)}`);
 }
 
+// 测试用例 9：带分隔符电话、超长连字符数字防护与电子邮箱脱敏/还原
+const phoneInput = "我的电话是159-766-73363，备用 +86 159 7667 3363";
+const phoneDashedRes = anonymize(phoneInput);
+const phoneValues = Object.values(phoneDashedRes.keymap);
+if (
+  phoneValues.length !== 2 ||
+  !phoneValues.includes("159-766-73363") ||
+  !phoneValues.includes("+86 159 7667 3363") ||
+  phoneDashedRes.text.includes("159") ||
+  deanonymize(phoneDashedRes.text, phoneDashedRes.keymap) !== phoneInput
+) {
+  throw new Error(`带分隔符手机号脱敏失败: ${JSON.stringify(phoneDashedRes)}`);
+}
+const nonPhoneDashedRes = anonymize("工单流水 2026-11-22 159-766-73363-99 不是电话");
+if (nonPhoneDashedRes.text.includes("{{PHONE_NUMBER_")) {
+  throw new Error(`超长连字符数字不应误判为手机号: ${JSON.stringify(nonPhoneDashedRes)}`);
+}
+const emailInput = "请发至邮箱 user@example.com，或 QQ 邮箱 13800138000@163.com。";
+const emailRes = anonymize(emailInput);
+const emailValues = Object.values(emailRes.keymap);
+if (
+  emailValues.length !== 2 ||
+  emailRes.text.includes("{{PHONE_NUMBER_") ||
+  !emailValues.includes("user@example.com") ||
+  !emailValues.includes("13800138000@163.com") ||
+  deanonymize(emailRes.text, emailRes.keymap) !== emailInput
+) {
+  throw new Error(`电子邮箱脱敏或防手机号误切失败: ${JSON.stringify(emailRes)}`);
+}
+const firstPhoneToken = Object.entries(phoneDashedRes.keymap).find(
+  ([, v]) => v === "159-766-73363"
+)?.[0];
+const firstEmailToken = Object.entries(emailRes.keymap).find(
+  ([, v]) => v === "user@example.com"
+)?.[0];
+if (!firstPhoneToken || !firstEmailToken) {
+  throw new Error("未找到期望的电话或邮箱占位符！");
+}
+const restoredContact = deanonymize(
+  { contactPhone: firstPhoneToken, contactEmail: firstEmailToken },
+  { ...phoneDashedRes.keymap, ...emailRes.keymap }
+);
+if (
+  restoredContact.contactPhone !== "159-766-73363" ||
+  restoredContact.contactEmail !== "user@example.com"
+) {
+  throw new Error(`联系方式还原失败: ${JSON.stringify(restoredContact)}`);
+}
+
 console.log("\n🎉 所有 @civic/anonymizer 单元测试全部顺利通过！");

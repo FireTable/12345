@@ -4,6 +4,8 @@ import "@/app/_components/civic/tokens.css";
 import "@/app/_components/civic/components.css";
 import "@/app/_components/civic/layout.css";
 import "@/app/_components/civic/civic-pages.css";
+import "@/app/_components/civic/voice-chat-composer.css";
+import "@/app/_components/copilot/copilot-md.css";
 import "@/app/_components/cockpit/cockpit-glass.css";
 import { CivicNav } from "@/app/_components/civic/civic-nav";
 import { CivicWorkflowProvider } from "@/app/_components/civic/civic-workflow";

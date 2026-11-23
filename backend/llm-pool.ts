@@ -213,6 +213,18 @@ export function getLlmPool(): LlmPool {
   return _llmPool;
 }
 
+export function syncLlmPoolConcurrency(activeHealthyNodeCount: number): number {
+  const envOverride = Number(process.env.SYSTEM_TWO_CONCURRENCY);
+  const next =
+    Number.isFinite(envOverride) && envOverride >= 1
+      ? Math.trunc(envOverride)
+      : Math.max(1, Math.trunc(activeHealthyNodeCount || 1));
+  if (_llmPool && _llmPool.concurrency !== next) {
+    _llmPool.concurrency = next;
+  }
+  return next;
+}
+
 export function runInLlmPool<T>(
   lane: LlmLane,
   fn: (signal?: AbortSignal) => Promise<T>,

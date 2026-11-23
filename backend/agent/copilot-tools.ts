@@ -1065,7 +1065,7 @@ export function createCopilotTools(
       }
 
       const { db } = await getRegionDb(regionId);
-      const limit = clampLimit(input.limit, 8, 12);
+      const limit = clampLimit(input.limit, 6, 10);
       const base = db
         .select({
           id: themesTable.id,
@@ -1097,8 +1097,8 @@ export function createCopilotTools(
           handlingStatus: row.handlingStatus || "PENDING",
           handlingOwner: maskText(row.handlingOwner),
           ticketCount: row.ticketCount,
-          summary: clip(maskText(row.summary), 180),
-          action: clip(maskText(row.action), 180),
+          summary: clip(maskText(row.summary), 90),
+          action: clip(maskText(row.action), 90),
         })),
       });
     },
@@ -1302,12 +1302,12 @@ export function createCopilotTools(
         FROM tickets
         GROUP BY 1
         ORDER BY tickets DESC
-        LIMIT 12
+        LIMIT 10
       `);
       return JSON.stringify({
         unitType: isEcommerce ? "渠道/仓网" : "镇街",
         townships: rowsOf(result).map((row) => ({
-          name: cell(row, "name") || "未知",
+          name: maskText(cell(row, "name")) || "未知",
           tickets: Number(cell(row, "tickets") || 0),
           pending: Number(cell(row, "pending") || 0),
           urgent: Number(cell(row, "urgent") || 0),
@@ -1339,7 +1339,7 @@ export function createCopilotTools(
       `);
       return JSON.stringify({
         categories: rowsOf(result).map((row) => ({
-          category: cell(row, "category") || "未分类",
+          category: maskText(cell(row, "category")) || "未分类",
           tickets: Number(cell(row, "tickets") || 0),
           pending: Number(cell(row, "pending") || 0),
           urgent: Number(cell(row, "urgent") || 0),
@@ -1363,7 +1363,7 @@ export function createCopilotTools(
       const { db } = await getRegionDb(regionId);
       const statusRaw = String(input.status || "").trim().toUpperCase();
       const levelRaw = String(input.autonomyLevel || "").trim().toUpperCase();
-      const limit = clampLimit(input.limit, 10, 20);
+      const limit = clampLimit(input.limit, 6, 12);
 
       try {
         const filters: SQL[] = [];
@@ -1419,8 +1419,8 @@ export function createCopilotTools(
             maskedContact: cell(row, "masked_contact") ? maskText(cell(row, "masked_contact")) : null,
             missingSlots,
             suggestedOwner: cell(row, "suggested_owner") ? maskText(cell(row, "suggested_owner")) : null,
-            reason: clip(maskText(cell(row, "reason")), 160),
-            draftMessage: clip(maskText(cell(row, "draft_message")), 180),
+            reason: clip(maskText(cell(row, "reason")), 100),
+            draftMessage: clip(maskText(cell(row, "draft_message")), 90),
             resultSummary: cell(row, "result_summary") ? maskText(cell(row, "result_summary")) : null,
           };
         });
