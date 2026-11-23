@@ -81,7 +81,12 @@ export async function GET(req: Request) {
 
     const regionId = await resolveRequestRegionId(req);
     const { value } = await cacheGetOrLoad(`stats:${regionId}`, () => loadCivicStats(regionId));
-    return NextResponse.json(value);
+    return NextResponse.json(value, {
+      headers: {
+        "cache-control": "private, max-age=15, stale-while-revalidate=60",
+        vary: "Cookie, x-region-id",
+      },
+    });
   } catch (err) {
     console.warn("DB stats query error:", err);
     return NextResponse.json({

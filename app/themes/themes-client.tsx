@@ -1,13 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { buildSafeCsv } from "@/lib/export-csv";
-import { URGENCY_META, clusterStoryPenalty, type ClusterUrgency } from "@/lib/civic-cluster";
+import { URGENCY_META, type ClusterUrgency } from "@/lib/civic-cluster";
 import { isTownLabel } from "@/lib/admin-area";
 import { FolderKanban, Clock, Flame, TrendingUp } from "lucide-react";
-import { clampTimeRef, formatYmd } from "@/lib/civic-time";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
 import { SkThemes } from "@/app/_components/civic/skeletons";
 import {
@@ -66,10 +65,19 @@ export default function ThemesPage() {
     activeRegion?.domainProfile?.terminology?.themeNoun ||
     (isEcommerce ? "多频客诉案卷" : "多频工单");
   const [rows, setRows] = useState<Cluster[]>([]);
+  const [filteredTotal, setFilteredTotal] = useState(0);
+  const [counts, setCounts] = useState({
+    all: 0,
+    today: 0,
+    pending: 0,
+    progress: 0,
+    urgent: 0,
+  });
   const [regions, setRegions] = useState<string[]>([]);
   const [tab, setTab] = useState("all");
   const [todayOnly, setTodayOnly] = useState(false);
   const [kw, setKw] = useState("");
+  const [debouncedKw, setDebouncedKw] = useState("");
   const [region, setRegion] = useState("");
   const [mode, setMode] = useState("");
   const [urgency, setUrgency] = useState("");
@@ -78,122 +86,142 @@ export default function ThemesPage() {
   const [ready, setReady] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const loadAbortRef = useRef<AbortController | null>(null);
+  const exportAbortRef = useRef<AbortController | null>(null);
   const loadSeqRef = useRef(0);
   const prevRegionIdRef = useRef<string | undefined>(undefined);
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
-  const load = useCallback(() => {
-    if (!isAdmin) return;
-    loadAbortRef.current?.abort();
-    const controller = new AbortController();
-    loadAbortRef.current = controller;
-    const seq = ++loadSeqRef.current;
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedKw(kw.trim()), 180);
+    return () => window.clearTimeout(timer);
+  }, [kw]);
 
-    const headers: Record<string, string> = {};
-    if (activeRegion?.id) headers["x-region-id"] = activeRegion.id;
-    setLoadError(null);
+  const buildFilterParams = useCallback(
+    (includePaging: boolean) => {
+      const params = new URLSearchParams({ sort: "story" });
+      if (activeRegion?.id) params.set("regionId", activeRegion.id);
+      if (includePaging) {
+        params.set("page", String(page));
+        params.set("size", String(pageSize));
+      }
+      if (tab && tab !== "all") params.set("tab", tab);
+      if (todayOnly) params.set("todayOnly", "1");
+      if (region) params.set("region", region);
+      if (mode) params.set("mode", mode);
+      if (urgency) params.set("urgency", urgency);
+      if (debouncedKw) params.set("keyword", debouncedKw);
+      return params;
+    },
+    [activeRegion?.id, page, pageSize, tab, todayOnly, region, mode, urgency, debouncedKw]
+  );
 
-    // 站点由 x-region-id / cookie 决定。region 查询参数是镇街名，传站点 id 会把列表滤空。
-    fetch("/api/clusters", { headers, signal: controller.signal })
-      .then(async (r) => {
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok) {
-          throw new Error(j?.error || `加载多频群组失败 (${r.status})`);
-        }
-        return j;
+  const load = useCallback(
+    (bypassCache = false) => {
+      if (!isAdmin) return;
+      loadAbortRef.current?.abort();
+      const controller = new AbortController();
+      loadAbortRef.current = controller;
+      const seq = ++loadSeqRef.current;
+
+      const headers: Record<string, string> = {};
+      if (activeRegion?.id) headers["x-region-id"] = activeRegion.id;
+      setLoadError(null);
+
+      // 服务端分页 + 预排序：仅传输当前页（~5KB），避免一次性拉取数千条（数 MB）
+      const params = buildFilterParams(true);
+      fetch(`/api/clusters?${params.toString()}`, {
+        headers,
+        signal: controller.signal,
+        ...(bypassCache ? { cache: "no-cache" as const } : {}),
       })
-      .then((j) => {
-        if (controller.signal.aborted || seq !== loadSeqRef.current) return;
-        setRows(j.topClusters || []);
-        setRegions(
-          (j.facets?.regions || []).filter((r: string) =>
-            isEcommerce ? Boolean(r && r.trim()) : isTownLabel(r) || r === "未知"
-          )
-        );
-      })
-      .catch((err) => {
-        if (controller.signal.aborted || err?.name === "AbortError" || seq !== loadSeqRef.current) return;
-        const msg = err instanceof Error ? err.message : "加载多频群组失败";
-        setLoadError(msg);
-        setRows([]);
-        toast.error(msg);
-      })
-      .finally(() => {
-        if (controller.signal.aborted || seq !== loadSeqRef.current) return;
-        setReady(true);
-      });
-  }, [isAdmin, activeRegion?.id, isEcommerce]);
+        .then(async (r) => {
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            throw new Error(j?.error || `加载多频群组失败 (${r.status})`);
+          }
+          return j;
+        })
+        .then((j) => {
+          if (controller.signal.aborted || seq !== loadSeqRef.current) return;
+          const list: Cluster[] = Array.isArray(j.topClusters) ? j.topClusters : [];
+          setRows(list);
+          setFilteredTotal(typeof j.total === "number" ? j.total : list.length);
+          if (j.counts && typeof j.counts === "object") {
+            setCounts({
+              all: Number(j.counts.all || 0),
+              today: Number(j.counts.today || 0),
+              pending: Number(j.counts.pending || 0),
+              progress: Number(j.counts.progress || 0),
+              urgent: Number(j.counts.urgent || 0),
+            });
+          } else {
+            setCounts({
+              all: Number(j.totalClusters || list.length),
+              today: Number(j.todayNew || 0),
+              pending: 0,
+              progress: 0,
+              urgent: 0,
+            });
+          }
+          if (typeof j.page === "number" && j.page !== page) {
+            setPage(j.page);
+          }
+          setRegions(
+            (j.facets?.regions || []).filter((r: string) =>
+              isEcommerce ? Boolean(r && r.trim()) : isTownLabel(r) || r === "未知"
+            )
+          );
+        })
+        .catch((err) => {
+          if (controller.signal.aborted || err?.name === "AbortError" || seq !== loadSeqRef.current) return;
+          const msg = err instanceof Error ? err.message : "加载多频群组失败";
+          setLoadError(msg);
+          setRows([]);
+          setFilteredTotal(0);
+          toast.error(msg);
+        })
+        .finally(() => {
+          if (controller.signal.aborted || seq !== loadSeqRef.current) return;
+          setReady(true);
+        });
+    },
+    [isAdmin, activeRegion?.id, isEcommerce, buildFilterParams, page]
+  );
 
   useEffect(() => {
     return () => {
       loadSeqRef.current += 1;
       loadAbortRef.current?.abort();
+      exportAbortRef.current?.abort();
     };
   }, []);
 
   useEffect(() => {
     if (regionLoading || isRolePending || !isAdmin) return;
     if (prevRegionIdRef.current && activeRegion?.id && prevRegionIdRef.current !== activeRegion.id) {
-      setRegion("");
-      setPage(1);
+      prevRegionIdRef.current = activeRegion.id;
+      if (region !== "" || page !== 1) {
+        setRegion("");
+        setPage(1);
+        return;
+      }
     }
     if (activeRegion?.id) {
       prevRegionIdRef.current = activeRegion.id;
     }
     load();
-  }, [activeRegion?.id, regionLoading, isRolePending, isAdmin, load]);
+  }, [activeRegion?.id, regionLoading, isRolePending, isAdmin, load, region, page]);
 
   // WS 推送：簇生成 / 上传完成后立即重拉聚合列表
   useCivicSse(isAdmin ? activeRegion?.id : undefined, (msg) => {
     if (msg.type === "civic-data-refresh" || msg.type === "pipeline-state-refresh") {
-      load();
+      load(true);
     }
   });
 
-  const latestStr = rows.reduce((acc, r) => {
-    const d = r.last_date || r.first_date || "";
-    return d > acc ? d : acc;
-  }, "");
-  const todayKey = formatYmd(clampTimeRef(latestStr ? new Date(latestStr.replace(" ", "T")) : null));
-  const todayNewCount = rows.filter((r) => r.last_date === todayKey || r.first_date === todayKey).length;
-
-  const counts = {
-    all: rows.length,
-    today: todayNewCount,
-    pending: rows.filter((r) => (r.status.code || HANDLING_STATUS.PENDING) === HANDLING_STATUS.PENDING).length,
-    progress: rows.filter((r) => r.status.code === HANDLING_STATUS.IN_PROGRESS).length,
-    urgent: rows.filter((r) => r.urgency === "urgent").length,
-  };
-
-  const filtered = useMemo(() => {
-    const arr = rows.filter((r) => {
-      const code = r.status.code || normalizeStatusCode(r.status.label);
-      if (todayOnly && r.last_date !== todayKey && r.first_date !== todayKey) return false;
-      if (tab === "pending" && code !== HANDLING_STATUS.PENDING) return false;
-      if (tab === "progress" && code !== HANDLING_STATUS.IN_PROGRESS) return false;
-      if (tab === "urgent" && r.urgency !== "urgent") return false;
-      if (region && !r.region.includes(region)) return false;
-      if (mode && r.mode !== mode) return false;
-      if (urgency && r.urgency !== urgency) return false;
-      if (kw && !`${r.type}${r.region}${r.title}${r.code}`.toLowerCase().includes(kw.toLowerCase())) return false;
-      return true;
-    });
-    const statusOrder: Record<string, number> = { PENDING: 0, IN_PROGRESS: 1, RESOLVED: 2 };
-    arr.sort((a, b) => {
-      const pa = clusterStoryPenalty(a);
-      const pb = clusterStoryPenalty(b);
-      if (pa !== pb) return pa - pb;
-      const sa = statusOrder[a.status.code || "PENDING"] ?? 0;
-      const sb = statusOrder[b.status.code || "PENDING"] ?? 0;
-      if (sa !== sb) return sa - sb;
-      return b.count - a.count;
-    });
-    return arr;
-  }, [rows, tab, region, mode, urgency, kw, todayOnly, todayKey]);
-
-  const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const pages = Math.max(1, Math.ceil(filteredTotal / pageSize));
   const currentPage = Math.min(page, pages);
-  const pageData = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const pageData = rows;
 
   function activateTab(nextKey: string, focusButton = false) {
     setTab(nextKey);
@@ -229,30 +257,52 @@ export default function ThemesPage() {
     return <SkThemes />;
   }
 
-  function exportCsv() {
-    const header = ["编号", "模式", regionUnit, "类型", "代表标题", "工单数", "待派单", "紧急度", "持续天数", "置信度", "状态"];
-    const csvRows = filtered.map((g) => [
-      g.code,
-      g.mode_name,
-      g.region,
-      g.type,
-      g.title || "",
-      g.count,
-      g.unprocessed,
-      URGENCY_META[g.urgency]?.label || g.urgency,
-      g.days,
-      g.ai_confidence == null ? "" : `${g.ai_confidence}%`,
-      g.status.label,
-    ]);
-    const csvContent = buildSafeCsv(header, csvRows, { includeBom: true });
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "multi-frequency-themes.csv";
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success(`已导出 ${filtered.length} 个${isEcommerce ? "案卷" : "群组"}`);
+  async function exportCsv() {
+    if (!isAdmin) return;
+    exportAbortRef.current?.abort();
+    const controller = new AbortController();
+    exportAbortRef.current = controller;
+    try {
+      const headers: Record<string, string> = {};
+      if (activeRegion?.id) headers["x-region-id"] = activeRegion.id;
+      const params = buildFilterParams(false);
+      const res = await fetch(`/api/clusters?${params.toString()}`, {
+        headers,
+        signal: controller.signal,
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json?.error || `导出请求失败 (${res.status})`);
+      }
+      if (controller.signal.aborted) return;
+      const list: Cluster[] = Array.isArray(json.topClusters) ? json.topClusters : [];
+      const header = ["编号", "模式", regionUnit, "类型", "代表标题", "工单数", "待派单", "紧急度", "持续天数", "置信度", "状态"];
+      const csvRows = list.map((g) => [
+        g.code,
+        g.mode_name,
+        g.region,
+        g.type,
+        g.title || "",
+        g.count,
+        g.unprocessed,
+        URGENCY_META[g.urgency]?.label || g.urgency,
+        g.days,
+        g.ai_confidence == null ? "" : `${g.ai_confidence}%`,
+        g.status.label,
+      ]);
+      const csvContent = buildSafeCsv(header, csvRows, { includeBom: true });
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "multi-frequency-themes.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`已导出 ${list.length} 个${isEcommerce ? "案卷" : "群组"}`);
+    } catch (err: any) {
+      if (controller.signal.aborted || err?.name === "AbortError") return;
+      toast.error(err instanceof Error ? err.message : "导出失败");
+    }
   }
 
   return (
@@ -268,7 +318,7 @@ export default function ThemesPage() {
           </div>
         </div>
         <PageHeaderActions
-          onRefresh={load}
+          onRefresh={() => load(true)}
           onExport={exportCsv}
         />
       </section>
@@ -287,6 +337,7 @@ export default function ThemesPage() {
               onClick={() => {
                 setTab("all");
                 setTodayOnly(false);
+                setPage(1);
               }}
               className={tab === "all" && !todayOnly ? "ring-2 ring-blue-500/30" : ""}
             />
@@ -299,6 +350,7 @@ export default function ThemesPage() {
               onClick={() => {
                 setTodayOnly(!todayOnly);
                 setTab("all");
+                setPage(1);
               }}
               className={todayOnly ? "ring-2 ring-amber-500/30" : ""}
             />
@@ -311,6 +363,7 @@ export default function ThemesPage() {
               onClick={() => {
                 setTab("pending");
                 setTodayOnly(false);
+                setPage(1);
               }}
               className={tab === "pending" && !todayOnly ? "ring-2 ring-blue-500/30" : ""}
             />
@@ -323,6 +376,7 @@ export default function ThemesPage() {
               onClick={() => {
                 setTab("urgent");
                 setTodayOnly(false);
+                setPage(1);
               }}
               className={tab === "urgent" && !todayOnly ? "ring-2 ring-rose-500/30" : ""}
             />
@@ -442,7 +496,7 @@ export default function ThemesPage() {
                   <SelectItem value="low">普通</SelectItem>
                 </SelectContent>
               </Select>
-              <span className="filter-bar__summary">共 {filtered.length} 条结果</span>
+              <span className="filter-bar__summary">共 {filteredTotal} 条结果</span>
             </div>
 
             {loadError && (
@@ -453,7 +507,7 @@ export default function ThemesPage() {
                 <span>{loadError}</span>
                 <button
                   type="button"
-                  onClick={load}
+                  onClick={() => load(true)}
                   className="btn btn--default text-xs min-h-[44px] sm:min-h-[30px]"
                 >
                   重试加载
@@ -559,16 +613,16 @@ export default function ThemesPage() {
                 </tbody>
               </table>
             </div>
-            {filtered.length === 0 && (
+            {filteredTotal === 0 && (
               <div className="empty-hint">
                 {isEcommerce ? "暂无案卷。请先触发聚类研判。" : "暂无群组。请先触发聚类研判。"}
               </div>
             )}
-            {filtered.length > 0 && (
+            {filteredTotal > 0 && (
               <TablePager
                 page={currentPage}
                 pages={pages}
-                total={filtered.length}
+                total={filteredTotal}
                 pageSize={pageSize}
                 pageSizeOptions={[10, 15, 20, 50]}
                 itemLabel={isEcommerce ? "个多频案卷" : "个多频群组"}

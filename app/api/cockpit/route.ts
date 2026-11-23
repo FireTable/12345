@@ -12,7 +12,12 @@ export async function GET(req: Request) {
 
     const regionId = await resolveRequestRegionId(req);
     const payload = await loadCockpitRead(regionId);
-    return NextResponse.json(payload);
+    return NextResponse.json(payload, {
+      headers: {
+        "cache-control": "private, max-age=10, stale-while-revalidate=30",
+        vary: "Cookie, x-region-id",
+      },
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "cockpit read failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });

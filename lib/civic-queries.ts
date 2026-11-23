@@ -3,7 +3,11 @@ import { ticketsTable, themesTable, ticketThemesTable, reviewQueueTable } from "
 import { and, desc, eq, gte, isNotNull, lt, sql, type SQL } from "drizzle-orm";
 import { isTownLabel, parseAdminArea } from "@/lib/admin-area";
 import { regionLabel, toClusterDto, normalizeStatusCode, UNKNOWN_TOWN } from "@/lib/civic-dto";
-import { buildUnresolvedMissingInfoSql } from "@/lib/civic-missing";
+import {
+  buildMissingInfoFlagSql,
+  buildUnresolvedMissingInfoSql,
+  isUndefinedColumnError,
+} from "@/lib/civic-missing";
 import { CIVIC_CATEGORIES, deriveClusterUrgency, spanDays, urgentCutFromUnprocessed } from "@/lib/civic-cluster";
 import {
   buildInsights,
@@ -266,7 +270,7 @@ export async function loadWorkorderStats(regionId?: string) {
       ? and(gte(ticketsTable.createTime, todayWin.from), lt(ticketsTable.createTime, todayWin.to))
       : undefined;
 
-  const [bucketRows, reviewPendingRows] = await Promise.all([
+  const runWorkorderStatsQuery = (missingInfoSql: string) =>
     tenantDb
       .select({
         subdistrict: ticketsTable.subdistrict,
@@ -280,10 +284,18 @@ export async function loadWorkorderStats(regionId?: string) {
         urgent: sql<number>`count(*) filter (where upper(coalesce(${ticketsTable.urgency}, '')) = 'URGENT')::int`,
         multifreq: sql<number>`count(*) filter (where ${ticketsTable.primaryThemeId} is not null)::int`,
         fakeClosure: sql<number>`count(*) filter (where ${ticketsTable.isFakeClosure} is true)::int`,
-        missingInfo: sql<number>`count(*) filter (where ${sql.raw(buildUnresolvedMissingInfoSql("", isEcommerce))})::int`,
+        missingInfo: sql<number>`count(*) filter (where ${sql.raw(missingInfoSql)})::int`,
       })
       .from(ticketsTable)
-      .groupBy(ticketsTable.subdistrict, ticketsTable.sourceCategory),
+      .groupBy(ticketsTable.subdistrict, ticketsTable.sourceCategory);
+
+  const [bucketRows, reviewPendingRows] = await Promise.all([
+    runWorkorderStatsQuery(buildMissingInfoFlagSql()).catch((err) => {
+      if (isUndefinedColumnError(err, "is_missing_info")) {
+        return runWorkorderStatsQuery(buildUnresolvedMissingInfoSql("", isEcommerce));
+      }
+      throw err;
+    }),
     tenantDb
       .select({ count: sql<number>`count(*)::int` })
       .from(reviewQueueTable)

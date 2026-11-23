@@ -1,6 +1,24 @@
 import postgres from "postgres";
 import { evictTenantPool, invalidateRegionCache } from "@/db/client";
 import { invalidateCivicAggregates } from "@/lib/civic-cache";
+import { buildMissingInfoTriggerFunctionsSql } from "@/lib/civic-missing";
+
+function detectEcommerceFromConfig(categoryConfigJson?: string | null, schemaName?: string): boolean {
+  if (categoryConfigJson && typeof categoryConfigJson === "string") {
+    try {
+      const parsed = JSON.parse(categoryConfigJson) as {
+        domainProfile?: { domainType?: string };
+        domainType?: string;
+      } | null;
+      const dt = parsed?.domainProfile?.domainType ?? parsed?.domainType;
+      if (dt === "ECOMMERCE_CS") return true;
+      if (dt === "GOV_12345") return false;
+    } catch {
+      if (/"domainType"\s*:\s*"ECOMMERCE_CS"/.test(categoryConfigJson)) return true;
+    }
+  }
+  return Boolean(schemaName && /ecom/i.test(schemaName));
+}
 
 /**
  * PostgreSQL 多租户 Schema 隔离核心管理器
@@ -76,12 +94,33 @@ export async function ensurePublicComputeNodesTable(sql: postgres.Sql) {
 /**
  * 在目标 Schema 中构建所有标准业务数据表及索引
  */
-export async function createTenantTables(sql: postgres.Sql, schemaName: string) {
+export async function createTenantTables(
+  sql: postgres.Sql,
+  schemaName: string,
+  opts?: { isEcommerce?: boolean }
+) {
   // 1. 创建独立 Schema 命名空间
   await sql.unsafe(`CREATE SCHEMA IF NOT EXISTS "${schemaName}";`);
   // halfvec 需要数据库级扩展。镜像是带 pgvector 的 Postgres 16。这里不建 HNSW。
   await sql.unsafe(`CREATE EXTENSION IF NOT EXISTS vector`);
   await sql.unsafe(`CREATE EXTENSION IF NOT EXISTS pg_trgm`);
+
+  // 确保 public 级缺失要素判定函数与触发器函数存在
+  for (const fnSql of buildMissingInfoTriggerFunctionsSql()) {
+    await sql.unsafe(fnSql);
+  }
+
+  let isEcommerce = opts?.isEcommerce;
+  if (typeof isEcommerce !== "boolean") {
+    try {
+      const [reg] = await sql<Array<{ category_config_json: string | null }>>`
+        SELECT category_config_json FROM public.regions WHERE schema_name = ${schemaName} LIMIT 1;
+      `;
+      isEcommerce = detectEcommerceFromConfig(reg?.category_config_json, schemaName);
+    } catch {
+      isEcommerce = detectEcommerceFromConfig(null, schemaName);
+    }
+  }
 
   // 2. 在该 Schema 下执行 DDL 建表脚本
   await sql.begin(async (tx) => {
@@ -121,11 +160,26 @@ export async function createTenantTables(sql: postgres.Sql, schemaName: string) 
         closed_at TIMESTAMP WITH TIME ZONE,
         closure_status VARCHAR(32),
         is_fake_closure BOOLEAN DEFAULT false,
+        is_missing_info BOOLEAN NOT NULL DEFAULT false,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
       );
     `;
     await tx`ALTER TABLE tickets ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT now();`;
+    await tx`ALTER TABLE tickets ADD COLUMN IF NOT EXISTS is_missing_info BOOLEAN NOT NULL DEFAULT false;`;
+    await tx`DROP TRIGGER IF EXISTS trg_tickets_sync_missing_info ON tickets;`;
+    await tx.unsafe(
+      `UPDATE tickets
+         SET is_missing_info = public.compute_ticket_is_missing_info(status, address, subdistrict, canonical_subject, ${isEcommerce ? "true" : "false"})
+       WHERE is_missing_info IS DISTINCT FROM public.compute_ticket_is_missing_info(status, address, subdistrict, canonical_subject, ${isEcommerce ? "true" : "false"});`
+    );
+    await tx.unsafe(
+      `CREATE TRIGGER trg_tickets_sync_missing_info
+         BEFORE INSERT OR UPDATE OF status, address, subdistrict, canonical_subject, is_missing_info
+         ON tickets
+         FOR EACH ROW
+         EXECUTE FUNCTION public.trg_tickets_sync_missing_info('${isEcommerce ? "true" : "false"}');`
+    );
     await tx`CREATE INDEX IF NOT EXISTS idx_tickets_ticket_no ON tickets (ticket_no);`;
     await tx`CREATE INDEX IF NOT EXISTS idx_tickets_subdistrict ON tickets (subdistrict);`;
     await tx`CREATE INDEX IF NOT EXISTS idx_tickets_create_time ON tickets (create_time);`;
@@ -149,6 +203,12 @@ export async function createTenantTables(sql: postgres.Sql, schemaName: string) 
     await tx`CREATE INDEX IF NOT EXISTS idx_tickets_primary_theme_create_time ON tickets (primary_theme_id, create_time DESC);`;
     await tx`CREATE INDEX IF NOT EXISTS idx_tickets_fake_closure_true ON tickets (create_time DESC) WHERE is_fake_closure = true;`;
     await tx`CREATE INDEX IF NOT EXISTS idx_tickets_stability_risk_true ON tickets (create_time DESC) WHERE stability_risk = true;`;
+    await tx`CREATE INDEX IF NOT EXISTS idx_tickets_missing_info_ct ON tickets (create_time DESC, id DESC) WHERE is_missing_info = true;`;
+    await tx`CREATE INDEX IF NOT EXISTS idx_tickets_status_create_time_id_desc ON tickets (status, create_time DESC, id DESC) INCLUDE (is_fake_closure);`;
+    await tx`CREATE INDEX IF NOT EXISTS idx_tickets_reopened_updated_at ON tickets (updated_at DESC NULLS LAST, create_time DESC, id DESC) WHERE status = 'REOPENED';`;
+    await tx`CREATE INDEX IF NOT EXISTS idx_tickets_fake_closure_pending ON tickets (updated_at DESC NULLS LAST, create_time DESC, id DESC) WHERE is_fake_closure IS TRUE AND status IN ('PENDING', 'REOPENED');`;
+    await tx`CREATE INDEX IF NOT EXISTS idx_tickets_id_subd_status ON tickets (id) INCLUDE (subdistrict, status);`;
+    await tx`CREATE INDEX IF NOT EXISTS idx_tickets_stats_cover ON tickets (create_time) INCLUDE (subdistrict, source_category, status, urgency, confidence, primary_theme_id, closed_at, is_fake_closure, is_missing_info);`;
 
     // 工单嵌入旁路表。HNSW 在回填写完之后单独建，不放在这张表的创建语句里。
     await tx`
@@ -200,6 +260,7 @@ export async function createTenantTables(sql: postgres.Sql, schemaName: string) 
     await tx`CREATE INDEX IF NOT EXISTS idx_themes_canonical_location_trgm ON themes USING gin (canonical_location gin_trgm_ops);`;
     await tx`CREATE INDEX IF NOT EXISTS idx_themes_event_type_trgm ON themes USING gin (event_type gin_trgm_ops);`;
     await tx`CREATE INDEX IF NOT EXISTS idx_themes_category_trgm ON themes USING gin (category gin_trgm_ops);`;
+    await tx`CREATE INDEX IF NOT EXISTS idx_themes_created_at ON themes (created_at);`;
 
     // 2.3 工单-多频主题关联表 ticket_themes
     await tx`
@@ -316,7 +377,9 @@ export async function registerRegion(sql: postgres.Sql, params: CreateRegionPara
   await ensurePublicRegionsTable(sql);
 
   // 1. 初始化独立 Schema 及数据表
-  await createTenantTables(sql, params.schemaName);
+  await createTenantTables(sql, params.schemaName, {
+    isEcommerce: detectEcommerceFromConfig(params.categoryConfigJson, params.schemaName),
+  });
 
   // 2. 若设为默认，先重置其他站点的 is_default
   if (params.isDefault) {

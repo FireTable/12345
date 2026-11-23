@@ -81,7 +81,12 @@ export async function GET(req: Request) {
       }
     );
 
-    return NextResponse.json(payload);
+    return NextResponse.json(payload, {
+      headers: {
+        "cache-control": "private, max-age=15, stale-while-revalidate=60",
+        vary: "Cookie, x-region-id",
+      },
+    });
   } catch (err: any) {
     return NextResponse.json(
       { success: false, error: err.message || "Failed to query themes" },

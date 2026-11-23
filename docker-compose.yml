@@ -29,6 +29,25 @@ services:
     image: pgvector/pgvector:pg16
     container_name: 12345-postgres
     restart: unless-stopped
+    shm_size: 512m
+    command:
+      - postgres
+      - -c
+      - shared_buffers=1GB
+      - -c
+      - effective_cache_size=4GB
+      - -c
+      - work_mem=32MB
+      - -c
+      - maintenance_work_mem=256MB
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - jit=off
+      - -c
+      - max_parallel_workers_per_gather=2
+      - -c
+      - checkpoint_completion_target=0.9
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -45,7 +64,7 @@ services:
 
   app:
     # Service renamed: ticket-radar-app (避免 DNS clash with langgraph-app 的 `app`)
-    image: ticket-radar:v0.1.4
+    image: ticket-radar:v0.1.5
     build:
       context: .
       dockerfile: Dockerfile
@@ -75,7 +94,7 @@ services:
 
   ecom-app:
     # 复用同一生产镜像，独立运行电商售后客诉域 (https://ecom.firetable.tech)
-    image: ticket-radar:v0.1.4
+    image: ticket-radar:v0.1.5
     container_name: 12345-ecom-app
     restart: unless-stopped
     depends_on:

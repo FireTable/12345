@@ -68,66 +68,98 @@ export function RegionProvider({
 
   const pathname = usePathname();
   const router = useRouter();
+  const pathnameRef = useRef(pathname);
+  pathnameRef.current = pathname;
   const refreshedCookie = useRef(false);
+  const loadedOnceRef = useRef(false);
+  const inFlightRef = useRef<Promise<void> | null>(null);
 
-  const fetchRegions = useCallback(async () => {
+  const fetchRegions = useCallback(
+    async (force = false) => {
+      const currentPath = pathnameRef.current;
+      if (currentPath === "/login") {
+        setIsLoading(false);
+        return;
+      }
+      if (!force && inFlightRef.current) {
+        return inFlightRef.current;
+      }
+
+      let task: Promise<void> | undefined;
+      task = (async () => {
+        try {
+          if (!loadedOnceRef.current) {
+            setIsLoading(true);
+          }
+          // 首次/常规加载复用 HTTP 缓存（public, max-age=30, swr=120）；
+          // 管理员变更站点后调用 refreshRegions() 传 force=true 强制穿透缓存。
+          const res = await fetch("/api/regions", force ? { cache: "no-store" } : undefined);
+          if (res.status === 401) {
+            if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+              window.location.href = `/login?from=${encodeURIComponent(window.location.pathname)}`;
+            }
+            return;
+          }
+          const json = await res.json();
+          if (json.appDomain === "GOV_12345" || json.appDomain === "ECOMMERCE_CS" || json.appDomain === "ALL") {
+            setAppDomain(json.appDomain);
+          }
+
+          if (Array.isArray(json.regions)) {
+            loadedOnceRef.current = true;
+            setRegions(json.regions);
+
+            const savedRegionId = localStorage.getItem("civic_active_region");
+            const matched =
+              json.regions.find((r: RegionInfo) => r.id === savedRegionId) ||
+              json.regions.find((r: RegionInfo) => r.id === json.defaultRegionId) ||
+              json.regions[0] ||
+              null;
+
+            setActiveRegion(matched);
+            if (matched) {
+              if (
+                savedRegionId &&
+                savedRegionId !== matched.id &&
+                !json.regions.some((r: RegionInfo) => r.id === savedRegionId)
+              ) {
+                localStorage.setItem("civic_active_region", matched.id);
+              }
+              const prev = document.cookie.match(/(?:^|; )active_region=([^;]*)/)?.[1] || "";
+              const prevId = prev ? decodeURIComponent(prev) : "";
+              document.cookie = `active_region=${encodeURIComponent(matched.id)}; path=/; max-age=31536000; SameSite=Lax`;
+              if (pathnameRef.current !== "/login" && prevId && prevId !== matched.id && !refreshedCookie.current) {
+                refreshedCookie.current = true;
+                router.refresh();
+              }
+            }
+          }
+        } catch (err: unknown) {
+          console.warn("[RegionProvider] Failed to fetch regions:", err instanceof Error ? err.message : String(err));
+        } finally {
+          setIsLoading(false);
+          if (inFlightRef.current === task) {
+            inFlightRef.current = null;
+          }
+        }
+      })();
+
+      inFlightRef.current = task;
+      return task;
+    },
+    [router]
+  );
+
+  const refreshRegions = useCallback(() => fetchRegions(true), [fetchRegions]);
+
+  useEffect(() => {
     if (pathname === "/login") {
       setIsLoading(false);
       return;
     }
-
-    try {
-      setIsLoading(true);
-      const res = await fetch("/api/regions", { cache: "no-store" });
-      if (res.status === 401) {
-        if (typeof window !== "undefined" && window.location.pathname !== "/login") {
-          window.location.href = `/login?from=${encodeURIComponent(window.location.pathname)}`;
-        }
-        return;
-      }
-      const json = await res.json();
-      if (json.appDomain === "GOV_12345" || json.appDomain === "ECOMMERCE_CS" || json.appDomain === "ALL") {
-        setAppDomain(json.appDomain);
-      }
-
-      if (Array.isArray(json.regions)) {
-        setRegions(json.regions);
-
-        const savedRegionId = localStorage.getItem("civic_active_region");
-        const matched =
-          json.regions.find((r: RegionInfo) => r.id === savedRegionId) ||
-          json.regions.find((r: RegionInfo) => r.id === json.defaultRegionId) ||
-          json.regions[0] ||
-          null;
-
-        setActiveRegion(matched);
-        if (matched) {
-          if (
-            savedRegionId &&
-            savedRegionId !== matched.id &&
-            !json.regions.some((r: RegionInfo) => r.id === savedRegionId)
-          ) {
-            localStorage.setItem("civic_active_region", matched.id);
-          }
-          const prev = document.cookie.match(/(?:^|; )active_region=([^;]*)/)?.[1] || "";
-          const prevId = prev ? decodeURIComponent(prev) : "";
-          document.cookie = `active_region=${encodeURIComponent(matched.id)}; path=/; max-age=31536000; SameSite=Lax`;
-          if (pathname !== "/login" && prevId && prevId !== matched.id && !refreshedCookie.current) {
-            refreshedCookie.current = true;
-            router.refresh();
-          }
-        }
-      }
-    } catch (err: unknown) {
-      console.warn("[RegionProvider] Failed to fetch regions:", err instanceof Error ? err.message : String(err));
-    } finally {
-      setIsLoading(false);
-    }
-  }, [pathname, router]);
-
-  useEffect(() => {
-    if (pathname !== "/login") {
-      fetchRegions();
+    // 仅在尚未加载站点列表时拉取一次，切页导航不再重复打 /api/regions 并阻塞页面渲染
+    if (!loadedOnceRef.current) {
+      void fetchRegions(false);
     }
   }, [pathname, fetchRegions]);
 
@@ -158,7 +190,7 @@ export function RegionProvider({
         regions,
         isLoading,
         switchRegion,
-        refreshRegions: fetchRegions,
+        refreshRegions,
       }}
     >
       {children}

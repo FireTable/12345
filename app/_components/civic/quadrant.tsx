@@ -52,13 +52,21 @@ function hash01(id: string, salt: number): number {
   return ((h >>> 0) % 10000) / 10000;
 }
 
-export function QuadrantBoard({ clusters }: { clusters: QuadCluster[] }) {
+export function QuadrantBoard({
+  clusters,
+  quadrantCounts,
+}: {
+  clusters: QuadCluster[];
+  quadrantCounts?: Record<Q, number>;
+}) {
   const router = useRouter();
   const pending = clusters.filter((c) => ((c.status as any)?.code || "PENDING") !== "RESOLVED");
 
-  // 各象限真实总数（宏观角标忠实统计）
-  const grouped: Record<Q, number> = { tl: 0, tr: 0, bl: 0, br: 0 };
-  pending.forEach((c) => { grouped[quadKey(c)] += 1; });
+  // 各象限真实总数（宏观角标忠实统计；支持服务端 summary 直接下发精确计数）
+  const grouped: Record<Q, number> = quadrantCounts ?? { tl: 0, tr: 0, bl: 0, br: 0 };
+  if (!quadrantCounts) {
+    pending.forEach((c) => { grouped[quadKey(c)] += 1; });
+  }
 
   // 散点图可视化：保留各象限最具代表性、工单量最高的重点聚类（保证图表优雅高质感，避免数千 DOM 挤压重叠与主线程卡顿）
   const displayPending = useMemo(() => {

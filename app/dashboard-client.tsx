@@ -85,7 +85,7 @@ export default function DashboardPage() {
     return activeRegion?.id ? { "x-region-id": activeRegion.id } : {};
   }, [activeRegion?.id]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (bypassCache = false) => {
     if (!isAdmin) return;
     loadAbortRef.current?.abort();
     const controller = new AbortController();
@@ -94,10 +94,15 @@ export default function DashboardPage() {
 
     const regParam = activeRegion?.id ? `&region=${encodeURIComponent(activeRegion.id)}` : "";
     const headers = regionHeaders();
+    const fetchOpts: RequestInit = {
+      headers,
+      signal: controller.signal,
+      ...(bypassCache ? { cache: "no-cache" as const } : {}),
+    };
     try {
       const [ovRes, trRes] = await Promise.all([
-        fetch(`/api/overview?days=${daysRange}${regParam}`, { headers, signal: controller.signal }),
-        fetch(`/api/trends?days=${daysRange}${regParam}`, { headers, signal: controller.signal }),
+        fetch(`/api/overview?days=${daysRange}${regParam}`, fetchOpts),
+        fetch(`/api/trends?days=${daysRange}${regParam}`, fetchOpts),
       ]);
       if (!ovRes.ok || !trRes.ok) {
         throw new Error(`总览数据请求失败 (${!ovRes.ok ? ovRes.status : trRes.status})`);
@@ -137,7 +142,7 @@ export default function DashboardPage() {
   // 取代之前的 window event 跨 tab 同步（跨进程 / 跨 tab 现在都走同一路）。
   useCivicSse(isAdmin ? activeRegion?.id : undefined, (msg) => {
     if (msg.type === "civic-data-refresh" || msg.type === "pipeline-state-refresh") {
-      load();
+      load(true);
     }
   });
 
@@ -147,7 +152,10 @@ export default function DashboardPage() {
     const controller = new AbortController();
     exportAbortRef.current = controller;
     try {
-      const res = await fetch("/api/clusters", {
+      const exportUrl = activeRegion?.id
+        ? `/api/clusters?regionId=${encodeURIComponent(activeRegion.id)}`
+        : "/api/clusters";
+      const res = await fetch(exportUrl, {
         headers: regionHeaders(),
         signal: controller.signal,
       });
@@ -222,7 +230,7 @@ export default function DashboardPage() {
           </div>
         </div>
         <PageHeaderActions
-          onRefresh={load}
+          onRefresh={() => load(true)}
           onExport={exportOverview}
         >
           {/* 政企科技大屏入口按钮 (Primary 实心科技蓝按钮) */}

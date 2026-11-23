@@ -228,7 +228,12 @@ export default function SandboxXrayPage() {
     try {
       const headers: Record<string, string> = {};
       if (activeRegion?.id) headers["x-region-id"] = activeRegion.id;
-      const res = await fetch("/api/clusters", { headers, signal: controller.signal });
+      const params = new URLSearchParams({ tab: "done", page: "1", size: "1" });
+      if (activeRegion?.id) params.set("regionId", activeRegion.id);
+      const res = await fetch(`/api/clusters?${params.toString()}`, {
+        headers,
+        signal: controller.signal,
+      });
       if (!res.ok) {
         throw new Error(`专题索引拉取失败 (${res.status})`);
       }

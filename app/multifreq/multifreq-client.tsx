@@ -26,8 +26,7 @@ const CivicMap = dynamic(
     ),
   }
 );
-import { URGENCY_META, clusterStoryPenalty, type ClusterUrgency } from "@/lib/civic-cluster";
-import { clampTimeRef, formatYmd, inTimeWindow } from "@/lib/civic-time";
+import { URGENCY_META, type ClusterUrgency } from "@/lib/civic-cluster";
 import { isTownLabel } from "@/lib/admin-area";
 import { HANDLING_STATUS, normalizeStatusCode } from "@/lib/civic-dto";
 import { Clock, TrendingUp, Flame, Layers, AlertTriangle } from "lucide-react";
@@ -69,6 +68,39 @@ type Cluster = {
 };
 
 type Overview = { regionDistribution?: Record<string, number> };
+
+type QuadrantCounts = { tl: number; tr: number; bl: number; br: number };
+
+type MultifreqSummary = {
+  filteredTotal: number;
+  pendingCount: number;
+  urgentCount: number;
+  todayNew: number;
+  clusterByRegion: Record<string, number>;
+  quadrantCounts: QuadrantCounts;
+  quadrantClusters: Array<{
+    id: string;
+    type: string;
+    region: string;
+    count: number;
+    urgency: ClusterUrgency;
+    status: { code?: string; label: string };
+  }>;
+  topClusters: Cluster[];
+  facetRegions: string[];
+};
+
+const EMPTY_SUMMARY: MultifreqSummary = {
+  filteredTotal: 0,
+  pendingCount: 0,
+  urgentCount: 0,
+  todayNew: 0,
+  clusterByRegion: {},
+  quadrantCounts: { tl: 0, tr: 0, bl: 0, br: 0 },
+  quadrantClusters: [],
+  topClusters: [],
+  facetRegions: [],
+};
 
 /** 主题镇街可能是「大良 · 容桂」或「大良 · 容桂 等 3 镇街」。筛选项要拆成单个镇街。 */
 function townChoices(labels: string[]): string[] {
@@ -119,7 +151,7 @@ function MultifreqInner() {
   const { isAdmin, isPending: isRolePending } = useAuthRole();
   const hasGeoMap = activeRegion?.domainProfile?.hasGeoMap !== false;
   const regionUnit = activeRegion?.domainProfile?.terminology?.regionUnit || "镇街";
-  const [rows, setRows] = useState<Cluster[]>([]);
+  const [summary, setSummary] = useState<MultifreqSummary>(EMPTY_SUMMARY);
   const [ov, setOv] = useState<Overview | null>(null);
   const urlTown = search.get("region") || "";
   const [region, setRegion] = useState(isTownLabel(urlTown) || urlTown === "未知" ? urlTown : "");
@@ -127,123 +159,183 @@ function MultifreqInner() {
   const [thresholdOpen, setThresholdOpen] = useState(false);
   const [confMin, setConfMin] = useState(85);
   const [minCount, setMinCount] = useState(2);
+  const [debouncedConfMin, setDebouncedConfMin] = useState(85);
+  const [debouncedMinCount, setDebouncedMinCount] = useState(2);
   const [windowDays, setWindowDays] = useState(7);
   const [ready, setReady] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const loadAbortRef = useRef<AbortController | null>(null);
-  const loadSeqRef = useRef(0);
+  const ovAbortRef = useRef<AbortController | null>(null);
+  const ovSeqRef = useRef(0);
+  const summaryAbortRef = useRef<AbortController | null>(null);
+  const summarySeqRef = useRef(0);
+  const prevRegionIdRef = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedConfMin(confMin);
+      setDebouncedMinCount(minCount);
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [confMin, minCount]);
 
   useEffect(() => {
     if (regionLoading || hasGeoMap || !urlTown) return;
     setRegion((prev) => prev || urlTown);
   }, [regionLoading, hasGeoMap, urlTown]);
 
-  const load = useCallback(async () => {
-    if (!isAdmin) return;
-    loadAbortRef.current?.abort();
-    const controller = new AbortController();
-    loadAbortRef.current = controller;
-    const seq = ++loadSeqRef.current;
+  const loadOverview = useCallback(
+    async (bypassCache = false) => {
+      if (!isAdmin) return;
+      ovAbortRef.current?.abort();
+      const controller = new AbortController();
+      ovAbortRef.current = controller;
+      const seq = ++ovSeqRef.current;
 
-    const headers: Record<string, string> = {};
-    if (activeRegion?.id) headers["x-region-id"] = activeRegion.id;
-    try {
-      const [clustersRes, overviewRes] = await Promise.all([
-        fetch("/api/clusters", { headers, signal: controller.signal }),
-        fetch("/api/overview", { headers, signal: controller.signal }),
-      ]);
-      if (!clustersRes.ok || !overviewRes.ok) {
-        throw new Error(`数据加载失败 (${!clustersRes.ok ? clustersRes.status : overviewRes.status})`);
+      const headers: Record<string, string> = {};
+      if (activeRegion?.id) headers["x-region-id"] = activeRegion.id;
+      const regParam = activeRegion?.id ? `?region=${encodeURIComponent(activeRegion.id)}` : "";
+      try {
+        const overviewRes = await fetch(`/api/overview${regParam}`, {
+          headers,
+          signal: controller.signal,
+          ...(bypassCache ? { cache: "no-cache" as const } : {}),
+        });
+        if (!overviewRes.ok) {
+          throw new Error(`总览数据加载失败 (${overviewRes.status})`);
+        }
+        const o = await overviewRes.json();
+        if (controller.signal.aborted || seq !== ovSeqRef.current) return;
+        setOv(o);
+      } catch (err) {
+        if (
+          controller.signal.aborted ||
+          (err as { name?: string })?.name === "AbortError" ||
+          seq !== ovSeqRef.current
+        ) {
+          return;
+        }
+        setLoadError((prev) => prev || (err instanceof Error ? err.message : "区域分布数据拉取失败"));
       }
-      const [c, o] = await Promise.all([clustersRes.json(), overviewRes.json()]);
-      if (controller.signal.aborted || seq !== loadSeqRef.current) return;
-      setRows(c?.topClusters || []);
-      setOv(o);
-      setLoadError(null);
-    } catch (err) {
-      if (controller.signal.aborted || (err as { name?: string })?.name === "AbortError" || seq !== loadSeqRef.current) {
-        return;
+    },
+    [isAdmin, activeRegion?.id]
+  );
+
+  const loadSummary = useCallback(
+    async (bypassCache = false) => {
+      if (!isAdmin) return;
+      summaryAbortRef.current?.abort();
+      const controller = new AbortController();
+      summaryAbortRef.current = controller;
+      const seq = ++summarySeqRef.current;
+
+      const headers: Record<string, string> = {};
+      if (activeRegion?.id) headers["x-region-id"] = activeRegion.id;
+      const params = new URLSearchParams({
+        view: "summary",
+        confMin: String(debouncedConfMin),
+        minCount: String(debouncedMinCount),
+        timeLabel,
+      });
+      if (activeRegion?.id) params.set("regionId", activeRegion.id);
+      if (region) params.set("region", region);
+
+      try {
+        const clustersRes = await fetch(`/api/clusters?${params.toString()}`, {
+          headers,
+          signal: controller.signal,
+          ...(bypassCache ? { cache: "no-cache" as const } : {}),
+        });
+        if (!clustersRes.ok) {
+          throw new Error(`数据加载失败 (${clustersRes.status})`);
+        }
+        const c = await clustersRes.json();
+        if (controller.signal.aborted || seq !== summarySeqRef.current) return;
+        setSummary({
+          filteredTotal: Number(c?.filteredTotal ?? c?.totalClusters ?? 0),
+          pendingCount: Number(c?.pendingCount ?? 0),
+          urgentCount: Number(c?.urgentCount ?? 0),
+          todayNew: Number(c?.todayNew ?? 0),
+          clusterByRegion: c?.clusterByRegion || {},
+          quadrantCounts: c?.quadrantCounts || { tl: 0, tr: 0, bl: 0, br: 0 },
+          quadrantClusters: Array.isArray(c?.quadrantClusters) ? c.quadrantClusters : [],
+          topClusters: Array.isArray(c?.topClusters) ? c.topClusters : [],
+          facetRegions: Array.isArray(c?.facets?.regions) ? c.facets.regions : [],
+        });
+        setLoadError(null);
+      } catch (err) {
+        if (
+          controller.signal.aborted ||
+          (err as { name?: string })?.name === "AbortError" ||
+          seq !== summarySeqRef.current
+        ) {
+          return;
+        }
+        setSummary(EMPTY_SUMMARY);
+        setLoadError(err instanceof Error ? err.message : "多频工单数据拉取失败");
+      } finally {
+        if (!controller.signal.aborted && seq === summarySeqRef.current) {
+          setReady(true);
+        }
       }
-      setRows([]);
-      setLoadError(err instanceof Error ? err.message : "多频工单数据拉取失败");
-    } finally {
-      if (!controller.signal.aborted && seq === loadSeqRef.current) {
-        setReady(true);
-      }
-    }
-  }, [isAdmin, activeRegion?.id]);
+    },
+    [isAdmin, activeRegion?.id, debouncedConfMin, debouncedMinCount, timeLabel, region]
+  );
+
+  const load = useCallback(
+    async (bypassCache = false) => {
+      await Promise.all([loadOverview(bypassCache), loadSummary(bypassCache)]);
+    },
+    [loadOverview, loadSummary]
+  );
 
   useEffect(() => {
     return () => {
-      loadSeqRef.current += 1;
-      loadAbortRef.current?.abort();
+      ovSeqRef.current += 1;
+      ovAbortRef.current?.abort();
+      summarySeqRef.current += 1;
+      summaryAbortRef.current?.abort();
     };
   }, []);
 
   useEffect(() => {
     if (regionLoading || isRolePending || !isAdmin) return;
-    load();
-  }, [activeRegion?.id, regionLoading, isRolePending, isAdmin, load]);
+    loadOverview();
+  }, [activeRegion?.id, regionLoading, isRolePending, isAdmin, loadOverview]);
+
+  useEffect(() => {
+    if (regionLoading || isRolePending || !isAdmin) return;
+    if (prevRegionIdRef.current && activeRegion?.id && prevRegionIdRef.current !== activeRegion.id) {
+      prevRegionIdRef.current = activeRegion.id;
+      if (region !== "") {
+        setRegion("");
+        return;
+      }
+    }
+    if (activeRegion?.id) {
+      prevRegionIdRef.current = activeRegion.id;
+    }
+    loadSummary();
+  }, [regionLoading, isRolePending, isAdmin, activeRegion?.id, region, loadSummary]);
 
   // WS 推送：簇生成 / 上传后服务端推 civic-data-refresh，立即重拉聚合数据
   useCivicSse(isAdmin ? activeRegion?.id : undefined, (msg) => {
     if (msg.type === "civic-data-refresh" || msg.type === "pipeline-state-refresh") {
-      load();
+      load(true);
     }
   });
-
-  const filtered = useMemo(() => {
-    const latestStr = rows.reduce((acc, r) => {
-      const d = r.last_date || r.first_date || "";
-      return d > acc ? d : acc;
-    }, "");
-    const ref = clampTimeRef(latestStr ? new Date(latestStr.replace(" ", "T")) : null);
-    return rows.filter((r) => {
-      if (region && !r.region.includes(region)) return false;
-      if ((r.ai_confidence ?? 100) < confMin) return false;
-      if (r.count < minCount) return false;
-      if (!inTimeWindow(r.last_date || r.first_date, timeLabel, ref)) return false;
-      return true;
-    });
-  }, [rows, region, confMin, minCount, timeLabel]);
-
-  const pending = filtered.filter((r) =>
-    r.status.code ? r.status.code === "PENDING" : r.status.label === "待派单" || r.status.label === "未处理"
-  );
-  const urgent = filtered.filter((r) => r.urgency === "urgent");
-  const latestStr = rows.reduce((acc, r) => {
-    const d = r.last_date || r.first_date || "";
-    return d > acc ? d : acc;
-  }, "");
-  const todayKey = formatYmd(clampTimeRef(latestStr ? new Date(latestStr.replace(" ", "T")) : null));
-  const todayNew = filtered.filter((r) => r.last_date === todayKey || r.first_date === todayKey).length;
-
-  const clusterByRegion: Record<string, number> = {};
-  for (const r of filtered) {
-    if (!r.region) continue;
-    if (hasGeoMap) {
-      clusterByRegion[r.region] = (clusterByRegion[r.region] || 0) + 1;
-    } else {
-      const head = r.region.split(" 等 ")[0];
-      for (const part of head.split(" · ")) {
-        const name = part.trim();
-        if (name) clusterByRegion[name] = (clusterByRegion[name] || 0) + 1;
-      }
-    }
-  }
 
   const regions = useMemo(() => {
     const fromTickets = Object.keys(ov?.regionDistribution || {});
     if (hasGeoMap) {
-      const labels = fromTickets.length > 0 ? fromTickets : townChoices(rows.map((r) => r.region));
+      const labels = fromTickets.length > 0 ? fromTickets : townChoices(summary.facetRegions);
       const set = new Set(labels.filter((name) => isTownLabel(name) || name === "未知"));
       const list = [...set].filter((name) => name !== "未知").sort((a, b) => a.localeCompare(b, "zh-CN"));
       if (set.has("未知")) list.push("未知");
       return list;
     }
 
-    const rowLabels = rows.flatMap((r) =>
-      (r.region || "")
+    const rowLabels = summary.facetRegions.flatMap((r) =>
+      (r || "")
         .split(" 等 ")[0]
         .split(" · ")
         .map((s) => s.trim())
@@ -255,11 +347,9 @@ function MultifreqInner() {
     const list = [...set].filter((name) => name !== "未知").sort((a, b) => a.localeCompare(b, "zh-CN"));
     if (set.has("未知")) list.push("未知");
     return list;
-  }, [ov, rows, hasGeoMap, activeRegion?.domainProfile?.channels]);
+  }, [ov, summary.facetRegions, hasGeoMap, activeRegion?.domainProfile?.channels]);
 
-  const top5 = [...filtered]
-    .sort((a, b) => clusterStoryPenalty(a) - clusterStoryPenalty(b) || b.count - a.count)
-    .slice(0, 5);
+  const top5 = summary.topClusters;
 
   if (isRolePending || !isAdmin) {
     return <MultifreqChrome />;
@@ -289,7 +379,7 @@ function MultifreqInner() {
             {activeRegion ? `${activeRegion.name} · ` : ""}实时识别 · AI 自动聚类 · 置信度 ≥ {confMin}%
           </div>
         </div>
-        <PageHeaderActions onRefresh={load}>
+        <PageHeaderActions onRefresh={() => void load(true)}>
           <button id="cycle-time-btn" type="button" className="btn btn--default min-h-[44px] sm:min-h-0 sm:h-[34px] px-3 text-xs font-medium" onClick={cycleTime}>
             {timeLabel}
           </button>
@@ -335,7 +425,7 @@ function MultifreqInner() {
               </div>
               <button
                 type="button"
-                onClick={() => void load()}
+                onClick={() => void load(true)}
                 className="btn btn--default min-h-[44px] sm:min-h-0 text-xs text-rose-700 border-rose-300 hover:bg-rose-100 shrink-0"
               >
                 重试加载
@@ -347,28 +437,28 @@ function MultifreqInner() {
               icon={Clock}
               tone="blue"
               label="待派单"
-              value={pending.length}
+              value={summary.pendingCount}
               sub="待派单协同处置"
             />
             <StatCard
               icon={TrendingUp}
               tone="orange"
               label="今日新增"
-              value={todayNew}
+              value={summary.todayNew}
               sub="数据最新一日"
             />
             <StatCard
               icon={Flame}
               tone="red"
               label="紧急群组"
-              value={urgent.length}
+              value={summary.urgentCount}
               sub="高风险优先跟进"
             />
             <StatCard
               icon={Layers}
               tone="purple"
               label="多频总量"
-              value={filtered.length}
+              value={summary.filteredTotal}
               sub="当前筛选主题总计"
             />
           </StatCardGrid>
@@ -389,7 +479,7 @@ function MultifreqInner() {
                 {hasGeoMap ? (
                   <CivicMap
                     counts={ov?.regionDistribution || {}}
-                    clusterCounts={clusterByRegion}
+                    clusterCounts={summary.clusterByRegion}
                     selected={region}
                     onSelect={(name) => {
                       setRegion(name);
@@ -398,7 +488,7 @@ function MultifreqInner() {
                 ) : (
                   <DomainChannelMatrix
                     counts={ov?.regionDistribution || {}}
-                    clusterCounts={clusterByRegion}
+                    clusterCounts={summary.clusterByRegion}
                     selected={region}
                     domainProfile={activeRegion?.domainProfile}
                     onSelect={(name) => {
@@ -412,14 +502,17 @@ function MultifreqInner() {
               <div className="card__header">
                 <h2 className="card__title">待派单群组 · 紧急 × 重要 四象限</h2>
                 <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>
-                  共 <b style={{ color: "#1E5AFF" }}>{pending.length}</b> 个待派单群组
+                  共 <b style={{ color: "#1E5AFF" }}>{summary.pendingCount}</b> 个待派单群组
                 </div>
               </div>
               <div className="card__body split-pane">
-                {pending.length === 0 ? (
+                {summary.pendingCount === 0 ? (
                   <div className="empty-hint">暂无待派单群组。请先启动 Agent 研判。</div>
                 ) : (
-                  <QuadrantBoard clusters={filtered} />
+                  <QuadrantBoard
+                    clusters={summary.quadrantClusters}
+                    quadrantCounts={summary.quadrantCounts}
+                  />
                 )}
               </div>
             </div>
@@ -437,7 +530,7 @@ function MultifreqInner() {
                 className="top5-header__more inline-flex items-center min-h-[44px] sm:min-h-[24px] py-0.5"
                 onClick={() => router.push("/themes")}
               >
-                查看全部 {filtered.length} 个聚类
+                查看全部 {summary.filteredTotal} 个聚类
               </button>
             </div>
             <div

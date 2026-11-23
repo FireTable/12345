@@ -22,10 +22,18 @@ export async function GET(req: Request) {
 
     const result = await listAgentTasks(regionId, { status, autonomyLevel });
 
-    return NextResponse.json({
-      success: true,
-      ...result,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        ...result,
+      },
+      {
+        headers: {
+          "cache-control": "private, max-age=5, stale-while-revalidate=15",
+          vary: "Cookie, x-region-id",
+        },
+      }
+    );
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Failed to load agent tasks";
     return NextResponse.json({ success: false, error: message }, { status: 500 });

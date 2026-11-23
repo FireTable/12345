@@ -49,8 +49,10 @@ export function useCivicWorkflow() {
 export function CivicWorkflowProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { activeRegion } = useRegion();
+  const { activeRegion, isLoading: regionLoading } = useRegion();
   const { isAdmin } = useAuthRole();
+  const isAdminRef = useRef(isAdmin);
+  isAdminRef.current = isAdmin;
 
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploadMounted, setUploadMounted] = useState(false);
@@ -111,7 +113,7 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
         });
         return;
       }
-      if (!isAdmin) return;
+      if (!isAdminRef.current) return;
       const res = await fetch(`/api/overview${regParam}`, {
         headers,
         signal: controller.signal,
@@ -129,7 +131,7 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
     } catch {
       // silent
     }
-  }, [isAdmin, activeRegion?.id]);
+  }, [activeRegion?.id]);
 
   useEffect(() => {
     return () => {
@@ -173,6 +175,7 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
   }, [isAdmin]);
 
   React.useEffect(() => {
+    if (pathname === "/login" || regionLoading) return;
     setTaskProgress(null);
     loadTicketStatus();
     const handleRefresh = () => {
@@ -182,7 +185,7 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
     return () => {
       window.removeEventListener("civic-data-refresh", handleRefresh);
     };
-  }, [activeRegion?.id, loadTicketStatus]);
+  }, [pathname, regionLoading, activeRegion?.id, loadTicketStatus]);
 
   const isAllAnalyzed =
     ticketStatus.loaded &&

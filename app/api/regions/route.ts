@@ -24,23 +24,30 @@ export async function GET() {
     const defaultRegion = regions.find((r) => r.isDefault) || regions[0] || null;
     const defaultRegionId = defaultRegion?.id || getFallbackRegionIdForDomain(appDomain);
 
-    return NextResponse.json({
-      success: true,
-      appDomain,
-      regions: regions.map((r) => ({
-        id: r.id,
-        name: r.name,
-        city: r.city,
-        province: r.province,
-        schemaName: r.schemaName,
-        svgMapPath: r.svgMapPath,
-        isDefault: r.isDefault,
-        description: r.description,
-        categoryConfigJson: r.categoryConfigJson ?? null,
-        domainProfile: parseDomainProfile(r.categoryConfigJson),
-      })),
-      defaultRegionId,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        appDomain,
+        regions: regions.map((r) => ({
+          id: r.id,
+          name: r.name,
+          city: r.city,
+          province: r.province,
+          schemaName: r.schemaName,
+          svgMapPath: r.svgMapPath,
+          isDefault: r.isDefault,
+          description: r.description,
+          categoryConfigJson: r.categoryConfigJson ?? null,
+          domainProfile: parseDomainProfile(r.categoryConfigJson),
+        })),
+        defaultRegionId,
+      },
+      {
+        headers: {
+          "cache-control": "public, max-age=30, stale-while-revalidate=120",
+        },
+      }
+    );
   } catch (error: any) {
     console.error("[api/regions] Failed to list regions:", error);
     const fallbackRegions =
@@ -88,7 +95,12 @@ export async function GET() {
         regions: fallbackRegions,
         defaultRegionId: getFallbackRegionIdForDomain(appDomain),
       },
-      { status: 200 }
+      {
+        status: 200,
+        headers: {
+          "cache-control": "no-store",
+        },
+      }
     );
   }
 }
