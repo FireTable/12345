@@ -355,7 +355,13 @@ pnpm dev
 - 🗺️ **[空间地理与天地图 GIS 规范 (SPATIAL.md)](docs/SPATIAL.md)**：天地图 CGCS2000 测绘级底图无偏移对齐、四级镇街矢量面与时空核心提纯标准。
 - 🔌 **[Model Context Protocol 接入指南 (MCP.md)](docs/MCP.md)**：外部智能体通过 OAuth 2.0 与 Streamable HTTP 发现并调用政务研判工具。
 - 🗄️ **[多租户数据库设计与字典规范 (DBS.md)](docs/DBS.md)**：PostgreSQL Schema 物理隔离设计、性能索引、触发器与数据字典定义。
+- 📦 **[项目依赖清单与组件合规披露 (DEPS.md)](docs/DEPS.md)**：全栈生产/开发依赖清单、自研 4 大内核包映射与开源许可证合规声明。
+- 📈 **[系统架构演进与技术攻坚日志 (IMPROVE.md)](docs/IMPROVE.md)**：V1→V2 认知双系统、双域隔离、全链路闭环与 10 万+ 大表性能调优攻坚记录。
+- ✅ **[交付状态与协作红线总账 (TODOS.md)](docs/TODOS.md)**：已交付功能清单、版本收口进度与工程协作红线。
 - ☁️ **[Google Colab / 远程 GPU 算力套件 (scripts/colab/README.md)](scripts/colab/README.md)**：一键拉起 System-2 + BGE-M3 远程算力并热挂载到后台算力池。
+- 🤖 **双站在线 GEO / 大模型发现入口 (`llms.txt`)**：
+  - 政务 12345 主站：[https://12345.firetable.tech/llms.txt](https://12345.firetable.tech/llms.txt)
+  - 电商客诉示范站：[https://ecom.firetable.tech/llms.txt](https://ecom.firetable.tech/llms.txt)
 
 ---
 

@@ -25,7 +25,8 @@
    - [10. 动态算力节点花名册表 (`public.compute_nodes`)](#10-动态算力节点花名册表-publiccompute_nodes-computenodestable)
    - [11. 用户与认证体系表 (Better Auth)](#11-用户与认证体系表-better-auth-security-schema)
    - [12. MCP 接入表 (`public.mcp_clients` / `public.mcp_auth_codes`)](#12-mcp-接入表-mcp_clients--mcp_auth_codes)
-4. [性能索引与关键迁移清单 (`0011` / `0012`)](#四性能索引与关键迁移清单-0011--0012)
+   - [13. PII 按需明文查看留痕审计表 (`public.pii_audit_logs`)](#13-pii-按需明文查看留痕审计表-publicpii_audit_logs-piiauditlogstable)
+4. [性能索引与关键迁移清单 (`0011` / `0012` / `0013`)](#四性能索引与关键迁移清单-0011--0012--0013)
 5. [PostgreSQL 16 生产调优与 `VACUUM ANALYZE` 运维](#五postgresql-16-生产调优与-vacuum-analyze-运维)
 6. [数据库脚本与运维常用命令](#六数据库脚本与运维常用命令)
 
@@ -468,7 +469,27 @@ PostgreSQL 16 实例 (ticket_radar, image: pgvector/pgvector:pg16)
 
 ---
 
-## 四、性能索引与关键迁移清单 (`0011` / `0012`)
+### 13. PII 按需明文查看留痕审计表：`public.pii_audit_logs` (`piiAuditLogsTable`)
+> 由幂等迁移 [`db/migrations/0013_pii_audit_logs.sql`](../db/migrations/0013_pii_audit_logs.sql) 创建并同步于 `db/schema.ts`，为管理员按需查验工单明文提供 Fail-Closed 留痕审计（支撑 `POST /api/workorders/[id]/reveal-pii` 与 `GET /api/admin/pii-audit`，所有响应强制 `Cache-Control: no-store`，绝不削弱 3 层出网 LLM PII 脱敏防火墙）。
+
+| 字段名 | 数据库类型 | 约束 / 索引 | 描述 |
+| :--- | :--- | :--- | :--- |
+| `id` | `VARCHAR(64)` | `PRIMARY KEY` | 审计记录唯一 ID |
+| `region_id` | `VARCHAR(64)` | `NOT NULL, INDEX` | 目标租户站点 ID（如 `gz_tianhe`、`fs_shunde`、`ecom_demo`） |
+| `ticket_id` | `VARCHAR(64)` | `NOT NULL, INDEX` | 被查验工单内部 ID |
+| `ticket_no` | `VARCHAR(64)` | `NULLABLE` | 被查验工单业务编号 |
+| `actor_user_id` | `TEXT` | `NOT NULL, INDEX` | 执行查验的管理员用户 ID |
+| `actor_name` | `VARCHAR(128)` | `NOT NULL` | 执行查验的管理员名称 |
+| `actor_role` | `VARCHAR(32)` | `NOT NULL, DEFAULT 'admin'` | 操作人角色 |
+| `reason` | `TEXT` | `NOT NULL` | 必填查验事由（API 强制校验 4–200 字） |
+| `fields_revealed` | `TEXT[]` | `NOT NULL, DEFAULT '{}'` | 本次实际披露的字段名集合（默认 `callerName` / `callerPhone` / `address` / `rawContent`） |
+| `ip_address` | `VARCHAR(128)` | `NULLABLE` | 请求来源 IP |
+| `user_agent` | `TEXT` | `NULLABLE` | 请求端 User-Agent |
+| `created_at` | `TIMESTAMPTZ` | `NOT NULL, DEFAULT now(), INDEX` | 审计落库时间戳 |
+
+---
+
+## 四、性能索引与关键迁移清单 (`0011` / `0012` / `0013`)
 
 面向 10 万+ 级单租户大表（天河 ~106.5k、顺德 ~138.7k），`db/migrations/` 已沉淀两份核心幂等性能优化迁移，均自动遍历 `public` 与所有 `region_%` 租户 Schema：
 
@@ -500,6 +521,13 @@ PostgreSQL 16 实例 (ticket_radar, image: pgvector/pgvector:pg16)
    - `idx_tickets_id_subd_status ON tickets (id) INCLUDE (subdistrict, status)`：加速 `loadClusterBundle` 中 `ticket_themes INNER JOIN tickets` 关联投影。
    - `idx_tickets_stats_cover ON tickets (create_time) INCLUDE (subdistrict, source_category, status, urgency, confidence, primary_theme_id, closed_at, is_fake_closure, is_missing_info)`：统一覆盖 `loadOverview` / `loadWorkorderStats` / `loadTrends` 全部统计列。
    - `idx_themes_created_at ON themes (created_at)`：加速主题时间窗口查询。
+
+### 3. `0013_pii_audit_logs.sql`（PII 按需明文查看留痕审计表与索引）
+- 在 `public` Schema 幂等创建 `public.pii_audit_logs` 表，记录管理员按需查验工单原始 PII 时的租户、工单号、操作人、查验事由、披露字段、来源 IP、UA 与时间；
+- 建立 3 条 B-Tree 查询索引：
+  - `idx_pii_audit_logs_region_ticket_created (region_id, ticket_id, created_at DESC)`：按站点 + 工单快速检索历史查验次数与明细；
+  - `idx_pii_audit_logs_actor_created (actor_user_id, created_at DESC)`：按操作人审计追责；
+  - `idx_pii_audit_logs_created_at (created_at DESC)`：支撑 `GET /api/admin/pii-audit` 全局倒序分页查询。
 
 ---
 
@@ -544,7 +572,7 @@ docker exec 12345-postgres psql -U postgres -d ticket_radar -c "
 | **全量一键初始化** | `pnpm db:init` | `scripts/db-init.ts` | 一键执行表迁移、站点注册、行政边界、数据字典、管理员账号 |
 | **管理员账号初始化** | `pnpm db:init-admin` / `pnpm db:seed-admin` | `scripts/init-admin.ts` | 初始化/重置默认管理员账号与市民体验账号 |
 | **多租户站点拓荒** | `pnpm db:init-tenants` | `scripts/init-tenants.ts` | 初始化/重置租户 Schema、高精边界及标准字典 |
-| **数据库迁移** | `pnpm db:migrate` | `scripts/db-migrate.ts` | 幂等执行 `db/migrations/` 下的 SQL 迁移脚本（含 `0011` / `0012`） |
+| **数据库迁移** | `pnpm db:migrate` | `scripts/db-migrate.ts` | 幂等执行 `db/migrations/` 下的 SQL 迁移脚本（含 `0011` / `0012` / `0013`） |
 | **词库同步** | `pnpm db:vocab` | `scripts/seed-vocabulary.ts` | 导入辖区法定镇街、村居及预置别名知识库 |
 | **数据备份导出** | `pnpm db:export` | `scripts/db-export.ts` | 导出全库数据为 `db/dumps/ticket_radar_data.json` |
 | **数据离线恢复** | `pnpm db:import` | `scripts/db-import.ts` | 从 json dump 快速全量恢复库数据 |

@@ -140,6 +140,9 @@ flowchart TD
   - 列表筛选直接查询 `0012_perf_indexes.sql` 维护的 `is_missing_info = true` 部分索引（`idx_tickets_missing_info_ct`），精准定位缺失具体地址/订单明细、主体为通用泛化词或缺失镇街/仓网的未办结工单；
   - 管理员在工单详情抽屉点击「一键让 Agent 跟进」，前端调用 `POST /api/agent/tasks`（`createOrReuseMissingInfoTask`）幂等创建或复用 `MISSING_INFO` 任务，并立即弹出 [`VoiceOutreachDialog`](../app/_components/agent/voice-outreach-dialog.tsx)；
   - 对话回合提交至 `POST /api/agent/outreach/voice-turn`（`processAgentVoiceTurn`），自动解析市民补充的地点/主体/镇街槽位，回写 `tickets` 表与 `disposal_logs`；PostgreSQL `BEFORE UPDATE` 触发器 `trg_tickets_sync_missing_info` 同步将 `is_missing_info` 置为 `false`，实现缺资料即时清零。
+- **管理员按需明文查验与留痕审计（`revealPII` / `pii_audit`）**：
+  - 在工单详情页（[`app/tickets/[id]/ticket-detail-client.tsx`](../app/tickets/[id]/ticket-detail-client.tsx)）仅对管理员提供「申请查看明文（留痕审计）」入口；提交 4–200 字查验事由后调用 `POST /api/workorders/[id]/reveal-pii`（严格 `requireAdmin`：未登录 401 / 普通用户 403），采用 **Fail-Closed** 机制先向 `public.pii_audit_logs`（[`db/migrations/0013_pii_audit_logs.sql`](../db/migrations/0013_pii_audit_logs.sql)）落库留痕，再返回原始 `callerName`/`callerPhone`/`address`/`rawContent`；
+  - 全部明文与审计响应强制附带 `Cache-Control: no-store`，前端仅在当前页面内存态展示、绝不写入 `localStorage`；审计流水可通过 `GET /api/admin/pii-audit`（支持 `regionId` / `ticketId` / `actorUserId` / `limit`）回溯核查，且与出网 LLM 3 层 PII 脱敏防火墙完全解耦、零削弱。
 
 ### 3.3 智能治理中心：L1/L2/L3 分级自治、48h 回访与治理专报（`/agent`）
 核心引擎位于 [`lib/agent-governance.ts`](../lib/agent-governance.ts)，对应页面 [`app/agent/agent-client.tsx`](../app/agent/agent-client.tsx)：
@@ -195,8 +198,8 @@ flowchart TD
 - 唯一消费端为 `lib/cluster-runner.ts` 的 `runWorkerLoopForRegion`（运行在 `next-server` 进程内，避免跨进程状态撕裂与双 worker 抢池）；
 - [`instrumentation.ts`](../instrumentation.ts) 支持启动时通过 `/api/internal/cluster-bootstrap` 自动恢复未处理工单；在生产双实例环境下通过 `CIVIC_SKIP_BOOTSTRAP="1"` 关闭自动启动扫描，避免容器重启冲击数据库与模型节点。
 
-### 5.2 加权进度公式（[`lib/pipeline-progress.ts`](../lib/pipeline-progress.ts)）
-`PIPELINE_STAGE_WEIGHTS = { S1: 2, S2: 88, CLUSTER: 5, SUMMARY: 5 }`，配合 `stagePercent(stage, completed, total, phase)` 在子区间线性插值；前端 `pipeline-canvas.tsx` 采用 `Math.floor` 防止 `99.99%` 提前进位为 `100%`。
+### 5.2 加权进度公式与耗时校准（[`lib/pipeline-progress.ts`](../lib/pipeline-progress.ts)）
+基于各工序实测单单摊薄耗时基线 `PIPELINE_STAGE_BASELINE_MS = { S1: 0.079, S2: 1150, EMBED: 70, CLUSTER: 42, SUMMARY: 110 }`（单位 ms），经注水保底（`minWeight = 1`）与 Hamilton 最大余数法归一化，默认校准权重为 **`PIPELINE_STAGE_WEIGHTS = { S1: 1, S2: 83, EMBED: 5, CLUSTER: 3, SUMMARY: 8 }`**（总和精确 100，进度区间 `[0,1] / [1,84] / [84,89] / [89,92] / [92,100]`）。支持 `PIPELINE_STAGE_WEIGHTS` 环境变量覆写（JSON 或键值对）以及运行时指数移动平均（EMA，`recordStageLatency` / `getActiveStageWeights`）动态校准；配合 `stagePercent(stage, completed, total, phase)` 在子区间线性插值，前端 `pipeline-canvas.tsx` 采用 `Math.floor` 防止 `99.99%` 提前进位为 `100%`。
 
 ### 5.3 研判流水线工厂抽屉
 入口为顶部 [`PipelineDrawer`](../app/_components/civic/pipeline-drawer.tsx)（仅 `admin` 订阅 SSE），采用统一 React Flow 画布 [`pipeline-canvas.tsx`](../app/workbench/_components/pipeline-canvas.tsx)。同步节点时保留 `measured`、宽高与用户拖拽坐标；边线 [`flowing-edge.tsx`](../app/workbench/_components/flowing-edge.tsx) 严格要求所有 `data.active` 条件包含 `isRunning`。
@@ -213,10 +216,11 @@ flowchart TD
 ## 七、核心自动化核对脚本
 
 ```bash
-# 规则与聚类不变量核对
+# 规则、聚类、PII 审计与进度权重校准核对
 npx tsx tests/test-work-order-date.ts
 npx tsx tests/test-same-incident-cluster.ts
 npx tsx tests/test-incident-profile.ts
+npx tsx tests/test-pii-audit-and-progress.ts
 
 # 副驾驶协议、搜索、巡检与大屏核对
 npx tsx tests/test-copilot-protocol.ts

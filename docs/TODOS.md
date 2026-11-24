@@ -2,7 +2,7 @@
 
 > 本文档作为项目交付状态与剩余待办总账使用。已交付项以 `[x]` 标注并附核验后的 commit hash 与实测效果；待办项以 `[ ]` 按优先级排序。
 >
-> **当前工作分支**：`feat/closed-loop`（最新核心提交 `9b93585`，同步自 2026-11-24）
+> **当前工作分支**：`main`（已于 `84b925a` 合并 `feat/closed-loop`，同步自 2026-11-24）
 >
 > **生产现状快照**：
 > - **双域名同镜像生产架构**（`ticket-radar:v0.1.5`，`CIVIC_SKIP_BOOTSTRAP="1"`）：
@@ -55,16 +55,18 @@
 
 ---
 
-## 二、当前剩余待办 (Active Backlog)
+## 二、当前收口进展与演进状态 (Release & Backlog)
 
-### P1 — 发布收尾与运维确认（需授权后执行）
-- [ ] **生产数据库补跑 `VACUUM ANALYZE` 核验**：每次大批量数据导入或首次上线 `0012_perf_indexes.sql` 后，确认已对 `region_gz_tianhe`、`region_fs_shunde`、`region_ecom_demo` 执行 `VACUUM ANALYZE`，并在 `EXPLAIN (ANALYZE, BUFFERS)` 中确认 `Heap Fetches` 趋近于 0。
-- [ ] **分支合并收口**：完成本轮文档同步与最终回归核验后，经人工确认将 `feat/closed-loop` 合并至 `main`。
+### P1 — 发布收尾与运维确认 ✅
+- [x] **生产数据库补跑 `VACUUM ANALYZE` 核验**：已对生产库 `region_gz_tianhe`、`region_fs_shunde`、`region_ecom_demo` 执行 `VACUUM ANALYZE` 刷亮 Visibility Map，并在 `EXPLAIN (ANALYZE, BUFFERS)` 中确认覆盖索引热点查询实现纯 Index-Only Scan（0 磁盘读，`tab=pending` 0.25 ms、`missing_info` 21~25 ms）。
+- [x] **分支合并收口**：已完成全仓文档与双域 SEO/GEO 同步，并将 `feat/closed-loop` 合并至 `main`（`84b925a`）。
 
-### P2 — 下一阶段演进（需明确排期后启动）
-- [ ] **真实电信外呼 / 短信网关对接**：在现有 `VOICE_SIM`、Webhook 与 SMTP 通道基础上，按甲方合规要求接入运营商 SIP 语音外呼与政务短信回执。
-- [ ] **PII 按需审计还原 (`revealPII` / `pii_audit`)**：针对经审批的高权限核查岗位，建立带留痕审计的按需脱敏查看机制（不破坏现有出站 3 层 PII 防火墙）。
-- [ ] **工序权重数据化校准**：待采集生产大批量研判的真实 P95/P99 分阶段耗时后，用实测权重替换 `lib/pipeline-progress.ts` 中 `{ S1: 2, S2: 88, CLUSTER: 5, SUMMARY: 5 }` 占位比例。
+### P2 — 安全审计与算法校准收口 ✅
+- [x] **PII 按需审计还原 (`revealPII` / `pii_audit`)**：已新增幂等迁移 `db/migrations/0013_pii_audit_logs.sql`（`public.pii_audit_logs` 及 3 条查询索引）、`POST /api/workorders/[id]/reveal-pii`（`requireAdmin` 401/403 + 4–200 字事由校验 + Fail-Closed 落库留痕 + `Cache-Control: no-store`）、`GET /api/admin/pii-audit` 及工单详情页管理员专属「申请查看明文（留痕审计）」纯内存态交互，3 层出网 LLM PII 防火墙完好无损（`tests/test-pii-audit-and-progress.ts` 63/63 PASS）。
+- [x] **工序权重数据化校准**：已升级 `lib/pipeline-progress.ts` 为基于实测单单耗时基线 `{ S1: 0.079, S2: 1150, EMBED: 70, CLUSTER: 42, SUMMARY: 110 }` ms 的校准模型，默认归一化权重 `{ S1: 1, S2: 83, EMBED: 5, CLUSTER: 3, SUMMARY: 8 }`（总和 100），支持 `PIPELINE_STAGE_WEIGHTS` 环境变量覆写与运行时 EMA 动态校准，向后兼容既有导出签名。
+
+### 范围边界说明 (Out of Scope)
+- **真实电信运营商 SIP 语音外呼 / 政务短信回执**：真实电信运营商 SIP 语音外呼需政务专网运营商中继与语音呼叫资质，不属于公网开源/演示版本范围；系统已通过交互式语音外呼模拟（`VoiceOutreachDialog` / `VOICE_SIM`）+ Webhook / SMTP 闭环覆盖全流程。
 
 ---
 
@@ -72,7 +74,7 @@
 
 1. **禁止触碰核心红线文件（未经明确授权）**：
    - `langgraph.json`、`backend/agent/ticket-agent.ts`
-   - 已发布的旧迁移文件 `db/migrations/0000`–`0012`（新变更必须新增幂等迁移编号）
+   - 已发布的旧迁移文件 `db/migrations/0000`–`0013`（新变更必须新增幂等迁移编号）
 2. **密钥与隐私底线**：
    - 严禁将任何真实密码、API Key、Token 写入代码、日志或文档；密钥仅通过 `.env.local` / `.env.vps` 注入。
 3. **提交前基础自检**：

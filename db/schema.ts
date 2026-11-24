@@ -380,5 +380,44 @@ export const computeNodesTable = pgTable(
 export type ComputeNodeRecord = typeof computeNodesTable.$inferSelect;
 export type NewComputeNodeRecord = typeof computeNodesTable.$inferInsert;
 
+/**
+ * 10. PII 明文按需查看留痕审计表 (PII Audit Logs Table, in public schema)
+ */
+export const piiAuditLogsTable = pgTable(
+  "pii_audit_logs",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    regionId: varchar("region_id", { length: 64 }).notNull(),
+    ticketId: varchar("ticket_id", { length: 64 }).notNull(),
+    ticketNo: varchar("ticket_no", { length: 64 }),
+    actorUserId: text("actor_user_id").notNull(),
+    actorName: varchar("actor_name", { length: 128 }).notNull(),
+    actorRole: varchar("actor_role", { length: 32 }).default("admin").notNull(),
+    reason: text("reason").notNull(),
+    fieldsRevealed: text("fields_revealed")
+      .array()
+      .notNull()
+      .default(sql`ARRAY[]::text[]`),
+    ipAddress: varchar("ip_address", { length: 128 }),
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_pii_audit_logs_region_ticket_created").on(
+      table.regionId,
+      table.ticketId,
+      table.createdAt.desc()
+    ),
+    index("idx_pii_audit_logs_actor_created").on(
+      table.actorUserId,
+      table.createdAt.desc()
+    ),
+    index("idx_pii_audit_logs_created_at").on(table.createdAt.desc()),
+  ]
+);
+
+export type PiiAuditLogRecord = typeof piiAuditLogsTable.$inferSelect;
+export type NewPiiAuditLogRecord = typeof piiAuditLogsTable.$inferInsert;
+
 export * from "@/lib/auth/schema";
 

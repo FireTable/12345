@@ -21,6 +21,8 @@ import {
   Trash2,
   Bot,
   Loader2,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { SkTicketDetail } from "@/app/_components/civic/skeletons";
 import {
@@ -120,6 +122,37 @@ const ALIAS_TYPE_OPTIONS = [
   { value: "DEPARTMENT", label: "责任部门" },
 ] as const;
 
+const PII_FIELD_LABELS: Record<string, string> = {
+  callerName: "反映人",
+  callerPhone: "联系电话",
+  address: "事发地址",
+  rawContent: "原始诉求正文",
+};
+
+interface RevealedPiiState {
+  auditId: string;
+  createdAt: string;
+  reason: string;
+  fieldsRevealed: string[];
+  callerName: string;
+  callerPhone: string;
+  address: string;
+  rawContent: string;
+}
+
+interface PiiAuditLogItem {
+  id: string;
+  regionId: string;
+  ticketId: string;
+  ticketNo: string | null;
+  actorUserId: string;
+  actorName: string;
+  actorRole: string;
+  reason: string;
+  fieldsRevealed: string[];
+  createdAt: string;
+}
+
 export default function TicketDetailPage() {
   const { activeRegion, isLoading: regionLoading } = useRegion();
   const { isAdmin, isPending: isRolePending } = useAuthRole();
@@ -165,6 +198,17 @@ export default function TicketDetailPage() {
   const [outreachOpen, setOutreachOpen] = useState(false);
   const [followUpPending, setFollowUpPending] = useState(false);
 
+  // PII 按需查验（仅内存临时态，绝不持久化到 localStorage / sessionStorage）
+  const [revealFormOpen, setRevealFormOpen] = useState(false);
+  const [revealReason, setRevealReason] = useState("");
+  const [revealPending, setRevealPending] = useState(false);
+  const [revealError, setRevealError] = useState<string | null>(null);
+  const [revealedPii, setRevealedPii] = useState<RevealedPiiState | null>(null);
+  const [piiAuditLogs, setPiiAuditLogs] = useState<PiiAuditLogItem[]>([]);
+  const [piiAuditTotal, setPiiAuditTotal] = useState(0);
+  const [piiAuditLoading, setPiiAuditLoading] = useState(false);
+  const [piiAuditListOpen, setPiiAuditListOpen] = useState(false);
+
   function syncCorrectionForm(data: any) {
     if (!data) return;
     setSubdistrict(data.subdistrict ?? (data.region && data.region !== "未知" ? data.region : ""));
@@ -181,6 +225,13 @@ export default function TicketDetailPage() {
     setLoad("pending");
     setLoadError(null);
     setRow(null);
+    setRevealFormOpen(false);
+    setRevealReason("");
+    setRevealError(null);
+    setRevealedPii(null);
+    setPiiAuditLogs([]);
+    setPiiAuditTotal(0);
+    setPiiAuditListOpen(false);
     const headers: Record<string, string> = {};
     if (activeRegion?.id) headers["x-region-id"] = activeRegion.id;
     fetch(`/api/workorders/${encodeURIComponent(params.id)}`, {
@@ -371,6 +422,133 @@ export default function TicketDetailPage() {
     }
   }
 
+  // 加载当前工单的 PII 留痕审计记录（仅管理员）
+  const auditTicketKey = row?.ticketId || row?.id || "";
+  useEffect(() => {
+    if (!isAdmin || isRolePending || !auditTicketKey) return;
+    const controller = new AbortController();
+    setPiiAuditLoading(true);
+    const qs = new URLSearchParams({
+      ticketId: String(auditTicketKey),
+      limit: "10",
+    });
+    if (activeRegion?.id) {
+      qs.set("regionId", activeRegion.id);
+    }
+    fetch(`/api/admin/pii-audit?${qs.toString()}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (res) => {
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.success) return null;
+        return json;
+      })
+      .then((json) => {
+        if (controller.signal.aborted || !json) return;
+        setPiiAuditLogs(Array.isArray(json.items) ? json.items : []);
+        setPiiAuditTotal(typeof json.total === "number" ? json.total : 0);
+      })
+      .catch(() => {
+        // 审计条数加载失败不阻塞主详情
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setPiiAuditLoading(false);
+        }
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [isAdmin, isRolePending, auditTicketKey, activeRegion?.id]);
+
+  async function handleRevealPiiSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!isAdmin) {
+      toast.error("需管理员权限可执行敏感信息查验");
+      return;
+    }
+    const targetId = row?.ticketId || row?.id || params.id;
+    if (!targetId || revealPending) return;
+
+    const trimmedReason = revealReason.trim();
+    const len = Array.from(trimmedReason).length;
+    if (len < 4 || len > 200) {
+      const msg = "请填写 4–200 字的查验事由";
+      setRevealError(msg);
+      toast.error(msg);
+      return;
+    }
+
+    setRevealPending(true);
+    setRevealError(null);
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (activeRegion?.id) headers["x-region-id"] = activeRegion.id;
+      const res = await fetch(`/api/workorders/${encodeURIComponent(targetId)}/reveal-pii`, {
+        method: "POST",
+        cache: "no-store",
+        headers,
+        body: JSON.stringify({
+          reason: trimmedReason,
+          ...(activeRegion?.id ? { regionId: activeRegion.id } : {}),
+        }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        error?: string;
+        auditId?: string;
+        createdAt?: string;
+        fieldsRevealed?: string[];
+        auditCount?: number;
+        audit?: PiiAuditLogItem;
+        callerName?: string;
+        callerPhone?: string;
+        address?: string;
+        rawContent?: string;
+      };
+      if (!isMountedRef.current) return;
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || `申请查看明文失败 (${res.status})`);
+      }
+
+      setRevealedPii({
+        auditId: json.auditId || "",
+        createdAt: json.createdAt || new Date().toISOString(),
+        reason: trimmedReason,
+        fieldsRevealed: Array.isArray(json.fieldsRevealed) ? json.fieldsRevealed : [],
+        callerName: json.callerName || "",
+        callerPhone: json.callerPhone || "",
+        address: json.address || "",
+        rawContent: json.rawContent || "",
+      });
+      if (json.audit) {
+        const createdAudit = json.audit;
+        setPiiAuditLogs((prev) => [
+          createdAudit,
+          ...prev.filter((item) => item.id !== createdAudit.id),
+        ].slice(0, 10));
+      }
+      if (typeof json.auditCount === "number") {
+        setPiiAuditTotal(json.auditCount);
+      } else {
+        setPiiAuditTotal((prev) => prev + 1);
+      }
+      setRevealFormOpen(false);
+      setRevealReason("");
+      toast.success("已记录查验审计留痕，明文仅当前页面临时展示");
+    } catch (err) {
+      if (!isMountedRef.current) return;
+      const msg = err instanceof Error ? err.message : "申请查看明文失败";
+      setRevealError(msg);
+      toast.error(msg);
+    } finally {
+      if (isMountedRef.current) {
+        setRevealPending(false);
+      }
+    }
+  }
+
   if (isRolePending || !isAdmin) {
     return (
       <>
@@ -534,6 +712,178 @@ export default function TicketDetailPage() {
 
           {/* 2. 市民原始诉求卡片 (复用统一组件) */}
           <CitizenVoiceCard data={row} />
+
+          {/* 3. PII 敏感信息按需查验与留痕审计（仅管理员可见，明文仅页面内存态展示） */}
+          {isAdmin && (
+            <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <h2 className="flex items-center gap-1.5 text-xs font-bold text-slate-800 m-0">
+                  <Eye className="w-4 h-4 text-slate-600 shrink-0" aria-hidden="true" />
+                  <span>敏感信息按需查验（留痕审计）</span>
+                </h2>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[11px] text-slate-500 tabular-nums">
+                    {piiAuditLoading ? "正在读取审计记录…" : `本单审计记录 ${piiAuditTotal} 条`}
+                  </span>
+                  {revealedPii ? (
+                    <button
+                      type="button"
+                      onClick={() => setRevealedPii(null)}
+                      className="btn btn--default inline-flex items-center gap-1 text-xs min-h-[44px] sm:min-h-[30px] px-2.5 py-1"
+                    >
+                      <EyeOff className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                      <span>隐藏明文</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      aria-expanded={revealFormOpen}
+                      onClick={() => {
+                        setRevealFormOpen((prev) => !prev);
+                        setRevealError(null);
+                      }}
+                      className="btn btn--default inline-flex items-center gap-1 text-xs min-h-[44px] sm:min-h-[30px] px-2.5 py-1 text-slate-800"
+                    >
+                      <Eye className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                      <span>申请查看明文（留痕审计）</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {revealFormOpen && !revealedPii && (
+                <form onSubmit={handleRevealPiiSubmit} className="space-y-2.5 pt-2 border-t border-slate-100">
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <label htmlFor="pii-reveal-reason" className="text-[11px] font-medium text-slate-700">
+                        查验事由（必填，4–200 字，提交后写入审计日志）
+                      </label>
+                      <span className="text-[11px] text-slate-400 tabular-nums">
+                        {Array.from(revealReason.trim()).length}/200
+                      </span>
+                    </div>
+                    <textarea
+                      id="pii-reveal-reason"
+                      rows={2}
+                      maxLength={200}
+                      value={revealReason}
+                      disabled={revealPending}
+                      onChange={(e) => {
+                        setRevealReason(e.target.value);
+                        if (revealError) setRevealError(null);
+                      }}
+                      placeholder="例如：核实回访联系电话与现场准确地址，用于工单复核处置"
+                      className="w-full px-2.5 py-2 rounded-lg border border-slate-200 bg-slate-50/70 text-base sm:text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-blue-500 disabled:opacity-60"
+                    />
+                  </div>
+                  {revealError && (
+                    <div role="alert" className="text-xs text-rose-600">
+                      {revealError}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="submit"
+                      disabled={revealPending}
+                      className="btn btn--primary inline-flex items-center gap-1.5 text-xs min-h-[44px] sm:min-h-[32px] px-3 py-1.5 disabled:opacity-50"
+                    >
+                      {revealPending && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" aria-hidden="true" />}
+                      <span>{revealPending ? "正在记录并读取…" : "确认留痕并查看明文"}</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={revealPending}
+                      onClick={() => {
+                        setRevealFormOpen(false);
+                        setRevealError(null);
+                      }}
+                      className="btn btn--default text-xs min-h-[44px] sm:min-h-[32px] px-3 py-1.5"
+                    >
+                      取消
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {revealedPii && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3 space-y-2.5 text-xs">
+                  <div className="flex items-center justify-between gap-2 flex-wrap text-[11px] text-slate-600 pb-2 border-b border-slate-200/80">
+                    <span className="font-mono">审计编号：{revealedPii.auditId}</span>
+                    <span>已留痕 · 仅本页临时展示，刷新或切换工单自动清除</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div className="bg-white rounded-md border border-slate-200/80 px-2.5 py-2 min-w-0">
+                      <div className="text-[11px] text-slate-500 mb-0.5">{isEcommerce ? "反馈买家" : "反映人"}</div>
+                      <div className="font-medium text-slate-900 break-words">
+                        {revealedPii.callerName || "—"}
+                      </div>
+                    </div>
+                    <div className="bg-white rounded-md border border-slate-200/80 px-2.5 py-2 min-w-0">
+                      <div className="text-[11px] text-slate-500 mb-0.5">联系电话</div>
+                      <div className="font-mono font-medium text-slate-900 break-all">
+                        {revealedPii.callerPhone || "—"}
+                      </div>
+                    </div>
+                    <div className="bg-white rounded-md border border-slate-200/80 px-2.5 py-2 min-w-0">
+                      <div className="text-[11px] text-slate-500 mb-0.5">事发地址</div>
+                      <div className="font-medium text-slate-900 break-words">
+                        {revealedPii.address || "—"}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-white rounded-md border border-slate-200/80 px-2.5 py-2 space-y-1">
+                    <div className="text-[11px] text-slate-500">原始诉求正文</div>
+                    <div className="text-slate-800 leading-relaxed whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto">
+                      {revealedPii.rawContent || "—"}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {piiAuditTotal > 0 && (
+                <div className="pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    aria-expanded={piiAuditListOpen}
+                    onClick={() => setPiiAuditListOpen((prev) => !prev)}
+                    className="w-full flex items-center justify-between text-xs font-medium text-slate-600 hover:text-slate-900 py-1 min-h-[44px] sm:min-h-[30px] cursor-pointer"
+                  >
+                    <span>本单明文查验留痕记录（{piiAuditTotal} 条）</span>
+                    {piiAuditListOpen ? (
+                      <ChevronUp className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />
+                    )}
+                  </button>
+                  {piiAuditListOpen && (
+                    <div className="mt-2 space-y-1.5">
+                      {piiAuditLogs.map((item) => (
+                        <div
+                          key={item.id}
+                          className="rounded-md border border-slate-200/70 bg-slate-50/60 px-2.5 py-2 text-[11px] space-y-1"
+                        >
+                          <div className="flex items-center justify-between gap-2 flex-wrap text-slate-600">
+                            <span className="font-medium text-slate-800">
+                              {item.actorName}（{item.actorRole}）
+                            </span>
+                            <span className="font-mono tabular-nums text-slate-500">
+                              {formatLocalDateTime(item.createdAt)}
+                            </span>
+                          </div>
+                          <div className="text-slate-700 break-words">事由：{item.reason}</div>
+                          {item.fieldsRevealed.length > 0 && (
+                            <div className="text-slate-500">
+                              查验字段：{item.fieldsRevealed.map((f) => PII_FIELD_LABELS[f] || f).join("、")}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* 右侧边栏区域：经办属性、工单处置与人工纠偏、群组联动、处置时间轴 (4列) */}
