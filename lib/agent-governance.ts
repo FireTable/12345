@@ -419,6 +419,98 @@ export function extractEmailFromText(raw: string): string {
   return match?.[0] ?? "";
 }
 
+const CONTACT_UTTERANCE_NOISE_RE =
+  /我(?:们)?的?|留(?:个|一下)?|补充(?:一下)?|给(?:你|您)|改成|改为|换成|联系(?:方式|电话|手机|号码|邮箱)?|电话(?:号码)?|手机(?:号码|号)?|座机(?:号码)?|号码|电子?邮箱|邮箱(?:地址)?|邮件|微信同号|是|为|叫|号|啊|吧|哦|呢|哈|好的|好|行|可以|谢谢|麻烦了?|请|记一下|一下/g;
+
+function isOnlyContactRemainder(withoutContacts: string): boolean {
+  const stripped = withoutContacts
+    .replace(CONTACT_UTTERANCE_NOISE_RE, "")
+    .replace(/[\s，,。！？?!：:；;、~～()（）【】[\]""''"'·…\-—_]+/g, "")
+    .trim();
+  return stripped.length < 2;
+}
+
+const MALFORMED_MOBILE_FLEX_RE =
+  /(?<!\d)(?:(?:\+|00)86[\s-]*)?(1[3-9](?:[\s-]?\d){6,14})(?!\d)/g;
+const MALFORMED_SPOKEN_PHONE_RE = new RegExp(
+  `(?<![${SPOKEN_PHONE_CHARS}])(?:(?:\\+|00)?86[\\s\\-、，。,.]*)?([1一幺壹]${SPOKEN_SEP}[3-9三四五六七八九叁肆伍陆柒捌玖](?:${SPOKEN_SEP}[${SPOKEN_PHONE_CHARS}]){6,14})(?![${SPOKEN_PHONE_CHARS}])`,
+  "g"
+);
+const NON_PHONE_ID_PREFIX_RE =
+  /(?:订单|单号|快递单号|运单号|物流单号|SKU|货号|编号|工单|回执)\s*[：:#-]?\s*$/i;
+const EXPLICIT_PHONE_CUE_RE = /(?:手机|电话|联系|号码|回电|回访|微信同号)/;
+
+/**
+ * 检测用户输入中“疑似想留手机号但位数不对”的尝试（8-16 位且非 11 位），
+ * 用于替代机械复读“还需要补充联系电话”，同时排除订单号/SKU/地址门牌误报。
+ */
+export function detectMalformedMobileAttempt(
+  raw: string
+): { length: number; isOnlyContactAttempt: boolean } | null {
+  if (!raw || !raw.trim()) return null;
+  if (extractPhoneFromText(raw) || extractEmailFromText(raw)) {
+    return null;
+  }
+
+  const normalized = normalizeContactChars(normalizeEmailSymbols(raw))
+    .replace(new RegExp(EMAIL_RE.source, "g"), " ")
+    .replace(EMAIL_FLEX_RE, " ");
+
+  const inspectCandidate = (
+    fullStart: number,
+    fullEnd: number,
+    digits: string
+  ): { length: number; isOnlyContactAttempt: boolean } | null => {
+    if (digits.length < 8 || digits.length > 16 || digits.length === 11) {
+      return null;
+    }
+    const prevChar = fullStart > 0 ? normalized[fullStart - 1] : "";
+    const nextChar = fullEnd < normalized.length ? normalized[fullEnd] : "";
+    if (/[A-Za-z]/.test(prevChar) || /[A-Za-z]/.test(nextChar)) {
+      return null;
+    }
+    const prefixWindow = normalized.slice(Math.max(0, fullStart - 12), fullStart);
+    if (NON_PHONE_ID_PREFIX_RE.test(prefixWindow.slice(-8))) {
+      return null;
+    }
+
+    const withoutCandidate = `${normalized.slice(0, fullStart)} ${normalized.slice(fullEnd)}`;
+    const isOnlyContactAttempt = isOnlyContactRemainder(withoutCandidate);
+    const hasPhoneCue = EXPLICIT_PHONE_CUE_RE.test(prefixWindow);
+    if (!isOnlyContactAttempt && !hasPhoneCue) {
+      return null;
+    }
+    return { length: digits.length, isOnlyContactAttempt };
+  };
+
+  MALFORMED_MOBILE_FLEX_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = MALFORMED_MOBILE_FLEX_RE.exec(normalized)) !== null) {
+    const digits = (m[1] || "").replace(/[\s-]/g, "");
+    const hit = inspectCandidate(m.index, m.index + m[0].length, digits);
+    if (hit) return hit;
+  }
+
+  MALFORMED_SPOKEN_PHONE_RE.lastIndex = 0;
+  while ((m = MALFORMED_SPOKEN_PHONE_RE.exec(normalized)) !== null) {
+    const group1 = m[1] || "";
+    if (!/[零〇一幺壹二两贰三叁四肆五伍六陆七柒八捌九玖]/.test(group1)) {
+      continue;
+    }
+    let digits = "";
+    for (const ch of group1) {
+      const mapped = SPOKEN_DIGIT_MAP[ch];
+      if (mapped !== undefined) {
+        digits += mapped;
+      }
+    }
+    const hit = inspectCandidate(m.index, m.index + m[0].length, digits);
+    if (hit) return hit;
+  }
+
+  return null;
+}
+
 const THIRD_PARTY_ENTITY_PATTERN =
   "商家|商户|店铺|门店|老板|店主|摊主|物业|开发商|房东|快递|客服|对方|涉事方?|投诉对象|卖家|店长|经理";
 const THIRD_PARTY_PHONE_CONTEXT_RE = new RegExp(
@@ -575,15 +667,7 @@ export function isContactOnlyUtterance(raw: string): boolean {
     .replace(new RegExp(MOBILE_FLEX_RE.source, "g"), " ")
     .replace(new RegExp(LANDLINE_FLEX_RE.source, "g"), " ");
 
-  const stripped = withoutContacts
-    .replace(
-      /我(?:们)?的?|留(?:个|一下)?|补充(?:一下)?|给(?:你|您)|改成|改为|换成|联系(?:方式|电话|手机|号码|邮箱)?|电话(?:号码)?|手机(?:号码|号)?|座机(?:号码)?|号码|电子?邮箱|邮箱(?:地址)?|邮件|微信同号|是|为|叫|号|啊|吧|哦|呢|哈|好的|好|行|可以|谢谢|麻烦了?|请|记一下|一下/g,
-      ""
-    )
-    .replace(/[\s，,。！？?!：:；;、~～()（）【】[\]""''"'·…\-—_]+/g, "")
-    .trim();
-
-  return stripped.length < 2;
+  return isOnlyContactRemainder(withoutContacts);
 }
 
 /**
@@ -1404,12 +1488,14 @@ export async function processIntakeChat(input: {
     .map((m) => m.content.trim());
   const latestUserText = userTexts[userTexts.length - 1] || "";
   const allUserText = userTexts.join("；");
+  const isPureContactOrMalformedAttempt = (text: string): boolean =>
+    isContactOnlyUtterance(text) || Boolean(detectMalformedMobileAttempt(text)?.isOnlyContactAttempt);
   const hasExistingDraftContent = Boolean(input.draft?.content?.trim());
   const latestContentTurn =
-    latestUserText && !isContactOnlyUtterance(latestUserText) ? [latestUserText] : [];
+    latestUserText && !isPureContactOrMalformedAttempt(latestUserText) ? [latestUserText] : [];
   const contentUserTexts = hasExistingDraftContent
     ? latestContentTurn
-    : userTexts.filter((t) => !isContactOnlyUtterance(t));
+    : userTexts.filter((t) => !isPureContactOrMalformedAttempt(t));
 
   // 汇总非纯联系方式的用户陈述；已有整理稿时仅增量合并最新有效轮次
   const combinedRaw = mergeUniqueUserContent(input.draft?.content, contentUserTexts);
@@ -1439,6 +1525,9 @@ export async function processIntakeChat(input: {
   const historyEmail =
     extractEmailFromText(allUserText) || extractEmailFromText(input.draft?.content || "");
   const ruleEmail = latestEmail || existingEmail || historyEmail;
+
+  const malformedMobileAttempt =
+    !latestCitizenPhone && !latestEmail ? detectMalformedMobileAttempt(latestUserText) : null;
 
   const contactOnlyTurn =
     Boolean(latestCitizenPhone || latestEmail) && isContactOnlyUtterance(latestUserText);
@@ -1567,6 +1656,7 @@ export async function processIntakeChat(input: {
       );
       const contentSafe =
         !contactOnlyTurn &&
+        !malformedMobileAttempt?.isOnlyContactAttempt &&
         strippedCombined.length > 0 &&
         !/\{\{[A-Z0-9_]+_\d+\}\}/.test(llmRes.data.content || "") &&
         !/\{\{[A-Z0-9_]+_\d+\}\}/.test(rawLlmContent) &&
@@ -1672,6 +1762,21 @@ export async function processIntakeChat(input: {
     reply = readyToSubmit
       ? "已记录您的联系方式，诉求要素已齐全，请核对下方草稿后点击确认提交。"
       : `已为您记下联系方式，还需要补充${missingFields.join("和")}，您也可以直接在下方草稿卡片中选择或填写。`;
+  } else if (
+    !latestCitizenPhone &&
+    !latestEmail &&
+    malformedMobileAttempt &&
+    (missingFields.includes("联系电话或电子邮箱") || malformedMobileAttempt.isOnlyContactAttempt)
+  ) {
+    const diffHint =
+      malformedMobileAttempt.length < 11
+        ? `少了 ${11 - malformedMobileAttempt.length} 位`
+        : `多了 ${malformedMobileAttempt.length - 11} 位`;
+    const otherMissing = missingFields.filter((f) => f !== "联系电话或电子邮箱");
+    reply =
+      otherMissing.length > 0
+        ? `您输入的号码当前为 ${malformedMobileAttempt.length} 位（${diffHint}），中国大陆手机号应为 11 位，请核对后重新输入或提供电子邮箱；另外还需要补充${otherMissing.join("和")}。`
+        : `您输入的号码当前为 ${malformedMobileAttempt.length} 位（${diffHint}），中国大陆手机号应为 11 位，请核对后重新输入，或提供电子邮箱。`;
   } else if (!reply || (!readyToSubmit && !replyAddressesMissingFields(reply, missingFields))) {
     if (readyToSubmit) {
       reply =
@@ -2951,6 +3056,8 @@ export async function processAgentVoiceTurn(input: {
   | {
       ok: true;
       reply: string;
+      reasoning: string;
+      sentiment?: "NEGATIVE" | "POSITIVE" | "UNCLEAR";
       completed: boolean;
       extractedPatch?: Record<string, string>;
       triggeredFakeClosure?: boolean;
@@ -3123,14 +3230,29 @@ export async function processAgentVoiceTurn(input: {
         llmReply ||
         `好的，感谢您的补充！我已经记录到${Object.values(patch).join(" · ")}，工单信息已补全并转入精准处置流程。`;
 
+      const reasoning = [
+        `1. 隐私脱敏识别：已提取对方有效回答字段（${Object.keys(patch).join("、")}），并将工单置信度提升至 ≥ 88。`,
+        `2. 要素对齐写库：${patchDesc}。`,
+        `3. 闭环处置联动：已记录审计日志并将治理任务 ${task.id} 标记为「已完成（EXECUTED）」。`,
+      ].join("\n");
+
       return {
         ok: true,
         reply,
+        reasoning,
         completed: true,
         extractedPatch: patch,
         task: toTaskDto((updatedRows[0] as Record<string, unknown>) || rawTask),
       };
     }
+
+    const stillMissing = [
+      !hasConfirmedAddress ? (isEcommerce ? "订单/仓网地点" : "具体路名门牌/地点") : null,
+      !hasConfirmedSubject ? (isEcommerce ? "SKU/涉事店铺" : "涉事主体") : null,
+      !hasConfirmedSubdistrict ? (isEcommerce ? "购买渠道/仓网" : "所属镇街") : null,
+    ]
+      .filter(Boolean)
+      .join("、");
 
     return {
       ok: true,
@@ -3139,6 +3261,7 @@ export async function processAgentVoiceTurn(input: {
         (domainType === "ECOMMERCE_CS"
           ? "抱歉暂未听清订单号或具体SKU编号，麻烦您再提供一下涉及的商品名称、SKU或购买渠道。"
           : "抱歉暂未识别到具体路名门牌或涉事商铺名称，麻烦您再说明一下详细位置。"),
+      reasoning: `本轮用户回答未命中缺失关键槽位（仍缺少：${stillMissing || "核心要素"}），保留任务为未完成态并自动追问下一轮。`,
       completed: false,
       extractedPatch: {},
       task,
@@ -3314,6 +3437,12 @@ export async function processAgentVoiceTurn(input: {
       reply:
         llmReply ||
         "非常抱歉给您带来困扰！我已将此事项标记为疑似假闭环并立即重开督办，将安排专人复核整改并向您反馈。",
+      reasoning: [
+        `1. 满意度语义研判：判定用户反馈为「未解决/负反馈（NEGATIVE）」。`,
+        `2. 假闭环告警联动：已将关联${task.targetType === "THEME" ? "多频专题与代表工单" : "工单"}回退至 REOPENED（疑似假闭环）并记录审计日志。`,
+        `3. 治理任务状态：任务 ${task.id} 已置为 EXECUTED。`,
+      ].join("\n"),
+      sentiment: "NEGATIVE",
       completed: true,
       triggeredFakeClosure: true,
       reopenedThemeId,
@@ -3350,6 +3479,11 @@ export async function processAgentVoiceTurn(input: {
       reply:
         llmReply ||
         "感谢您的宝贵反馈！很高兴确认问题已经顺利解决，本次回访已完成归档，祝您生活愉快！",
+      reasoning: [
+        `1. 满意度语义研判：判定用户反馈为「满意办结（POSITIVE）」。`,
+        `2. 闭环归档：确认原处置结果真实有效，未触发假闭环重开，已写入回访归档日志并将任务置为 EXECUTED。`,
+      ].join("\n"),
+      sentiment: "POSITIVE",
       completed: true,
       triggeredFakeClosure: false,
       reopenedThemeId: null,
@@ -3362,6 +3496,9 @@ export async function processAgentVoiceTurn(input: {
     reply:
       llmReply ||
       "请问您此前反映的问题目前是否已经彻底解决？如果仍存在反复或敷衍办结的情况，请直接告诉我。",
+    reasoning:
+      "满意度语义研判暂为不明确（UNCLEAR），保持通话并继续礼貌追问问题是否真正解决。",
+    sentiment: "UNCLEAR",
     completed: false,
     triggeredFakeClosure: false,
     reopenedThemeId: null,

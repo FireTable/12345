@@ -98,8 +98,8 @@ export async function GET(req: NextRequest) {
 
       req.signal.addEventListener("abort", teardown, { once: true });
 
-      // 1. 按已认证用户角色注册订阅者
-      cleanup = registerController(resolvedRegionId, controller, session.user.role);
+      // 1. 按已认证用户角色及 userId 注册订阅者
+      cleanup = registerController(resolvedRegionId, controller, session.user.role, session.user.id);
 
       // 2. 立即推一行注释让客户端 EventSource 立刻确认连接建立
       try {

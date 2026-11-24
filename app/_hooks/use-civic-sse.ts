@@ -38,7 +38,10 @@ export type CivicSseMessage =
       metrics: CivicSseMetrics | null;
     }
   | { type: "pipeline-state-refresh"; regionId: string }
-  | { type: "civic-data-refresh"; regionId: string };
+  | { type: "civic-data-refresh"; regionId: string }
+  | { type: "outreach-incoming"; regionId: string; session: unknown }
+  | { type: "outreach-update"; regionId: string; session: unknown; processing?: boolean }
+  | { type: "outreach-dismissed"; regionId: string; sessionId: string };
 
 export type CivicSseStatus = "connecting" | "open" | "closed" | "error";
 

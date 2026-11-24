@@ -611,6 +611,16 @@ export default function SubmitPage() {
   }, [fetchOptions, fetchMyTickets]);
 
   useEffect(() => {
+    const onRefresh = () => {
+      void fetchMyTickets();
+    };
+    window.addEventListener("civic-data-refresh", onRefresh);
+    return () => {
+      window.removeEventListener("civic-data-refresh", onRefresh);
+    };
+  }, [fetchMyTickets]);
+
+  useEffect(() => {
     return () => {
       optionsAbortRef.current?.abort();
       ticketsAbortRef.current?.abort();

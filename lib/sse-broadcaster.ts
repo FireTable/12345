@@ -57,7 +57,10 @@ type SseMessage =
       metrics: SseMetrics | null;
     }
   | { type: "pipeline-state-refresh"; regionId: string }
-  | { type: "civic-data-refresh"; regionId: string };
+  | { type: "civic-data-refresh"; regionId: string }
+  | { type: "outreach-incoming"; regionId: string; session: unknown }
+  | { type: "outreach-update"; regionId: string; session: unknown; processing?: boolean }
+  | { type: "outreach-dismissed"; regionId: string; sessionId: string };
 
 type MetricsCacheEntry = { value: SseMetrics | null; fetchedAt: number };
 type BroadcastThrottleEntry = {
@@ -84,6 +87,10 @@ declare global {
   var __sse_emit_seq: Map<string, number> | undefined;
   // eslint-disable-next-line no-var
   var __sse_emit_chain: Map<string, Promise<void>> | undefined;
+  // eslint-disable-next-line no-var
+  var __sse_user_controllers: Map<string, Set<SseController>> | undefined;
+  // eslint-disable-next-line no-var
+  var __sse_controller_user: WeakMap<SseController, string> | undefined;
 }
 
 const subscribers: Map<string, SseRoleBucket> =
@@ -113,6 +120,14 @@ globalThis.__sse_emit_seq = emitSeqMap;
 const emitChainMap: Map<string, Promise<void>> =
   globalThis.__sse_emit_chain ?? new Map<string, Promise<void>>();
 globalThis.__sse_emit_chain = emitChainMap;
+
+const userControllers: Map<string, Set<SseController>> =
+  globalThis.__sse_user_controllers ?? new Map<string, Set<SseController>>();
+globalThis.__sse_user_controllers = userControllers;
+
+const controllerToUser: WeakMap<SseController, string> =
+  globalThis.__sse_controller_user ?? new WeakMap<SseController, string>();
+globalThis.__sse_controller_user = controllerToUser;
 
 const encoder = new TextEncoder();
 
@@ -207,6 +222,16 @@ export function unregisterController(
   regionId: string,
   controller: SseController
 ): void {
+  const userId = controllerToUser.get(controller);
+  if (userId) {
+    controllerToUser.delete(controller);
+    const uSet = userControllers.get(userId);
+    if (uSet) {
+      uSet.delete(controller);
+      if (uSet.size === 0) userControllers.delete(userId);
+    }
+  }
+
   const bucket = subscribers.get(regionId);
   if (!bucket) return;
   bucket.admin.delete(controller);
@@ -224,12 +249,13 @@ export function unregisterController(
  * 返回幂等取消注册的函数（路由 handler 在 cancel()/abort 时调一次）。
  *
  * 仅对 "admin" 订阅者推送初始 task-progress 快照（taskProgress + metrics），
- * 普通 "user" 订阅者绝不接收管理态势与工单敏感细节。
+ * 普通 "user" 订阅者绝不接收管理态势与工单敏感细节，可按 userId 接收点对点外呼来电通知。
  */
 export function registerController(
   regionId: string,
   controller: SseController,
-  role: SseRole = "user"
+  role: SseRole = "user",
+  userId?: string
 ): () => void {
   const safeRole: SseRole = role === "admin" ? "admin" : "user";
   let bucket = subscribers.get(regionId);
@@ -238,6 +264,16 @@ export function registerController(
     subscribers.set(regionId, bucket);
   }
   bucket[safeRole].add(controller);
+
+  if (safeRole === "user" && userId) {
+    let uSet = userControllers.get(userId);
+    if (!uSet) {
+      uSet = new Set();
+      userControllers.set(userId, uSet);
+    }
+    uSet.add(controller);
+    controllerToUser.set(controller, userId);
+  }
 
   let unregistered = false;
   const cleanup = () => {
@@ -421,10 +457,80 @@ export function broadcastPipelineRefresh(regionId: string): void {
   for (const c of bucket.admin) send(c, msg);
 }
 
+/** 统计当前在线且可接收指定外呼会话的用户端连接数。 */
+export function countOnlineOutreachTargets(
+  regionId: string,
+  targetUserId: string | null
+): number {
+  if (targetUserId) {
+    return userControllers.get(targetUserId)?.size ?? 0;
+  }
+  const regionUsers = subscribers.get(regionId)?.user.size ?? 0;
+  if (regionUsers > 0) return regionUsers;
+  let total = 0;
+  for (const set of userControllers.values()) total += set.size;
+  return total;
+}
+
+/** 向同辖区所有管理员端外呼监听窗推送最新通话/推理状态（仅 admin 桶，绝不发给 user）。 */
+export function broadcastOutreachToAdmins(
+  regionId: string,
+  payload: { session: unknown; processing?: boolean }
+): void {
+  const msg: SseMessage = {
+    type: "outreach-update",
+    regionId,
+    session: payload.session,
+    ...(payload.processing !== undefined ? { processing: payload.processing } : {}),
+  };
+  const bucket = subscribers.get(regionId);
+  if (bucket && bucket.admin.size > 0) {
+    for (const c of bucket.admin) send(c, msg);
+  }
+}
+
+/** 向对应用户端实时推送外呼来电（RINGING）或回复更新。 */
+export function broadcastOutreachToCitizen(
+  regionId: string,
+  targetUserId: string | null,
+  type: "outreach-incoming" | "outreach-update",
+  session: unknown
+): void {
+  const msg: SseMessage = { type, regionId, session };
+  if (targetUserId) {
+    const set = userControllers.get(targetUserId);
+    if (!set || set.size === 0) return;
+    for (const c of set) send(c, msg);
+    return;
+  }
+  const regionUserSet = subscribers.get(regionId)?.user;
+  if (regionUserSet && regionUserSet.size > 0) {
+    for (const c of regionUserSet) send(c, msg);
+    return;
+  }
+  for (const set of userControllers.values()) {
+    for (const c of set) send(c, msg);
+  }
+}
+
+/** 通知其他未接听该来电的用户端窗口关闭来电提醒。 */
+export function broadcastOutreachDismissed(
+  regionId: string,
+  sessionId: string,
+  excludeUserId?: string
+): void {
+  const msg: SseMessage = { type: "outreach-dismissed", regionId, sessionId };
+  for (const [uid, set] of userControllers.entries()) {
+    if (excludeUserId && uid === excludeUserId) continue;
+    for (const c of set) send(c, msg);
+  }
+}
+
 /**
  * 测试 / 优雅停机用：清掉所有订阅与节流状态。
  */
 export function _resetSseBroadcasterForTesting(): void {
+  userControllers.clear();
   for (const st of broadcastThrottle.values()) {
     if (st.timer) {
       clearTimeout(st.timer);

@@ -11,6 +11,7 @@ import { CivicNav } from "@/app/_components/civic/civic-nav";
 import { CivicWorkflowProvider } from "@/app/_components/civic/civic-workflow";
 import { Toaster } from "@/app/_components/ui/sonner";
 import { RegionProvider } from "@/app/_components/civic/region-context";
+import { UserOutreachReceiver } from "@/app/_components/agent/user-outreach-receiver";
 import { getAppDomainMode } from "@/lib/app-domain";
 import { appViewport } from "./viewport";
 
@@ -416,6 +417,7 @@ export default function RootLayout({
             <main id="main-content" className="main">
               {children}
             </main>
+            <UserOutreachReceiver />
             <Toaster />
           </CivicWorkflowProvider>
         </RegionProvider>
