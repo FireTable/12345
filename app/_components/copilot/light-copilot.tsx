@@ -421,6 +421,7 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
         id: aiId,
         role: "assistant",
         content: "",
+        status: "正在理解问题并规划检索…",
         timestamp: new Date().toLocaleTimeString(),
       },
     ]);
@@ -475,7 +476,7 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
           think = visible.slice(thinkOpenIdx + 7, thinkCloseIdx).trim();
           content = visible.slice(thinkCloseIdx + 8);
         }
-        const status = content.trim() ? undefined : split.status;
+        const status = content.trim() ? undefined : (split.status || "正在理解问题并规划检索…");
         setMessages((prev) =>
           prev.map((m) =>
             m.id === aiId
@@ -523,7 +524,7 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
       setMessages((prev) =>
         prev.map((m) =>
           m.id === aiId
-            ? { ...m, content: m.content || `研判失败:${msg || "未知错误"}` }
+            ? { ...m, status: undefined, content: m.content || `研判失败:${msg || "未知错误"}` }
             : m
         )
       );
