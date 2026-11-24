@@ -153,7 +153,7 @@ export function buildRecordsFromRows(
       district: optionalText(normalized.district) || options.district || null,
       subdistrict: optionalText(normalized.subdistrict) || profile.township || null,
       sourceCategory: optionalText(normalized.sourceCategory) || profile.category || null,
-      urgency: profile.urgent ? "URGENT" : "NORMAL",
+      urgency: profile.urgency,
       channel,
       status: "PENDING",
       createTime,

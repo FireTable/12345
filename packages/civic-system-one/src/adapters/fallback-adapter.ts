@@ -8,6 +8,7 @@ import type {
 } from "../types";
 import { CATEGORY_NAME_MAP } from "../presets/categories";
 import { hasCivicRedlineSignal } from "../redline";
+import { assessCivicUrgency } from "../urgency";
 import { matchTownshipFromOptions } from "./township-matcher";
 
 export class FallbackAdapter implements DecisionAdapter {
@@ -76,23 +77,17 @@ export class FallbackAdapter implements DecisionAdapter {
       }
     }
 
-    // 3. 紧迫度判定
-    let urgencyLevel: 0 | 1 | 2 | 3 = 1;
-    let slaHours: 0 | 2 | 24 | 120 | 360 = 120;
-    if (intent === "INQUIRY") {
+    // 3. 紧迫度判定与 4. 涉稳风险（统一复用否定敏感符号规则）
+    const rawFullText = `${ticket.title || ""} ${ticket.content || ""}`.trim();
+    const symbolicUrgency = assessCivicUrgency(rawFullText);
+    const stabilityRisk = hasCivicRedlineSignal(rawFullText);
+
+    let urgencyLevel: 0 | 1 | 2 | 3 = symbolicUrgency.level;
+    let slaHours: 0 | 2 | 24 | 120 | 360 = symbolicUrgency.slaHours;
+    if (intent === "INQUIRY" && symbolicUrgency.level <= 1 && !stabilityRisk) {
       urgencyLevel = 0;
       slaHours = 0;
-    } else if (text.includes("爆裂") || text.includes("喷涌") || text.includes("困人") || text.includes("泄漏") || text.includes("重大事故")) {
-      urgencyLevel = 3;
-      slaHours = 2;
-    } else if (text.includes("严重阻碍") || text.includes("瘫痪") || text.includes("大面积")) {
-      urgencyLevel = 2;
-      slaHours = 24;
     }
-
-    // 4. 涉稳风险（10类红线硬互锁 + 否定语境窗口）
-    const rawFullText = `${ticket.title || ""} ${ticket.content || ""}`.trim();
-    const stabilityRisk = hasCivicRedlineSignal(rawFullText);
     if (stabilityRisk) {
       urgencyLevel = 3;
       slaHours = 2;

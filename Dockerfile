@@ -4,7 +4,8 @@
 ARG NODE_VERSION=22
 
 # ---------- base: pnpm via corepack ----------
-FROM node:${NODE_VERSION}-alpine AS base
+# 使用 Debian slim (glibc)，保证 onnxruntime-node 原生 Linux x64 推理库与模型可在生产容器正常加载
+FROM node:${NODE_VERSION}-slim AS base
 ENV PNPM_HOME="/pnpm" PATH="/pnpm:$PATH"
 # pin pnpm@9: pnpm 10+ 移走了 package.json 里的 pnpm.onlyBuiltDependencies (新家是 pnpm-workspace.yaml)
 # 本项目在 package.json 里写 onlyBuiltDependencies, 必须用 pnpm 9.x 才生效
@@ -26,6 +27,19 @@ COPY . .
 RUN if [ -f .env.vps ] && [ ! -f .env.production ]; then cp .env.vps .env.production; fi
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm build
+# System-1 ONNXAdapter 通过动态 import('onnxruntime-node') 加载，@vercel/nft 不会自动追踪；
+# 将真实目录与 onnxruntime-common 实体拷贝进 standalone/node_modules，并剔除非 linux 二进制缩小体积。
+RUN node -e '\
+  const fs = require("fs"), path = require("path"); \
+  const ortPkg = require.resolve("onnxruntime-node/package.json", { paths: [process.cwd(), path.join(process.cwd(), "packages/civic-system-one")] }); \
+  const ortNode = fs.realpathSync(path.dirname(ortPkg)); \
+  const ortCommon = fs.realpathSync(path.join(path.dirname(ortNode), "onnxruntime-common")); \
+  fs.cpSync(ortNode, ".next/standalone/node_modules/onnxruntime-node", { recursive: true, dereference: true }); \
+  fs.cpSync(ortCommon, ".next/standalone/node_modules/onnxruntime-common", { recursive: true, dereference: true }); \
+  for (const plat of ["darwin", "win32"]) { \
+    fs.rmSync(path.join(".next/standalone/node_modules/onnxruntime-node/bin/napi-v6", plat), { recursive: true, force: true }); \
+  } \
+'
 
 # ---------- migrate: drizzle migrator (one-off, not in final image) ----------
 # 用法: docker run --rm --network 12345_default --env-file .env.local \
@@ -47,11 +61,17 @@ ENV NODE_ENV=production \
     PORT=3100 \
     HOSTNAME=0.0.0.0
 
-RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates libgomp1 && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd -g 1001 -r nodejs && \
+    useradd -r -u 1001 -g nodejs nextjs
 
-# public assets
+# public assets & ONNX System-1 model weights + vocab
 COPY --from=build /app/public ./public
-# standalone server (preferred minimal runtime)
+COPY --from=build --chown=nextjs:nodejs /app/packages/civic-system-one/models/civic-laya-onnx ./packages/civic-system-one/models/civic-laya-onnx
+COPY --from=build --chown=nextjs:nodejs /app/packages/civic-system-one/models/vocab_civic.json ./packages/civic-system-one/models/vocab_civic.json
+# standalone server (preferred minimal runtime, includes onnxruntime-node)
 COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static
 
@@ -60,6 +80,6 @@ EXPOSE 3100
 
 # healthcheck against Next.js root
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:3100/ >/dev/null || exit 1
+  CMD node -e "fetch('http://127.0.0.1:3100/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 CMD ["node", "server.js"]

@@ -111,9 +111,8 @@ function systemOnePatch(ticket: RawTicket) {
 
 function hasStoredSystemOne(ticket: RawTicket): boolean {
   return Boolean(
-    hasStoredExtraction(ticket) ||
-      typeof ticket.slaHours === "number" ||
-      typeof ticket.stabilityRisk === "boolean"
+    ticket.urgency &&
+      (typeof ticket.slaHours === "number" || typeof ticket.stabilityRisk === "boolean")
   );
 }
 

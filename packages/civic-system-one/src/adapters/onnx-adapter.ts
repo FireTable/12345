@@ -8,6 +8,7 @@ import type {
 } from "../types";
 import { CATEGORY_NAME_MAP } from "../presets/categories";
 import { hasCivicRedlineSignal } from "../redline";
+import { assessCivicUrgency } from "../urgency";
 import { matchTownshipFromOptions } from "./township-matcher";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -98,27 +99,57 @@ export class ONNXAdapter implements DecisionAdapter {
   private tokenToId: Map<string, number> = new Map();
   private ort: any = null;
   private fullLength = false;
+  private warnedUnavailable = false;
 
   constructor(options?: ONNXAdapterOptions) {
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
-    const packageModelDir = path.resolve(__dirname, "../../models/civic-laya-onnx");
-    const packageVocabPath = path.resolve(__dirname, "../../models/vocab_civic.json");
+    const modelDirs = [
+      options?.modelDir,
+      path.resolve(__dirname, "../../models/civic-laya-onnx"),
+      path.resolve(process.cwd(), "packages/civic-system-one/models/civic-laya-onnx"),
+      path.resolve(process.cwd(), "models/civic-laya-onnx"),
+    ].filter((dir): dir is string => Boolean(dir));
 
-    const modelDir = options?.modelDir || packageModelDir;
-    this.onnxModelPath = path.join(modelDir, "model.onnx");
-    this.vocabPath = options?.vocabPath || packageVocabPath;
+    const vocabCandidates = [
+      options?.vocabPath,
+      path.resolve(__dirname, "../../models/vocab_civic.json"),
+      path.resolve(process.cwd(), "packages/civic-system-one/models/vocab_civic.json"),
+      path.resolve(process.cwd(), "models/vocab_civic.json"),
+    ].filter((filePath): filePath is string => Boolean(filePath));
+
+    const matchedModelDir =
+      modelDirs.find((dir) => fs.existsSync(path.join(dir, "model.onnx"))) || modelDirs[0];
+    const matchedVocabPath =
+      vocabCandidates.find((filePath) => fs.existsSync(filePath)) || vocabCandidates[0];
+
+    this.onnxModelPath = path.join(matchedModelDir, "model.onnx");
+    this.vocabPath = matchedVocabPath;
+  }
+
+  private warnOnce(reason: string): void {
+    if (this.warnedUnavailable) return;
+    this.warnedUnavailable = true;
+    console.warn(`[ONNXAdapter] Unavailable: ${reason}`);
   }
 
   async isAvailable(): Promise<boolean> {
     try {
       if (!fs.existsSync(this.onnxModelPath) || !fs.existsSync(this.vocabPath)) {
+        this.warnOnce(
+          `model/vocab missing (model=${fs.existsSync(this.onnxModelPath)} at ${this.onnxModelPath}, vocab=${fs.existsSync(this.vocabPath)} at ${this.vocabPath})`
+        );
         return false;
       }
       const importDynamic = new Function("modulePath", "return import(modulePath)");
       const mod = await importDynamic("onnxruntime-node");
       const ort = mod.default || mod;
-      return typeof ort.InferenceSession?.create === "function";
-    } catch {
+      const ok = typeof ort.InferenceSession?.create === "function";
+      if (!ok) {
+        this.warnOnce("onnxruntime-node loaded without InferenceSession.create");
+      }
+      return ok;
+    } catch (err: any) {
+      this.warnOnce(`onnxruntime-node import failed: ${err?.message || err}`);
       return false;
     }
   }
@@ -252,8 +283,10 @@ export class ONNXAdapter implements DecisionAdapter {
     let urgencyLevel = URGENCY_KEYS[bestUrgIdx] ?? 1;
     const urgencyScore = bestUrgIdx;
 
-    // 4. Stability Risk (Neural Head + Negation-Aware Symbolic Redline Hard Interlock)
-    const symbolicRedline = hasCivicRedlineSignal(`${title} ${body}`.trim());
+    // 4. Stability Risk & Negation-Aware Symbolic Urgency Interlock
+    const fullText = `${title} ${body}`.trim();
+    const symbolicRedline = hasCivicRedlineSignal(fullText);
+    const symbolicUrgency = assessCivicUrgency(fullText);
     const stabilityRisk = stabProbs[0] > stabProbs[1] || symbolicRedline; // Index 0 is YES, Index 1 is NO
     const stabilityRiskProbability = symbolicRedline
       ? Math.max(stabProbs[0], 0.95)
@@ -264,11 +297,23 @@ export class ONNXAdapter implements DecisionAdapter {
     const township = townDecision.township;
     const townshipProbability = townDecision.probability;
 
-    // Interlock: escalate to Level 3 if stability risk is triggered
+    // Interlock: apply symbolic safety urgency floor, negation suppression, then stability redline
+    if (symbolicUrgency.level >= 2 && symbolicUrgency.level > urgencyLevel) {
+      urgencyLevel = symbolicUrgency.level;
+    }
+    if (
+      !stabilityRisk &&
+      symbolicUrgency.negatedOnly &&
+      symbolicUrgency.level <= 1 &&
+      urgencyLevel >= 2
+    ) {
+      urgencyLevel = 1;
+    }
     if (stabilityRisk) {
       urgencyLevel = 3;
     }
     const slaHours = SLA_MAP[urgencyLevel];
+    const finalUrgencyScore = Math.max(urgencyScore, urgencyLevel);
 
     return {
       intent,
@@ -281,7 +326,7 @@ export class ONNXAdapter implements DecisionAdapter {
       categoryProbability: Number(categoryProbability.toFixed(4)),
       categoryDistribution,
       urgencyLevel,
-      urgencyScore: Number(urgencyScore.toFixed(2)),
+      urgencyScore: Number(finalUrgencyScore.toFixed(2)),
       slaHours,
       stabilityRisk,
       stabilityRiskProbability: Number(stabilityRiskProbability.toFixed(4)),

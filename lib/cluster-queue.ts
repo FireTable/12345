@@ -112,22 +112,35 @@ export async function enqueueClusterJob(
         source: "running",
       };
     }
-    // 心跳陈（worker 死了但 DB 行还在）。re-claim：把这一行刷新心跳 + 改 stage_text。
-    // 这样：
-    //   - 不创建新行（DB 还是同一行 task_id，processed 等历史进度保留）
-    //   - 触发方（triggerClusterJobAuto）拿到这个 taskId 启新 worker
-    //   - 新 worker 的 claimNextClusterJob 看到同一行已经 RUNNING + fresh heartbeat → 不再 claim
-    //     （但因为它已经"在跑"，它会直接 run executeClusterJob；这条 task 行已经被 setup 好）
-    await sql`
-      UPDATE task_progress
-      SET heartbeat_at = now(),
-          stage_text = '前任 worker 已退出，本 worker 续跑',
-          updated_at = now()
-      WHERE task_id = ${r.task_id} AND status = 'RUNNING'
+    // 心跳陈（worker 死了但 DB 行还在）。re-claim：把这一行从 RUNNING 退回 PENDING，
+    // 让调用方紧接着通过 claimNextClusterJob 正常认领并推进。
+    // 注意：不能保留 status = 'RUNNING' 同时把 heartbeat_at 刷成 now()，否则
+    // claimNextClusterJob 会认为已有 fresh-RUNNING 任务而返回 null，导致死锁。
+    try {
+      await sql`
+        UPDATE task_progress
+        SET status = 'PENDING',
+            heartbeat_at = now(),
+            stage_text = '前任 worker 已退出，本 worker 续跑',
+            updated_at = now()
+        WHERE task_id = ${r.task_id}
+          AND status = 'RUNNING'
+          AND NOT EXISTS (
+            SELECT 1 FROM task_progress p2
+            WHERE p2.region_id = ${regionId} AND p2.status = 'PENDING'
+          )
+      `;
+    } catch (err: any) {
+      if (err?.code !== "23505") throw err;
+    }
+    const reclaimedPending = await sql<{ task_id: string }[]>`
+      SELECT task_id FROM task_progress
+      WHERE region_id = ${regionId} AND status = 'PENDING'
+      ORDER BY created_at DESC LIMIT 1
     `;
     return {
-      taskId: r.task_id,
-      status: "RUNNING",
+      taskId: reclaimedPending[0]?.task_id || r.task_id,
+      status: "PENDING",
       alreadyQueued: true,
       source: "reclaimed",
     };

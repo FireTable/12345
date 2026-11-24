@@ -1,5 +1,6 @@
 import { extractSpatialCore, isSameSpatialEntity } from "./node/canonical-node";
 import { CATEGORY, matchTownshipName, type StandardCategoryName, type TownshipInfo } from "@/lib/vocabulary";
+import { assessCivicUrgency, hasCivicRedlineSignal } from "@civic/system-one";
 
 /**
  * 从工单标题和正文里读出「这是哪一类事、发生在哪、找谁」。
@@ -96,6 +97,7 @@ export interface IncidentProfile {
   subject: string | null;
   place: string | null;
   fingerprint: string;
+  urgency: "URGENT" | "MEDIUM" | "NORMAL";
   urgent: boolean;
 }
 
@@ -116,9 +118,18 @@ export function profileTicket(
   const content = input.content || "";
   const issue = classifyIssue(title, content);
   const text = `${title}\n${content}`;
+  const fullText = `${title} ${content}`.trim();
   const township =
     (input.subdistrict && matchTownshipName(input.subdistrict, townships)) ||
     matchTownshipName(text, townships);
+  const redline = hasCivicRedlineSignal(fullText);
+  const symbolicUrgency = assessCivicUrgency(fullText);
+  const urgency: "URGENT" | "MEDIUM" | "NORMAL" =
+    redline || symbolicUrgency.level === 3
+      ? "URGENT"
+      : symbolicUrgency.level === 2
+        ? "MEDIUM"
+        : "NORMAL";
   return {
     family: issue?.family ?? null,
     category: issue?.category ?? null,
@@ -126,7 +137,8 @@ export function profileTicket(
     subject: extractSubject(text),
     place: extractPlace(text),
     fingerprint: fingerprintOf(content),
-    urgent: /（急）|紧急/.test(title),
+    urgency,
+    urgent: urgency === "URGENT",
   };
 }
 

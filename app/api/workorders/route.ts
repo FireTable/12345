@@ -238,8 +238,13 @@ export async function GET(req: NextRequest) {
       statusFilter = eq(ticketsTable.status, "REOPENED");
     }
 
-    if (urgency === "URGENT" || tab === "urgent") {
+    const normalizedUrgency = urgency.trim().toUpperCase();
+    if (normalizedUrgency === "URGENT" || tab === "urgent") {
       baseFilters.push(eq(ticketsTable.urgency, "URGENT"));
+    } else if (normalizedUrgency === "MEDIUM") {
+      baseFilters.push(eq(ticketsTable.urgency, "MEDIUM"));
+    } else if (normalizedUrgency === "NORMAL") {
+      baseFilters.push(or(eq(ticketsTable.urgency, "NORMAL"), isNull(ticketsTable.urgency))!);
     }
     if (tab === "fake_closure") {
       baseFilters.push(eq(ticketsTable.isFakeClosure, true));
