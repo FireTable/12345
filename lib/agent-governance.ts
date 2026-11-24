@@ -959,7 +959,7 @@ function maskFreeText(text: string): string {
 async function callSystemTwoJsonSafe<T>(
   schema: z.ZodType<T>,
   messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
-  maxTokens = 512,
+  maxTokens = 1024,
   signal?: AbortSignal
 ): Promise<{ data: T; usedLlm: true } | null> {
   if (signal?.aborted) {

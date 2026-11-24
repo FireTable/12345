@@ -27,6 +27,10 @@ export function scrubCloudPiiText(text: string): string {
     .replace(CLOUD_EMAIL_RE, '{{EMAIL_CLOUD}}');
 }
 
+function isMiniMaxTarget(endpoint: string, model: string): boolean {
+  return /minimax/i.test(endpoint) || /^minimax/i.test(model);
+}
+
 function sanitizeMessagesForCloud(
   messages: CivicChatCompletionParams['messages']
 ): CivicChatCompletionParams['messages'] {
@@ -98,17 +102,28 @@ export class CloudOpenAIAdapter implements ISystemTwoAdapter {
   async chatCompletions(params: CivicChatCompletionParams): Promise<CivicChatCompletion> {
     const url = `${this.endpoint}/chat/completions`;
     const safeMessages = sanitizeMessagesForCloud(params.messages);
+    const targetModel = params.model || this.model;
+    const isMiniMax = isMiniMaxTarget(this.endpoint, targetModel);
+    const requestedMaxTokens = params.max_tokens ?? 2048;
+    const effectiveMaxTokens = isMiniMax ? Math.max(requestedMaxTokens, 1536) : requestedMaxTokens;
 
     const payload: Record<string, unknown> = {
-      model: params.model || this.model,
+      model: targetModel,
       messages: safeMessages,
       temperature: params.temperature ?? 0.2,
-      max_tokens: params.max_tokens ?? 2048,
+      max_tokens: effectiveMaxTokens,
       stream: false,
-      chat_template_kwargs: {
-        enable_thinking: params.enable_thinking ?? false,
-      },
     };
+
+    if (isMiniMax) {
+      if (params.enable_thinking !== true) {
+        payload.reasoning_effort = 'low';
+      }
+    } else {
+      payload.chat_template_kwargs = {
+        enable_thinking: params.enable_thinking ?? false,
+      };
+    }
 
     if (params.top_p !== undefined) {
       payload.top_p = params.top_p;
@@ -229,17 +244,28 @@ export class CloudOpenAIAdapter implements ISystemTwoAdapter {
   ): AsyncGenerator<CivicChatStreamChunk> {
     const url = `${this.endpoint}/chat/completions`;
     const safeMessages = sanitizeMessagesForCloud(params.messages);
+    const targetModel = params.model || this.model;
+    const isMiniMax = isMiniMaxTarget(this.endpoint, targetModel);
+    const requestedMaxTokens = params.max_tokens ?? 2048;
+    const effectiveMaxTokens = isMiniMax ? Math.max(requestedMaxTokens, 1536) : requestedMaxTokens;
 
     const payload: Record<string, unknown> = {
-      model: params.model || this.model,
+      model: targetModel,
       messages: safeMessages,
       temperature: params.temperature ?? 0.2,
-      max_tokens: params.max_tokens ?? 2048,
+      max_tokens: effectiveMaxTokens,
       stream: true,
-      chat_template_kwargs: {
-        enable_thinking: params.enable_thinking ?? false,
-      },
     };
+
+    if (isMiniMax) {
+      if (params.enable_thinking !== true) {
+        payload.reasoning_effort = 'low';
+      }
+    } else {
+      payload.chat_template_kwargs = {
+        enable_thinking: params.enable_thinking ?? false,
+      };
+    }
 
     if (params.top_p !== undefined) {
       payload.top_p = params.top_p;

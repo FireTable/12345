@@ -369,7 +369,7 @@ async function streamModelTurn(input: {
       input.writer?.({ type: "answer", text: flushed.emitted });
     }
 
-    const raw = fullContent.trim() || fullReasoning.trim();
+    const raw = fullContent.trim();
     return { raw, emittedText };
   };
 
@@ -749,7 +749,7 @@ export async function* streamCopilot(input: {
       ],
       allowTools: false,
       timeoutMs: 90_000,
-      maxTokens: 1536,
+      maxTokens: 2560,
       preferCloudDirect: Boolean(engine.hasCloudFallback?.()),
       sessionKeymap,
       externalSignal: input.signal,
@@ -780,7 +780,7 @@ export async function* streamCopilot(input: {
           ],
           allowTools: false,
           timeoutMs: 90_000,
-          maxTokens: 1536,
+          maxTokens: 2560,
           preferCloudDirect: Boolean(engine.hasCloudFallback?.()),
           sessionKeymap,
           externalSignal: input.signal,
