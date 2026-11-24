@@ -225,7 +225,7 @@ export default function DashboardPage() {
               style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#52C41A" }}
             />
             <span className="min-w-0 leading-snug">
-              {activeRegion ? `${activeRegion.city} · ${activeRegion.name}` : "当前辖区"} · 接口正常 · {ov?.dateRange || "全部时间"} · 工单已研判
+              接口正常 · {ov?.dateRange || "全部时间"} · 工单已研判
             </span>
           </div>
         </div>

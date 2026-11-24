@@ -311,7 +311,6 @@ export default function ThemesPage() {
         <div>
           <h1 className="page-hero__title">{isEcommerce ? themeNoun : "多频工单"}</h1>
           <div className="page-hero__sub">
-            {activeRegion ? `${activeRegion.name} · ` : ""}
             {isEcommerce
               ? `AI 识别的${themeNoun} · 每行为一个案卷，包含多条关联客诉工单`
               : "AI 识别的多频工单群组 · 每行为一个群组，包含多条关联工单"}

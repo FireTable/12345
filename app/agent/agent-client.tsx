@@ -628,17 +628,7 @@ export default function AgentCenterPage() {
       {/* 紧凑 PageHeader */}
       <div className="page-hero flex-col lg:flex-row lg:items-center">
         <div className="min-w-0 flex-1">
-          <h1 className="page-hero__title flex items-center gap-2 flex-wrap">
-            <span>智能治理 · 主动 Agent 中心</span>
-            <span className="rounded-full bg-blue-50 border border-blue-200/80 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700 whitespace-nowrap">
-              {activeRegion
-                ? `${activeRegion.city} · ${activeRegion.name} · ${
-                    activeRegion.domainProfile?.badgeLabel ||
-                    (isEcommerce ? "电商客诉" : "政务热线")
-                  }`
-                : "正在识别工作区"}
-            </span>
-          </h1>
+          <h1 className="page-hero__title">智能治理 · 主动 Agent 中心</h1>
           <div className="page-hero__sub">
             {isEcommerce
               ? "全渠道电商客诉主动巡检 · 缺失 SKU/仓网语音补全 · 48h 挽回回访与食安合规红线熔断"

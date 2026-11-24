@@ -376,7 +376,7 @@ function MultifreqInner() {
             工单透势
           </h1>
           <div className="page-hero__sub">
-            {activeRegion ? `${activeRegion.name} · ` : ""}实时识别 · AI 自动聚类 · 置信度 ≥ {confMin}%
+            实时识别 · AI 自动聚类 · 置信度 ≥ {confMin}%
           </div>
         </div>
         <PageHeaderActions onRefresh={() => void load(true)}>

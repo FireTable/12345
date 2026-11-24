@@ -725,11 +725,8 @@ export default function AdminRegionsPage() {
       {/* 头部导航与操作栏 */}
       <div className="page-hero">
         <div className="min-w-0">
-          <h1 className="page-hero__title flex items-center gap-2 flex-wrap">
-            <span>{isEcommerceOnly ? "电商客诉多租户与算力控制台" : "12345 站点纳管与多租户控制台"}</span>
-            <span className="rounded-full bg-blue-50 border border-blue-200/80 px-2 py-0.5 text-[11px] font-semibold text-blue-700 whitespace-nowrap">
-              SuperAdmin 物理 Schema 隔离
-            </span>
+          <h1 className="page-hero__title">
+            {isEcommerceOnly ? "电商客诉多租户与算力控制台" : "12345 站点纳管与多租户控制台"}
           </h1>
           <div className="page-hero__desc">
             {isEcommerceOnly

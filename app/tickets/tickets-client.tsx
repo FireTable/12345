@@ -623,7 +623,7 @@ function TicketsClientInner() {
             工单中心
           </h1>
           <div className="page-hero__sub">
-            {activeRegion ? `${activeRegion.name} · ` : ""}全部工单 · 实时同步
+            全部工单 · 实时同步
           </div>
         </div>
         <PageHeaderActions

@@ -458,7 +458,6 @@ export default function DictionaryManagementPage() {
             标准字典与知识库
           </h1>
           <div className="page-hero__desc">
-            {activeRegion ? `${activeRegion.city} · ${activeRegion.name}` : "当前辖区"}{" "}
             {stats.townshipCount} 大法定镇街区划、{stats.categoryCount} 大民生诉求分类标准及 AI 自学习别名沉淀知识库统一管理平台
           </div>
         </div>

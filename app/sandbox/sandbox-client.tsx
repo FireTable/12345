@@ -395,22 +395,10 @@ export default function SandboxXrayPage() {
     <>
       <div className="page-hero">
         <div className="min-w-0">
-          <h1 className="page-hero__title flex-wrap">
-            <span>全链路 AI 透视演练台</span>
-            <span className="badge-pill badge-pill--info text-xs font-semibold">
-              X-Ray Sandbox
-            </span>
-          </h1>
+          <h1 className="page-hero__title">全链路 AI 透视演练台</h1>
           <div className="page-hero__sub">
-            {activeRegion ? `${activeRegion.city} · ${activeRegion.name}` : "当前辖区"} ·
             逐阶段透明展示「可逆脱敏 ➔ System-1 快思考 ➔ 白名单归一 ➔ System-2 慢思考 ➔ 语义吸附与假闭环 ➔ 还原建议」（默认只读不落库）
           </div>
-        </div>
-        <div className="flex items-center gap-2 shrink-0 flex-wrap">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
-            <Shield className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-            只读透视模式 (persist: false)
-          </span>
         </div>
       </div>
 
