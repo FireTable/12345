@@ -7,19 +7,57 @@
 ## 📌 V1 到 V2 核心架构质变与重大突破概览
 
 1. **认知双系统分层（Kahneman Dual-System）**：
-   - 摆脱全量依赖通用大模型的单体瓶颈，抽象端侧 ONNX 4 头轻量神经网络（System 1，<0.08ms 前向）与本地 27B 强约束结构化认知模型（System 2），实现“快慢分治”，算力开销骤降 80%+。
-2. **根除幻觉死循环与去套娃仲裁**：
-   - 彻底废除 V1 置信度不足反复调用 LLM 仲裁的死循环模式，建立法定镇街、社区与权威分类白名单的确定性物理校准。
-3. **数据隐私安全气隙（Air-Gap Security）**：
-   - 研发独立 `@civic/anonymizer`，会话级全要素双向可逆脱敏，实现出站高强度加密与入库无损解密，全链路本地离线部署，数据 100% 不出域。
-4. **时空语义精准聚类与微观基底提纯**：
-   - 弃用粗粒度静态 72h 图拓扑割裂，融合密集语义向量（bge-m3）与微观道路核心基底提纯（`extractSpatialCore`），实现高精度同案同地收拢，相邻门牌不误聚，跨街道误聚率清零。
-5. **空间测绘级 GIS 基底（CGCS2000）**：
-   - 引入国家天地图高精底图，彻底消除火星坐标系（GCJ-02）300~500米偏移，第四级乡镇街道矢量边界入库并自适应调色。
-6. **多城市与多租户物理隔离**：
-   - PostgreSQL Schema 物理隔离，解耦单一顺德硬编码，新增 AI Scout 30 秒全自主辖区智能拓荒向导。
-7. **开放互联与可视化工作台**：
-   - 原生 Model Context Protocol (MCP 2025-03-26) 集成与 React Flow 研判流水线全景工作台。
+   - 摆脱全量依赖通用大模型的单体瓶颈，抽象端侧 ONNX 4 头轻量神经网络（System 1）与本地 27B 强约束结构化认知模型（System 2），并加入符号红线互锁，算力开销骤降 80%+。
+2. **全链路闭环治理（市民端 + 工单中心 + 智能治理 + Copilot）**：
+   - 从只读统计大盘演进为端到端闭环：市民端 `/submit`（`VoiceChatComposer` + `@firetable/stream-asr` + 3D 数字人「小蠢」`@firetable/project-xiaochun` + 进度追踪 + 假闭环重开）→ 工单中心 `/tickets`（4 态统一 + `缺资料` 筛选与 `一键让 Agent 跟进` 外呼补全）→ 智能治理 `/agent`（L1/L2/L3 分级自治 + 48h 回访假闭环重开 + 治理专报）→ Copilot（1 轮简报预取 + 3 层 PII 脱敏防火墙 + `civic-action` 提案执行）。
+3. **数据隐私安全气隙（Air-Gap & 3-Layer PII Firewall）**：
+   - 独立 `@civic/anonymizer` 实现全要素双向可逆脱敏，Copilot 形成入口/工具/出站三层脱敏防火墙，全链路支持本地离线推理，数据 100% 不出域。
+4. **多业务域双域名同镜像与 `hasGeoMap` 适配**：
+   - PostgreSQL Schema 物理隔离（天河 ~106.5k、顺德 ~138.7k、电商 3,240）+ `APP_DOMAIN` 双域名同镜像独立部署（`12345.firetable.tech` vs `ecom.firetable.tech`）；政务启用国家天地图 CGCS2000 四级镇街图，电商自动切换全渠道仓网矩阵 `DomainChannelMatrix`。
+5. **10 万+ 级大表全栈读性能调优**：
+   - `0011` `pg_trgm` GIN + `0012` `is_missing_info` 触发器持久化列/部分索引/`tab=pending` 三段索引归并/覆盖索引 + SWR 软硬双过期缓存 + Better Auth `cookieCache` + `/api/clusters` 分页/汇总 **-99.8%** 瘦身 + Postgres 16 内存调优与 Caddy `@streaming`/压缩分流。
+6. **开放互联与动态算力生态**：
+   - 原生 MCP (`2025-03-26`) 双域名隔离接入、React Flow 研判流水线工厂与热插拔动态算力节点池（`LOCAL` / `COLAB` / `CLOUD`）。
+
+---
+
+## 2026-11-24 — 10 万+ 级大表性能闭环调优：覆盖索引、`is_missing_info` 触发器、SWR + `cookieCache`、`/api/clusters` -99.8% 瘦身与 Postgres/Caddy 调优 (`9b93585`)
+
+- **数据库索引与触发器迁移 (`db/migrations/0012_perf_indexes.sql`, `lib/civic-missing.ts`, `lib/tenant/schema-manager.ts`)**：
+  - 新增 `tickets.is_missing_info` 持久化列 + `public.compute_ticket_is_missing_info()` + 域感知 `BEFORE INSERT/UPDATE` 触发器 `trg_tickets_sync_missing_info` + 部分索引 `idx_tickets_missing_info_ct`，彻底消除 `tab=missing_info` 与统计聚合时的全表 POSIX 正则扫描；并在旧库（`42703`）自动安全降级。
+  - 新增 `tab=pending` 三段归并索引（`idx_tickets_reopened_updated_at`、`idx_tickets_fake_closure_pending`、`idx_tickets_status_create_time_id_desc INCLUDE (is_fake_closure)`），配合 `app/api/workorders/route.ts` 的 `fetchPendingOrderedPage()` 彻底消除 10 万+ 行 `CASE` 全表排序。
+  - 新增统一覆盖索引 `idx_tickets_stats_cover` 与 `idx_tickets_id_subd_status`（及 `idx_themes_created_at`），配合存量表 `VACUUM ANALYZE` 刷亮 Visibility Map 达成纯 Index-Only Scan。
+- **缓存与鉴权读优化 (`lib/civic-cache.ts`, `lib/auth/config.ts`)**：
+  - `lib/civic-cache.ts` 升级为 `globalThis` 共享 **SWR 软硬双过期缓存**（软过期 60s 立即返回旧值并后台单飞刷新、硬过期 10min，上限 500 条），写操作统一调用 `invalidateCivicAggregates(regionId)` 防止脏写回。
+  - `lib/auth/config.ts` 开启 Better Auth `session.cookieCache`（`maxAge: 300s` HMAC 签名 Cookie 缓存），消除并发页面/API 重复回查 `session`/`user` 表。
+- **`GET /api/clusters` 分页与汇总视图瘦身 (`app/api/clusters/route.ts`, `app/themes/themes-client.tsx`, `app/multifreq/multifreq-client.tsx`)**：
+  - 新增 `view=summary` 轻量汇总视图与 `page`/`size` 分页视图（含预编码字节缓存），实测响应体积从 **4.14~6.86 MB** 压降至 **未压缩 ~5.4~7.6 KB / zstd 压缩后 1.3~1.9 KB（降幅 99.8%+）**；全量兼容模式默认移除冗余 `allClusters` 双份拷贝。
+- **生产基础设施调优 (`docker-compose.yml` & Caddyfile)**：
+  - `12345-postgres` 配置 `shm_size: 512m`、`shared_buffers=1GB`、`effective_cache_size=4GB`、`work_mem=32MB`、`maintenance_work_mem=256MB`、`random_page_cost=1.1`、`jit=off`、`max_parallel_workers_per_gather=2`、`checkpoint_completion_target=0.9`。
+  - 共享 Caddy 按 `@streaming`（`/api/sse* /api/copilot* /api/events* /api/agent/outreach* /api/mcp*`，`flush_interval -1` 无压缩）与普通路由（`encode zstd gzip`）分流代理。
+
+## 2026-11-24 — 全闭环治理统一、缺资料外呼跟进、Copilot 1 轮提速与双域名同镜像部署 (`3e031b2`)
+
+- **统一交互与 4 态闭环 (`voice-chat-composer.tsx`, `lib/civic-dto.ts`, `app/tickets/tickets-client.tsx`, `app/api/agent/tasks/route.ts`)**：
+  - 抽取统一语音/文字输入框 `VoiceChatComposer`；全站工单状态统一为 `PENDING` / `DISPATCHED` / `IN_PROGRESS` / `RESOLVED`（含 `REOPENED` 重开置顶）。
+  - 工单中心上线 `缺资料`（`tab=missing_info`）筛选与抽屉内「一键让 Agent 跟进」按钮，调用 `POST /api/agent/tasks`（`createOrReuseMissingInfoTask`）拉起 `VoiceOutreachDialog` 语音/对话补全并回写 `tickets` 表。
+- **AI 研判 Copilot 提速与 3 层安全加固 (`backend/agent/copilot-agent.ts`, `backend/agent/copilot-tools.ts`, `app/_components/copilot/light-copilot.tsx`)**：
+  - 新增 `isBriefingPrefetchPrompt()` **1 轮简报预取快路径**，并行预取 `region_overview` + `search_themes(HIGH, top6)` + `list_townships` 后单轮流式直出简报，并在超长 Prompt / 本地繁忙时优先云端直连。
+  - 落实 **3 层 PII 脱敏防火墙**（`@civic/anonymizer` 会话/工具脱敏层 + `copilot-agent.ts` `sanitizeMessagesForModel()` 模型前置层 + `CloudOpenAIAdapter` `{{*_CLOUD}}` 云端出网兜底层）与 9 工具矩阵（含 `propose_theme_action` 生成 ```` ```civic-action ```` 提案卡片，管理员确认后调用 `PATCH /api/clusters/:id` 执行）。
+- **双域名同镜像独立部署 (`docker-compose.yml`)**：
+  - 同一 `ticket-radar:v0.1.5` 镜像启动 `12345-app`（`https://12345.firetable.tech`，`APP_DOMAIN=GOV_12345`）与 `12345-ecom-app`（`https://ecom.firetable.tech`，`APP_DOMAIN=ECOMMERCE_CS`），双实例均配置 `CIVIC_SKIP_BOOTSTRAP="1"`。
+
+## 2026-11-21 ~ 2026-11-23 — 双业务域隔离、智能治理闭环、3D 数字人语音受理与 P0/P1 安全性能审计修复 (`d0a7057` ~ `dc31170`)
+
+- **双业务域与动态算力池 (`ea76ae2`, `ee85bf8`, `fed2c28`)**：
+  - 抽象 `DomainProfile`（`lib/domain-profile.ts`）与 `APP_DOMAIN`（`lib/app-domain.ts`），新增电商售后客诉域 `region_ecom_demo`（3,240 单，`hasGeoMap: false` 切换 `DomainChannelMatrix` 全渠道仓网矩阵）。
+  - 上线 `public.compute_nodes` 动态算力节点池与 Colab GPU 接入面板（`/admin/regions`），支持热插拔探活调度。
+- **高参与度智能治理与市民端 3D 语音受理 (`fc2a8bf`, `ab16724`, `23809e1`, `dc31170`)**：
+  - 上线市民端 `/submit`（集成 `@firetable/project-xiaochun` 小蠢 + `@firetable/stream-asr` 实时语音转写 + EMAGE 动作预加载 + 开麦打断 TTS 防回声 + 进度追踪 + 市民假闭环重开）。
+  - 上线智能治理 `/agent`（`L1_AUTO` / `L2_APPROVAL` / `L3_BLOCKED` 分级自治巡检、48h 满意度抽查回访触发假闭环重开、`agent_reports` 治理专报）与 `disposal_logs` 审计时间线。
+- **全量 P0/P1 安全审计与性能优化 (`3201339`)**：
+  - 新增 `0011_trgm_and_review_indexes.sql`（14 列 `pg_trgm` GIN 索引 + `review_queue` 分页索引）；SSE 角色隔离（管理员态势流隔离）；`/api/map/tile` 白名单/坐标限界/1000 瓦片 LRU 与 `/api/map/geocode` 管理员鉴权；System-1 涉稳头重训与符号红线互锁；`search_tickets` 无标点 2-gram + 向量下推混合召回；原生 `<dialog>`、390px 移动端与 ≥44px 触控无障碍适配。
+  - 验证基线：`tsc 0`、`next build ok`、GOV E2E 51/51、ECOM E2E 10/10、`civic_val` 18/18。
 
 ---
 

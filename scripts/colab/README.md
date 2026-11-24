@@ -29,7 +29,7 @@
 
 无需重启「民声智理」Next.js 服务或修改 `.env`，直接通过后台面板热生效：
 
-1. 登录「民声智理」管理后台，进入 **多站点与算力管理** 页面，找到 **「算力集群与 Colab GPU」** 面板。
+1. 登录「民声智理」管理后台，进入 **多站点与算力管理** 页面（`/admin/regions`），找到 **「算力集群与 Colab GPU」** 面板。
 2. 点击 **「接入 Colab GPU / 算力节点」**，按 Colab Step 4 控制台输出依次录入两个节点（或按需接入单个节点）：
    - **节点 1（System-2 大模型）**
      - 节点名称：例如 `Colab L4 GPU (System-2)`
@@ -64,7 +64,13 @@ python3 scripts/colab/serve_colab.py --tunnel tailscale
 COLAB_API_KEY="<your-strong-token>" python3 scripts/colab/serve_colab.py \
   --llm-backend llama-cpp \
   --tunnel cloudflared
+
+# 仅打印硬件探测与模型推荐结果，不实际启动服务；或按需跳过单引擎
+python3 scripts/colab/serve_colab.py --dry-run
+python3 scripts/colab/serve_colab.py --skip-embed --tunnel tailscale
 ```
+
+常用参数：`--llm-model`、`--llm-alias`、`--embed-model`、`--llm-port`（默认 `8132`）、`--embed-port`（默认 `8133`）、`--tunnel`（`cloudflared` / `tailscale` / `none`）、`--skip-llm`、`--skip-embed`、`--startup-timeout`（默认 `600` 秒）、`--dry-run`。
 
 ### 显存自动推荐策略
 

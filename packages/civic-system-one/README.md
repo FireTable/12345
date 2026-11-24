@@ -112,30 +112,42 @@ afshinm/laya-mps (Base ModernBERT 1.68GB)     | 10,000   | 876.20 s    | 87.6197
 - `models/civic-laya-onnx/model.onnx`：生产级 ONNX 模型（4.5 MB，Node.js 原生内嵌 0.2ms 极速推理）
 - `models/civic-laya-checkpoint/best_model.pt`：PyTorch 训练检查点（4.5 MB，用于模型重训练、微调与 Python 基准对比）
 
-### 2. TypeScript / Node.js 极简调用
+### 2. TypeScript / Node.js 极简调用与涉稳红线互锁
 
-`@civic/system-one` 采用极简设计，基于官方 `onnxruntime-node` 原生内嵌运行，**零外部进程依赖（无需 Python/8000端口）**，单条推理耗时仅 **0.2 ~ 0.4 ms**：
+`@civic/system-one` 采用极简设计，基于官方 `onnxruntime-node` 原生内嵌运行，**零外部进程依赖（无需 Python/8000端口）**，单条推理耗时仅 **0.2 ~ 0.4 ms**；同时支持通过 `CivicEvaluateOptions` 传入当前城市/业务域的动态分类与法定镇街字典，实现多租户无感适配：
 
 ```typescript
-import { SystemOneEngine } from "@civic/system-one";
+import {
+  SystemOneEngine,
+  matchCivicRedline,
+  hasCivicRedlineSignal,
+} from "@civic/system-one";
 
 const engine = await SystemOneEngine.create();
 const decision = await engine.evaluate({
   title: "水管爆裂路面积水",
-  content: "大良街道某路段主水管突发爆裂漏水严重，导致双向交通受阻..."
+  content: "大良街道某路段主水管突发爆裂漏水严重，导致双向交通受阻...",
 });
 
 console.log(decision.categoryName); // 交通出行
 console.log(decision.intent);       // COMPLAINT
 console.log(decision.urgencyLevel); // Level 1
 console.log(decision.latencyMs);    // 0.4 ms
+
+// 独立调用 11 类政务涉稳与极端安全红线符号检测器（含 16 字否定/预防/良性语境防误杀窗口）
+const redline = matchCivicRedline("业主扬言明天组织集体上访并堵路维权");
+console.log(redline); // { matched: true, category: "group_petition", keyword: "集体上访" }
+console.log(hasCivicRedlineSignal("现场已排除群体上访风险，未发生食物中毒")); // false
 ```
 
-### 2. 生产脚本清单 (`scripts/`)
+> **11 类极端高危红线符号规则 (`src/redline.ts`)**：覆盖 `suicide_self_harm`（自杀自残）、`extreme_violence`（极端暴力）、`organized_crime`（涉黑涉恶）、`group_petition`（集体/越级上访）、`mass_gathering_protest`（群体聚集抗议）、`road_gate_blockade`（堵路堵门）、`collective_strike`（集体罢工）、`major_safety_incident`（重大安全险情）、`food_poisoning`（群体食安中毒）、`major_media_escalation`（重大舆情曝光）与 `extreme_threat`（极端威胁），与 ONNX 涉稳头组成双保险硬互锁，也是 `/agent` 智能治理 **L3 红线熔断** 的底层依据。
 
-- [`scripts/engine.py`](scripts/engine.py)：**生产级推理引擎**（支持单单分析、主办+协办联合分派、安全互锁与 0.08ms 极速响应）
+### 3. 生产脚本清单 (`scripts/` & `test/`)
+
+- [`scripts/engine.py`](scripts/engine.py)：**Python 生产级推理引擎**（支持单单分析、主办+协办联合分派、安全互锁与 0.08ms 极速响应）
 - [`scripts/train.py`](scripts/train.py)：**训练主管线**（交叉注意力架构、类别焦点损失权重、余弦学习率衰减）
 - [`scripts/benchmark.py`](scripts/benchmark.py)：**统一压测工具**（默认 10,000 条样本，集成深层质检审核流）
+- [`scripts/test-engine.ts`](scripts/test-engine.ts) / [`test/test-runner.ts`](test/test-runner.ts)：**TypeScript 引擎与红线检测自动化测试**（`pnpm --dir packages/civic-system-one test`）
 - [`scripts/generate-full-train-set.ts`](scripts/generate-full-train-set.ts)：**政务数据精准生成器**（源头消除标签噪声，规范 7 类法定领域）
 - [`scripts/build_civic_vocab.py`](scripts/build_civic_vocab.py)：政务分词词表构建脚本
 

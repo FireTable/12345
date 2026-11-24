@@ -1,187 +1,177 @@
-# CivicRadar Spatial & Geo-Location Architecture Guide
+# CivicRadar Spatial, Geo-Location & Dual-Domain Matrix Architecture Guide
 
 > **Civic Intelligence (民声智理) · 12345 Public Hotline Cognitive Engine & AI Workflow**  
-> Spatial computing, multi-tier administrative division mesh, and zero-drift GIS visualization standards.
+> Spatial computing, multi-tier administrative division mesh, zero-drift CGCS2000 GIS visualization, and `hasGeoMap` dual-domain switching (Government GIS vs. E-Commerce Channel & Warehouse Matrix).
 
 ---
 
 ## Table of Contents
 1. [Executive Summary](#1-executive-summary)
-2. [Multi-Tier Spatial Data Hierarchy](#2-multi-tier-spatial-data-hierarchy)
-3. [Coordinate Reference Systems (CRS) & Pixel-Perfect Alignment](#3-coordinate-reference-systems-crs--pixel-perfect-alignment)
-4. [Front/Back Separation Architecture for GIS](#4-frontback-separation-architecture-for-gis)
-5. [Geo-Location in the AI Agent Pipeline](#5-geo-location-in-the-ai-agent-pipeline)
-6. [Visualization & UX Ergonomics Standards](#6-visualization--ux-ergonomics-standards)
-7. [API & Data Schema Reference](#7-api--data-schema-reference)
+2. [Dual-Domain `hasGeoMap` Switching (Gov GIS vs. E-Commerce Matrix)](#2-dual-domain-hasgeomap-switching-gov-gis-vs-e-commerce-matrix)
+3. [Multi-Tier Spatial Data Hierarchy (`public/civic/*.geojson`)](#3-multi-tier-spatial-data-hierarchy-publiccivicgeojson)
+4. [Coordinate Reference Systems (CRS) & Pixel-Perfect Alignment](#4-coordinate-reference-systems-crs--pixel-perfect-alignment)
+5. [Front/Back Separation, Hardened Tile Proxy & `lib/map/` Modules](#5-frontback-separation-hardened-tile-proxy--libmap-modules)
+6. [Geo-Location in the AI Agent Pipeline](#6-geo-location-in-the-ai-agent-pipeline)
+7. [Visualization & UX Ergonomics Standards](#7-visualization--ux-ergonomics-standards)
+8. [API & Data Schema Reference](#8-api--data-schema-reference)
+9. [Geo-Spatial Indexing & GEO/SEO Standards](#9-geo-spatial-indexing--geoseo-standards)
 
 ---
 
 ## 1. Executive Summary
 
-CivicRadar does not treat geographic maps as static UI decorations. Instead, spatial data is treated as an **active dimension of incident reasoning and operational routing**:
+CivicRadar treats spatial/topological structure as an **active dimension of incident reasoning, operational routing, and domain adaptation**:
 
-- **Incident-to-Grid Binding**: Translates unstructured conversational citizen reports into structured geographic coordinates and official 4th-level subdistrict grids (镇街/网格).
-- **Spatial Semantic Clustering**: Merges micro-spatial entity proximity with LangGraph embeddings to identify localized recurring incident clusters (多频高发群组).
-- **High-Performance Vector Visualization**: Provides subdistrict-level choropleths, centroid micro-badges, and zero-jank interactive filtering with full multi-tenant region switching.
+- **Incident-to-Grid Binding (`GOV_12345`)**: Translates unstructured conversational citizen reports into structured CGCS2000 coordinates and statutory 4th-level subdistrict grids (镇街/街道).
+- **Dual-Domain Topology Adaptation (`hasGeoMap`)**: Driven by `DomainProfile.hasGeoMap` (`lib/domain-profile.ts`), government hotlines (`12345.firetable.tech`) render interactive Leaflet + Tianditu choropleth maps, while standalone e-commerce CS instances (`ecom.firetable.tech`) seamlessly switch to the **Omni-Channel & Warehouse Pressure Matrix (`DomainChannelMatrix`)** with zero GIS tile or geocode overhead.
+- **Spatial Semantic Clustering**: Combines micro-spatial entity cleansing with `BAAI/bge-m3` embeddings to converge localized recurring incident clusters (多频高发群组).
 
 ---
 
-## 2. Multi-Tier Spatial Data Hierarchy
+## 2. Dual-Domain `hasGeoMap` Switching (Gov GIS vs. E-Commerce Matrix)
 
-### 2.1 Fourth-Level Administrative Polygon Mesh (Subdistricts)
-Traditional municipal systems often stop at the 3rd administrative tier (District/County level, e.g., 顺德区 or 天河区). CivicRadar standardizes on the **4th statutory administrative level** (Township/Subdistrict level, e.g., 大良街道, 容桂街道, 猎德街道):
+Each tenant stores a `DomainProfile` inside `public.regions.category_config_json` (parsed by `parseDomainProfile()` in `lib/domain-profile.ts`):
 
-- **Shunde District (`fs_shunde`)**: 10 official townships / subdistricts.
-- **Tianhe District (`gz_tianhe`)**: 21 official subdistricts.
+| Domain (`domainType`) | Production Instance | `hasGeoMap` | Spatial / Topological Visualization |
+| :--- | :--- | :---: | :--- |
+| **`GOV_12345`** | `https://12345.firetable.tech` (`12345-app`) | `true` | Leaflet + Tianditu CGCS2000 basemap, 4th-level subdistrict GeoJSON choropleth (`CivicGeoMap` / `CockpitMap`), and per-ticket geo-pin card (`TicketGeoMapCard`). |
+| **`ECOMMERCE_CS`** | `https://ecom.firetable.tech` (`12345-ecom-app`) | `false` | Disables all GIS tile/geocode fetches; renders **`DomainChannelMatrix`** (`app/_components/civic/domain-channel-matrix.tsx`) across Cockpit (`/screen`) and Trend Analysis (`/multifreq`), and hides `TicketGeoMapCard` in Ticket Detail / Drawer (`/tickets`). |
 
-### 2.2 Canonical Asset Naming Convention
-All geographic boundary datasets follow the strict prefixed format in `/public/civic/`:
-- `fs_shunde-townships.geojson` (Foshan Shunde Subdistrict Mesh)
-- `gz_tianhe-townships.geojson` (Guangzhou Tianhe Subdistrict Mesh)
+### `DomainChannelMatrix` Capabilities (`hasGeoMap: false`)
+- **Node Classification**: Automatically classifies tenant `subdistrict` / channel nodes into **平台店铺** (`store`: 天猫旗舰店, 京东自营店, 拼多多官方店), **直播渠道** (`live`: 抖音直播间), and **仓配节点** (`warehouse`: 华南冷链仓, 华东中心仓, 华北分拨仓, 跨境保税仓).
+- **Risk & Share Highlighting**: Highlights high-risk complaint nodes based on volume share (`>= 18%`), multi-frequency cluster density (`>= 4`), or high-risk category ratio (`>= 25%` for `食安与合规红线` / `假冒伪劣与欺诈`).
+- **Dual Visual Variants**: Supports Civic Light (`variant="light"`, used in `/multifreq`) and dark Obsidian (`variant="dark"`, used in `/screen` cockpit).
+- **Cluster API Alignment**: `app/api/clusters/route.ts` reads `domainProfile.hasGeoMap` to keep facet labels and regional filters aligned with townships (`hasGeoMap: true`) or channels/warehouses (`hasGeoMap: false`).
 
-### 2.3 Three-Tier Resilient Fallback Strategy
-To guarantee 100% rendering uptime regardless of database state or cold starts, boundary resolution employs a 3-tier cascade:
+---
 
+## 3. Multi-Tier Spatial Data Hierarchy (`public/civic/*.geojson`)
+
+### 3.1 Fourth-Level Administrative Polygon Mesh (Subdistricts)
+For `GOV_12345` tenants, CivicRadar standardizes on the **4th statutory administrative level** (Township / Subdistrict):
+- **Guangzhou Tianhe District (`gz_tianhe`)**: 21 official subdistricts (`~106.5k` tickets).
+- **Foshan Shunde District (`fs_shunde`)**: 10 official townships/subdistricts (`~138.7k` tickets).
+
+### 3.2 Canonical Local Static Assets (`public/civic/`)
+Verified static GIS assets shipped in `/public/civic/`:
+- `public/civic/gz_tianhe-townships.geojson` (Guangzhou Tianhe Subdistrict Mesh)
+- `public/civic/fs_shunde-townships.geojson` (Foshan Shunde Subdistrict Mesh)
+
+### 3.3 Three-Tier Resilient Boundary Fallback Strategy
 ```mermaid
 flowchart TD
-    A[Client Requests Boundary] --> B{Tier 1: Tenant Database?<br/>/api/regions/:id/boundary?level=subdistricts}
-    B -->|Found in public.regions| C[Render High-Precision GeoJSON]
-    B -->|Empty or Network Lag| D{Tier 2: Local Static Asset?<br/>/civic/:regionId-townships.geojson}
+    A["Client Requests Boundary (hasGeoMap=true)"] --> B{"Tier 1: Tenant Database?<br/>/api/regions/:id/boundary?level=subdistricts"}
+    B -->|Found in public.regions| C["Render High-Precision GeoJSON"]
+    B -->|Empty or Network Lag| D{"Tier 2: Local Static Asset?<br/>/civic/:regionId-townships.geojson"}
     D -->|Asset Exists| C
-    D -->|Missing| E{Tier 3: District Fallback?<br/>/api/regions/:id/boundary?level=district}
-    E -->|Success| F[Render District Boundary Outline]
-    E -->|Failed| G[Display Graceful Fallback]
+    D -->|Missing| E{"Tier 3: District Fallback?<br/>/api/regions/:id/boundary?level=district"}
+    E -->|Success| F["Render District Boundary Outline"]
+    E -->|Failed| G["Display Graceful Fallback"]
 ```
 
 ---
 
-## 3. Coordinate Reference Systems (CRS) & Pixel-Perfect Alignment
+## 4. Coordinate Reference Systems (CRS) & Pixel-Perfect Alignment
 
-### 3.1 The Coordinate Drift Problem in China
-In the Chinese GIS ecosystem, map layers and GeoJSON often diverge across three incompatible coordinate standards:
-
+### 4.1 The Coordinate Drift Problem in China
 | Coordinate System | Authority / Platform | Characteristics | Non-linear Encryption Shift |
-|---|---|---|---|
+| :--- | :--- | :--- | :--- |
 | **WGS-84 / CGCS2000** | National Geomatics Center of China (Tianditu), Gov GeoJSON | Standard geodetic ellipsoid | **0 meters (True Coordinates)** |
-| **GCJ-02 ("Mars Coordinates")** | AutoNavi (Amap), Google China, Tencent | Obfuscated via national algorithm | **300m ~ 500m offset** |
+| **GCJ-02 ("Mars Coordinates")** | AutoNavi (Amap), Tencent | Obfuscated via national algorithm | **300m ~ 500m offset** |
 | **BD-09** | Baidu Maps | Secondary obfuscation on top of GCJ-02 | **400m ~ 800m offset** |
 
-### 3.2 Resolution: Strict CGCS2000 Alignment
-CivicRadar strictly aligns its GeoJSON boundaries with **Tianditu CGCS2000 base layers**:
-- Vector boundary coordinates and Tianditu raster tiles use the identical spatial reference.
-- **Zero offset**: Rivers, highways, bridges, and subdistrict boundaries align down to the individual pixel.
+### 4.2 Resolution: Strict CGCS2000 Alignment
+CivicRadar strictly aligns GeoJSON boundaries and enterprise/incident geocodes with **Tianditu CGCS2000 base layers**, ensuring zero drift between rivers, roads, bridges, and subdistrict boundaries.
 
 ---
 
-## 4. Front/Back Separation Architecture for GIS
+## 5. Front/Back Separation, Hardened Tile Proxy & `lib/map/` Modules
 
-```
+```text
 ┌────────────────────────────────────────────────────────────┐
-│                    Client Browser (Leaflet)                 │
+│            Client Browser (Leaflet, hasGeoMap=true)         │
 └──────┬─────────────────────────────────────────────┬───────┘
        │                                             │
-       │ ① Map Raster Tiles (High-frequency images)   │ ② Administrative Boundaries & Geocoding
-       │   Cached locally via HTTP Disk Cache        │   (Low-frequency business data)
+       │ ① Raster Tiles (/api/map/tile)              │ ② Boundaries & Geocoding
+       │   In-memory 1000-tile LRU + 30d immutable   │   (/api/regions/:id/boundary, /api/map/geocode)
        ▼                                             ▼
 ┌────────────────────────────┐               ┌────────────────────────────┐
-│    Tianditu / Tile Proxy    │               │  Next.js Server Backend    │
-│  (256x256 WMTS Png Layers) │               │  (/api/regions, /api/map)  │
-└────────────────────────────┘               └─────────────┬──────────────┘
-                                                           │
-                                                           │ ③ TIANDITU_SERVER_KEY
-                                                           ▼
-                                             ┌────────────────────────────┐
-                                             │ Tianditu National API Gate │
-                                             │ (Reverse Geocoding / POIs) │
-                                             └────────────────────────────┘
+│  Hardened Tile Proxy Route │               │  Next.js Server Backend    │
+│  type whitelist + z/x/y    │               │  requireAdmin on geocode   │
+│  bounds + image/* check    │               │  vocabularies LOCATION DB  │
+└──────────────┬─────────────┘               └─────────────┬──────────────┘
+               │                                           │
+               └──────────────► TIANDITU_SERVER_KEY ◄──────┘
+                                       ▼
+                        ┌────────────────────────────┐
+                        │ Tianditu National API Gate │
+                        │ (WMTS Tiles / Geo / POI)   │
+                        └────────────────────────────┘
 ```
 
-1. **Map Tile Delivery**:
-   - Vector and annotation tiles are requested through `/api/map/tile?type=vec` and `/api/map/tile?type=cva`.
-   - The backend proxy injects statutory user-agent headers and enforces `Cache-Control: public, max-age=604800` (7 days).
-   - Once fetched, tiles are served entirely from the client browser's **`disk cache`**, resulting in **zero ongoing compute or network overhead** on the application server.
-2. **Backend Key Security**:
-   - `TIANDITU_SERVER_KEY` is maintained exclusively within server-side environment variables (`.env.local`, `.env.vps`) and is never exposed in client bundles or network inspection.
+### 5.1 Core `lib/map/` Module Inventory
+| File | Key Exports | Responsibility |
+| :--- | :--- | :--- |
+| [`lib/map/boundary-service.ts`](../lib/map/boundary-service.ts) | `KNOWN_DISTRICT_ADCODES`, `fetchDistrictBoundary` | Fetches district/subdistrict GeoJSON boundaries for existing & AI-Scouted tenants. |
+| [`lib/map/tianditu-service.ts`](../lib/map/tianditu-service.ts) | `geocodeAddress`, `reverseGeocode`, `getTiandituTileUrl` | Server-side Tianditu forward/reverse geocoding and WMTS URL builder (`vec` / `cva` / `img` / `cia`) using `TIANDITU_SERVER_KEY`. |
+| [`lib/map/tile-layer.ts`](../lib/map/tile-layer.ts) | `getTiandituTileUrls` | Provides client-side proxy tile URL templates pointing to `/api/map/tile`. |
+| [`lib/map/client-geocode.ts`](../lib/map/client-geocode.ts) | `geocodeAddressClient`, `runWithConcurrency`, `isValidCoordinate` | Client geocode helper with bounded concurrency and coordinate validity checks. |
+| [`lib/map/enterprise-address-enricher.ts`](../lib/map/enterprise-address-enricher.ts) | `PLACEHOLDER_LOCATIONS`, `isPlaceholderLocation`, `isEnterpriseEntity`, `enrichEnterpriseLocation` | Detects placeholder locations and enriches named enterprise subjects with real addresses. |
+
+### 5.2 Hardened Tile Proxy & Geocode Security (`app/api/map/`)
+1. **Map Tile Proxy (`GET /api/map/tile`)**:
+   - Strict `ALLOWED_TILE_TYPES` whitelist (`vec`, `cva`, `img`, `cia`), integer `z` (`0..18`) and `x`/`y` (`0..2^z - 1`) bounds checks;
+   - Upstream fetch enforces a `6s` `AbortSignal.timeout`, verifies `Content-Type: image/*`, and caps tile payload at `5 MB`;
+   - Server-side in-memory LRU cache (`MAX_TILE_CACHE = 1000`, `X-Tile-Cache: HIT`) + browser response header `Cache-Control: public, max-age=2592000, immutable` (30 days);
+   - `TIANDITU_SERVER_KEY` is read exclusively on the server and never exposed to client bundles.
+2. **Geocode Route (`POST /api/map/geocode`)**:
+   - Protected by `requireAdmin(req)` (never exposed anonymously);
+   - Supports `mode: "forward"` and `mode: "reverse"` with strict coordinate & string length validation (`<= 128` chars);
+   - Persists resolved coordinates in tenant `vocabularies` (`type = 'LOCATION'`, deterministic `LOC-<sha256>` ID) to avoid redundant upstream API calls.
 
 ---
 
-## 5. Geo-Location in the AI Agent Pipeline
+## 6. Geo-Location in the AI Agent Pipeline
 
-Spatial intelligence directly feeds the LangGraph multi-stage graph pipeline:
-
-### 5.1 Spatial Core Cleansing (`extractSpatialCore`)
-Raw citizen descriptions frequently contain erratic micro-suffixes:
-- `"大良街道金榜上街28号门前沿街商铺"` ➔ Cleansed to: **`"大良街道金榜上街"`**
-- `"容桂文武路某烧烤档夜间占道"` ➔ Cleansed to: **`"容桂文武路"`**
-
-By stripping away room numbers, floor levels, and generic suffixes while preserving road, neighborhood, and village cores, the system ensures high-quality clustering keys.
-
-### 5.2 Reverse Township Imputation (`legalTownshipName`)
-When a citizen ticket omits explicit subdistrict metadata:
-1. The AI pipeline evaluates the spatial description against canonical landmark and community dictionaries in `lib/vocabulary.ts`.
-2. References such as `"清晖园门前"` or `"太古汇北门"` automatically map to their statutory subdistricts (**大良街道** and **天河南街道**).
-3. Tickets without geographic markers remain unassigned rather than being assigned arbitrary defaults.
-
-### 5.3 Anti-Hallucination Barrier (`isSameSpatialEntity`)
-To prevent over-clustering:
-- Distinct road sections within the same town are evaluated as distinct spatial nodes.
-- Administrative-level generalities (e.g., merging all `"大良街道"` tickets into one) are strictly blocked by `RULES.adminOnlyLocation`.
+1. **Spatial Core Cleansing (`extractSpatialCore`)**: Strips room numbers, floor suffixes, and noisy modifiers while preserving canonical road/community/village cores (e.g., `"大良街道金榜上街28号门前沿街商铺"` → `"大良街道金榜上街"`).
+2. **Reverse Township Imputation (`legalTownshipName`)**: Maps landmark/community mentions against tenant `vocabularies` and `aliases` dictionaries (`lib/vocabulary.ts`) to resolve statutory subdistricts (`清晖园门前` → `大良街道`, `太古汇北门` → `天河南街道`).
+3. **Anti-Hallucination Barrier (`isSameSpatialEntity`)**: Prevents merging unrelated incidents across distinct road sections or administrative-only generalities (`RULES.adminOnlyLocation`).
 
 ---
 
-## 6. Visualization & UX Ergonomics Standards
+## 7. Visualization & UX Ergonomics Standards
 
-1. **Single Source of Truth (SSOT) Palette**:
-   - Township colors are centrally derived via `getTownshipColor(name)` in `lib/civic-cluster.ts`.
-   - The exact same color corresponds to a given subdistrict across GIS choropleth maps, ticket tables, trend charts, and vocabulary administration settings.
-2. **Centroid Micro-Badge Anchoring**:
-   - Dynamic HTML markers that drift during zoom have been eliminated.
-   - The `[Township Name · Ticket Count]` pill is permanently bound to the polygon's geometric centroid.
-3. **Zero-Jank Interaction**:
-   - Selecting a township highlights the polygon and filters the dashboard while **preserving the exact viewport and zoom level**.
-   - `vector-effect: non-scaling-stroke !important;` prevents stroke explosion artifacts during map zooms.
+1. **SSOT Palette**: Township colors are centrally derived via `getTownshipColor(name)` in `lib/civic-cluster.ts` across choropleth maps, tables, and charts.
+2. **Centroid Micro-Badge Anchoring & Non-Scaling Stroke**: Subdistrict labels stay anchored to polygon geometric centroids; `vector-effect: non-scaling-stroke !important;` avoids stroke explosion while zooming.
+3. **Lifecycle & XSS Hardening**:
+   - Leaflet components lazy-load `leaflet.css` on demand (no longer bloating root layout CSS) and guard against React StrictMode / pre-region unmount races (`6ef9866`);
+   - All dynamic text injected into Leaflet popups and tooltips is HTML-escaped to eliminate XSS (`3201339`).
 
 ---
 
-## 7. API & Data Schema Reference
+## 8. API & Data Schema Reference
 
-### 7.1 Database Schema Additions (`public.regions`)
+### 8.1 Database Schema Columns (`public.regions`)
 ```sql
 ALTER TABLE public.regions
   ADD COLUMN IF NOT EXISTS geojson_boundary text,      -- District Level Boundary
-  ADD COLUMN IF NOT EXISTS subdistricts_geojson text;   -- 4th-Level Subdistrict Mesh
+  ADD COLUMN IF NOT EXISTS subdistricts_geojson text;  -- 4th-Level Subdistrict Mesh
 ```
 
-### 7.2 Core Endpoints
-| Method | Route | Description |
-|---|---|---|
-| `GET` | `/api/regions/:id/boundary?level=subdistricts` | Retrieves 4th-level subdistrict polygon mesh |
-| `GET` | `/api/regions/:id/boundary?level=district` | Retrieves 3rd-level district outline polygon |
-| `POST` | `/api/map/geocode` | Bi-directional geocoding & subdistrict reverse lookup |
-| `GET` | `/api/map/tile?type=vec&z=:z&x=:x&y=:y` | High-speed cached Tianditu vector raster tile proxy |
-| `GET` | `/api/map/tile?type=cva&z=:z&x=:x&y=:y` | High-speed cached Tianditu annotation tile proxy |
+### 8.2 Core Spatial Endpoints
+| Method | Route | Auth | Description |
+| :--- | :--- | :---: | :--- |
+| `GET` | `/api/regions/:id/boundary?level=subdistricts` | Public | Retrieves 4th-level subdistrict polygon mesh |
+| `GET` | `/api/regions/:id/boundary?level=district` | Public | Retrieves 3rd-level district outline polygon |
+| `POST` | `/api/admin/regions/:id/fetch-boundary` | Admin | Fetches and persists boundaries via `boundary-service.ts` |
+| `POST` | `/api/admin/regions/:id/upload-map` | Admin | Uploads custom GeoJSON/SVG boundary assets (with safe SVG preview) |
+| `POST` | `/api/map/geocode` | Admin | Forward/reverse geocoding with `vocabularies` (`LOCATION`) caching |
+| `GET` | `/api/map/tile?type=vec\|cva\|img\|cia&z=:z&x=:x&y=:y` | Public | Hardened & LRU-cached Tianditu CGCS2000 tile proxy |
 
 ---
 
-## 8. Geo-Spatial Indexing & Generative Engine Optimization (GEO/SEO Standards)
+## 9. Geo-Spatial Indexing & GEO/SEO Standards
 
-### 8.1 Administrative Area Indexing & Schema.org Semantic Markup
-To ensure municipal administrative assets and civic intelligence services are machine-readable across web crawlers and modern AI search engines:
-- **Schema.org Integration**: The platform dynamically injects `GovernmentService` and `SoftwareApplication` JSON-LD schemas in the root layout, linking statutory administrative subdistricts (`佛山市顺德区`, `广州市天河区`) directly to civic analytics operations.
-- **Geographic HTML Directives**: Emits standard RFC geographic metadata:
-  ```html
-  <meta name="geo.region" content="CN-GD" />
-  <meta name="geo.placename" content="Guangdong" />
-  <meta name="geo.position" content="22.80;113.29" />
-  <meta name="ICBM" content="22.80, 113.29" />
-  ```
-
-### 8.2 Generative Engine Optimization (`/llms.txt` Specification)
-In accordance with modern LLM search agent standards (Anthropic, OpenAI, Perplexity):
-- **High-Density Manifest**: `/public/llms.txt` exposes canonical system architecture, System-1/2 dual-engine specs, Tianditu CGCS2000 standards, and core API endpoints in clean Markdown.
-- **Zero-Drift Spatial Discovery**: AI search bots indexing the platform immediately resolve official 4th-level subdistrict coverage and Model Context Protocol (MCP) tool bindings without hallucinations.
-
-### 8.3 Dynamic Robots & Sitemap Architecture
-- **`app/robots.ts`**: Provides strict crawl policy allowing public spatial overviews, themes, and `llms.txt` while shielding sensitive administrative `/admin/` and `/mcp/authorize` paths.
-- **`app/sitemap.ts`**: Next.js 15 metadata route registering high-frequency municipal analytics routes with prioritized crawl frequencies.
-
+- **Schema.org & Geographic Metadata**: Emits `GovernmentService` / `SoftwareApplication` JSON-LD and standard `geo.region` / `geo.placename` / `geo.position` metadata in the root layout.
+- **`/llms.txt` Dynamic Manifest**: [`app/llms.txt/route.ts`](../app/llms.txt/route.ts) dynamically serves `/llms.txt` with canonical dual-domain architecture, System-1/2 dual-engine specs, Tianditu CGCS2000 standards, and MCP endpoints in clean Markdown.
+- **Dynamic Robots & Sitemap**: `app/robots.ts` shields `/admin/` and `/mcp/authorize` while exposing public analytics routes; `app/sitemap.ts` registers core routes dynamically.
