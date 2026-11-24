@@ -160,7 +160,7 @@ export function VoiceOutreachDialog({
   );
 
   const startOrLoadSession = useCallback(
-    async (forceNew = false) => {
+    async (forceNew = false, resumeOnly = false) => {
       if (!task) return;
       setLoading(true);
       setErrorMsg(null);
@@ -172,6 +172,7 @@ export function VoiceOutreachDialog({
             taskId: task.id,
             regionId,
             forceNew,
+            resumeOnly,
           }),
         });
         const json = await res.json().catch(() => ({}));
@@ -203,7 +204,8 @@ export function VoiceOutreachDialog({
       refreshedOnCloseRef.current = false;
       setConfirming(false);
       setSession(null);
-      void startOrLoadSession(false);
+      // 打开监听窗只恢复最近一次会话；仅在从未外呼过时才首次发起，重新呼叫需点击「重新发起外呼」
+      void startOrLoadSession(false, true);
     } else if (dialogEl.open) {
       dialogEl.close();
     }
@@ -480,8 +482,8 @@ export function VoiceOutreachDialog({
                   <span className="inline-flex items-center gap-1 text-slate-600">
                     <UserCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" aria-hidden="true" />
                     {session?.targetUserName
-                      ? `对应用户端账号：${session.targetUserName}`
-                      : `已向在线用户端广播来电（在线接收端：${session?.onlineTargetCount ?? 0}）`}
+                      ? `对应用户端账号：${session.targetUserName}（在线窗口：${session.onlineTargetCount ?? 0}）`
+                      : "未绑定用户端账号"}
                   </span>
                 </p>
               </div>

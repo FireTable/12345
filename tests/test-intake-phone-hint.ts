@@ -94,6 +94,25 @@ async function main() {
   assert.equal(turn3.draft.contactPhone, "13800238000", "补齐 11 位后正确写入 contactPhone");
   assert.equal(turn3.readyToSubmit, true, "要素齐备后 readyToSubmit 应为 true");
 
+  // 已留有效联系方式后再发一串疑似错位数字（可能是订单号/编号）：不误报位数提示，也不吞掉正文
+  const turn4 = await processIntakeChat({
+    regionId: "gz_tianhe",
+    draft: turn3.draft,
+    messages: [
+      { role: "user", content: "投诉天河南路壹号烧烤夜间油烟过多" },
+      { role: "assistant", content: turn1.reply },
+      { role: "user", content: "13800238000" },
+      { role: "assistant", content: turn3.reply },
+      { role: "user", content: "1380023800" },
+    ],
+  });
+  assert.equal(turn4.draft.contactPhone, "13800238000", "已留手机号保持不变");
+  assert.equal(
+    turn4.reply.includes("中国大陆手机号应为 11 位"),
+    false,
+    `已有联系方式时不应提示号码位数，实际：${turn4.reply}`
+  );
+
   console.log("✅ All intake malformed phone hint tests passed!");
 }
 

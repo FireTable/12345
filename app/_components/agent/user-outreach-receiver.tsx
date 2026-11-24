@@ -40,8 +40,6 @@ interface CitizenOutreachSession {
   missingSlots: string[];
   turns: CitizenOutreachTurn[];
   completed: boolean;
-  triggeredFakeClosure: boolean;
-  resultSummary: string | null;
   createdAt: string;
   answeredAt: string | null;
   endedAt: string | null;
@@ -142,6 +140,8 @@ export function UserOutreachReceiver() {
   const inputId = useId();
 
   const [session, setSession] = useState<CitizenOutreachSession | null>(null);
+  const currentSessionIdRef = useRef<string | null>(null);
+  currentSessionIdRef.current = session?.id ?? null;
   const [textInput, setTextInput] = useState("");
   const [sending, setSending] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
@@ -181,15 +181,13 @@ export function UserOutreachReceiver() {
     (incoming: CitizenOutreachSession | null) => {
       if (!incoming) return;
       if (dismissedIdsRef.current.has(incoming.id)) return;
-      setSession((prev) => {
-        if (prev && prev.id === incoming.id) {
-          return incoming;
-        }
+      if (currentSessionIdRef.current !== incoming.id) {
         lastSpokenTurnIdRef.current = "";
         setTextInput("");
         setTurnError(null);
-        return incoming;
-      });
+      }
+      currentSessionIdRef.current = incoming.id;
+      setSession(incoming);
       speakTurnIfNeeded(incoming);
     },
     [speakTurnIfNeeded]
@@ -216,8 +214,9 @@ export function UserOutreachReceiver() {
       return;
     }
     void pollActiveSession();
+    // 有活跃来电时 4s 同步一次详情；空闲时仅做 30s 兜底轮询（实时来电依赖 SSE 推送）
     const intervalMs =
-      session && (session.status === "RINGING" || session.status === "IN_CALL") ? 4000 : 6000;
+      session && (session.status === "RINGING" || session.status === "IN_CALL") ? 4000 : 30000;
     const timer = window.setInterval(() => {
       if (session && (session.status === "RINGING" || session.status === "IN_CALL")) {
         void (async () => {
@@ -226,6 +225,12 @@ export function UserOutreachReceiver() {
               `/api/outreach/sessions/${encodeURIComponent(session.id)}`,
               { cache: "no-store" }
             );
+            if (res.status === 403 || res.status === 404) {
+              // 会话已不属于当前用户或已被清理：关闭来电弹窗，避免卡死
+              dismissedIdsRef.current.add(session.id);
+              setSession((prev) => (prev?.id === session.id ? null : prev));
+              return;
+            }
             if (!res.ok) return;
             const json = await res.json().catch(() => ({}));
             if (json.success && json.session) {
@@ -384,6 +389,8 @@ export function UserOutreachReceiver() {
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : "发送回答失败";
+        // 失败时恢复用户输入，服务端已回滚该轮记录，可直接重发
+        setTextInput((prev) => (prev.trim() ? prev : transcript));
         setTurnError(msg);
         toast.error(msg);
       } finally {
@@ -774,7 +781,7 @@ export function UserOutreachReceiver() {
                           <div className="space-y-0.5">
                             <div className="font-semibold">本次外呼核实已完成</div>
                             <p className="text-[11px] text-emerald-800">
-                              {session.resultSummary || "感谢配合，您的回答已同步回写至对应工单与处理专班。"}
+                              感谢配合，您的回答已同步回写至对应工单与处理专班。
                             </p>
                           </div>
                         </div>

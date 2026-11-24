@@ -20,6 +20,7 @@ export async function POST(req: Request) {
       regionId?: unknown;
       targetUserId?: unknown;
       forceNew?: unknown;
+      resumeOnly?: unknown;
     } | null;
 
     const taskId = typeof body?.taskId === "string" ? body.taskId.trim() : "";
@@ -46,6 +47,7 @@ export async function POST(req: Request) {
       initiatedBy,
       targetUserId: typeof body?.targetUserId === "string" ? body.targetUserId : undefined,
       forceNew: body?.forceNew === true,
+      resumeOnly: body?.resumeOnly === true,
     });
 
     if (!result.ok) {

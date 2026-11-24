@@ -28,6 +28,7 @@ import { GET as outreachActiveGet } from "../app/api/outreach/active/route";
 import { GET as outreachDetailGet } from "../app/api/outreach/sessions/[id]/route";
 import { POST as outreachActionPost } from "../app/api/outreach/sessions/[id]/action/route";
 import { POST as outreachReplyPost } from "../app/api/outreach/sessions/[id]/reply/route";
+import { expireStaleOutreachSessions } from "../lib/outreach-session";
 
 const TEST_REGION_ID = "verify_outreach_dual";
 const TEMP_CITIZEN_USER = `verify_citizen_${Date.now()}`;
@@ -246,6 +247,8 @@ async function main() {
     assert.equal(replyJson.session.status, "COMPLETED");
     assert.equal(replyJson.session.completed, true);
     assert.equal("reasoning" in (replyJson.session.turns.at(-1) || {}), false, "用户端不回显管理端推理");
+    assert.equal("resultSummary" in replyJson.session, false, "用户端不返回内部处置摘要");
+    assert.equal("triggeredFakeClosure" in replyJson.session, false, "用户端不返回假闭环研判标记");
 
     // 8. 管理端查看会话详情 -> 包含用户回答原话、AI 回复、AI 推理过程与 extractedPatch
     const adminDetailRes = await outreachDetailGet(
@@ -269,6 +272,171 @@ async function main() {
       .limit(1);
     assert.ok(tkAfter?.address?.includes("天河南一路88号"), "tickets 表地址字段已被用户回答真实更新");
     assert.ok((tkAfter?.confidence || 0) >= 88, "tickets 表置信度提升至 >= 88");
+
+    // ---------- 加固回归：目标限定 / 只读恢复 / 重新发起 / 超时 / 并发 ----------
+    const submitMissingTicket = async (title: string, keepSubmission = true) => {
+      const res = await intakeSubmitPost(
+        await makeCitizenReq(`/api/intake/submit?region=${TEST_REGION_ID}`, citizenCookie, {
+          method: "POST",
+          regionId: TEST_REGION_ID,
+          body: {
+            title,
+            content: `${title}，每天深夜持续发生，希望尽快处理。`,
+            subdistrict: "天河南街道",
+            category: "生态环境",
+            contactPhone: "13800138000",
+            source: "FORM",
+            skipAutoCluster: true,
+          },
+        })
+      );
+      const json = await res.json();
+      assert.equal(res.status, 200, `补充工单提交成功: ${JSON.stringify(json)}`);
+      const tid = (json.ticketId || json.receipt?.ticketId) as string;
+      await testDb
+        .update(ticketsTable)
+        .set({ address: null, canonicalSubject: null, confidence: 52 })
+        .where(eq(ticketsTable.id, tid));
+      if (!keepSubmission) {
+        await sql`DELETE FROM public.citizen_submissions WHERE region_id = ${TEST_REGION_ID} AND ticket_id = ${tid}`;
+      }
+      const t = await createOrReuseMissingInfoTask({ regionId: TEST_REGION_ID, ticketId: tid });
+      if (!t.ok) throw new Error(`生成 MISSING_INFO 任务失败: ${t.error}`);
+      return { ticketId: tid, taskId: t.task.id };
+    };
+    const adminStart = async (body: Record<string, unknown>) => {
+      const res = await agentOutreachStartPost(
+        await makeAdminReq("/api/agent/outreach/sessions", {
+          method: "POST",
+          regionId: TEST_REGION_ID,
+          body: { regionId: TEST_REGION_ID, ...body },
+        })
+      );
+      return { status: res.status, json: await res.json() };
+    };
+    const citizenAction = async (sid: string, action: string) => {
+      const res = await outreachActionPost(
+        await makeCitizenReq(`/api/outreach/sessions/${encodeURIComponent(sid)}/action`, citizenCookie, {
+          method: "POST",
+          body: { action },
+        }),
+        { params: Promise.resolve({ id: sid }) }
+      );
+      return { status: res.status, json: await res.json() };
+    };
+    const adminAction = async (sid: string, action: string) => {
+      const res = await outreachActionPost(
+        await makeAdminReq(`/api/outreach/sessions/${encodeURIComponent(sid)}/action`, {
+          method: "POST",
+          body: { action },
+        }),
+        { params: Promise.resolve({ id: sid }) }
+      );
+      return { status: res.status, json: await res.json() };
+    };
+    const citizenReply = async (sid: string, transcript: string) => {
+      const res = await outreachReplyPost(
+        await makeCitizenReq(`/api/outreach/sessions/${encodeURIComponent(sid)}/reply`, citizenCookie, {
+          method: "POST",
+          body: { transcript },
+        }),
+        { params: Promise.resolve({ id: sid }) }
+      );
+      return { status: res.status, json: await res.json() };
+    };
+    const readSessionRow = async (sid: string) => {
+      const [r] = await sql<Array<{ status: string; turns_json: string; reply_lock_token: string | null }>>`
+        SELECT status, turns_json, reply_lock_token FROM public.outreach_sessions WHERE id = ${sid}
+      `;
+      return r;
+    };
+
+    // A. 无关联提交账号的存量工单：拒绝发起外呼（不再向全体在线市民广播）
+    const orphan = await submitMissingTicket("存量导入工单无提交账号", false);
+    const orphanStart = await adminStart({ taskId: orphan.taskId });
+    assert.equal(orphanStart.status, 409, `无目标用户应返回 409: ${JSON.stringify(orphanStart.json)}`);
+    assert.equal(orphanStart.json.code, "NO_TARGET_USER");
+    const [orphanCount] = await sql<Array<{ c: number }>>`
+      SELECT count(*)::int AS c FROM public.outreach_sessions WHERE region_id = ${TEST_REGION_ID} AND task_id = ${orphan.taskId}
+    `;
+    assert.equal(orphanCount.c, 0, "无目标用户时不创建任何外呼会话");
+
+    // B. 拒接后管理员仅打开监听窗(resumeOnly)：返回原会话，不重新响铃
+    const t3 = await submitMissingTicket("工地夜间施工噪音扰民");
+    const s3 = await adminStart({ taskId: t3.taskId });
+    assert.equal(s3.status, 200);
+    assert.equal(s3.json.session.status, "RINGING");
+    const rej = await citizenAction(s3.json.session.id, "REJECT");
+    assert.equal(rej.status, 200);
+    assert.equal(rej.json.session.status, "REJECTED");
+    const view = await adminStart({ taskId: t3.taskId, resumeOnly: true });
+    assert.equal(view.status, 200);
+    assert.equal(view.json.session.id, s3.json.session.id, "resumeOnly 返回最近会话，不新建");
+    assert.equal(view.json.session.status, "REJECTED", "resumeOnly 不会重新响铃");
+    const activeAfterReject = await (await outreachActiveGet(
+      await makeCitizenReq("/api/outreach/active", citizenCookie)
+    )).json();
+    assert.equal(activeAfterReject.session, null, "拒接后用户端无待接来电");
+
+    // C. 重新发起(forceNew) -> 新会话；旧活跃会话自动结束，同一任务最多一个活跃会话
+    const s4 = await adminStart({ taskId: t3.taskId, forceNew: true });
+    assert.equal(s4.status, 200);
+    assert.notEqual(s4.json.session.id, s3.json.session.id);
+    const s5 = await adminStart({ taskId: t3.taskId, forceNew: true });
+    assert.equal(s5.status, 200);
+    assert.equal((await readSessionRow(s4.json.session.id)).status, "CANCELLED", "重新发起时旧响铃会话被自动结束");
+    const [activeCount] = await sql<Array<{ c: number }>>`
+      SELECT count(*)::int AS c FROM public.outreach_sessions
+      WHERE region_id = ${TEST_REGION_ID} AND task_id = ${t3.taskId} AND status IN ('RINGING','IN_CALL')
+    `;
+    assert.equal(activeCount.c, 1, "同一任务仅保留一个活跃会话");
+
+    // D. 响铃超时：超过阈值未接听自动结束，用户端不再弹出
+    await sql`UPDATE public.outreach_sessions SET updated_at = now() - interval '200 seconds' WHERE id = ${s5.json.session.id}`;
+    const expiredCount = await expireStaleOutreachSessions(true);
+    assert.ok(expiredCount >= 1, "超时会话被自动结束");
+    const s5Row = await readSessionRow(s5.json.session.id);
+    assert.equal(s5Row.status, "CANCELLED");
+    assert.ok(s5Row.turns_json.includes("超时"), "超时结束写入系统提示轮次");
+    const activeAfterTimeout = await (await outreachActiveGet(
+      await makeCitizenReq("/api/outreach/active", citizenCookie)
+    )).json();
+    assert.equal(activeAfterTimeout.session, null, "超时后用户端无待接来电");
+    const answerExpired = await citizenAction(s5.json.session.id, "ANSWER");
+    assert.equal(answerExpired.status, 400, "超时结束的来电不可再接听");
+
+    // E. 处理锁：上一条回答处理中时拒绝并发回答(409)
+    const s6 = await adminStart({ taskId: t3.taskId, forceNew: true });
+    const sid6 = s6.json.session.id as string;
+    assert.equal((await citizenAction(sid6, "ANSWER")).status, 200);
+    await sql`UPDATE public.outreach_sessions SET reply_lock_token = 'held-by-test', reply_lock_at = now() WHERE id = ${sid6}`;
+    const lockedReply = await citizenReply(sid6, "就在体育西横街12号工地");
+    assert.equal(lockedReply.status, 409, "持锁期间的并发回答返回 409");
+    assert.equal(lockedReply.json.code, "REPLY_IN_PROGRESS");
+    assert.equal(
+      JSON.parse((await readSessionRow(sid6)).turns_json).filter((t: any) => t.role === "citizen").length,
+      0,
+      "被拒绝的并发回答不写入通话记录"
+    );
+    await sql`UPDATE public.outreach_sessions SET reply_lock_token = NULL, reply_lock_at = NULL WHERE id = ${sid6}`;
+
+    // F. 回答与管理员取消并发：任一结果都必须保持一致（取消记录不丢失、锁被释放）
+    const [raceReply, raceCancel] = await Promise.all([
+      citizenReply(sid6, "就在体育西横街12号临街工地，夜间23点后仍在打桩"),
+      new Promise((r) => setTimeout(r, 30)).then(() => adminAction(sid6, "CANCEL")),
+    ]);
+    assert.equal(raceCancel.status, 200, `管理员取消返回 200: ${JSON.stringify(raceCancel.json)}`);
+    const raceRow = await readSessionRow(sid6);
+    assert.ok(["CANCELLED", "COMPLETED"].includes(raceRow.status), `并发后终态一致: ${raceRow.status}`);
+    assert.equal(raceRow.reply_lock_token, null, "并发结束后处理锁已释放");
+    if (raceRow.status === "CANCELLED") {
+      assert.ok(raceRow.turns_json.includes("管理员已取消本次语音外呼"), "取消记录未被回答写入覆盖");
+      assert.ok([200, 400].includes(raceReply.status), `被取消的回答返回 400 或已先完成: ${raceReply.status}`);
+    }
+
+    // G. 已取消会话不可再回答
+    const lateReply = await citizenReply(sid6, "补充一下地址");
+    assert.equal(lateReply.status, 400, "已结束会话拒绝回答");
 
     // 9. 验证前端管理弹窗源码中已彻底移除所有用户输入控件（只读监听）
     const adminDialogSrc = fs.readFileSync(

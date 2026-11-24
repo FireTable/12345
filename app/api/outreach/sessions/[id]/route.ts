@@ -38,7 +38,7 @@ export async function GET(
       return NextResponse.json({ success: true, session });
     }
 
-    if (session.targetUserId && session.targetUserId !== guard.session.user.id) {
+    if (!session.targetUserId || session.targetUserId !== guard.session.user.id) {
       return NextResponse.json(
         { success: false, code: "FORBIDDEN", error: "无权查看其他用户的外呼通话" },
         { status: 403 }

@@ -457,19 +457,10 @@ export function broadcastPipelineRefresh(regionId: string): void {
   for (const c of bucket.admin) send(c, msg);
 }
 
-/** 统计当前在线且可接收指定外呼会话的用户端连接数。 */
-export function countOnlineOutreachTargets(
-  regionId: string,
-  targetUserId: string | null
-): number {
-  if (targetUserId) {
-    return userControllers.get(targetUserId)?.size ?? 0;
-  }
-  const regionUsers = subscribers.get(regionId)?.user.size ?? 0;
-  if (regionUsers > 0) return regionUsers;
-  let total = 0;
-  for (const set of userControllers.values()) total += set.size;
-  return total;
+/** 统计指定外呼目标用户当前在线的用户端连接数（未绑定目标用户时恒为 0，绝不按辖区广播）。 */
+export function countOnlineOutreachTargets(targetUserId: string | null): number {
+  if (!targetUserId) return 0;
+  return userControllers.get(targetUserId)?.size ?? 0;
 }
 
 /** 向同辖区所有管理员端外呼监听窗推送最新通话/推理状态（仅 admin 桶，绝不发给 user）。 */
@@ -489,41 +480,31 @@ export function broadcastOutreachToAdmins(
   }
 }
 
-/** 向对应用户端实时推送外呼来电（RINGING）或回复更新。 */
+/** 仅向会话明确指派的目标用户的所有在线窗口推送来电或通话更新；未绑定目标用户时不推送。 */
 export function broadcastOutreachToCitizen(
   regionId: string,
   targetUserId: string | null,
   type: "outreach-incoming" | "outreach-update",
   session: unknown
 ): void {
+  if (!targetUserId) return;
+  const set = userControllers.get(targetUserId);
+  if (!set || set.size === 0) return;
   const msg: SseMessage = { type, regionId, session };
-  if (targetUserId) {
-    const set = userControllers.get(targetUserId);
-    if (!set || set.size === 0) return;
-    for (const c of set) send(c, msg);
-    return;
-  }
-  const regionUserSet = subscribers.get(regionId)?.user;
-  if (regionUserSet && regionUserSet.size > 0) {
-    for (const c of regionUserSet) send(c, msg);
-    return;
-  }
-  for (const set of userControllers.values()) {
-    for (const c of set) send(c, msg);
-  }
+  for (const c of set) send(c, msg);
 }
 
-/** 通知其他未接听该来电的用户端窗口关闭来电提醒。 */
+/** 通知目标用户的所有在线窗口关闭该来电弹窗（拒接/取消/超时）。 */
 export function broadcastOutreachDismissed(
   regionId: string,
   sessionId: string,
-  excludeUserId?: string
+  targetUserId: string | null
 ): void {
+  if (!targetUserId) return;
+  const set = userControllers.get(targetUserId);
+  if (!set || set.size === 0) return;
   const msg: SseMessage = { type: "outreach-dismissed", regionId, sessionId };
-  for (const [uid, set] of userControllers.entries()) {
-    if (excludeUserId && uid === excludeUserId) continue;
-    for (const c of set) send(c, msg);
-  }
+  for (const c of set) send(c, msg);
 }
 
 /**

@@ -61,6 +61,7 @@ export interface OutreachSessionAdminDto {
   updatedAt: string;
 }
 
+/** 用户端可见的外呼会话：不含内部推理、发起人、假闭环研判与任务处置摘要。 */
 export interface OutreachSessionCitizenDto {
   id: string;
   regionId: string;
@@ -80,8 +81,6 @@ export interface OutreachSessionCitizenDto {
     createdAt: string;
   }>;
   completed: boolean;
-  triggeredFakeClosure: boolean;
-  resultSummary: string | null;
   createdAt: string;
   answeredAt: string | null;
   endedAt: string | null;
@@ -93,7 +92,18 @@ declare global {
   var __outreachSessionsReady: boolean | undefined;
   // eslint-disable-next-line no-var
   var __outreachSessionsPending: Promise<void> | undefined;
+  // eslint-disable-next-line no-var
+  var __outreachExpireLastRunAt: number | undefined;
 }
+
+/** 响铃超时：超过该时长未接听自动结束，防止离线用户数天后登录仍被弹窗。 */
+export const OUTREACH_RINGING_TIMEOUT_SECONDS = 90;
+/** 通话空闲超时：IN_CALL 状态长时间无任何应答自动挂断。 */
+export const OUTREACH_IN_CALL_IDLE_TIMEOUT_SECONDS = 600;
+/** 回答处理锁过期时间（覆盖 LLM 超时 + 写库），进程崩溃后可自动释放。 */
+const OUTREACH_REPLY_LOCK_STALE_SECONDS = 90;
+const EXPIRE_THROTTLE_MS = 3000;
+const ACTIVE_STATUSES = ["RINGING", "IN_CALL"] as const;
 
 /** 剥离气隙脱敏占位符，避免数字人播报与字幕念出 `{{PHONE_NUMBER_1}}`。 */
 export function toSpokenOutreachText(raw: string): string {
@@ -153,6 +163,8 @@ export async function ensureOutreachSessionsTable(): Promise<void> {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
     `;
+    await sql`ALTER TABLE public.outreach_sessions ADD COLUMN IF NOT EXISTS reply_lock_token VARCHAR(64);`;
+    await sql`ALTER TABLE public.outreach_sessions ADD COLUMN IF NOT EXISTS reply_lock_at TIMESTAMPTZ;`;
     await sql`
       CREATE INDEX IF NOT EXISTS idx_outreach_sessions_user_status
       ON public.outreach_sessions (target_user_id, status, updated_at DESC);
@@ -160,6 +172,11 @@ export async function ensureOutreachSessionsTable(): Promise<void> {
     await sql`
       CREATE INDEX IF NOT EXISTS idx_outreach_sessions_task
       ON public.outreach_sessions (region_id, task_id, updated_at DESC);
+    `;
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_outreach_sessions_active
+      ON public.outreach_sessions (status, updated_at)
+      WHERE status IN ('RINGING', 'IN_CALL');
     `;
     globalThis.__outreachSessionsReady = true;
   })();
@@ -194,9 +211,18 @@ function safeJsonParse<T>(raw: unknown, fallback: T): T {
   }
 }
 
+function isActiveStatus(status: string): boolean {
+  return (ACTIVE_STATUSES as readonly string[]).includes(status);
+}
+
 function toAdminDto(row: Record<string, unknown>, processing = false): OutreachSessionAdminDto {
   const regionId = String(row.region_id || "");
   const targetUserId = row.target_user_id ? String(row.target_user_id) : null;
+  const lockAt = row.reply_lock_at ? new Date(String(row.reply_lock_at)).getTime() : 0;
+  const lockFresh =
+    Boolean(row.reply_lock_token) &&
+    lockAt > 0 &&
+    Date.now() - lockAt < OUTREACH_REPLY_LOCK_STALE_SECONDS * 1000;
   return {
     id: String(row.id),
     regionId,
@@ -209,7 +235,7 @@ function toAdminDto(row: Record<string, unknown>, processing = false): OutreachS
     targetUserId,
     targetUserName: row.target_user_name ? String(row.target_user_name) : null,
     initiatedBy: String(row.initiated_by || "admin"),
-    status: (String(row.status || "RINGING") as OutreachSessionStatus),
+    status: String(row.status || "RINGING") as OutreachSessionStatus,
     missingSlots: safeJsonParse<string[]>(row.missing_slots_json, []),
     reason: String(row.reason || ""),
     turns: safeJsonParse<OutreachTurn[]>(row.turns_json, []),
@@ -217,8 +243,8 @@ function toAdminDto(row: Record<string, unknown>, processing = false): OutreachS
     triggeredFakeClosure: Boolean(row.triggered_fake_closure),
     reopenedThemeId: row.reopened_theme_id ? String(row.reopened_theme_id) : null,
     resultSummary: row.result_summary ? String(row.result_summary) : null,
-    onlineTargetCount: countOnlineOutreachTargets(regionId, targetUserId),
-    processing,
+    onlineTargetCount: countOnlineOutreachTargets(targetUserId),
+    processing: processing || (isActiveStatus(String(row.status || "")) && lockFresh),
     createdAt: asIso(row.created_at),
     answeredAt: asIsoOrNull(row.answered_at),
     endedAt: asIsoOrNull(row.ended_at),
@@ -248,13 +274,97 @@ export function sanitizeOutreachForCitizen(
       createdAt: t.createdAt,
     })),
     completed: admin.status === "COMPLETED",
-    triggeredFakeClosure: admin.triggeredFakeClosure,
-    resultSummary: admin.resultSummary,
     createdAt: admin.createdAt,
     answeredAt: admin.answeredAt,
     endedAt: admin.endedAt,
     updatedAt: admin.updatedAt,
   };
+}
+
+/** 生成原子追加单条通话记录所需的 JSON 参数（配合 SQL `turns_json::jsonb || $x::jsonb`）。 */
+function turnAppendParam(turn: OutreachTurn): string {
+  return JSON.stringify([turn]);
+}
+
+/** 通知管理端最新状态；会话结束时同步关闭目标用户端所有窗口的来电弹窗。 */
+function broadcastSessionState(dto: OutreachSessionAdminDto, processing = false): void {
+  broadcastOutreachToAdmins(dto.regionId, { session: dto, processing });
+  if (dto.status === "REJECTED" || dto.status === "CANCELLED") {
+    broadcastOutreachDismissed(dto.regionId, dto.id, dto.targetUserId);
+  } else {
+    broadcastOutreachToCitizen(
+      dto.regionId,
+      dto.targetUserId,
+      "outreach-update",
+      sanitizeOutreachForCitizen(dto)
+    );
+  }
+}
+
+async function fetchSessionRow(sessionId: string): Promise<Record<string, unknown> | null> {
+  const rows = await sql<Array<Record<string, unknown>>>`
+    SELECT * FROM public.outreach_sessions WHERE id = ${sessionId} LIMIT 1
+  `;
+  return rows[0] ?? null;
+}
+
+/**
+ * 自动结束超时会话：响铃超时未接听、通话长时间无应答（且没有正在处理的回答）。
+ * 按进程节流执行，并向管理端与目标用户端广播结束状态。
+ */
+export async function expireStaleOutreachSessions(force = false): Promise<number> {
+  await ensureOutreachSessionsTable();
+  const now = Date.now();
+  if (
+    !force &&
+    globalThis.__outreachExpireLastRunAt &&
+    now - globalThis.__outreachExpireLastRunAt < EXPIRE_THROTTLE_MS
+  ) {
+    return 0;
+  }
+  globalThis.__outreachExpireLastRunAt = now;
+
+  const nowIso = new Date(now).toISOString();
+  const turnId = `sys-timeout-${now}`;
+  const ringingText = "对方未接听，本次来电已超时结束。";
+  const ringingReasoning = `【响铃超时】用户端超过 ${OUTREACH_RINGING_TIMEOUT_SECONDS} 秒未接听，系统自动结束本次外呼，可稍后重新发起。`;
+  const idleText = "通话长时间无应答，已自动结束。";
+  const idleReasoning = "【通话空闲超时】用户端长时间无应答，系统自动挂断本次外呼。";
+  const expired = await sql<Array<Record<string, unknown>>>`
+    UPDATE public.outreach_sessions
+    SET status = 'CANCELLED',
+        turns_json = (
+          COALESCE(NULLIF(turns_json, ''), '[]')::jsonb ||
+          jsonb_build_array(jsonb_build_object(
+            'id', ${turnId}::text,
+            'role', 'agent'::text,
+            'text', CASE WHEN status = 'RINGING' THEN ${ringingText}::text ELSE ${idleText}::text END,
+            'reasoning', CASE WHEN status = 'RINGING' THEN ${ringingReasoning}::text ELSE ${idleReasoning}::text END,
+            'createdAt', ${nowIso}::text
+          ))
+        )::text,
+        ended_at = now(),
+        updated_at = now(),
+        reply_lock_token = NULL,
+        reply_lock_at = NULL
+    WHERE (
+        status = 'RINGING'
+        AND updated_at < now() - make_interval(secs => ${OUTREACH_RINGING_TIMEOUT_SECONDS}::int)
+      ) OR (
+        status = 'IN_CALL'
+        AND updated_at < now() - make_interval(secs => ${OUTREACH_IN_CALL_IDLE_TIMEOUT_SECONDS}::int)
+        AND (
+          reply_lock_token IS NULL
+          OR reply_lock_at < now() - make_interval(secs => ${OUTREACH_REPLY_LOCK_STALE_SECONDS}::int)
+        )
+      )
+    RETURNING *
+  `;
+
+  for (const row of expired) {
+    broadcastSessionState(toAdminDto(row, false));
+  }
+  return expired.length;
 }
 
 async function resolveUserDisplayName(userId: string): Promise<string | null> {
@@ -343,17 +453,52 @@ function buildInitialGreeting(task: {
   };
 }
 
+/** 结束同一任务下仍处于活跃状态的旧会话（重新发起外呼前调用，保证同一任务最多一个活跃会话）。 */
+async function cancelActiveSessionsForTask(
+  regionId: string,
+  taskId: string,
+  reasonText: string
+): Promise<void> {
+  const nowIso = new Date().toISOString();
+  const turn: OutreachTurn = {
+    id: `sys-superseded-${Date.now()}`,
+    role: "agent",
+    text: "本次来电已结束。",
+    reasoning: reasonText,
+    createdAt: nowIso,
+  };
+  const rows = await sql<Array<Record<string, unknown>>>`
+    UPDATE public.outreach_sessions
+    SET status = 'CANCELLED',
+        turns_json = (COALESCE(NULLIF(turns_json, ''), '[]')::jsonb || ${turnAppendParam(turn)}::jsonb)::text,
+        ended_at = now(),
+        updated_at = now(),
+        reply_lock_token = NULL,
+        reply_lock_at = NULL
+    WHERE region_id = ${regionId}
+      AND task_id = ${taskId}
+      AND status IN ('RINGING', 'IN_CALL')
+    RETURNING *
+  `;
+  for (const row of rows) {
+    broadcastSessionState(toAdminDto(row, false));
+  }
+}
+
 export async function createOrResumeOutreachSession(input: {
   regionId: string;
   taskId: string;
   initiatedBy: string;
   targetUserId?: string;
   forceNew?: boolean;
+  /** 仅查看/恢复最近一次会话：已存在任何会话时直接返回，不再新建或重新响铃。 */
+  resumeOnly?: boolean;
 }): Promise<
   | { ok: true; session: OutreachSessionAdminDto; reused: boolean }
   | { ok: false; status: 400 | 404 | 409; code: string; error: string }
 > {
   await ensureOutreachSessionsTable();
+  await expireStaleOutreachSessions(true);
   const schemaName = await ensureAgentGovernanceTables(input.regionId);
   const { region } = await getRegionDb(input.regionId);
   const appDomain = getAppDomainMode();
@@ -384,7 +529,6 @@ export async function createOrResumeOutreachSession(input: {
     };
   }
 
-  // 检查是否已有活跃（RINGING / IN_CALL）或已完结的历史会话
   const existingRows = await sql<Array<Record<string, unknown>>>`
     SELECT * FROM public.outreach_sessions
     WHERE region_id = ${input.regionId} AND task_id = ${input.taskId}
@@ -392,12 +536,25 @@ export async function createOrResumeOutreachSession(input: {
     LIMIT 1
   `;
   const existing = existingRows[0];
-  if (
-    existing &&
-    !input.forceNew &&
-    (existing.status === "RINGING" || existing.status === "IN_CALL")
-  ) {
-    const adminDto = toAdminDto(existing, false);
+
+  if (existing && input.resumeOnly && !input.forceNew) {
+    return { ok: true, session: toAdminDto(existing, false), reused: true };
+  }
+
+  if (existing && !input.forceNew && isActiveStatus(String(existing.status || ""))) {
+    // 管理员显式再次呼叫：刷新响铃计时并重新推送给目标用户
+    const refreshed =
+      existing.status === "RINGING"
+        ? (
+            await sql<Array<Record<string, unknown>>>`
+              UPDATE public.outreach_sessions
+              SET updated_at = now()
+              WHERE id = ${String(existing.id)} AND status = 'RINGING'
+              RETURNING *
+            `
+          )[0] ?? existing
+        : existing;
+    const adminDto = toAdminDto(refreshed, false);
     if (adminDto.status === "RINGING") {
       broadcastOutreachToCitizen(
         adminDto.regionId,
@@ -424,6 +581,9 @@ export async function createOrResumeOutreachSession(input: {
   let targetUserName: string | null = targetUserId
     ? await resolveUserDisplayName(targetUserId)
     : null;
+  if (targetUserId && !targetUserName) {
+    return { ok: false, status: 404, code: "TARGET_USER_NOT_FOUND", error: "指定的用户端账号不存在" };
+  }
   if (!targetUserId) {
     const resolved = await resolveTargetUserForTask({
       regionId: input.regionId,
@@ -435,6 +595,27 @@ export async function createOrResumeOutreachSession(input: {
     targetUserName = resolved.userName;
   }
 
+  const initialStatus: OutreachSessionStatus =
+    taskStatus === "EXECUTED" ? "COMPLETED" : "RINGING";
+
+  // 严禁向无关市民广播：找不到对应提交账号时拒绝发起实时外呼
+  if (!targetUserId && initialStatus === "RINGING") {
+    return {
+      ok: false,
+      status: 409,
+      code: "NO_TARGET_USER",
+      error: "该工单未关联用户端提交账号（如存量导入工单），无法向用户端发起实时外呼，请改用人工电话回访",
+    };
+  }
+
+  if (input.forceNew && initialStatus === "RINGING") {
+    await cancelActiveSessionsForTask(
+      input.regionId,
+      input.taskId,
+      "【重新发起】管理员重新发起外呼，旧会话自动结束。"
+    );
+  }
+
   const greeting = buildInitialGreeting({
     taskType,
     draftMessage,
@@ -442,8 +623,6 @@ export async function createOrResumeOutreachSession(input: {
     domainType,
   });
   const nowIso = new Date().toISOString();
-  const initialStatus: OutreachSessionStatus =
-    taskStatus === "EXECUTED" ? "COMPLETED" : "RINGING";
 
   const initialTurns: OutreachTurn[] = [
     {
@@ -454,9 +633,7 @@ export async function createOrResumeOutreachSession(input: {
       reasoning:
         initialStatus === "COMPLETED"
           ? `任务已执行闭环：${String(rawTask.result_summary || "已完成外呼核实")}`
-          : targetUserId
-            ? `【外呼发起】已识别关联提交账号「${targetUserName || targetUserId}」，正通过实时通道向用户端推送来电提醒。`
-            : "【外呼发起】当前为存量工单演示外呼，已向在线用户端推送来电提醒，等待用户端接听应答。",
+          : `【外呼发起】已识别关联提交账号「${targetUserName || targetUserId}」，正通过实时通道向该用户端推送来电提醒（${OUTREACH_RINGING_TIMEOUT_SECONDS} 秒未接听自动结束）。`,
       createdAt: nowIso,
     },
   ];
@@ -496,10 +673,9 @@ export async function getOutreachSessionById(
   sessionId: string
 ): Promise<OutreachSessionAdminDto | null> {
   await ensureOutreachSessionsTable();
-  const rows = await sql<Array<Record<string, unknown>>>`
-    SELECT * FROM public.outreach_sessions WHERE id = ${sessionId} LIMIT 1
-  `;
-  return rows[0] ? toAdminDto(rows[0], false) : null;
+  await expireStaleOutreachSessions();
+  const row = await fetchSessionRow(sessionId);
+  return row ? toAdminDto(row, false) : null;
 }
 
 export async function getLatestOutreachForTask(
@@ -507,6 +683,7 @@ export async function getLatestOutreachForTask(
   taskId: string
 ): Promise<OutreachSessionAdminDto | null> {
   await ensureOutreachSessionsTable();
+  await expireStaleOutreachSessions();
   const rows = await sql<Array<Record<string, unknown>>>`
     SELECT * FROM public.outreach_sessions
     WHERE region_id = ${regionId} AND task_id = ${taskId}
@@ -516,35 +693,37 @@ export async function getLatestOutreachForTask(
   return rows[0] ? toAdminDto(rows[0], false) : null;
 }
 
+/** 仅返回明确指派给该用户的活跃来电，绝不返回未绑定账号的会话。 */
 export async function getActiveOutreachForUser(
   userId: string,
   appDomain: AppDomainMode = getAppDomainMode()
 ): Promise<OutreachSessionCitizenDto | null> {
   await ensureOutreachSessionsTable();
+  await expireStaleOutreachSessions();
   const rows =
     appDomain === "ALL"
       ? await sql<Array<Record<string, unknown>>>`
           SELECT * FROM public.outreach_sessions
           WHERE status IN ('RINGING', 'IN_CALL')
-            AND (target_user_id = ${userId} OR target_user_id IS NULL)
-          ORDER BY
-            CASE WHEN target_user_id = ${userId} THEN 0 ELSE 1 END ASC,
-            updated_at DESC
+            AND target_user_id = ${userId}
+          ORDER BY updated_at DESC
           LIMIT 1
         `
       : await sql<Array<Record<string, unknown>>>`
           SELECT * FROM public.outreach_sessions
           WHERE status IN ('RINGING', 'IN_CALL')
             AND domain_type = ${appDomain}
-            AND (target_user_id = ${userId} OR target_user_id IS NULL)
-          ORDER BY
-            CASE WHEN target_user_id = ${userId} THEN 0 ELSE 1 END ASC,
-            updated_at DESC
+            AND target_user_id = ${userId}
+          ORDER BY updated_at DESC
           LIMIT 1
         `;
   if (!rows[0]) return null;
   return sanitizeOutreachForCitizen(toAdminDto(rows[0], false));
 }
+
+type ActionResult =
+  | { ok: true; session: OutreachSessionAdminDto }
+  | { ok: false; status: 400 | 403 | 404 | 409; code: string; error: string };
 
 export async function handleOutreachAction(input: {
   sessionId: string;
@@ -552,15 +731,10 @@ export async function handleOutreachAction(input: {
   actorUserId: string;
   actorRole: "admin" | "user";
   actorName?: string | null;
-}): Promise<
-  | { ok: true; session: OutreachSessionAdminDto }
-  | { ok: false; status: 400 | 403 | 404; code: string; error: string }
-> {
+}): Promise<ActionResult> {
   await ensureOutreachSessionsTable();
-  const rows = await sql<Array<Record<string, unknown>>>`
-    SELECT * FROM public.outreach_sessions WHERE id = ${input.sessionId} LIMIT 1
-  `;
-  const row = rows[0];
+  await expireStaleOutreachSessions();
+  const row = await fetchSessionRow(input.sessionId);
   if (!row) {
     return { ok: false, status: 404, code: "NOT_FOUND", error: "外呼通话会话不存在" };
   }
@@ -568,35 +742,46 @@ export async function handleOutreachAction(input: {
   const current = toAdminDto(row, false);
   const nowIso = new Date().toISOString();
 
+  /** 状态条件更新未命中时：已结束则幂等返回最新状态，否则视为并发冲突。 */
+  const resolveMiss = async (): Promise<ActionResult> => {
+    const latestRow = await fetchSessionRow(current.id);
+    if (!latestRow) {
+      return { ok: false, status: 404, code: "NOT_FOUND", error: "外呼通话会话不存在" };
+    }
+    const latest = toAdminDto(latestRow, false);
+    if (!isActiveStatus(latest.status)) {
+      return { ok: true, session: latest };
+    }
+    return { ok: false, status: 409, code: "CONFLICT", error: "通话状态已变化，请刷新后重试" };
+  };
+
   if (input.action === "CANCEL") {
     if (input.actorRole !== "admin") {
       return { ok: false, status: 403, code: "FORBIDDEN", error: "仅管理员可取消外呼任务" };
     }
-    if (current.status === "COMPLETED" || current.status === "CANCELLED" || current.status === "REJECTED") {
-      return { ok: true, session: current };
-    }
-    const turns = [...current.turns];
-    turns.push({
+    const turn: OutreachTurn = {
       id: `sys-cancel-${Date.now()}`,
       role: "agent",
       text: "管理员已取消本次语音外呼。",
       reasoning: "【外呼中止】管理员主动取消/挂断本次外呼会话。",
       createdAt: nowIso,
-    });
+    };
     const updated = await sql<Array<Record<string, unknown>>>`
       UPDATE public.outreach_sessions
-      SET status = 'CANCELLED', turns_json = ${JSON.stringify(turns)}, ended_at = ${nowIso}, updated_at = ${nowIso}
-      WHERE id = ${current.id}
+      SET status = 'CANCELLED',
+          turns_json = (COALESCE(NULLIF(turns_json, ''), '[]')::jsonb || ${turnAppendParam(turn)}::jsonb)::text,
+          ended_at = now(),
+          updated_at = now()
+      WHERE id = ${current.id} AND status IN ('RINGING', 'IN_CALL')
       RETURNING *
     `;
+    if (!updated[0]) return resolveMiss();
     const dto = toAdminDto(updated[0], false);
-    broadcastOutreachDismissed(dto.regionId, dto.id);
-    broadcastOutreachToCitizen(dto.regionId, dto.targetUserId, "outreach-update", sanitizeOutreachForCitizen(dto));
-    broadcastOutreachToAdmins(dto.regionId, { session: dto, processing: false });
+    broadcastSessionState(dto);
     return { ok: true, session: dto };
   }
 
-  // ANSWER / REJECT / HANGUP 必须由目标用户（或普通用户认领）操作
+  // ANSWER / REJECT / HANGUP 必须由会话明确指派的目标用户本人操作
   if (input.actorRole !== "user") {
     return {
       ok: false,
@@ -605,94 +790,132 @@ export async function handleOutreachAction(input: {
       error: "接听/拒接/用户挂断仅限用户端操作，管理端只负责实时监听与AI推理展示",
     };
   }
-  if (current.targetUserId && current.targetUserId !== input.actorUserId) {
+  if (!current.targetUserId || current.targetUserId !== input.actorUserId) {
     return { ok: false, status: 403, code: "FORBIDDEN", error: "无权操作其他用户的外呼来电" };
   }
+  const boundUserName =
+    current.targetUserName ||
+    input.actorName ||
+    (await resolveUserDisplayName(input.actorUserId)) ||
+    input.actorUserId;
 
   if (input.action === "ANSWER") {
-    if (current.status !== "RINGING" && current.status !== "IN_CALL") {
+    if (!isActiveStatus(current.status)) {
       return { ok: false, status: 400, code: "INVALID_STATE", error: "该通话已结束，无法接听" };
     }
-    const boundUserName =
-      current.targetUserName || input.actorName || (await resolveUserDisplayName(input.actorUserId)) || input.actorUserId;
-    const turns = [...current.turns];
-    if (current.status === "RINGING") {
-      turns[0] = {
-        ...turns[0],
-        reasoning: `【已接听】用户「${boundUserName}」已接听 AI 来电，正在播放开场白并等待对方语音/文字应答。`,
-      };
-    }
+    const answeredReasoning = `【已接听】用户「${boundUserName}」已接听 AI 来电，正在播放开场白并等待对方语音/文字应答。`;
     const updated = await sql<Array<Record<string, unknown>>>`
       UPDATE public.outreach_sessions
       SET status = 'IN_CALL',
-          target_user_id = ${input.actorUserId},
-          target_user_name = ${boundUserName},
-          turns_json = ${JSON.stringify(turns)},
-          answered_at = COALESCE(answered_at, ${nowIso}),
-          updated_at = ${nowIso}
+          turns_json = CASE
+            WHEN status = 'RINGING' AND jsonb_array_length(COALESCE(NULLIF(turns_json, ''), '[]')::jsonb) > 0
+              THEN jsonb_set(turns_json::jsonb, '{0,reasoning}', to_jsonb(${answeredReasoning}::text))::text
+            ELSE turns_json
+          END,
+          answered_at = COALESCE(answered_at, now()),
+          updated_at = now()
       WHERE id = ${current.id}
+        AND target_user_id = ${input.actorUserId}
+        AND status IN ('RINGING', 'IN_CALL')
       RETURNING *
     `;
+    if (!updated[0]) {
+      const miss = await resolveMiss();
+      return miss.ok
+        ? { ok: false, status: 400, code: "INVALID_STATE", error: "该通话已结束，无法接听" }
+        : miss;
+    }
     const dto = toAdminDto(updated[0], false);
-    broadcastOutreachDismissed(dto.regionId, dto.id, input.actorUserId);
-    broadcastOutreachToCitizen(dto.regionId, dto.targetUserId, "outreach-update", sanitizeOutreachForCitizen(dto));
-    broadcastOutreachToAdmins(dto.regionId, { session: dto, processing: false });
+    broadcastSessionState(dto);
     return { ok: true, session: dto };
   }
 
   if (input.action === "REJECT") {
-    if (current.status === "COMPLETED" || current.status === "CANCELLED" || current.status === "REJECTED") {
-      return { ok: true, session: current };
-    }
-    const boundUserName =
-      current.targetUserName || input.actorName || (await resolveUserDisplayName(input.actorUserId)) || input.actorUserId;
-    const turns = [...current.turns];
-    turns.push({
+    const turn: OutreachTurn = {
       id: `sys-reject-${Date.now()}`,
       role: "agent",
       text: "对方暂未接听本次外呼。",
       reasoning: `【用户拒接】用户「${boundUserName}」选择暂不接听，可稍后在管理端重新发起外呼。`,
       createdAt: nowIso,
-    });
+    };
     const updated = await sql<Array<Record<string, unknown>>>`
       UPDATE public.outreach_sessions
       SET status = 'REJECTED',
-          target_user_id = COALESCE(target_user_id, ${input.actorUserId}),
-          target_user_name = COALESCE(target_user_name, ${boundUserName}),
-          turns_json = ${JSON.stringify(turns)},
-          ended_at = ${nowIso},
-          updated_at = ${nowIso}
+          turns_json = (COALESCE(NULLIF(turns_json, ''), '[]')::jsonb || ${turnAppendParam(turn)}::jsonb)::text,
+          ended_at = now(),
+          updated_at = now()
       WHERE id = ${current.id}
+        AND target_user_id = ${input.actorUserId}
+        AND status = 'RINGING'
       RETURNING *
     `;
+    if (!updated[0]) return resolveMiss();
     const dto = toAdminDto(updated[0], false);
-    broadcastOutreachDismissed(dto.regionId, dto.id);
-    broadcastOutreachToAdmins(dto.regionId, { session: dto, processing: false });
+    broadcastSessionState(dto);
     return { ok: true, session: dto };
   }
 
-  // HANGUP by user during IN_CALL
-  if (current.status === "COMPLETED" || current.status === "CANCELLED" || current.status === "REJECTED") {
-    return { ok: true, session: current };
-  }
-  const turns = [...current.turns];
-  turns.push({
+  // HANGUP：用户在通话中主动挂断
+  const turn: OutreachTurn = {
     id: `sys-hangup-${Date.now()}`,
     role: "agent",
     text: "通话已结束，感谢您的配合。",
     reasoning: "【用户挂断】用户端结束通话，本次外呼会话关闭。",
     createdAt: nowIso,
-  });
+  };
   const updated = await sql<Array<Record<string, unknown>>>`
     UPDATE public.outreach_sessions
-    SET status = 'CANCELLED', turns_json = ${JSON.stringify(turns)}, ended_at = ${nowIso}, updated_at = ${nowIso}
+    SET status = 'CANCELLED',
+        turns_json = (COALESCE(NULLIF(turns_json, ''), '[]')::jsonb || ${turnAppendParam(turn)}::jsonb)::text,
+        ended_at = now(),
+        updated_at = now()
     WHERE id = ${current.id}
+      AND target_user_id = ${input.actorUserId}
+      AND status IN ('RINGING', 'IN_CALL')
     RETURNING *
   `;
+  if (!updated[0]) return resolveMiss();
   const dto = toAdminDto(updated[0], false);
-  broadcastOutreachToCitizen(dto.regionId, dto.targetUserId, "outreach-update", sanitizeOutreachForCitizen(dto));
-  broadcastOutreachToAdmins(dto.regionId, { session: dto, processing: false });
+  broadcastSessionState(dto);
   return { ok: true, session: dto };
+}
+
+/** 回滚失败轮次的用户回答并释放处理锁，避免重试时同一句回答重复出现。 */
+async function rollbackCitizenTurn(
+  sessionId: string,
+  lockToken: string,
+  citizenTurnId: string
+): Promise<Record<string, unknown> | null> {
+  const rows = await sql<Array<Record<string, unknown>>>`
+    UPDATE public.outreach_sessions
+    SET turns_json = COALESCE(
+          (
+            SELECT jsonb_agg(e.v ORDER BY e.i)
+            FROM jsonb_array_elements(COALESCE(NULLIF(turns_json, ''), '[]')::jsonb) WITH ORDINALITY AS e(v, i)
+            WHERE e.v->>'id' IS DISTINCT FROM ${citizenTurnId}::text
+          ),
+          '[]'::jsonb
+        )::text,
+        reply_lock_token = NULL,
+        reply_lock_at = NULL,
+        updated_at = now()
+    WHERE id = ${sessionId} AND reply_lock_token = ${lockToken}
+    RETURNING *
+  `;
+  return rows[0] ?? null;
+}
+
+async function releaseReplyLock(
+  sessionId: string,
+  lockToken: string
+): Promise<Record<string, unknown> | null> {
+  const rows = await sql<Array<Record<string, unknown>>>`
+    UPDATE public.outreach_sessions
+    SET reply_lock_token = NULL, reply_lock_at = NULL
+    WHERE id = ${sessionId} AND reply_lock_token = ${lockToken}
+    RETURNING *
+  `;
+  return rows[0] ?? null;
 }
 
 export async function submitCitizenOutreachReply(input: {
@@ -707,22 +930,20 @@ export async function submitCitizenOutreachReply(input: {
       adminSession: OutreachSessionAdminDto;
       task: AgentTaskDto;
     }
-  | { ok: false; status: 400 | 403 | 404; code: string; error: string }
+  | { ok: false; status: 400 | 403 | 404 | 409; code: string; error: string }
 > {
   await ensureOutreachSessionsTable();
-  const rows = await sql<Array<Record<string, unknown>>>`
-    SELECT * FROM public.outreach_sessions WHERE id = ${input.sessionId} LIMIT 1
-  `;
-  const row = rows[0];
+  await expireStaleOutreachSessions();
+  const row = await fetchSessionRow(input.sessionId);
   if (!row) {
     return { ok: false, status: 404, code: "NOT_FOUND", error: "未找到外呼通话会话" };
   }
 
   const current = toAdminDto(row, false);
-  if (current.targetUserId && current.targetUserId !== input.userId) {
+  if (!current.targetUserId || current.targetUserId !== input.userId) {
     return { ok: false, status: 403, code: "FORBIDDEN", error: "无权回复其他用户的外呼来电" };
   }
-  if (current.status !== "RINGING" && current.status !== "IN_CALL") {
+  if (!isActiveStatus(current.status)) {
     return { ok: false, status: 400, code: "INVALID_STATE", error: "本次外呼通话已结束" };
   }
 
@@ -732,46 +953,99 @@ export async function submitCitizenOutreachReply(input: {
   }
 
   const nowIso = new Date().toISOString();
-  const boundUserName =
-    current.targetUserName || input.userName || (await resolveUserDisplayName(input.userId)) || input.userId;
-
+  const lockToken = randomUUID();
   const citizenTurn: OutreachTurn = {
-    id: `u-${Date.now()}`,
+    id: `u-${Date.now()}-${lockToken.slice(0, 6)}`,
     role: "citizen",
     text: cleanTranscript,
     createdAt: nowIso,
   };
-  const turnsAfterCitizen = [...current.turns, citizenTurn];
-  const turnIndex = turnsAfterCitizen.filter((t) => t.role === "citizen").length;
 
+  // 原子追加用户回答 + 获取处理锁（同一会话同一时刻只处理一条回答）
   const midRows = await sql<Array<Record<string, unknown>>>`
     UPDATE public.outreach_sessions
     SET status = 'IN_CALL',
-        target_user_id = ${input.userId},
-        target_user_name = ${boundUserName},
-        answered_at = COALESCE(answered_at, ${nowIso}),
-        turns_json = ${JSON.stringify(turnsAfterCitizen)},
-        updated_at = ${nowIso}
+        answered_at = COALESCE(answered_at, now()),
+        turns_json = (COALESCE(NULLIF(turns_json, ''), '[]')::jsonb || ${turnAppendParam(citizenTurn)}::jsonb)::text,
+        reply_lock_token = ${lockToken},
+        reply_lock_at = now(),
+        updated_at = now()
     WHERE id = ${current.id}
+      AND target_user_id = ${input.userId}
+      AND status IN ('RINGING', 'IN_CALL')
+      AND (
+        reply_lock_token IS NULL
+        OR reply_lock_at < now() - make_interval(secs => ${OUTREACH_REPLY_LOCK_STALE_SECONDS}::int)
+      )
     RETURNING *
   `;
-  const midDto = toAdminDto(midRows[0], true);
-  if (!current.targetUserId) {
-    broadcastOutreachDismissed(midDto.regionId, midDto.id, input.userId);
+  if (!midRows[0]) {
+    const latestRow = await fetchSessionRow(current.id);
+    const latest = latestRow ? toAdminDto(latestRow, false) : null;
+    if (!latest || !isActiveStatus(latest.status)) {
+      return { ok: false, status: 400, code: "INVALID_STATE", error: "本次外呼通话已结束" };
+    }
+    return {
+      ok: false,
+      status: 409,
+      code: "REPLY_IN_PROGRESS",
+      error: "上一条回答正在处理中，请稍候再发送",
+    };
   }
-  broadcastOutreachToAdmins(midDto.regionId, { session: midDto, processing: true });
 
-  const voiceResult = await processAgentVoiceTurn({
-    regionId: current.regionId,
-    taskId: current.taskId,
-    transcript: cleanTranscript,
-    turnIndex,
-    operatorName: boundUserName,
-  });
+  const midDto = toAdminDto(midRows[0], true);
+  broadcastOutreachToAdmins(midDto.regionId, { session: midDto, processing: true });
+  const turnIndex = midDto.turns.filter((t) => t.role === "citizen").length;
+
+  // 处理期间若会话被管理员取消/超时结束，立即中止 LLM 与业务库写入
+  const abortCtrl = new AbortController();
+  const watcher = setInterval(() => {
+    void (async () => {
+      try {
+        const st = await sql<Array<{ status: string }>>`
+          SELECT status FROM public.outreach_sessions WHERE id = ${current.id} LIMIT 1
+        `;
+        if (!st[0] || !isActiveStatus(st[0].status)) {
+          abortCtrl.abort(new Error("OUTREACH_SESSION_ENDED"));
+        }
+      } catch {
+        /* ignore transient db errors */
+      }
+    })();
+  }, 1000);
+  watcher.unref?.();
+
+  let voiceResult: Awaited<ReturnType<typeof processAgentVoiceTurn>>;
+  try {
+    voiceResult = await processAgentVoiceTurn({
+      regionId: current.regionId,
+      taskId: current.taskId,
+      transcript: cleanTranscript,
+      turnIndex,
+      operatorName: midDto.targetUserName || input.userName || input.userId,
+      signal: abortCtrl.signal,
+    });
+  } catch (err) {
+    clearInterval(watcher);
+    if (abortCtrl.signal.aborted) {
+      const released = await releaseReplyLock(current.id, lockToken);
+      const latestRow = released ?? (await fetchSessionRow(current.id));
+      if (latestRow) broadcastOutreachToAdmins(midDto.regionId, { session: toAdminDto(latestRow, false), processing: false });
+      return { ok: false, status: 400, code: "INVALID_STATE", error: "本次外呼通话已结束" };
+    }
+    const rolledBack = await rollbackCitizenTurn(current.id, lockToken, citizenTurn.id);
+    if (rolledBack) {
+      broadcastOutreachToAdmins(midDto.regionId, { session: toAdminDto(rolledBack, false), processing: false });
+    }
+    throw err;
+  }
+  clearInterval(watcher);
 
   if (!voiceResult.ok) {
-    const errDto = toAdminDto(midRows[0], false);
-    broadcastOutreachToAdmins(errDto.regionId, { session: errDto, processing: false });
+    const rolledBack = await rollbackCitizenTurn(current.id, lockToken, citizenTurn.id);
+    if (rolledBack) {
+      broadcastOutreachToAdmins(midDto.regionId, { session: toAdminDto(rolledBack, false), processing: false });
+    }
     return {
       ok: false,
       status: voiceResult.status,
@@ -782,7 +1056,7 @@ export async function submitCitizenOutreachReply(input: {
 
   const endIso = new Date().toISOString();
   const aiTurn: OutreachTurn = {
-    id: `a-${Date.now()}`,
+    id: `a-${Date.now()}-${lockToken.slice(0, 6)}`,
     role: "agent",
     text: toDisplayOutreachText(voiceResult.reply),
     spokenText: toSpokenOutreachText(voiceResult.reply),
@@ -795,40 +1069,41 @@ export async function submitCitizenOutreachReply(input: {
   };
 
   const mergedPatch: Record<string, string> = {
-    ...(current.extractedPatch || {}),
+    ...(midDto.extractedPatch || {}),
     ...(voiceResult.extractedPatch || {}),
   };
   const hasPatch = Object.keys(mergedPatch).length > 0;
   const finalStatus: OutreachSessionStatus = voiceResult.completed ? "COMPLETED" : "IN_CALL";
-  const finalTurns = [...turnsAfterCitizen, aiTurn];
 
+  // 仅在仍持有处理锁且会话未被结束时写入，避免覆盖管理员取消等并发状态
   const finalRows = await sql<Array<Record<string, unknown>>>`
     UPDATE public.outreach_sessions
     SET status = ${finalStatus},
-        turns_json = ${JSON.stringify(finalTurns)},
+        turns_json = (COALESCE(NULLIF(turns_json, ''), '[]')::jsonb || ${turnAppendParam(aiTurn)}::jsonb)::text,
         extracted_patch_json = ${hasPatch ? JSON.stringify(mergedPatch) : null},
-        triggered_fake_closure = ${Boolean(current.triggeredFakeClosure || voiceResult.triggeredFakeClosure)},
+        triggered_fake_closure = triggered_fake_closure OR ${Boolean(voiceResult.triggeredFakeClosure)},
         reopened_theme_id = COALESCE(${voiceResult.reopenedThemeId ?? null}, reopened_theme_id),
-        result_summary = ${voiceResult.task.resultSummary ?? current.resultSummary},
+        result_summary = COALESCE(${voiceResult.task.resultSummary ?? null}, result_summary),
         ended_at = ${voiceResult.completed ? endIso : null},
-        updated_at = ${endIso}
+        updated_at = now(),
+        reply_lock_token = NULL,
+        reply_lock_at = NULL
     WHERE id = ${current.id}
+      AND reply_lock_token = ${lockToken}
+      AND status IN ('RINGING', 'IN_CALL')
     RETURNING *
   `;
 
+  if (!finalRows[0]) {
+    const released = await releaseReplyLock(current.id, lockToken);
+    const latestRow = released ?? (await fetchSessionRow(current.id));
+    if (latestRow) broadcastOutreachToAdmins(midDto.regionId, { session: toAdminDto(latestRow, false), processing: false });
+    return { ok: false, status: 400, code: "INVALID_STATE", error: "本次外呼通话已结束" };
+  }
+
   const finalAdminDto = toAdminDto(finalRows[0], false);
   const finalCitizenDto = sanitizeOutreachForCitizen(finalAdminDto);
-
-  broadcastOutreachToAdmins(finalAdminDto.regionId, {
-    session: finalAdminDto,
-    processing: false,
-  });
-  broadcastOutreachToCitizen(
-    finalAdminDto.regionId,
-    finalAdminDto.targetUserId,
-    "outreach-update",
-    finalCitizenDto
-  );
+  broadcastSessionState(finalAdminDto);
 
   return {
     ok: true,

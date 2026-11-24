@@ -1488,8 +1488,13 @@ export async function processIntakeChat(input: {
     .map((m) => m.content.trim());
   const latestUserText = userTexts[userTexts.length - 1] || "";
   const allUserText = userTexts.join("；");
+  // 已留有效联系方式时，不再把疑似错位号码当作“联系方式尝试”（可能是订单号/编号等正文要素）
+  const draftHasContact = Boolean(
+    input.draft?.contactPhone?.trim() || input.draft?.contactEmail?.trim()
+  );
   const isPureContactOrMalformedAttempt = (text: string): boolean =>
-    isContactOnlyUtterance(text) || Boolean(detectMalformedMobileAttempt(text)?.isOnlyContactAttempt);
+    isContactOnlyUtterance(text) ||
+    (!draftHasContact && Boolean(detectMalformedMobileAttempt(text)?.isOnlyContactAttempt));
   const hasExistingDraftContent = Boolean(input.draft?.content?.trim());
   const latestContentTurn =
     latestUserText && !isPureContactOrMalformedAttempt(latestUserText) ? [latestUserText] : [];
@@ -1527,7 +1532,9 @@ export async function processIntakeChat(input: {
   const ruleEmail = latestEmail || existingEmail || historyEmail;
 
   const malformedMobileAttempt =
-    !latestCitizenPhone && !latestEmail ? detectMalformedMobileAttempt(latestUserText) : null;
+    !draftHasContact && !latestCitizenPhone && !latestEmail
+      ? detectMalformedMobileAttempt(latestUserText)
+      : null;
 
   const contactOnlyTurn =
     Boolean(latestCitizenPhone || latestEmail) && isContactOnlyUtterance(latestUserText);
@@ -1766,7 +1773,7 @@ export async function processIntakeChat(input: {
     !latestCitizenPhone &&
     !latestEmail &&
     malformedMobileAttempt &&
-    (missingFields.includes("联系电话或电子邮箱") || malformedMobileAttempt.isOnlyContactAttempt)
+    missingFields.includes("联系电话或电子邮箱")
   ) {
     const diffHint =
       malformedMobileAttempt.length < 11
@@ -3148,6 +3155,10 @@ export async function processAgentVoiceTurn(input: {
       384,
       input.signal
     );
+    // 外呼会话在 LLM 推理期间被取消/超时：中止后续业务库写入
+    if (input.signal?.aborted) {
+      throw createAbortError(input.signal);
+    }
 
     if (llmRes) {
       const restored = deanonymize(llmRes.data, anonTranscript.keymap);
@@ -3285,6 +3296,9 @@ export async function processAgentVoiceTurn(input: {
     320,
     input.signal
   );
+  if (input.signal?.aborted) {
+    throw createAbortError(input.signal);
+  }
   if (llmCb) {
     if (sentiment === "UNCLEAR" && llmCb.data.sentiment) {
       sentiment = llmCb.data.sentiment;
