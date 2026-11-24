@@ -268,6 +268,20 @@
 | ![多站点管理与 AI 拓荒](screenshots/07-admin-regions.png) | ![统一认证门户](screenshots/08-login-portal.png) |
 | **核心亮点**：PostgreSQL `region_{id}` 物理隔离、SuperAgent AI Scout 30 秒拓荒新辖区、Colab/Linux GPU 算力热挂载与 MCP 密钥管理。 | **核心亮点**：Civic Light 双域自适应登录/注册门户、Better Auth `cookieCache` 会话安全防护与管理端/市民端 RBAC 隔离。 |
 
+### 第五层 · 全链路闭环受理与 L1 / L2 / L3 主动治理中枢
+
+| 10. 市民/买家 3D 语音对话受理门户 (`/submit`) | 11. 智能治理 · L1/L2/L3 分级自治与红线熔断 (`/agent`) |
+| :--- | :--- |
+| ![市民 3D 数字人语音受理门户](screenshots/10-submit-voice-xiaochun.png) | ![智能治理主动 Agent 中心](screenshots/11-agent-governance.png) |
+| **核心亮点**：3D 数字人「小蠢」+ 流式语音转写对话建单，自动核对镇街、地点与涉事主体并脱敏打码；支持切换传统表单与页底「我的投诉进度」实时追踪及假闭环一键重开。 | **核心亮点**：主动巡检驱动 L1 自动执行 / L2 人工审批 / L3 红线熔断三级分权，命中涉稳或食安红线强制禁用自动外联并转人工专班，全链路展示气隙脱敏占位符并一键生成每日研判专报。 |
+
+### 第六层 · 缺资料 Agent 外呼补全与跨行业电商独立示范站
+
+| 12. 缺资料筛查与 3D 数字人 AI 语音外呼补全 (`/tickets`) | 13. 跨行业电商客诉独立示范站 (`ecom.firetable.tech`) |
+| :--- | :--- |
+| ![缺资料筛查与 AI 语音外呼补全](screenshots/12-tickets-missing-outreach.png) | ![电商售后客诉独立示范站](screenshots/13-ecommerce-domain.png) |
+| **核心亮点**：触发器部分索引毫秒筛出缺门牌/主体工单，一键拉起 3D 小蠢语音外呼弹窗（气隙脱敏 `{{PHONE_NUMBER_1}}`），补全要素自动回写工单与处置时间轴。 | **核心亮点**：复用同一生产镜像双容器运行（`APP_DOMAIN=ECOMMERCE_CS`），自动切换电商售后客诉中心（3,240 条客诉 / 40 个专题）与全渠道仓网客诉热度分布矩阵。 |
+
 ---
 
 ## 🎬 系统演示视频专区 (System Demo Videos)
