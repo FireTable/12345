@@ -20,7 +20,7 @@
 
 ## 一、系统部署全景架构（双域名同镜像）
 
-系统通过运行期环境变量 `APP_DOMAIN` 实现**同镜像双实例双域名物理域隔离**：一份 `ticket-radar:v0.1.5` 生产镜像同时承载政务主站与电商售后独立站，共用后端 PostgreSQL 16 + `pgvector` 实例（按独立 Schema 隔离），前端由共享 Caddy 容器按子域与路径特性分流。
+系统通过运行期环境变量 `APP_DOMAIN` 实现**同镜像双实例双域名物理域隔离**：一份 `ticket-radar:v0.1.7` 生产镜像同时承载政务主站与电商售后独立站，共用后端 PostgreSQL 16 + `pgvector` 实例（按独立 Schema 隔离），前端由共享 Caddy 容器按子域与路径特性分流。
 
 ```text
 本地开发 / 演示机                          VPS 生产环境 (/opt/12345-stack/)
@@ -28,11 +28,11 @@
 12345 项目源码                             ├── Dockerfile         (Node 22 + pnpm@9 + Next.js Standalone)
   ↓ rsync                                  ├── docker-compose.yml (12345-postgres + 12345-app + 12345-ecom-app)
   + .env.vps (不入库)                       ├── .env.vps           (生产密钥与外部模型配置)
-                                           └── db/migrations/*    (含 0011 / 0012 性能迁移)
+                                           └── db/migrations/*    (含 0011–0013 性能与审计迁移)
                                                  ↓ docker compose --env-file .env.vps up -d
                                            + 12345-postgres       (pgvector/pgvector:pg16, shm_size: 512m, 内网 :5432)
-                                           + 12345-app            (ticket-radar:v0.1.5, APP_DOMAIN=GOV_12345, :3100)
-                                           + 12345-ecom-app       (ticket-radar:v0.1.5, APP_DOMAIN=ECOMMERCE_CS, :3100)
+                                           + 12345-app            (ticket-radar:v0.1.7, APP_DOMAIN=GOV_12345, :3100)
+                                           + 12345-ecom-app       (ticket-radar:v0.1.7, APP_DOMAIN=ECOMMERCE_CS, :3100)
                                                  ↓ Docker 外部共享网络 (langgraph-app_default)
                                            langgraph-app-caddy-1  (共享 Caddy 反向代理 + 自动 HTTPS)
                                              ├── https://12345.firetable.tech → 12345-app:3100
@@ -47,8 +47,8 @@
 
 | 服务名 | 容器名 | 生产镜像 | 绑定域名 | `APP_DOMAIN` | `CIVIC_SKIP_BOOTSTRAP` |
 | :--- | :--- | :--- | :--- | :--- | :---: |
-| `app` | `12345-app` | `ticket-radar:v0.1.5` | `https://12345.firetable.tech` | `GOV_12345` | `"1"` |
-| `ecom-app` | `12345-ecom-app` | `ticket-radar:v0.1.5` | `https://ecom.firetable.tech` | `ECOMMERCE_CS` | `"1"` |
+| `app` | `12345-app` | `ticket-radar:v0.1.7` | `https://12345.firetable.tech` | `GOV_12345` | `"1"` |
+| `ecom-app` | `12345-ecom-app` | `ticket-radar:v0.1.7` | `https://ecom.firetable.tech` | `ECOMMERCE_CS` | `"1"` |
 
 > **为什么生产设置 `CIVIC_SKIP_BOOTSTRAP="1"`**：`instrumentation.ts` 在 Node.js 运行时启动后默认延迟 2 秒自动触发 `/api/internal/cluster-bootstrap` 扫描全库未研判工单。双实例生产环境下将其关闭可避免容器滚动重启时瞬时抢占 LLM/Embedding 算力与数据库连接，按需由新工单入库、MCP 推送或管理员手动触发增量研判。
 
@@ -163,7 +163,7 @@ pnpm exec tsc --noEmit && pnpm build
 rsync -avz --exclude={node_modules,.next,.git,*.tsbuildinfo,.env.local,.env.vps} \
   ./ root@<VPS_HOST>:/opt/12345-stack/
 
-# 3. VPS 构建新镜像 ticket-radar:v0.1.5 并启动双实例（app 构建镜像，ecom-app 复用同镜像）
+# 3. VPS 构建新镜像 ticket-radar:v0.1.7 并启动双实例（app 构建镜像，ecom-app 复用同镜像）
 ssh root@<VPS_HOST> 'cd /opt/12345-stack && \
   docker compose --env-file .env.vps build app && \
   docker compose --env-file .env.vps up -d postgres app ecom-app && \

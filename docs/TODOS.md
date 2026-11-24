@@ -2,13 +2,13 @@
 
 > 本文档作为项目交付状态与剩余待办总账使用。已交付项以 `[x]` 标注并附核验后的 commit hash 与实测效果；待办项以 `[ ]` 按优先级排序。
 >
-> **当前工作分支**：`main`（已于 `84b925a` 合并 `feat/closed-loop`，同步自 2026-11-24）
+> **当前工作分支**：`main`（同步自 2026-11-24）
 >
 > **生产现状快照**：
-> - **双域名同镜像生产架构**（`ticket-radar:v0.1.5`，`CIVIC_SKIP_BOOTSTRAP="1"`）：
->   - 政务热线主站：`https://12345.firetable.tech` → `12345-app:3100`（`APP_DOMAIN=GOV_12345`，承载 `region_gz_tianhe` ~106.5k、`region_fs_shunde` ~138.7k）
+> - **双域名同镜像生产架构**（`ticket-radar:v0.1.7`，`CIVIC_SKIP_BOOTSTRAP="1"`）：
+>   - 政务热线主站：`https://12345.firetable.tech` → `12345-app:3100`（`APP_DOMAIN=GOV_12345`，承载 `region_gz_tianhe` ~106.6k、`region_fs_shunde` ~138.8k）
 >   - 电商售后独立站：`https://ecom.firetable.tech` → `12345-ecom-app:3100`（`APP_DOMAIN=ECOMMERCE_CS`，承载 `region_ecom_demo` 3,240）
-> - **主导航路由**（`app/_components/civic/nav-items.ts`）：数据总览 `/` · 多频工单 `/themes` · 工单透势 `/multifreq` · 工单中心 `/tickets` · 智能治理 `/agent` · 标准字典 `/dict` · 实时演练 `/sandbox`；另含市民端 `/submit`、指挥大屏 `/screen`、站点管理 `/admin/regions`、MCP 授权 `/mcp/authorize`。
+> - **主导航路由与逐页说明**（详见 [docs/PAGES.md](PAGES.md)）：数据总览 `/` · 多频工单 `/themes` · 工单透势 `/multifreq` · 工单中心 `/tickets` · 智能治理 `/agent` · 标准字典 `/dict` · 实时演练 `/sandbox`；另含市民端 `/submit`、指挥大屏 `/screen`、站点管理 `/admin/regions`、MCP 授权 `/mcp/authorize`。
 
 ---
 
@@ -17,7 +17,7 @@
 ### A. 架构升级与双域名独立部署
 - [x] **双域名同镜像独立部署与 `APP_DOMAIN` 物理域隔离** — `ea76ae2`、`ee85bf8`、`3e031b2`
   - 触达：`docker-compose.yml`、`lib/app-domain.ts`、`lib/domain-profile.ts`、`lib/tenant/request-region.ts`、`app/api/regions/route.ts`、`lib/mcp/tools.ts`
-  - 实测效果：同一生产镜像 `ticket-radar:v0.1.5` 独立承载 `12345.firetable.tech`（政务 `hasGeoMap: true`）与 `ecom.firetable.tech`（电商 `hasGeoMap: false` 切 `DomainChannelMatrix` 全渠道仓网矩阵），彻底阻断跨业务域 Cookie 与 MCP 越权访问；`CIVIC_SKIP_BOOTSTRAP="1"` 避免重启抢占算力。
+  - 实测效果：同一生产镜像同构独立承载 `12345.firetable.tech`（政务 `hasGeoMap: true`）与 `ecom.firetable.tech`（电商 `hasGeoMap: false` 切 `DomainChannelMatrix` 全渠道仓网矩阵），彻底阻断跨业务域 Cookie 与 MCP 越权访问；`CIVIC_SKIP_BOOTSTRAP="1"` 避免重启抢占算力。
 - [x] **热插拔动态算力节点池（LOCAL / COLAB / CLOUD）** — `fed2c28`、`a459957`
   - 触达：`db/schema.ts`（`public.compute_nodes`）、`lib/compute-nodes.ts`、`app/api/admin/compute-nodes/**`、`app/_components/civic/compute-nodes-panel.tsx`
   - 实测效果：支持在 `/admin/regions` 在线增删与探活 System-2 / Embedding 节点，本地或 Colab 掉线时 2 秒内自动切换云端回退。

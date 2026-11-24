@@ -20,7 +20,7 @@
     <img src="https://img.shields.io/badge/💻_源码仓库-FireTable%2F12345-0F172A?style=for-the-badge&logo=github&logoColor=white" alt="GitHub" />
   </a>
   <a href="docs/DEPLOY.md">
-    <img src="https://img.shields.io/badge/🚀_生产部署-ticket--radar%3Av0.1.5-0284C7?style=for-the-badge&logo=docker&logoColor=white" alt="Deploy" />
+    <img src="https://img.shields.io/badge/🚀_生产部署-ticket--radar%3Av0.1.7-0284C7?style=for-the-badge&logo=docker&logoColor=white" alt="Deploy" />
   </a>
 </p>
 
@@ -59,7 +59,7 @@
 
 </div>
 
-> **💡 双域名独立生产部署（同镜像 `ticket-radar:v0.1.5` 双容器运行）**：
+> **💡 双域名独立生产部署（同镜像 `ticket-radar:v0.1.7` 双容器运行）**：
 > - **政务 12345 主站**：[https://12345.firetable.tech](https://12345.firetable.tech)（容器 `12345-app`，`APP_DOMAIN=GOV_12345`）
 >   - 预置示范站点：**广州市·天河区**（约 **10.6 万**条 / 106,543 条工单、21 街道）、**佛山市·顺德区**（约 **13.8 万**条 / 138,704 条工单、10 镇街）
 > - **跨行业电商客诉示范站**：[https://ecom.firetable.tech](https://ecom.firetable.tech)（容器 `12345-ecom-app`，`APP_DOMAIN=ECOMMERCE_CS`）
@@ -230,7 +230,7 @@
 
 ## 📸 核心系统界面与全景研判矩阵 (System Showcase & Visual Matrix)
 
-系统遵循 **Civic Light** 现代政务设计体系，以下核心视窗均在 4K / Retina 分辨率（3840 × 2160）下实机捕获：
+系统遵循 **Civic Light** 现代政务设计体系，以下核心视窗均在生产环境（`ticket-radar:v0.1.7`）实机捕获（`01`–`09` 为 **4K 3840 × 2160**，`10`–`13` 为 **Retina 2880 × 1800**）；全站每个页面的功能、权限与接口说明详见 **[全站页面功能与界面说明 (docs/PAGES.md)](docs/PAGES.md)**：
 
 ### 旗舰总览 · 政企智能调度指挥驾驶舱大屏 (`/screen`)
 > 专为城市运行管理中心（IOC）指挥大厅设计，支持 4K/8K 巨幕投屏，集天地图全域民声热力、流式脉冲、AI 研判态势与多维指标于一体。
@@ -245,7 +245,7 @@
 | 01. 数据总览 · 态势感知大盘 (`/`) | 06. AI 研判工厂 · React Flow 认知图谱 (顶部抽屉) |
 | :--- | :--- |
 | ![数据总览大盘](screenshots/01-overview-cockpit.png) | ![AI 研判工作流引擎](screenshots/06-pipeline-drawer.png) |
-| **核心亮点**：辖区法定矢量底图像素级对齐、全量工单/多频聚类/日均负荷 KPI 卡片、分类环形态势图、AI 研判副驾驶入口。 | **核心亮点**：顶部门户集成式 React Flow 流水线抽屉，可视化呈现 System-1 快思考、System-2 慢思考、空间聚类与案卷生成 DAG 节点。 |
+| **核心亮点**：辖区法定矢量底图像素级对齐、全量工单/多频聚类/日均负荷 KPI 卡片、分类环形态势图、AI 研判副驾驶入口。 | **核心亮点**：顶部门户集成式 React Flow 流水线抽屉，可视化呈现接入导入、分类初筛、要素提取、同类聚合、案卷生成与第 6 工序协同处置闭环回流。 |
 
 ### 第二层 · 深度研判决策：四象限透势与多频群诉案卷
 
@@ -354,7 +354,7 @@ pnpm dev
 | `pnpm dev` | **全栈启动**：并行拉起 System-2 本地大模型推理引擎 (8132) + Next.js (3000，含内嵌研判 worker) |
 | `pnpm dev:models` | **算力集群**：并行拉起 System-2 (8132) + Civic-Embed (8133)，支持通过 Tailscale 供 VPS 跨网调度 |
 | `pnpm db:init` | **全量一键初始化**：表结构迁移、示范租户、高精天地图边界、全量字典与管理员账号 |
-| `pnpm db:migrate` | 执行幂等数据库迁移（含 `0012_perf_indexes.sql` 触发器与覆盖索引） |
+| `pnpm db:migrate` | 执行幂等数据库迁移（含 `0012` 覆盖索引/触发器与 `0013` PII 审计日志表） |
 | `pnpm db:init-admin` | 初始化/重置默认管理员账号 |
 | `pnpm db:init-tenants` | 初始化/同步多租户站点、行政边界与别名词库 |
 | `pnpm db:studio` | 打开 Drizzle Studio 可视化数据管理面板 |
@@ -364,6 +364,7 @@ pnpm dev
 
 ## 📚 专属文档导航体系 (Documentation)
 
+- 🖥️ **[全站页面功能与界面说明 (PAGES.md)](docs/PAGES.md)**：逐页拆解全站 15 个路由与 2 个全局抽屉的权限、交互模块、关联接口、双域差异与实机截图。
 - 🚀 **[系统生产部署与运维手册 (DEPLOY.md)](docs/DEPLOY.md)**：覆盖本地开发、双域名 Docker Compose 容器化编排（`12345-app` + `12345-ecom-app`）与纯离线私有化部署。
 - 📐 **[AI 研判认知工作流规范 (WORKFLOW.md)](docs/WORKFLOW.md)**：System-1/2 双系统图状态机、同案同地判准、向量嵌入与主动治理闭环规范。
 - 🗺️ **[空间地理与天地图 GIS 规范 (SPATIAL.md)](docs/SPATIAL.md)**：天地图 CGCS2000 测绘级底图无偏移对齐、四级镇街矢量面与时空核心提纯标准。
