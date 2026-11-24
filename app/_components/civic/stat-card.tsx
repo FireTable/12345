@@ -91,20 +91,20 @@ export function StatCard({
 
   const cardContent = (
     <div
-      onClick={onClick}
       className={cn(
-        "relative flex items-center gap-3.5 p-4 rounded-xl border border-[var(--c-border-soft)] bg-[var(--c-surface)] shadow-2xs transition-all duration-200",
-        isInteractive && "cursor-pointer group hover:shadow-xs hover:border-[var(--c-border)] hover:-translate-y-0.5",
+        "relative flex items-center gap-2.5 sm:gap-3.5 p-3 sm:p-4 rounded-xl border border-[var(--c-border-card,rgba(15,23,42,0.08))] bg-[var(--c-surface)] shadow-[var(--sh-1)] transition-all duration-200 motion-reduce:transition-none min-w-0",
+        isInteractive && "cursor-pointer group hover:shadow-[var(--sh-2)] hover:border-[var(--c-border)] hover:-translate-y-0.5 motion-reduce:hover:translate-y-0",
         styles.border,
         className
       )}
     >
       {icon && (
         <div
+          aria-hidden="true"
           className={cn(
-            "w-10.5 h-10.5 rounded-xl border flex items-center justify-center shrink-0 transition-transform duration-200",
+            "w-9 h-9 sm:w-10.5 sm:h-10.5 rounded-xl border flex items-center justify-center shrink-0 transition-transform duration-200 motion-reduce:transition-none",
             styles.iconBg,
-            isInteractive && "group-hover:scale-105"
+            isInteractive && "group-hover:scale-105 motion-reduce:group-hover:scale-100"
           )}
         >
           {renderIcon()}
@@ -112,10 +112,10 @@ export function StatCard({
       )}
 
       <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between gap-1 mb-1">
+        <div className="flex items-center justify-between gap-1 mb-1 min-w-0">
           <span className="text-xs font-medium text-[var(--c-ink-3)] truncate">{label}</span>
           {badge && (
-            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[var(--c-bg)] text-[var(--c-ink-3)] border border-[var(--c-border-soft)]">
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[var(--c-bg)] text-[var(--c-ink-3)] border border-[var(--c-border-soft)] shrink-0 whitespace-nowrap">
               {badge}
             </span>
           )}
@@ -123,7 +123,7 @@ export function StatCard({
 
         <div
           className={cn(
-            "text-[22px] font-bold font-mono tracking-tight text-[var(--c-ink)] leading-tight",
+            "text-[clamp(1.0625rem,0.92rem+0.8vw,1.375rem)] font-bold font-sans tabular-nums whitespace-nowrap tracking-tight text-[var(--c-ink)] leading-tight",
             valueClassName
           )}
         >
@@ -141,9 +141,24 @@ export function StatCard({
 
   if (href) {
     return (
-      <Link href={href} className="block no-underline focus:outline-none">
+      <Link
+        href={href}
+        className="block no-underline rounded-xl focus-visible:outline-2 focus-visible:outline-[var(--c-brand)] focus-visible:outline-offset-2 min-w-0"
+      >
         {cardContent}
       </Link>
+    );
+  }
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="block w-full text-left bg-transparent border-0 p-0 rounded-xl focus-visible:outline-2 focus-visible:outline-[var(--c-brand)] focus-visible:outline-offset-2 min-w-0"
+      >
+        {cardContent}
+      </button>
     );
   }
 
@@ -161,12 +176,12 @@ export function StatCardGrid({
 }) {
   const colClass =
     columns === 4
-      ? "grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-4"
+      ? "grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-3.5 mb-4"
       : columns === 3
-      ? "grid grid-cols-1 md:grid-cols-3 gap-3.5 mb-4"
+      ? "grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-3.5 mb-4"
       : columns === 5
-      ? "grid grid-cols-2 md:grid-cols-5 gap-3.5 mb-4"
-      : "grid grid-cols-1 sm:grid-cols-2 gap-3.5 mb-4";
+      ? "grid grid-cols-2 md:grid-cols-5 gap-3 sm:gap-3.5 mb-4"
+      : "grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-3.5 mb-4";
 
   return <section className={cn(colClass, className)}>{children}</section>;
 }

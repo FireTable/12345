@@ -15,7 +15,7 @@ const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      "fixed inset-0 z-[2000] bg-black/80 backdrop-blur-xs data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+      "fixed inset-0 z-[2000] bg-slate-900/50 backdrop-blur-xs overflow-hidden overscroll-contain motion-reduce:animate-none motion-reduce:duration-0 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
       className
     )}
     {...props}
@@ -23,28 +23,77 @@ const DialogOverlay = React.forwardRef<
 ));
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
+type DialogContentProps = React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
+  showCloseButton?: boolean;
+  closeLabel?: string;
+  closeDisabled?: boolean;
+};
+
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, ...props }, ref) => (
-  <DialogPortal>
-    <DialogOverlay />
-    <DialogPrimitive.Content
-      ref={ref}
-      className={cn(
-        "fixed left-[50%] top-[50%] z-[2001] grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border border-slate-800 bg-slate-950 p-6 shadow-2xl duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-2xl",
-        className
-      )}
-      {...props}
-    >
-      {children}
-      <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
-        <X className="h-4 w-4" />
-        <span className="sr-only">Close</span>
-      </DialogPrimitive.Close>
-    </DialogPrimitive.Content>
-  </DialogPortal>
-));
+  DialogContentProps
+>(
+  (
+    {
+      className,
+      children,
+      showCloseButton = true,
+      closeLabel = "关闭",
+      closeDisabled = false,
+      onOpenAutoFocus,
+      onCloseAutoFocus,
+      "aria-modal": ariaModal,
+      ...props
+    },
+    ref
+  ) => {
+    const previousFocusRef = React.useRef<HTMLElement | null>(null);
+
+    return (
+      <DialogPortal>
+        <DialogOverlay />
+        <DialogPrimitive.Content
+          ref={ref}
+          aria-modal={ariaModal ?? true}
+          onOpenAutoFocus={(event) => {
+            const active = document.activeElement;
+            if (active instanceof HTMLElement && active !== document.body) {
+              previousFocusRef.current = active;
+            }
+            onOpenAutoFocus?.(event);
+          }}
+          onCloseAutoFocus={(event) => {
+            onCloseAutoFocus?.(event);
+            if (!event.defaultPrevented) {
+              const prev = previousFocusRef.current;
+              previousFocusRef.current = null;
+              if (prev && prev.isConnected && prev.getClientRects().length > 0) {
+                prev.focus();
+              }
+            }
+          }}
+          className={cn(
+            "fixed left-[50%] top-[50%] z-[2001] grid w-[calc(100dvw-1.5rem)] max-w-lg max-h-[90dvh] overflow-y-auto overscroll-contain translate-x-[-50%] translate-y-[-50%] gap-4 rounded-2xl border border-[var(--c-border,#E2E8F0)] bg-[var(--c-surface,#FFFFFF)] p-5 sm:p-6 text-[var(--c-ink,#0F172A)] shadow-2xl duration-200 motion-reduce:animate-none motion-reduce:duration-0 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]",
+            className
+          )}
+          {...props}
+        >
+          {children}
+          {showCloseButton && (
+            <DialogPrimitive.Close
+              disabled={closeDisabled}
+              aria-label={closeLabel}
+              className="absolute right-3 top-3 inline-flex min-h-[44px] min-w-[44px] sm:min-h-[32px] sm:min-w-[32px] items-center justify-center rounded-lg text-[var(--c-ink-3,#525E70)] transition-colors hover:bg-slate-100 hover:text-[var(--c-ink,#0F172A)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--c-brand,#1677FF)] disabled:pointer-events-none disabled:opacity-40 cursor-pointer sm:after:content-[''] sm:after:absolute sm:after:-inset-[6px]"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+              <span className="sr-only">{closeLabel}</span>
+            </DialogPrimitive.Close>
+          )}
+        </DialogPrimitive.Content>
+      </DialogPortal>
+    );
+  }
+);
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 const DialogHeader = ({
@@ -82,7 +131,7 @@ const DialogTitle = React.forwardRef<
   <DialogPrimitive.Title
     ref={ref}
     className={cn(
-      "text-base font-bold leading-none tracking-tight text-white",
+      "text-base font-bold leading-snug tracking-tight text-[var(--c-ink,#0F172A)]",
       className
     )}
     {...props}
@@ -96,7 +145,7 @@ const DialogDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Description
     ref={ref}
-    className={cn("text-xs text-slate-400 leading-relaxed", className)}
+    className={cn("text-xs text-[var(--c-ink-3,#525E70)] leading-relaxed", className)}
     {...props}
   />
 ));

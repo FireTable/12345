@@ -63,19 +63,19 @@ export function ClusterNode({ data }: NodeProps<ClusterNodeType>) {
             <FolderKanban size={11} className="text-blue-600 shrink-0" />
             专题数
           </div>
-          <div className="pipeline-metric-value text-blue-600 mt-1 whitespace-nowrap inline-flex items-baseline">
+          <div className="pipeline-metric-value text-blue-600 mt-1 whitespace-nowrap inline-flex items-baseline tabular-nums">
             {data.themeCount.toLocaleString()}{" "}
             <span className="text-xs font-normal text-slate-500 ml-1 whitespace-nowrap">个专题</span>
           </div>
         </div>
         <div>
           <div className="pipeline-metric-label flex items-center gap-1 whitespace-nowrap">
-            <TrendingUp size={11} className="text-emerald-600 shrink-0" />
+            <TrendingUp size={11} className="text-emerald-600 shrink-0" aria-hidden="true" />
             工单归集率
           </div>
-          <div className="pipeline-metric-value text-emerald-600 mt-1 whitespace-nowrap inline-flex items-baseline">
+          <div className="pipeline-metric-value text-emerald-600 mt-1 whitespace-nowrap inline-flex items-baseline tabular-nums">
             {compressionRatio}%{" "}
-            <span className="text-[11px] font-normal text-slate-400 font-mono ml-1.5 whitespace-nowrap">
+            <span className="text-[11px] font-normal text-slate-500 font-mono tabular-nums ml-1.5 whitespace-nowrap">
               ({data.totalTickets.toLocaleString()} ➔ {data.themeCount.toLocaleString()} 组)
             </span>
           </div>
@@ -86,7 +86,7 @@ export function ClusterNode({ data }: NodeProps<ClusterNodeType>) {
       <div className="pipeline-snippet-box">
         <div className="pipeline-snippet-title">
           <span className="flex items-center gap-1.5 text-cyan-800 whitespace-nowrap">
-            <Compass size={11} className="shrink-0 text-cyan-600" />
+            <Compass size={11} className="shrink-0 text-cyan-600" aria-hidden="true" />
             最新聚合问题专题
           </span>
           <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-100 text-cyan-800 font-bold shrink-0 whitespace-nowrap">
@@ -112,7 +112,7 @@ export function ClusterNode({ data }: NodeProps<ClusterNodeType>) {
                   <span className="font-semibold text-slate-800 text-[11.5px] truncate flex-1 min-w-0" title={c.title}>
                     {c.title}
                   </span>
-                  <span className="font-mono text-[10px] text-blue-600 font-bold shrink-0 whitespace-nowrap">
+                  <span className="font-mono tabular-nums text-[10px] text-blue-600 font-bold shrink-0 whitespace-nowrap">
                     {c.ticketCount.toLocaleString()} 件
                   </span>
                 </div>
@@ -120,11 +120,11 @@ export function ClusterNode({ data }: NodeProps<ClusterNodeType>) {
             ))}
           </div>
         ) : data.themeCount > 0 ? (
-          <div className="text-[11px] text-slate-400 mt-2">
+          <div className="text-[11px] text-slate-500 mt-2">
             已归并 {data.themeCount.toLocaleString()} 个专题，处置建议写入后才会出现在这里。
           </div>
         ) : (
-          <div className="text-[11px] text-slate-400 mt-2">
+          <div className="text-[11px] text-slate-500 mt-2">
             暂无聚合专题，工单要素提取完成后将自动合并归类。
           </div>
         )}

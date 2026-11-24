@@ -1,6 +1,7 @@
 import { getRegionDb } from "@/db/client";
-import { themesTable } from "@/db/schema";
+import { themesTable, ticketsTable } from "@/db/schema";
 import { getSystemTwoEndpoints } from "@/backend/model";
+import { cacheGetOrLoad } from "@/lib/civic-cache";
 import { loadOverview, loadTrends } from "@/lib/civic-queries";
 import { getNodeMetric } from "@/lib/node-metrics";
 import { peekLatestTaskProgress } from "@/lib/task-progress";
@@ -174,53 +175,142 @@ export function townshipStatsFromDistribution(distribution: Record<string, numbe
     }));
 }
 
-export async function loadCockpitRead(regionId?: string) {
-  const region = regionId || "gz_tianhe";
-  const [overview, trends, recentTickets, themeParts] = await Promise.all([
-    loadOverview(0, region),
-    loadTrends(30, region),
-    loadCockpitRecentTickets(region),
-    loadThemeSummary(region),
-  ]);
-  const themes: CockpitThemeSummary = {
-    themeCount: overview.multiFreqClusters,
-    ...themeParts,
-  };
-  const dates = Object.keys(trends.daily || {}).sort();
-  const todayCount = dates.length ? Number(trends.daily[dates[dates.length - 1]] || 0) : recentTickets.length;
-  const urgentFromThemes = themes.top.filter(
-    (theme) => theme.riskLevel === "HIGH" || theme.riskLevel === "高危" || /急|水|险|爆|火|伤|停/.test(theme.title)
-  ).length;
-  const task = peekLatestTaskProgress(region);
-  const townshipStats = townshipStatsFromDistribution(overview.regionDistribution || {});
+export type CockpitClosureFunnel = {
+  total: number;
+  analyzed: number;
+  clustered: number;
+  dispatched: number;
+  resolved: number;
+  fakeClosureIntercepted: number;
+};
+
+export type CockpitHourlyBucket = {
+  hour: number;
+  label: string;
+  count: number;
+};
+
+async function loadClosureFunnelAndHours(regionId: string | undefined): Promise<{
+  closureFunnel: CockpitClosureFunnel;
+  hourlyDistribution: CockpitHourlyBucket[];
+}> {
+  const { db } = await getRegionDb(regionId);
+  const hourBucketRows = await db
+    .select({
+      hour: sql<number | null>`extract(hour from ${ticketsTable.createTime} at time zone 'Asia/Shanghai')::int`,
+      total: sql<number>`count(*)::int`,
+      analyzed: sql<number>`count(*) filter (where ${ticketsTable.confidence} is not null and ${ticketsTable.confidence} > 0)::int`,
+      clustered: sql<number>`count(*) filter (where ${ticketsTable.primaryThemeId} is not null)::int`,
+      dispatched: sql<number>`count(*) filter (where upper(coalesce(${ticketsTable.status}, '')) in ('IN_PROGRESS', 'DISPATCHED', 'VERIFIED', 'PROCESSING', 'RESOLVED', 'FINISHED'))::int`,
+      resolved: sql<number>`count(*) filter (where upper(coalesce(${ticketsTable.status}, '')) in ('RESOLVED', 'FINISHED', 'CLOSED') or ${ticketsTable.closedAt} is not null)::int`,
+      fakeClosureIntercepted: sql<number>`count(*) filter (where ${ticketsTable.isFakeClosure} is true)::int`,
+    })
+    .from(ticketsTable)
+    .groupBy(sql`1`);
+
+  let total = 0;
+  let analyzed = 0;
+  let clustered = 0;
+  let dispatched = 0;
+  let resolved = 0;
+  let fakeClosureIntercepted = 0;
+  const countByHour = new Map<number, number>();
+
+  for (const r of hourBucketRows) {
+    const rowTotal = Number(r.total || 0);
+    total += rowTotal;
+    analyzed += Number(r.analyzed || 0);
+    clustered += Number(r.clustered || 0);
+    dispatched += Number(r.dispatched || 0);
+    resolved += Number(r.resolved || 0);
+    fakeClosureIntercepted += Number(r.fakeClosureIntercepted || 0);
+
+    if (r.hour !== null && r.hour !== undefined) {
+      const h = Number(r.hour);
+      if (Number.isInteger(h) && h >= 0 && h <= 23) {
+        countByHour.set(h, (countByHour.get(h) || 0) + rowTotal);
+      }
+    }
+  }
+
+  const hourlyDistribution: CockpitHourlyBucket[] = Array.from({ length: 24 }, (_, hour) => ({
+    hour,
+    label: `${String(hour).padStart(2, "0")}:00`,
+    count: countByHour.get(hour) || 0,
+  }));
 
   return {
-    success: true as const,
-    regionId: region,
-    overview,
-    trends: {
-      daily: trends.daily,
-      dailyNewClusters: trends.dailyNewClusters,
+    closureFunnel: {
+      total,
+      analyzed,
+      clustered,
+      dispatched,
+      resolved,
+      fakeClosureIntercepted,
     },
-    themes,
-    recentTickets,
-    townshipStats,
-    kpi: {
-      todayCount,
-      todayGrowthPct: 0,
-      totalTickets: overview.totalWorkorders,
-      dailyAverage: overview.avgDaily,
-      resolutionRatePct:
-        overview.totalWorkorders > 0
-          ? Math.round(((overview.resolvedCount || 0) / overview.totalWorkorders) * 1000) / 10
-          : 0,
-      multifreqCount: overview.multiFreqCount,
-      clusterCount: overview.multiFreqClusters,
-      urgentAlertCount: urgentFromThemes + recentTickets.filter((ticket) => ticket.isUrgent).length,
-    },
+    hourlyDistribution,
+  };
+}
+
+export async function loadCockpitRead(regionId?: string) {
+  const region = regionId || "gz_tianhe";
+  const { value: snapshot } = await cacheGetOrLoad(`cockpit:snapshot:${region}`, async () => {
+    const [{ value: overview }, { value: trends }, recentTickets, themeParts, closureAndHours] =
+      await Promise.all([
+        cacheGetOrLoad(`overview:${region}:0`, () => loadOverview(0, region)),
+        cacheGetOrLoad(`trends:${region}:30`, () => loadTrends(30, region)),
+        loadCockpitRecentTickets(region),
+        loadThemeSummary(region),
+        loadClosureFunnelAndHours(region),
+      ]);
+    const themes: CockpitThemeSummary = {
+      themeCount: overview.multiFreqClusters,
+      ...themeParts,
+    };
+    const dates = Object.keys(trends.daily || {}).sort();
+    const todayCount = dates.length ? Number(trends.daily[dates[dates.length - 1]] || 0) : recentTickets.length;
+    const urgentFromThemes = themes.top.filter(
+      (theme) => theme.riskLevel === "HIGH" || theme.riskLevel === "高危" || /急|水|险|爆|火|伤|停/.test(theme.title)
+    ).length;
+    const townshipStats = townshipStatsFromDistribution(overview.regionDistribution || {});
+
+    return {
+      success: true as const,
+      regionId: region,
+      overview,
+      trends: {
+        daily: trends.daily,
+        dailyNewClusters: trends.dailyNewClusters,
+      },
+      themes,
+      recentTickets,
+      townshipStats,
+      kpi: {
+        todayCount,
+        todayGrowthPct: 0,
+        totalTickets: overview.totalWorkorders,
+        dailyAverage: overview.avgDaily,
+        resolutionRatePct:
+          overview.totalWorkorders > 0
+            ? Math.round(((overview.resolvedCount || 0) / overview.totalWorkorders) * 1000) / 10
+            : 0,
+        multifreqCount: overview.multiFreqCount,
+        clusterCount: overview.multiFreqClusters,
+        urgentAlertCount: urgentFromThemes + recentTickets.filter((ticket) => ticket.isUrgent).length,
+      },
+      closureFunnel: closureAndHours.closureFunnel,
+      hourlyDistribution: closureAndHours.hourlyDistribution,
+    };
+  });
+
+  const task = peekLatestTaskProgress(region);
+  return {
+    ...snapshot,
     systemTwoNodes: cockpitSystemTwoNodes(),
     endpointRecentTickets: task?.endpointRecentTickets || {},
   };
 }
 
+export const loadCockpitSnapshot = loadCockpitRead;
 export type CockpitRead = Awaited<ReturnType<typeof loadCockpitRead>>;
+export type CockpitSnapshot = CockpitRead;

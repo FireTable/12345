@@ -5,6 +5,7 @@ export type CivicPiiCategory =
   | "ID_CARD"         // 二代身份证 (含校验和)
   | "LICENSE_PLATE"   // 中国机动车号牌 (蓝牌/黄牌/绿牌新能源)
   | "PHONE_NUMBER"    // 手机与带区号固话
+  | "EMAIL"           // 电子邮箱
   | "PRIVATE_ROOM"    // 私密个人房号 (保留外部公共建筑物/园区)
   | "PERSON_NAME";    // 市民姓名与特定称谓
 

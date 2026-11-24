@@ -4,9 +4,13 @@ import { themesTable } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { loadThemeMemberPage, THEME_MEMBER_PAGE } from "@/lib/cluster-members";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
+import { requireAdmin } from "@/lib/auth/rbac";
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const { id } = await params;
     const regionId = await resolveRequestRegionId(req);
     const { db } = await getRegionDb(regionId);

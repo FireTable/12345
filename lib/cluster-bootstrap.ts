@@ -12,6 +12,7 @@
  *       重复调用也是 no-op。
  */
 import { getAllRegions, sql as rawSql } from "@/db/client";
+import { filterRegionsByAppDomain } from "./app-domain";
 import { triggerClusterJobAuto } from "./cluster-runner";
 
 declare global {
@@ -85,7 +86,7 @@ export async function bootstrapClusterWorkers(): Promise<{
 
     let regions: Array<{ id: string }> = [];
     try {
-      regions = await getAllRegions();
+      regions = filterRegionsByAppDomain(await getAllRegions());
     } catch (err: any) {
       console.warn(
         `[cluster-bootstrap] getAllRegions failed: ${err?.message || err}`

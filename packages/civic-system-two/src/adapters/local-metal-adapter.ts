@@ -1,56 +1,76 @@
 import {
   CivicChatCompletion,
   CivicChatCompletionParams,
+  CivicChatStreamChunk,
   SystemTwoConfig,
 } from '../types';
 import { extractReasoningAndContent, parseStructuredJson } from '../parser';
 import { ISystemTwoAdapter } from './types';
 import { recordNodeMetric } from '../metrics';
+import { linkAbortSignals, createAbortError } from './abort-utils';
+import { readOpenAISseStream } from './sse-stream';
 
 export class LocalMetalAdapter implements ISystemTwoAdapter {
   readonly name = 'LocalMetalAdapter (llama-server / Metal)';
   private endpoint: string;
   private model: string;
   private apiKey?: string;
+  private provider?: string;
   private timeoutMs: number;
   private defaultEnableThinking: boolean;
 
   constructor(config: SystemTwoConfig = {}) {
     this.endpoint = (config.endpoint || 'http://127.0.0.1:8132/v1').replace(/\/+$/, '');
     this.model = config.model || 'bonsai-2-27b';
-    this.apiKey = config.apiKey || 'local-token';
+    this.apiKey = config.apiKey?.trim() || undefined;
+    this.provider = config.provider?.trim();
     this.timeoutMs = config.timeoutMs ?? 600000; // 默认 10 分钟充足慢思考预算
     this.defaultEnableThinking = config.enableThinkingDefault ?? true;
   }
 
-  async isAvailable(): Promise<boolean> {
-    try {
-      const baseUrl = this.endpoint.replace(/\/v1$/, '');
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 2000);
+  private authHeaders(extra?: Record<string, string>): Record<string, string> {
+    const headers: Record<string, string> = { ...(extra || {}) };
+    if (this.apiKey) {
+      headers.Authorization = `Bearer ${this.apiKey}`;
+    }
+    return headers;
+  }
 
-      // llama-server 提供了 /health 和 /v1/models
-      const res = await fetch(`${baseUrl}/health`, {
+  async isAvailable(): Promise<boolean> {
+    const isRemote =
+      this.provider === 'COLAB' ||
+      !/localhost|127\.0\.0\.1|0\.0\.0\.0|::1|192\.168\.|10\.|172\.(?:1[6-9]|2\d|3[01])\./i.test(
+        this.endpoint
+      );
+    const probeTimeout = isRemote ? 2500 : 1200;
+
+    try {
+      // 有 apiKey 或远程 OpenAI 兼容节点时优先走 /v1/models 校验鉴权与可用性
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), probeTimeout);
+      const resModels = await fetch(`${this.endpoint}/models`, {
+        headers: this.authHeaders(),
         signal: controller.signal,
       }).catch(() => null);
-
       clearTimeout(timer);
-      if (res && res.ok) {
-        return true;
+
+      if (resModels) {
+        if (resModels.ok) return true;
+        if (resModels.status === 401 || resModels.status === 403) return false;
       }
 
-      // 如果没有 /health，尝试请求 /v1/models
-      const controller2 = new AbortController();
-      const timer2 = setTimeout(() => controller2.abort(), 2000);
-      const res2 = await fetch(`${this.endpoint}/models`, {
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-        },
-        signal: controller2.signal,
-      }).catch(() => null);
+      if (!this.apiKey) {
+        const baseUrl = this.endpoint.replace(/\/v1$/, '');
+        const controller2 = new AbortController();
+        const timer2 = setTimeout(() => controller2.abort(), probeTimeout);
+        const resHealth = await fetch(`${baseUrl}/health`, {
+          signal: controller2.signal,
+        }).catch(() => null);
+        clearTimeout(timer2);
+        return !!(resHealth && resHealth.ok);
+      }
 
-      clearTimeout(timer2);
-      return !!(res2 && res2.ok);
+      return false;
     } catch {
       return false;
     }
@@ -79,19 +99,15 @@ export class LocalMetalAdapter implements ISystemTwoAdapter {
       payload.response_format = params.response_format;
     }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    const linked = linkAbortSignals(this.timeoutMs, params.signal);
     const startMs = Date.now();
 
     try {
       const res = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.apiKey}`,
-        },
+        headers: this.authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(payload),
-        signal: controller.signal,
+        signal: linked.signal,
       });
 
       if (!res.ok) {
@@ -188,8 +204,104 @@ export class LocalMetalAdapter implements ISystemTwoAdapter {
           : undefined,
         parsed,
       };
+    } catch (err) {
+      if (params.signal?.aborted) {
+        throw createAbortError(params.signal);
+      }
+      throw err;
     } finally {
-      clearTimeout(timeout);
+      linked.cleanup();
     }
+  }
+
+  async *chatCompletionsStream(
+    params: CivicChatCompletionParams
+  ): AsyncGenerator<CivicChatStreamChunk> {
+    const enableThinking = params.enable_thinking ?? this.defaultEnableThinking;
+    const url = `${this.endpoint}/chat/completions`;
+
+    const payload: Record<string, unknown> = {
+      model: params.model || this.model,
+      messages: params.messages,
+      temperature: params.temperature ?? 0.2,
+      max_tokens: params.max_tokens ?? 2048,
+      stream: true,
+      chat_template_kwargs: {
+        enable_thinking: enableThinking,
+      },
+    };
+
+    if (params.top_p !== undefined) {
+      payload.top_p = params.top_p;
+    }
+
+    if (params.response_format) {
+      payload.response_format = params.response_format;
+    }
+
+    const linked = linkAbortSignals(this.timeoutMs, params.signal);
+    const startMs = Date.now();
+    let res: Response;
+
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: this.authHeaders({
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
+        }),
+        body: JSON.stringify(payload),
+        signal: linked.signal,
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text().catch(() => '');
+        throw new Error(
+          `[LocalMetalAdapter] llama-server HTTP ${res.status}: ${res.statusText}. ${errorText}`
+        );
+      }
+    } catch (err) {
+      linked.cleanup();
+      if (params.signal?.aborted) {
+        throw createAbortError(params.signal);
+      }
+      throw err;
+    }
+
+    yield* readOpenAISseStream({
+      res,
+      endpoint: this.endpoint,
+      externalSignal: params.signal,
+      abortCombined: linked.abortCombined,
+      cleanup: linked.cleanup,
+      onComplete: ({ usage, timings, approxCompletionChunks }) => {
+        const durationMs = Math.max(1, Date.now() - startMs);
+        const completionTokens = usage?.completion_tokens ?? timings?.predicted_n ?? approxCompletionChunks;
+        const promptTokens = usage?.prompt_tokens ?? timings?.prompt_n ?? 0;
+        const totalTokens = usage?.total_tokens ?? completionTokens + promptTokens;
+        let tokensPerSecond = 0;
+        if (timings && typeof timings.predicted_per_second === 'number' && timings.predicted_per_second > 0) {
+          tokensPerSecond = timings.predicted_per_second;
+        } else if (timings && typeof timings.predicted_ms === 'number' && timings.predicted_ms > 0 && timings.predicted_n) {
+          tokensPerSecond = timings.predicted_n / (timings.predicted_ms / 1000);
+        } else if (completionTokens > 0 && durationMs > 0) {
+          tokensPerSecond = completionTokens / (durationMs / 1000);
+        }
+        const modelPredictedMs = Number(timings?.predicted_ms || 0);
+        const modelTotalMs = Number(timings?.prompt_ms || 0) + modelPredictedMs;
+        const finalDurationMs =
+          modelPredictedMs > 0 ? Math.round(modelPredictedMs) : modelTotalMs > 0 ? Math.round(modelTotalMs) : durationMs;
+
+        recordNodeMetric({
+          endpoint: this.endpoint,
+          tokensPerSecond: tokensPerSecond > 0 ? Math.round(tokensPerSecond * 10) / 10 : undefined,
+          completionTokens,
+          promptTokens,
+          totalTokens,
+          durationMs: finalDurationMs,
+          updatedAt: Date.now(),
+        });
+      },
+    });
   }
 }

@@ -51,6 +51,109 @@ export function extractReasoningAndContent(
   };
 }
 
+function trailingTagPrefixLength(lowerText: string, tag: string): number {
+  const maxCheck = Math.min(lowerText.length, tag.length - 1);
+  for (let len = maxCheck; len >= 1; len -= 1) {
+    if (lowerText.endsWith(tag.slice(0, len))) {
+      return len;
+    }
+  }
+  return 0;
+}
+
+/**
+ * 增量流式分离 <think>...</think> 思维链与纯正文，
+ * 仅保留可能跨越 chunk 边界的极短标签前缀（<= 7 字符），其余正文零延迟吐出。
+ */
+export class ThinkStreamSplitter {
+  private mode: 'TEXT' | 'THINK' = 'TEXT';
+  private pending = '';
+  private emittedAnyContent = false;
+  private stripLeadingNewlinesAfterThink = false;
+
+  push(delta: string): { content: string; reasoning: string } {
+    if (!delta) return { content: '', reasoning: '' };
+    this.pending += delta;
+    let content = '';
+    let reasoning = '';
+
+    while (this.pending.length > 0) {
+      if (this.mode === 'TEXT') {
+        if (this.stripLeadingNewlinesAfterThink) {
+          this.pending = this.pending.replace(/^[\r\n]+/, '');
+          if (!this.pending) break;
+          this.stripLeadingNewlinesAfterThink = false;
+        }
+
+        const lower = this.pending.toLowerCase();
+        const openIdx = lower.indexOf('<think>');
+        if (openIdx !== -1) {
+          const before = this.pending.slice(0, openIdx);
+          if (before) {
+            content += before;
+            this.emittedAnyContent = true;
+          }
+          this.pending = this.pending.slice(openIdx + 7);
+          this.mode = 'THINK';
+          continue;
+        }
+
+        const holdLen = trailingTagPrefixLength(lower, '<think>');
+        const safeEnd = this.pending.length - holdLen;
+        if (safeEnd > 0) {
+          const safe = this.pending.slice(0, safeEnd);
+          content += safe;
+          this.emittedAnyContent = true;
+          this.pending = this.pending.slice(safeEnd);
+        }
+        break;
+      }
+
+      const lower = this.pending.toLowerCase();
+      const closeIdx = lower.indexOf('</think>');
+      if (closeIdx !== -1) {
+        const before = this.pending.slice(0, closeIdx);
+        if (before) {
+          reasoning += before;
+        }
+        this.pending = this.pending.slice(closeIdx + 8);
+        this.mode = 'TEXT';
+        if (!this.emittedAnyContent) {
+          this.stripLeadingNewlinesAfterThink = true;
+        }
+        continue;
+      }
+
+      const holdLen = trailingTagPrefixLength(lower, '</think>');
+      const safeEnd = this.pending.length - holdLen;
+      if (safeEnd > 0) {
+        reasoning += this.pending.slice(0, safeEnd);
+        this.pending = this.pending.slice(safeEnd);
+      }
+      break;
+    }
+
+    return { content, reasoning };
+  }
+
+  flush(): { content: string; reasoning: string } {
+    if (!this.pending) return { content: '', reasoning: '' };
+    if (this.mode === 'THINK') {
+      const reasoning = this.pending;
+      this.pending = '';
+      return { content: '', reasoning };
+    }
+    if (this.stripLeadingNewlinesAfterThink) {
+      this.pending = this.pending.replace(/^[\r\n]+/, '');
+      this.stripLeadingNewlinesAfterThink = false;
+    }
+    const content = this.pending;
+    this.pending = '';
+    if (content) this.emittedAnyContent = true;
+    return { content, reasoning: '' };
+  }
+}
+
 /**
  * 从可能包裹了 Markdown 语法块的代码中提取干净的 JSON 字符串
  */

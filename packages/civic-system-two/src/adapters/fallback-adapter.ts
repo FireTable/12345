@@ -1,5 +1,6 @@
-import { CivicChatCompletion, CivicChatCompletionParams } from '../types';
+import { CivicChatCompletion, CivicChatCompletionParams, CivicChatStreamChunk } from '../types';
 import { ISystemTwoAdapter } from './types';
+import { createAbortError } from './abort-utils';
 
 export class FallbackAdapter implements ISystemTwoAdapter {
   readonly name = 'FallbackAdapter (Safe Offline Emergency Failsafe)';
@@ -9,6 +10,9 @@ export class FallbackAdapter implements ISystemTwoAdapter {
   }
 
   async chatCompletions(params: CivicChatCompletionParams): Promise<CivicChatCompletion> {
+    if (params.signal?.aborted) {
+      throw createAbortError(params.signal);
+    }
     const isJson = params.response_format && params.response_format.type !== 'text';
 
     const fallbackPayload = {
@@ -44,6 +48,20 @@ export class FallbackAdapter implements ISystemTwoAdapter {
         total_tokens: 0,
       },
       parsed: isJson ? fallbackPayload : undefined,
+    };
+  }
+
+  async *chatCompletionsStream(
+    params: CivicChatCompletionParams
+  ): AsyncGenerator<CivicChatStreamChunk> {
+    const completion = await this.chatCompletions(params);
+    const choice = completion.choices[0];
+    yield {
+      deltaContent: choice?.message.content || '',
+      deltaReasoning: choice?.message.reasoning_content,
+      finishReason: choice?.finish_reason || 'stop',
+      endpoint: null,
+      usage: completion.usage,
     };
   }
 }

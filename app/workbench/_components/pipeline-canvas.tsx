@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   ReactFlow,
   Background,
@@ -23,6 +23,7 @@ import { TriageNode, type TriageNodeData } from "./nodes/triage-node";
 import { EntityNode, type EntityNodeData } from "./nodes/entity-node";
 import { ClusterNode, type ClusterNodeData } from "./nodes/cluster-node";
 import { DossierNode, type DossierNodeData } from "./nodes/dossier-node";
+import { DisposalNode, type DisposalNodeData } from "./nodes/disposal-node";
 import { resolvePipelineFactoryStage } from "./pipeline-factory-stage";
 import { useRegion } from "@/app/_components/civic/region-context";
 
@@ -34,6 +35,7 @@ const DEFAULT_POSITIONS: Record<string, { x: number; y: number }> = {
   // 案卷归档卡片下移：triage 卡片自带饼图 + 22 个镇街，实际渲染高度约 730px，
   // 旧 y=560 会与 triage 卡片下半段重叠。给到 860，留出 60+px 视觉缓冲。
   "node-dossier": { x: 620, y: 860 },
+  "node-disposal": { x: 80, y: 860 },
 };
 
 function getSavedPositions(key: string): Record<string, { x: number; y: number }> | null {
@@ -98,6 +100,13 @@ export type PipelineStateResponse = {
     totalThemes: number;
     highRiskThemes: number;
   };
+  disposalMetrics?: {
+    pendingThemes: number;
+    inProgressThemes: number;
+    resolvedThemes: number;
+    fakeClosureTickets: number;
+    pendingReviewCount: number;
+  };
   categoryStats: Array<{ category: string; count: number }>;
   townshipStats?: Array<{ township: string; count: number }>;
   recentTickets: Array<{
@@ -134,6 +143,8 @@ export type PipelineStateResponse = {
     isLocal: boolean;
     isOnline?: boolean;
     lastDurationMs?: number | null;
+    provider?: string;
+    tokensPerSecond?: number | null;
   }>;
   recentExtractedTickets?: Array<{
     id: string;
@@ -160,6 +171,7 @@ const nodeTypes = {
   entity: EntityNode,
   cluster: ClusterNode,
   dossier: DossierNode,
+  disposal: DisposalNode,
 };
 
 const edgeTypes = {
@@ -175,8 +187,8 @@ function InnerPipelineCanvas({
 }) {
   const { fitView } = useReactFlow();
   const { activeRegion } = useRegion();
-  // v7: 案卷归档节点下移到 y=860，避免与超高的分类初筛节点下半段重叠
-  const storageKey = `civic_workbench_pipeline_positions_v7_${activeRegion?.id || "default"}`;
+  // v8: 新增 06 协同处置与闭环回流节点 (x=80, y=860)
+  const storageKey = `civic_workbench_pipeline_positions_v8_${activeRegion?.id || "default"}`;
 
   const rawStatus = (stateData?.taskProgress?.status || "").toUpperCase();
   const isRunning = rawStatus === "RUNNING";
@@ -296,6 +308,8 @@ function InnerPipelineCanvas({
               isLocal: n.isLocal,
               isOnline: n.isOnline,
               lastDurationMs: n.lastDurationMs ?? null,
+              provider: n.provider,
+              tokensPerSecond: n.tokensPerSecond ?? null,
               recentTickets: [],
             };
           }
@@ -324,6 +338,8 @@ function InnerPipelineCanvas({
             isLocal: n.isLocal,
             isOnline: n.isOnline,
             lastDurationMs: n.lastDurationMs ?? null,
+            provider: n.provider,
+            tokensPerSecond: n.tokensPerSecond ?? null,
             recentTickets: myTickets.map((t) => ({
               id: t.id,
               ticketNo: t.ticketNo,
@@ -392,10 +408,29 @@ function InnerPipelineCanvas({
         data: {
           dossierCount: factory.dossierCount,
           totalTickets: total,
-          pseudoLoopCount: stateData?.metrics.highRiskThemes ?? 0,
+          pseudoLoopCount: stateData?.disposalMetrics?.fakeClosureTickets ?? stateData?.metrics.highRiskThemes ?? 0,
           status: factory.dossierStatus,
           statusText: factory.dossierStatusText,
         } as DossierNodeData,
+      },
+      {
+        id: "node-disposal",
+        type: "disposal",
+        position: getPos("node-disposal"),
+        data: {
+          pendingThemes: stateData?.disposalMetrics?.pendingThemes ?? 0,
+          inProgressThemes: stateData?.disposalMetrics?.inProgressThemes ?? 0,
+          resolvedThemes: stateData?.disposalMetrics?.resolvedThemes ?? 0,
+          fakeClosureTickets: stateData?.disposalMetrics?.fakeClosureTickets ?? 0,
+          pendingReviewCount: stateData?.disposalMetrics?.pendingReviewCount ?? 0,
+          status:
+            (stateData?.disposalMetrics?.inProgressThemes ?? 0) > 0 ||
+            (stateData?.disposalMetrics?.resolvedThemes ?? 0) > 0
+              ? "completed"
+              : total > 0
+                ? "running"
+                : "idle",
+        } as DisposalNodeData,
       },
     ];
   }, [stateData, isRunning, processed, onRefresh, storageKey, factory]);
@@ -403,6 +438,10 @@ function InnerPipelineCanvas({
   // 2. 连接边配置 (根据活跃阶段动态激活流动粒子导轨)
   const initialEdges: Edge[] = useMemo(() => {
     const total = stateData?.metrics.totalTickets ?? 0;
+    const disposal = stateData?.disposalMetrics;
+    const hasDisposalFlow =
+      (disposal?.inProgressThemes ?? 0) > 0 || (disposal?.resolvedThemes ?? 0) > 0;
+    const hasFakeClosureLoop = (disposal?.fakeClosureTickets ?? 0) > 0;
 
     return [
       {
@@ -455,6 +494,44 @@ function InnerPipelineCanvas({
           completed: factory.dossierCompleted,
           label: "生成案卷",
         },
+      },
+      {
+        id: "edge-dossier-disposal",
+        source: "node-dossier",
+        target: "node-disposal",
+        type: "flowing",
+        animated: factory.dossierCompleted && !hasDisposalFlow,
+        data: {
+          active: factory.dossierCompleted && !hasDisposalFlow,
+          completed: hasDisposalFlow,
+          label: "派单处置",
+        },
+      },
+      {
+        id: "edge-disposal-cluster",
+        source: "node-disposal",
+        target: "node-cluster",
+        type: "smoothstep",
+        animated: hasFakeClosureLoop,
+        label: "假闭环复发回流监测",
+        style: {
+          stroke: hasFakeClosureLoop ? "#F53F3F" : "#F59E0B",
+          strokeWidth: hasFakeClosureLoop ? 2.2 : 1.6,
+          strokeDasharray: "6 4",
+          opacity: 0.85,
+        },
+        labelStyle: {
+          fill: hasFakeClosureLoop ? "#DC2626" : "#B45309",
+          fontSize: 10,
+          fontWeight: 700,
+        },
+        labelBgStyle: {
+          fill: "#FFFBEB",
+          stroke: hasFakeClosureLoop ? "#FECACA" : "#FDE68A",
+          strokeWidth: 1,
+        },
+        labelBgPadding: [6, 3] as [number, number],
+        labelBgBorderRadius: 99,
       },
     ];
   }, [isRunning, stateData, processed, factory]);
@@ -509,6 +586,24 @@ function InnerPipelineCanvas({
     [storageKey]
   );
 
+  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (resetTimerRef.current) {
+        clearTimeout(resetTimerRef.current);
+        resetTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const fitViewDuration = () =>
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ? 0
+      : 600;
+
   // 用户点击“复位标准排版”：清除本地位置并平滑回归默认 3列2行流向
   const handleResetLayout = useCallback(() => {
     if (typeof window !== "undefined") {
@@ -522,15 +617,16 @@ function InnerPipelineCanvas({
         position: DEFAULT_POSITIONS[n.id] || n.position,
       }))
     );
-    setTimeout(() => {
-      fitView({ padding: 0.12, duration: 600 });
+    if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+    resetTimerRef.current = setTimeout(() => {
+      fitView({ padding: 0.12, duration: fitViewDuration() });
     }, 50);
   }, [storageKey, setNodes, fitView]);
 
   // 挂载初始自动居中
   useEffect(() => {
     const timer = setTimeout(() => {
-      fitView({ padding: 0.12, duration: 600 });
+      fitView({ padding: 0.12, duration: fitViewDuration() });
     }, 150);
     return () => clearTimeout(timer);
   }, [fitView]);
@@ -556,10 +652,10 @@ function InnerPipelineCanvas({
         <button
           type="button"
           onClick={handleResetLayout}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white/95 hover:bg-white hover:text-slate-900 border border-slate-200/90 rounded-lg shadow-xs hover:shadow-md transition-all cursor-pointer backdrop-blur-md active:scale-95"
+          className="flex items-center gap-1.5 min-h-[44px] sm:min-h-0 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white/95 hover:bg-white hover:text-slate-900 border border-slate-200/90 rounded-lg shadow-xs hover:shadow-md transition-all cursor-pointer backdrop-blur-md active:scale-95"
           title="恢复 3列2行 蛇形无交叉标准排版并自适应居中"
         >
-          <RotateCcw size={12} className="text-slate-500" />
+          <RotateCcw size={12} className="text-slate-500" aria-hidden="true" />
           <span>复位标准排版</span>
         </button>
       </Panel>

@@ -105,6 +105,15 @@ export async function fetchDistrictBoundary(
   cityName?: string,
   manualAdcode?: number
 ): Promise<BoundaryFetchResult> {
+  if (manualAdcode !== undefined) {
+    if (!Number.isInteger(manualAdcode) || manualAdcode < 100000 || manualAdcode > 999999) {
+      return {
+        success: false,
+        error: "无效的行政区划代码 (adcode)，必须为 6 位整数",
+      };
+    }
+  }
+
   let targetAdcode = manualAdcode;
 
   if (!targetAdcode) {
@@ -132,6 +141,7 @@ export async function fetchDistrictBoundary(
       headers: {
         "User-Agent": "Mozilla/5.0 (Civic-12345-Boundary-Service)",
       },
+      signal: AbortSignal.timeout(8000),
     });
 
     if (!res.ok) {

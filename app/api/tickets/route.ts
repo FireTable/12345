@@ -1,23 +1,156 @@
 import { NextResponse } from "next/server";
 import { getRegionDb } from "@/db/client";
 import { ticketsTable, themesTable, ticketThemesTable } from "@/db/schema";
-import { inArray, eq, desc, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import type { RawTicket } from "@/backend/state";
 import { desensitizeContent } from "@/backend/anonymizer";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 import { ingestSingleTicketPipeline } from "@/backend/agent";
-import { HANDLING_STATUS, normalizeStatusCode } from "@/lib/civic-dto";
+import { HANDLING_STATUS, regionLabel, UNKNOWN_TOWN } from "@/lib/civic-dto";
 import { CATEGORY } from "@/lib/vocabulary";
 import { triggerClusterJobAuto } from "@/lib/cluster-runner";
 import { memberLastAt } from "@/backend/embed-policy";
 import { loadThemeMemberVectors } from "@/lib/ticket-embeddings";
+import { cacheGetOrLoad, invalidateCivicAggregates } from "@/lib/civic-cache";
+import { loadWorkorderStats, resolveSiteRegionId } from "@/lib/civic-queries";
+import { clampPage, clampSize } from "@/lib/api-bounds";
+import { isTownLabel } from "@/lib/admin-area";
+import { parseDomainProfile } from "@/lib/domain-profile";
+import { recordDisposalLog } from "@/lib/disposal";
+import { broadcastDataRefresh } from "@/lib/sse-broadcaster";
+import { requireAdmin } from "@/lib/auth/rbac";
 
 export async function GET(req: Request) {
   try {
-    const regionId = await resolveRequestRegionId(req);
-    const { db: tenantDb } = await getRegionDb(regionId);
-    // 没有页面调用。工单中心用的是 /api/workorders。这里只留 80 字摘录，不带电话。
-    const dbRows = await tenantDb
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
+    const regionId = await resolveSiteRegionId(req);
+    const { db: tenantDb, region: tenantRegion } = await getRegionDb(regionId);
+    const domainProfile = parseDomainProfile(tenantRegion?.categoryConfigJson);
+    const isEcommerce = domainProfile.domainType === "ECOMMERCE_CS";
+
+    const { searchParams } = new URL(req.url);
+    const tab = searchParams.get("tab") || "";
+    const status = searchParams.get("status") || "";
+    const effectiveStatus = status || (tab === "pending" || tab === "progress" || tab === "finished" ? tab : "");
+    const urgency = searchParams.get("urgency") || "";
+    const regionQuery = (searchParams.get("region") || "").trim();
+    const regionAllowedDirect =
+      Boolean(regionQuery) &&
+      regionQuery !== regionId &&
+      (isEcommerce ||
+        domainProfile.channels.includes(regionQuery) ||
+        isTownLabel(regionQuery) ||
+        regionQuery === UNKNOWN_TOWN ||
+        regionQuery === "未知");
+    const category = searchParams.get("category") || "";
+    const keyword = searchParams.get("keyword") || "";
+    const page = clampPage(searchParams.get("page"));
+    const size = clampSize(searchParams.get("size"));
+    const offset = Math.min((page - 1) * size, 2_000_000_000);
+
+    const buildWhere = (regionFilter: string) => {
+      const filters = [];
+      if (regionFilter) {
+        if (regionFilter === UNKNOWN_TOWN || regionFilter === "未知") {
+          filters.push(
+            or(
+              isNull(ticketsTable.subdistrict),
+              inArray(ticketsTable.subdistrict, ["", "未知", "未指定"])
+            )
+          );
+        } else if (isEcommerce || domainProfile.channels.includes(regionFilter)) {
+          filters.push(
+            or(
+              eq(ticketsTable.subdistrict, regionFilter),
+              eq(ticketsTable.district, regionFilter)
+            )
+          );
+        } else if (regionFilter.length < 3 && !/(?:街道|镇|乡)$/.test(regionFilter)) {
+          filters.push(
+            or(
+              inArray(ticketsTable.subdistrict, [
+                regionFilter,
+                `${regionFilter}街道`,
+                `${regionFilter}镇`,
+                `${regionFilter}乡`,
+              ]),
+              eq(ticketsTable.district, regionFilter),
+              ilike(ticketsTable.district, `%${regionFilter}镇%`),
+              ilike(ticketsTable.district, `%${regionFilter}街道%`),
+              ilike(ticketsTable.district, `%${regionFilter}乡%`),
+              ilike(ticketsTable.district, `%${regionFilter}区%`)
+            )
+          );
+        } else {
+          filters.push(
+            or(
+              ilike(ticketsTable.subdistrict, `%${regionFilter}%`),
+              ilike(ticketsTable.district, `%${regionFilter}%`)
+            )
+          );
+        }
+      }
+      if (category) {
+        filters.push(eq(ticketsTable.sourceCategory, category));
+      }
+
+      if (effectiveStatus === "RESOLVED" || effectiveStatus === "finished") {
+        filters.push(inArray(ticketsTable.status, ["RESOLVED", "FINISHED"]));
+      } else if (effectiveStatus === "IN_PROGRESS" || effectiveStatus === "progress") {
+        filters.push(
+          inArray(ticketsTable.status, ["DISPATCHED", "VERIFIED", "IN_PROGRESS", "PROCESSING"])
+        );
+      } else if (effectiveStatus === "PENDING" || effectiveStatus === "pending") {
+        filters.push(inArray(ticketsTable.status, ["PENDING", "REOPENED"]));
+      } else if (effectiveStatus === "REOPENED") {
+        filters.push(eq(ticketsTable.status, "REOPENED"));
+      }
+
+      if (urgency === "URGENT" || tab === "urgent") {
+        filters.push(eq(ticketsTable.urgency, "URGENT"));
+      }
+      if (tab === "fake_closure") {
+        filters.push(eq(ticketsTable.isFakeClosure, true));
+      }
+      if (tab === "multifreq") {
+        filters.push(isNotNull(ticketsTable.primaryThemeId));
+      } else if (tab === "single" || tab === "unclustered") {
+        filters.push(isNull(ticketsTable.primaryThemeId));
+      }
+      if (keyword) {
+        filters.push(
+          or(
+            ilike(ticketsTable.title, `%${keyword}%`),
+            ilike(ticketsTable.content, `%${keyword}%`),
+            ilike(ticketsTable.ticketNo, `%${keyword}%`),
+            ilike(ticketsTable.summarizeTitle, `%${keyword}%`)
+          )
+        );
+      }
+
+      return filters.length ? and(...filters) : undefined;
+    };
+
+    const orderBys =
+      effectiveStatus === "pending" || effectiveStatus === "PENDING"
+        ? [
+            sql`CASE WHEN ${ticketsTable.status} = 'REOPENED' THEN 0 WHEN ${ticketsTable.isFakeClosure} IS TRUE THEN 1 ELSE 2 END ASC`,
+            sql`CASE WHEN ${ticketsTable.status} = 'REOPENED' OR ${ticketsTable.isFakeClosure} IS TRUE THEN ${ticketsTable.updatedAt} END DESC NULLS LAST`,
+            desc(ticketsTable.createTime),
+            desc(ticketsTable.id),
+          ]
+        : tab === "fake_closure"
+          ? [
+              sql`CASE WHEN ${ticketsTable.status} = 'REOPENED' THEN 0 ELSE 1 END ASC`,
+              sql`${ticketsTable.updatedAt} DESC NULLS LAST`,
+              desc(ticketsTable.createTime),
+              desc(ticketsTable.id),
+            ]
+          : [desc(ticketsTable.createTime), desc(ticketsTable.id)];
+    const countQ = tenantDb.select({ count: sql<number>`count(*)::int` }).from(ticketsTable);
+    const listQ = tenantDb
       .select({
         id: ticketsTable.id,
         ticketNo: ticketsTable.ticketNo,
@@ -26,36 +159,91 @@ export async function GET(req: Request) {
         content: sql<string>`left(${ticketsTable.content}, 80)`,
         district: ticketsTable.district,
         subdistrict: ticketsTable.subdistrict,
+        sourceCategory: ticketsTable.sourceCategory,
+        urgency: ticketsTable.urgency,
         channel: ticketsTable.channel,
         status: ticketsTable.status,
         createTime: ticketsTable.createTime,
+        closedAt: ticketsTable.closedAt,
+        closureStatus: ticketsTable.closureStatus,
+        isFakeClosure: ticketsTable.isFakeClosure,
+        primaryThemeId: ticketsTable.primaryThemeId,
       })
       .from(ticketsTable)
-      .orderBy(desc(ticketsTable.createTime))
-      .limit(500);
-    if (dbRows && dbRows.length > 0) {
-      const tickets: RawTicket[] = dbRows.map((r) => ({
-        id: r.id,
-        ticketNo: r.ticketNo,
-        title: r.title || undefined,
-        summarizeTitle: r.summarizeTitle || undefined,
-        createTime: r.createTime ? r.createTime.toISOString().slice(0, 19).replace("T", " ") : "2025-01-01 00:00:00",
-        citizenPhone: "",
-        content: r.content,
-        citizenName: "",
-        district: r.district || undefined,
-        subdistrict: r.subdistrict || undefined,
-        channel: r.channel || "市民服务热线",
-        status: (r.status as any) || "PENDING",
-      }));
+      .orderBy(...orderBys)
+      .limit(size)
+      .offset(offset);
 
-      return NextResponse.json({
-        success: true,
-        source: "postgresql",
-        total: tickets.length,
-        data: tickets,
-      });
+    const snapPromise = cacheGetOrLoad(`workorders:stats:${regionId}`, () => loadWorkorderStats(regionId));
+
+    let snap: Awaited<typeof snapPromise>["value"];
+    let countRows: Array<{ count: number }> | null;
+    let dbRows: Awaited<typeof listQ>;
+
+    if (!regionQuery || regionQuery === regionId || regionAllowedDirect) {
+      const where = buildWhere(regionAllowedDirect ? regionQuery : "");
+      const [snapRes, cRows, lRows] = await Promise.all([
+        snapPromise,
+        where ? countQ.where(where) : Promise.resolve(null),
+        where ? listQ.where(where) : listQ,
+      ]);
+      snap = snapRes.value;
+      countRows = cRows;
+      dbRows = lRows;
+    } else {
+      const snapRes = await snapPromise;
+      snap = snapRes.value;
+      const facetMatch =
+        regionQuery !== regionId && snap.facets.regions.includes(regionQuery) ? regionQuery : "";
+      const where = buildWhere(facetMatch);
+      const [cRows, lRows] = await Promise.all([
+        where ? countQ.where(where) : Promise.resolve(null),
+        where ? listQ.where(where) : listQ,
+      ]);
+      countRows = cRows;
+      dbRows = lRows;
     }
+
+    const filteredTotal = countRows ? Number(countRows[0]?.count || 0) : snap.stats.total;
+    const tickets: Array<
+      RawTicket & {
+        ticketId: string;
+        region: string;
+        primaryThemeId?: string;
+        sourceCategory?: string;
+      }
+    > = dbRows.map((r) => ({
+      id: r.id,
+      ticketId: r.id,
+      ticketNo: r.ticketNo,
+      title: r.title || undefined,
+      summarizeTitle: r.summarizeTitle || undefined,
+      createTime: r.createTime ? r.createTime.toISOString().slice(0, 19).replace("T", " ") : "2025-01-01 00:00:00",
+      citizenPhone: "",
+      content: r.content,
+      citizenName: "",
+      district: r.district || undefined,
+      subdistrict: r.subdistrict || undefined,
+      region: regionLabel(r.subdistrict),
+      sourceCategory: r.sourceCategory || undefined,
+      urgency: (r.urgency as RawTicket["urgency"]) || "NORMAL",
+      channel: r.channel || "市民服务热线",
+      status: (r.status as RawTicket["status"]) || "PENDING",
+      closedAt: r.closedAt ? r.closedAt.toISOString() : undefined,
+      closureStatus: (r.closureStatus as RawTicket["closureStatus"]) || null,
+      isFakeClosure: Boolean(r.isFakeClosure),
+      primaryThemeId: r.primaryThemeId || undefined,
+    }));
+
+    return NextResponse.json({
+      success: true,
+      source: "postgresql",
+      page,
+      size,
+      total: filteredTotal,
+      stats: snap.stats,
+      data: tickets,
+    });
   } catch (e: any) {
     console.error("[tickets/route] GET error:", e?.message);
     return NextResponse.json(
@@ -63,18 +251,14 @@ export async function GET(req: Request) {
       { status: 500 }
     );
   }
-
-  return NextResponse.json({
-    success: true,
-    source: "postgresql",
-    total: 0,
-    data: [],
-  });
 }
 
 export async function POST(req: Request) {
   const startTime = Date.now();
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const body = await req.json();
     const newTickets = Array.isArray(body) ? body : [body];
 
@@ -139,8 +323,8 @@ export async function POST(req: Request) {
             const singleRec = recordsToInsert[0];
             (async () => {
               try {
-                const activeRows = (
-                  await tenantDb
+                const [activeRows, closedRows] = await Promise.all([
+                  tenantDb
                     .select({
                       id: themesTable.id,
                       title: themesTable.title,
@@ -157,9 +341,28 @@ export async function POST(req: Request) {
                       aiSummary: themesTable.aiSummary,
                       recommendedAction: themesTable.recommendedAction,
                       handlingStatus: themesTable.handlingStatus,
+                      handlingProgress: themesTable.handlingProgress,
+                      handlingOwner: themesTable.handlingOwner,
+                      handlingEta: themesTable.handlingEta,
                     })
-                    .from(themesTable)
-                ).filter((row) => normalizeStatusCode(row.handlingStatus) !== HANDLING_STATUS.RESOLVED);
+                    .from(themesTable),
+                  tenantDb
+                    .select({
+                      themeId: ticketThemesTable.themeId,
+                      maxClosedAt: sql<Date | null>`max(${ticketsTable.closedAt})`,
+                    })
+                    .from(ticketThemesTable)
+                    .innerJoin(ticketsTable, eq(ticketsTable.id, ticketThemesTable.ticketId))
+                    .groupBy(ticketThemesTable.themeId),
+                ]);
+
+                const closedAtByTheme = new Map<string, string>();
+                for (const r of closedRows) {
+                  if (r.maxClosedAt) {
+                    const d = r.maxClosedAt instanceof Date ? r.maxClosedAt : new Date(r.maxClosedAt);
+                    if (!Number.isNaN(d.getTime())) closedAtByTheme.set(r.themeId, d.toISOString());
+                  }
+                }
 
                 const activeThemes: any[] = activeRows.map((r: any) => ({
                   id: r.id,
@@ -172,11 +375,15 @@ export async function POST(req: Request) {
                   riskReason: r.riskReason || "",
                   ticketCount: r.ticketCount,
                   timeSpanHours: r.timeSpanHours || 1,
-                  firstOccurrence: r.firstAt ? r.firstAt.toISOString().slice(0, 19).replace("T", " ") : "",
-                  lastOccurrence: r.lastAt ? r.lastAt.toISOString().slice(0, 19).replace("T", " ") : "",
+                  firstOccurrence: r.firstAt ? r.firstAt.toISOString() : "",
+                  lastOccurrence: r.lastAt ? r.lastAt.toISOString() : "",
                   aiSummary: r.aiSummary || "",
                   recommendedAction: r.recommendedAction || "",
                   handlingStatus: r.handlingStatus || HANDLING_STATUS.PENDING,
+                  handlingProgress: r.handlingProgress ?? 0,
+                  handlingOwner: r.handlingOwner || undefined,
+                  handlingEta: r.handlingEta ? r.handlingEta.toISOString() : undefined,
+                  closedAt: closedAtByTheme.get(r.id),
                   status: "CONFIRMED",
                   tickets: [],
                   relatedSubjects: [r.canonicalSubject],
@@ -190,7 +397,7 @@ export async function POST(req: Request) {
                 const { enrichedTicket, result: incResult } = await ingestSingleTicketPipeline(
                   {
                     ...singleRec,
-                    createTime: singleRec.createTime instanceof Date ? singleRec.createTime.toISOString().slice(0, 19).replace("T", " ") : String(singleRec.createTime),
+                    createTime: singleRec.createTime instanceof Date ? singleRec.createTime.toISOString() : String(singleRec.createTime),
                   },
                   activeThemes,
                   regionId,
@@ -212,10 +419,16 @@ export async function POST(req: Request) {
                     slaHours: enrichedTicket.slaHours,
                     stabilityRisk: enrichedTicket.stabilityRisk,
                     subdistrict: enrichedTicket.subdistrict || singleRec.subdistrict,
+                    ...(enrichedTicket.isFakeClosure
+                      ? {
+                          isFakeClosure: true,
+                          closureStatus: enrichedTicket.closureStatus || "REOPENED",
+                        }
+                      : {}),
                   })
                   .where(eq(ticketsTable.id, singleRec.id));
 
-                // 2. 若成功吸附到已有主题，同步刷新对应专题的工单数与案卷建议
+                // 2. 若成功吸附到已有主题，同步刷新对应专题的工单数与案卷建议（含假闭环复发重开）
                 if (incResult.action === "ATTACHED" && incResult.matchedThemeId) {
                   await tenantDb
                     .insert(ticketThemesTable)
@@ -224,18 +437,79 @@ export async function POST(req: Request) {
                       themeId: incResult.matchedThemeId,
                     })
                     .onConflictDoNothing();
+                  const matchedRow = activeRows.find((r: any) => r.id === incResult.matchedThemeId);
+                  const parseThemeMoment = (raw: string | Date | null | undefined): Date | null => {
+                    if (!raw) return null;
+                    if (raw instanceof Date) return Number.isNaN(raw.getTime()) ? null : raw;
+                    const s = String(raw).trim();
+                    if (!s) return null;
+                    const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)
+                      ? `${s.replace(" ", "T")}+08:00`
+                      : s;
+                    const parsed = new Date(normalized);
+                    return Number.isNaN(parsed.getTime()) ? null : parsed;
+                  };
+                  const ticketMoment = memberLastAt(singleRec.ticketNo, singleRec.createTime ?? null);
+                  const existingFirstAt = parseThemeMoment(matchedRow?.firstAt);
+                  const existingLastAt = parseThemeMoment(matchedRow?.lastAt);
+                  const themeFirstOcc = parseThemeMoment(incResult.matchedTheme?.firstOccurrence);
+                  const themeLastOcc = parseThemeMoment(incResult.matchedTheme?.lastOccurrence);
+                  const firstCandidates = [existingFirstAt, themeFirstOcc, ticketMoment].filter(
+                    (d): d is Date => d instanceof Date && !Number.isNaN(d.getTime())
+                  );
+                  const lastCandidates = [existingLastAt, themeLastOcc, ticketMoment].filter(
+                    (d): d is Date => d instanceof Date && !Number.isNaN(d.getTime())
+                  );
+                  const nextFirstAt =
+                    firstCandidates.length > 0
+                      ? new Date(Math.min(...firstCandidates.map((d) => d.getTime())))
+                      : ticketMoment;
+                  const nextLastAt =
+                    lastCandidates.length > 0
+                      ? new Date(Math.max(...lastCandidates.map((d) => d.getTime())))
+                      : ticketMoment;
+                  const nextTimeSpanHours = Math.max(
+                    1,
+                    incResult.matchedTheme?.timeSpanHours ?? 1,
+                    Math.floor((nextLastAt.getTime() - nextFirstAt.getTime()) / 3_600_000)
+                  );
                   await tenantDb
                     .update(themesTable)
                     .set({
                       ticketCount: incResult.matchedTheme?.ticketCount ?? 1,
-                      lastAt: memberLastAt(singleRec.ticketNo, singleRec.createTime ?? null),
+                      firstAt: nextFirstAt,
+                      lastAt: nextLastAt,
+                      timeSpanHours: nextTimeSpanHours,
                       riskLevel: incResult.matchedTheme?.riskLevel,
                       riskReason: incResult.matchedTheme?.riskReason,
                       aiSummary: incResult.matchedTheme?.aiSummary,
                       recommendedAction: incResult.matchedTheme?.recommendedAction,
+                      ...(incResult.fakeClosureDetected || (incResult.matchedTheme?.reopenCount || 0) > 0
+                        ? {
+                            handlingStatus: incResult.matchedTheme?.handlingStatus || "IN_PROGRESS",
+                            handlingProgress: incResult.matchedTheme?.handlingProgress ?? 40,
+                          }
+                        : {}),
                     })
                     .where(eq(themesTable.id, incResult.matchedThemeId));
+
+                  if (incResult.fakeClosureDetected || (incResult.matchedTheme?.reopenCount || 0) > 0) {
+                    await recordDisposalLog({
+                      regionId,
+                      targetType: "THEME",
+                      targetId: incResult.matchedThemeId,
+                      action: "REOPEN",
+                      fromStatus: "RESOLVED",
+                      toStatus: incResult.matchedTheme?.handlingStatus || "IN_PROGRESS",
+                      owner: incResult.matchedTheme?.handlingOwner || null,
+                      operator: "system",
+                      note: `假闭环复发重开：工单 ${singleRec.ticketNo || singleRec.id} 并入已办结主题`,
+                      meta: { ticketId: singleRec.id, ticketNo: singleRec.ticketNo },
+                    });
+                  }
                 }
+                invalidateCivicAggregates(regionId);
+                broadcastDataRefresh(regionId);
               } catch (asyncErr: any) {
                 console.warn("[tickets/route] Incremental ingestion background task warning:", asyncErr.message);
               }

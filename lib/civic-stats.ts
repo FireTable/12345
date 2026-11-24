@@ -61,7 +61,20 @@ export type TrendBuckets = {
   clusterDayRows: Array<{ day: string; n: number }>;
 };
 
-export function buildOverviewFromBuckets(b: OverviewBuckets) {
+function normalizeBucketRegion(subdistrict: string | null | undefined, isEcommerce: boolean): string {
+  if (isEcommerce) {
+    const clean = (subdistrict || "").trim();
+    if (!clean || clean === "未知" || clean === "未指定" || clean === "未归属") {
+      return UNKNOWN_TOWN;
+    }
+    return clean;
+  }
+  const region = regionLabel(subdistrict);
+  return region && (isTownLabel(region) || region === UNKNOWN_TOWN) ? region : "";
+}
+
+export function buildOverviewFromBuckets(b: OverviewBuckets, opts?: { domainType?: string }) {
+  const isEcommerce = opts?.domainType === "ECOMMERCE_CS";
   const min = b.minTime;
   const max = b.maxTime;
   const totalDays =
@@ -69,8 +82,8 @@ export function buildOverviewFromBuckets(b: OverviewBuckets) {
 
   const regionDistribution: Record<string, number> = {};
   for (const row of b.regionRows) {
-    const region = regionLabel(row.subdistrict);
-    if (region && (isTownLabel(region) || region === UNKNOWN_TOWN)) {
+    const region = normalizeBucketRegion(row.subdistrict, isEcommerce);
+    if (region) {
       regionDistribution[region] = (regionDistribution[region] || 0) + Number(row.n || 0);
     }
   }
@@ -83,9 +96,9 @@ export function buildOverviewFromBuckets(b: OverviewBuckets) {
 
   const regionCategory: Record<string, Record<string, number>> = {};
   for (const row of b.regionCategoryRows) {
-    const region = regionLabel(row.subdistrict);
+    const region = normalizeBucketRegion(row.subdistrict, isEcommerce);
     const cat = (row.category || "").trim();
-    if (region && (isTownLabel(region) || region === UNKNOWN_TOWN) && cat) {
+    if (region && cat) {
       if (!regionCategory[region]) regionCategory[region] = {};
       regionCategory[region][cat] = (regionCategory[region][cat] || 0) + Number(row.n || 0);
     }
@@ -120,6 +133,25 @@ export function buildOverviewFromBuckets(b: OverviewBuckets) {
   };
 }
 
+const YMD_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+function weekRangeForDay(dayStr: string): string | null {
+  const m = YMD_RE.exec(dayStr);
+  let weekStart: Date;
+  if (m) {
+    weekStart = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  } else {
+    const d = asDate(dayStr);
+    if (!d) return null;
+    weekStart = new Date(d);
+  }
+  const dow = weekStart.getUTCDay() || 7;
+  weekStart.setUTCDate(weekStart.getUTCDate() - (dow - 1));
+  const weekEnd = new Date(weekStart);
+  weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
+  return `${weekStart.toISOString().slice(0, 10)}/${weekEnd.toISOString().slice(0, 10)}`;
+}
+
 export function buildTrendsFromBuckets(b: TrendBuckets) {
   const daily: Record<string, number> = {};
   const weekly: Record<string, number> = {};
@@ -130,16 +162,10 @@ export function buildTrendsFromBuckets(b: TrendBuckets) {
     if (!row.day) continue;
     const n = Number(row.n || 0);
     daily[row.day] = n;
-    monthly[row.day.slice(0, 7)] = (monthly[row.day.slice(0, 7)] || 0) + n;
-    const d = asDate(row.day);
-    if (!d) continue;
-    const weekStart = new Date(d);
-    const dow = weekStart.getUTCDay() || 7;
-    weekStart.setUTCDate(weekStart.getUTCDate() - (dow - 1));
-    const weekEnd = new Date(weekStart);
-    weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
-    const wk = `${ymd(weekStart)}/${ymd(weekEnd)}`;
-    weekly[wk] = (weekly[wk] || 0) + n;
+    const monthKey = row.day.slice(0, 7);
+    monthly[monthKey] = (monthly[monthKey] || 0) + n;
+    const wk = weekRangeForDay(row.day);
+    if (wk) weekly[wk] = (weekly[wk] || 0) + n;
   }
 
   for (const row of b.clusterDayRows) {
@@ -150,11 +176,8 @@ export function buildTrendsFromBuckets(b: TrendBuckets) {
 }
 
 export function buildOverview(tickets: TicketStatRow[], themeCount: number) {
-  const dates = tickets.map((t) => asDate(t.createTime)).filter((d): d is Date => !!d);
-  const min = dates.length ? new Date(Math.min(...dates.map((d) => d.getTime()))) : null;
-  const max = dates.length ? new Date(Math.max(...dates.map((d) => d.getTime()))) : null;
-  const totalDays =
-    min && max ? Math.max(1, Math.round((max.getTime() - min.getTime()) / 86400000) + 1) : 0;
+  let minMs = Infinity;
+  let maxMs = -Infinity;
 
   const regionDistribution: Record<string, number> = {};
   const categoryDistribution: Record<string, number> = {};
@@ -166,6 +189,9 @@ export function buildOverview(tickets: TicketStatRow[], themeCount: number) {
   for (const t of tickets) {
     const d = asDate(t.createTime);
     if (d) {
+      const ms = d.getTime();
+      if (ms < minMs) minMs = ms;
+      if (ms > maxMs) maxMs = ms;
       const key = ym(d);
       monthlyTrend[key] = (monthlyTrend[key] || 0) + 1;
     }
@@ -189,6 +215,11 @@ export function buildOverview(tickets: TicketStatRow[], themeCount: number) {
       regionCategory[region][cat] = (regionCategory[region][cat] || 0) + 1;
     }
   }
+
+  const min = Number.isFinite(minMs) ? new Date(minMs) : null;
+  const max = Number.isFinite(maxMs) ? new Date(maxMs) : null;
+  const totalDays =
+    min && max ? Math.max(1, Math.round((maxMs - minMs) / 86400000) + 1) : 0;
 
   const topRegion =
     Object.entries(regionDistribution)
@@ -285,10 +316,14 @@ export function buildInsights(
     return `${place}汇聚 ${theme.ticketCount || 0} 件${theme.category || "民生"}诉求`;
   };
 
+  const sortedPool = [...pool].sort((a, b) => (b.ticketCount || 0) - (a.ticketCount || 0));
+
   // 1. 寻找最高频的“空间聚集”重点主题 (GROUP_GATHERING / SPATIAL_BURST)
-  const gatherTheme = pool
-    .filter((t) => (t.patternType === "GROUP_GATHERING" || t.patternType === "SPATIAL_BURST" || !t.patternType) && !usedThemeIds.has(t.id))
-    .sort((a, b) => (b.ticketCount || 0) - (a.ticketCount || 0))[0];
+  const gatherTheme = sortedPool.find(
+    (t) =>
+      (t.patternType === "GROUP_GATHERING" || t.patternType === "SPATIAL_BURST" || !t.patternType) &&
+      !usedThemeIds.has(t.id)
+  );
 
   if (gatherTheme) {
     usedThemeIds.add(gatherTheme.id);
@@ -303,9 +338,7 @@ export function buildInsights(
   }
 
   // 2. 寻找最高频的“主体发散”重点主题 (DIVERGE)
-  const divergeTheme = pool
-    .filter((t) => t.patternType === "DIVERGE" && !usedThemeIds.has(t.id))
-    .sort((a, b) => (b.ticketCount || 0) - (a.ticketCount || 0))[0];
+  const divergeTheme = sortedPool.find((t) => t.patternType === "DIVERGE" && !usedThemeIds.has(t.id));
 
   if (divergeTheme) {
     usedThemeIds.add(divergeTheme.id);
@@ -320,10 +353,10 @@ export function buildInsights(
   }
 
   // 3. 寻找“高风险/重复反映”重点主题
-  const repeatOrUrgentTheme = pool
-    .filter((t) => (t.riskLevel === "HIGH" || t.patternType === "INDIVIDUAL_REPEAT") && !usedThemeIds.has(t.id))
-    .sort((a, b) => (b.ticketCount || 0) - (a.ticketCount || 0))[0] ||
-    pool.filter((t) => !usedThemeIds.has(t.id)).sort((a, b) => (b.ticketCount || 0) - (a.ticketCount || 0))[0];
+  const repeatOrUrgentTheme =
+    sortedPool.find(
+      (t) => (t.riskLevel === "HIGH" || t.patternType === "INDIVIDUAL_REPEAT") && !usedThemeIds.has(t.id)
+    ) || sortedPool.find((t) => !usedThemeIds.has(t.id));
 
   if (repeatOrUrgentTheme) {
     usedThemeIds.add(repeatOrUrgentTheme.id);
@@ -338,9 +371,7 @@ export function buildInsights(
   }
 
   // 4. 寻找“协同处置 / 综合治理”第 4 席主题 (补齐 4 列网格)
-  const fourthTheme = pool
-    .filter((t) => !usedThemeIds.has(t.id))
-    .sort((a, b) => (b.ticketCount || 0) - (a.ticketCount || 0))[0];
+  const fourthTheme = sortedPool.find((t) => !usedThemeIds.has(t.id));
 
   if (fourthTheme) {
     usedThemeIds.add(fourthTheme.id);

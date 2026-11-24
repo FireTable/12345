@@ -35,6 +35,28 @@ export interface CivicChatCompletionParams {
    */
   enable_thinking?: boolean;
   stream?: boolean;
+  signal?: AbortSignal;
+  /**
+   * 本地集群流式首包最大等待毫秒数；超时仅中止本次本地尝试的内部 signal（不触动调用方 signal，不误标节点不健康），并切换至 cloudFallback。
+   */
+  localWaitTimeoutMs?: number;
+  /**
+   * 当本地健康节点全部已有在途请求且配置了 cloudFallback 时，直接走云端流式避免交互被本地批处理长尾饿死。
+   */
+  preferCloudWhenLocalBusy?: boolean;
+  /**
+   * 为 true 且已配置 cloudFallback 时，直接走云端流式（跳过本地慢节点等待，若云端失败再回退本地）。
+   */
+  preferCloudDirect?: boolean;
+}
+
+export interface CivicChatStreamChunk {
+  deltaContent?: string;
+  deltaReasoning?: string;
+  finishReason?: string | null;
+  endpoint?: string | null;
+  usage?: CivicUsage;
+  timings?: CivicTimings;
 }
 
 export interface CivicChatChoice {
@@ -84,6 +106,16 @@ export interface CloudFallbackConfig {
   model: string;
 }
 
+export interface ClusterNodeObjectSpec {
+  endpoint: string;
+  apiKey?: string;
+  model?: string;
+  provider?: string;
+  name?: string;
+}
+
+export type ClusterNodeSpec = string | ClusterNodeObjectSpec;
+
 export interface SystemTwoConfig {
   /**
    * llama-server 本地端点，默认为 http://127.0.0.1:8132/v1
@@ -94,6 +126,10 @@ export interface SystemTwoConfig {
    */
   endpoints?: string[];
   /**
+   * 多节点算力集群详细节点规格（支持按节点绑定独立 apiKey / model / provider）
+   */
+  nodes?: ClusterNodeSpec[];
+  /**
    * 模型别名，默认 bonsai-2-27b
    */
   model?: string;
@@ -101,6 +137,10 @@ export interface SystemTwoConfig {
    * 鉴权密钥（本地 llama-server 默认为空或任意字符）
    */
   apiKey?: string;
+  /**
+   * 节点来源标记 (LOCAL / COLAB / CLOUD)
+   */
+  provider?: string;
   /**
    * 超时时间（毫秒），默认为 180,000ms (3分钟)
    */

@@ -5,7 +5,7 @@
 
 import { db } from "@/db/client";
 import { taskProgressTable } from "@/db/schema";
-import { eq, desc, lt, and } from "drizzle-orm";
+import { eq, desc, lt, and, sql as drizzleSql } from "drizzle-orm";
 import { getSystemTwoEngine } from "@/backend/model";
 
 export interface ActiveCategoryStats {
@@ -70,13 +70,38 @@ export interface TaskProgress {
   updatedAt: number;
 }
 
+interface TaskPersistEntry {
+  lastPersistedAt: number;
+  timer: ReturnType<typeof setTimeout> | null;
+  pendingTask: TaskProgress | null;
+  pendingImmediate: boolean;
+  inFlight: Promise<void> | null;
+}
+
+const PERSIST_THROTTLE_MS = 1000;
+
 declare global {
   var __ticket_radar_task_progress_store: Map<string, TaskProgress> | undefined;
+  var __ticket_radar_task_persist_state: Map<string, TaskPersistEntry> | undefined;
 }
 
 // In-memory global task progress map (singleton across module invocations & Next.js route chunks)
 const progressStore: Map<string, TaskProgress> =
   globalThis.__ticket_radar_task_progress_store ?? new Map<string, TaskProgress>();
+
+const persistState: Map<string, TaskPersistEntry> =
+  globalThis.__ticket_radar_task_persist_state ?? new Map<string, TaskPersistEntry>();
+globalThis.__ticket_radar_task_persist_state = persistState;
+
+function isTerminalTask(task: Pick<TaskProgress, "status" | "stage" | "percent" | "error">): boolean {
+  return (
+    task.status === "COMPLETED" ||
+    task.status === "FAILED" ||
+    task.stage === "COMPLETED" ||
+    task.percent >= 100 ||
+    Boolean(task.error)
+  );
+}
 
 /**
  * 只读本进程里已经记下的最新任务。不查库，也不连接 System 2。
@@ -98,6 +123,7 @@ globalThis.__ticket_radar_task_progress_store = progressStore;
  */
 async function persistTaskToDb(task: TaskProgress) {
   try {
+    const isTerminalStatus = task.status === "COMPLETED" || task.status === "FAILED";
     await db
       .insert(taskProgressTable)
       .values({
@@ -118,6 +144,9 @@ async function persistTaskToDb(task: TaskProgress) {
       })
       .onConflictDoUpdate({
         target: taskProgressTable.taskId,
+        ...(isTerminalStatus
+          ? {}
+          : { setWhere: drizzleSql`${taskProgressTable.status} NOT IN ('COMPLETED', 'FAILED')` }),
         set: {
           status: task.status,
           stage: task.stage,
@@ -139,6 +168,115 @@ async function persistTaskToDb(task: TaskProgress) {
   }
 }
 
+function getOrCreatePersistEntry(taskId: string): TaskPersistEntry {
+  let entry = persistState.get(taskId);
+  if (!entry) {
+    entry = {
+      lastPersistedAt: 0,
+      timer: null,
+      pendingTask: null,
+      pendingImmediate: false,
+      inFlight: null,
+    };
+    persistState.set(taskId, entry);
+  }
+  return entry;
+}
+
+function armPersistTimer(taskId: string, entry: TaskPersistEntry, delayMs: number): void {
+  if (entry.timer) return;
+  entry.timer = setTimeout(() => {
+    entry.timer = null;
+    const pending = entry.pendingTask;
+    if (!pending || entry.inFlight) return;
+    entry.pendingTask = null;
+    entry.pendingImmediate = false;
+    entry.lastPersistedAt = Date.now();
+    startPersist(taskId, entry, pending);
+  }, Math.max(1, delayMs));
+  entry.timer.unref?.();
+}
+
+function startPersist(taskId: string, entry: TaskPersistEntry, task: TaskProgress): void {
+  entry.pendingImmediate = false;
+  const flight = persistTaskToDb(task).finally(() => {
+    if (entry.inFlight === flight) {
+      entry.inFlight = null;
+    }
+    if (!persistState.has(taskId)) return;
+    const next = entry.pendingTask;
+    if (!next) return;
+    const wasPendingImmediate = entry.pendingImmediate;
+    const elapsed = Date.now() - entry.lastPersistedAt;
+    if (isTerminalTask(next) || wasPendingImmediate || elapsed >= PERSIST_THROTTLE_MS) {
+      if (entry.timer) {
+        clearTimeout(entry.timer);
+        entry.timer = null;
+      }
+      entry.pendingTask = null;
+      entry.pendingImmediate = false;
+      entry.lastPersistedAt = Date.now();
+      startPersist(taskId, entry, next);
+    } else {
+      armPersistTimer(taskId, entry, PERSIST_THROTTLE_MS - elapsed);
+    }
+  });
+  entry.inFlight = flight;
+}
+
+function schedulePersistTask(task: TaskProgress, forceImmediate: boolean): void {
+  const entry = getOrCreatePersistEntry(task.taskId);
+  const now = Date.now();
+  const shouldImmediate =
+    forceImmediate || isTerminalTask(task) || now - entry.lastPersistedAt >= PERSIST_THROTTLE_MS;
+
+  if (shouldImmediate && !entry.inFlight) {
+    if (entry.timer) {
+      clearTimeout(entry.timer);
+      entry.timer = null;
+    }
+    entry.pendingTask = null;
+    entry.pendingImmediate = false;
+    entry.lastPersistedAt = now;
+    startPersist(task.taskId, entry, task);
+    return;
+  }
+
+  entry.pendingTask = task;
+  entry.pendingImmediate = entry.pendingImmediate || forceImmediate;
+  if (!entry.inFlight) {
+    armPersistTimer(task.taskId, entry, PERSIST_THROTTLE_MS - (now - entry.lastPersistedAt));
+  }
+}
+
+export async function flushTaskProgressPersist(taskId?: string): Promise<void> {
+  const ids = taskId ? [taskId] : Array.from(persistState.keys());
+  for (const id of ids) {
+    const entry = persistState.get(id);
+    if (!entry) continue;
+    if (entry.timer) {
+      clearTimeout(entry.timer);
+      entry.timer = null;
+    }
+    while (entry.inFlight || entry.pendingTask) {
+      if (entry.inFlight) {
+        await entry.inFlight;
+      }
+      if (entry.timer) {
+        clearTimeout(entry.timer);
+        entry.timer = null;
+      }
+      const pending = entry.pendingTask;
+      if (pending && !entry.inFlight) {
+        entry.pendingTask = null;
+        entry.pendingImmediate = false;
+        entry.lastPersistedAt = Date.now();
+        startPersist(id, entry, pending);
+      }
+    }
+  }
+}
+
 export function initTaskProgress(taskId: string, regionId: string, total: number = 0): TaskProgress {
   const initial: TaskProgress = {
     taskId,
@@ -157,8 +295,8 @@ export function initTaskProgress(taskId: string, regionId: string, total: number
   };
 
   progressStore.set(taskId, initial);
-  // 异步写入 DB
-  persistTaskToDb(initial);
+  // 首帧立即落库
+  schedulePersistTask(initial, true);
 
   return initial;
 }
@@ -173,6 +311,15 @@ export function updateTaskProgress(
   patch: Partial<TaskProgress>
 ): TaskProgress {
   const current = progressStore.get(taskId);
+  if (
+    current &&
+    (current.status === "COMPLETED" || current.status === "FAILED") &&
+    patch.status !== "COMPLETED" &&
+    patch.status !== "FAILED"
+  ) {
+    return current;
+  }
+
   let updated: TaskProgress;
 
   if (!current) {
@@ -202,8 +349,10 @@ export function updateTaskProgress(
   }
 
   progressStore.set(taskId, updated);
-  // 异步实时同步 DB
-  persistTaskToDb(updated);
+  const stageOrStatusChanged =
+    !current || current.stage !== updated.stage || current.status !== updated.status;
+  // 按 taskId 节流异步落库；stage/status 切换或终态立即触发
+  schedulePersistTask(updated, stageOrStatusChanged);
 
   // SSE 推送：每个 region 的活跃订阅者立刻收到新一帧。
   // regionId 来源优先级：patch > 函数参数 > 内存旧值（切区时保证旧 task 不会跨区泄漏）。
@@ -226,6 +375,7 @@ export function updateTaskProgress(
  */
 function rowToProgress(r: {
   taskId: string;
+  regionId?: string | null;
   status: string | null;
   stage: string | null;
   stageText: string | null;
@@ -241,6 +391,7 @@ function rowToProgress(r: {
 }): TaskProgress {
   return {
     taskId: r.taskId,
+    regionId: r.regionId || undefined,
     status: (r.status as TaskProgress["status"]) || "PENDING",
     stage: (r.stage as TaskProgress["stage"]) || "EXTRACTING",
     stageText: r.stageText || "处理中...",
@@ -272,7 +423,14 @@ export async function getTaskProgress(taskId: string): Promise<TaskProgress | nu
 
     if (rows && rows.length > 0) {
       const fromDb = rowToProgress(rows[0]);
-      if (mem && mem.updatedAt > fromDb.updatedAt) return mem;
+      const fromDbIsTerminal = fromDb.status === "COMPLETED" || fromDb.status === "FAILED";
+      if (
+        mem &&
+        mem.updatedAt > fromDb.updatedAt &&
+        !(fromDbIsTerminal && mem.status !== "COMPLETED" && mem.status !== "FAILED")
+      ) {
+        return mem;
+      }
       progressStore.set(taskId, fromDb);
       return fromDb;
     }
@@ -322,30 +480,61 @@ export async function getLatestTaskProgress(regionId?: string): Promise<TaskProg
         error: r.error || undefined,
         updatedAt: r.updatedAt ? r.updatedAt.getTime() : Date.now(),
       };
-      if (newestMem && newestMem.updatedAt >= fromDb.updatedAt) return newestMem;
+      const fromDbIsTerminal = fromDb.status === "COMPLETED" || fromDb.status === "FAILED";
+      if (
+        newestMem &&
+        newestMem.updatedAt >= fromDb.updatedAt &&
+        !(
+          fromDbIsTerminal &&
+          newestMem.taskId === fromDb.taskId &&
+          newestMem.status !== "COMPLETED" &&
+          newestMem.status !== "FAILED"
+        )
+      ) {
+        return newestMem;
+      }
       const live = progressStore.get(fromDb.taskId);
-      if (live && live.updatedAt >= fromDb.updatedAt) return live;
+      if (
+        live &&
+        live.updatedAt >= fromDb.updatedAt &&
+        !(fromDbIsTerminal && live.status !== "COMPLETED" && live.status !== "FAILED")
+      ) {
+        return live;
+      }
       // fromDb 路径：DB row 没存 in-memory 字段（endpointRecentTickets / currentLocation 等），
       // 从进程内 SystemTwoEngine 补上，确保 pipeline-state API 返回给前端的 taskProgress
       // 跟 SSE 推的 taskProgress 字段对齐，避免 fetchState 拿到缺字段的 taskProgress
       // 导致 PipelineCanvas 节点卡空白。
-      try {
-        const engine = await getSystemTwoEngine();
-        (fromDb as any).endpointRecentTickets = engine.getEndpointRecentTickets();
-      } catch {
-        /* engine 不可用时保留 fromDb 原样 */
+      if (live?.endpointRecentTickets && !fromDb.endpointRecentTickets) {
+        fromDb.endpointRecentTickets = live.endpointRecentTickets;
+      } else {
+        try {
+          const engine = await getSystemTwoEngine();
+          (fromDb as any).endpointRecentTickets = engine.getEndpointRecentTickets();
+        } catch {
+          /* engine 不可用时保留 fromDb 原样 */
+        }
+      }
+      if (fromDbIsTerminal) {
+        progressStore.set(fromDb.taskId, fromDb);
       }
       return fromDb;
     } else {
-      // 该辖区（或全局）已无任务记录：清掉对应内存条目，杜绝僵尸状态
-      if (regionId) {
-        for (const [taskId, value] of progressStore.entries()) {
-          if (value.regionId === regionId) progressStore.delete(taskId);
+      // 该辖区（或全局）已无任务记录：清掉已完成落库同步的僵尸内存条目；
+      // 若当前进程尚有未完成/在途写入的任务，保留内存进度避免抢跑删除。
+      let retainedNewest: TaskProgress | null = null;
+      for (const [taskId, value] of Array.from(progressStore.entries())) {
+        if (regionId && value.regionId !== regionId) continue;
+        const p = persistState.get(taskId);
+        if (p && (p.inFlight || p.pendingTask || p.timer)) {
+          if (!retainedNewest || value.updatedAt > retainedNewest.updatedAt) {
+            retainedNewest = value;
+          }
+        } else {
+          removeTaskProgress(taskId);
         }
-      } else {
-        progressStore.clear();
       }
-      return null;
+      return retainedNewest;
     }
   } catch (err: any) {
     console.warn("[task-progress] Failed to fetch latest task from DB:", err.message);
@@ -354,11 +543,28 @@ export async function getLatestTaskProgress(regionId?: string): Promise<TaskProg
   return newestMem;
 }
 
+function clearPersistEntry(taskId: string): void {
+  const entry = persistState.get(taskId);
+  if (entry?.timer) {
+    clearTimeout(entry.timer);
+    entry.timer = null;
+  }
+  if (entry) {
+    entry.pendingTask = null;
+    entry.pendingImmediate = false;
+  }
+  persistState.delete(taskId);
+}
+
 export function clearTaskProgressStore(): void {
+  for (const taskId of Array.from(persistState.keys())) {
+    clearPersistEntry(taskId);
+  }
   progressStore.clear();
 }
 
 export function removeTaskProgress(taskId: string): void {
+  clearPersistEntry(taskId);
   progressStore.delete(taskId);
 }
 

@@ -1,10 +1,12 @@
-import { getRegionDb } from "@/db/client";
+import { getRegionDb, type DB } from "@/db/client";
 import { ticketsTable, themesTable, ticketThemesTable } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { sql as drizzleSql } from "drizzle-orm";
 import { adminFromLocation } from "@/lib/admin-area";
 import { civicModeFromPattern } from "@/backend/theme-metrics";
 import { HANDLING_STATUS } from "@/lib/civic-dto";
 import { invalidateCivicAggregates } from "@/lib/civic-cache";
+import { recordDisposalLog } from "@/lib/disposal";
+import { broadcastDataRefresh } from "@/lib/sse-broadcaster";
 import type { EnrichedTicket, MultiFrequencyTheme } from "@/backend/state";
 import { workOrderInstantFromTicketNo } from "@/lib/work-order-date";
 
@@ -21,6 +23,8 @@ export type TicketAgentPatch = {
   stabilityRisk: boolean | null;
   canonicalSubject: string | null;
   eventType: string | null;
+  isFakeClosure?: boolean;
+  closureStatus?: string | null;
   createTime?: Date;
 };
 
@@ -92,6 +96,7 @@ export function buildTicketAgentPatch(
     stabilityRisk: typeof ticket.systemOneStabilityRisk === "boolean" ? ticket.systemOneStabilityRisk : ticket.stabilityRisk ?? null,
     canonicalSubject: clipOrNull(ticket.canonicalSubject, 255),
     eventType: clipOrNull(ticket.eventType, 128),
+    ...(ticket.isFakeClosure ? { isFakeClosure: true, closureStatus: ticket.closureStatus || ("REOPENED" as const) } : {}),
     ...(createTime ? { createTime } : {}),
   };
 }
@@ -118,8 +123,8 @@ export function buildThemePersistRow(theme: MultiFrequencyTheme): ThemePersistRo
     category: clip(theme.category, 64),
     riskLevel: clip(theme.riskLevel, 32) || "LOW",
     riskReason: theme.riskReason || null,
-    ticketCount: theme.ticketCount,
-    timeSpanHours: theme.timeSpanHours,
+    ticketCount: Number.isFinite(theme.ticketCount) ? Math.round(theme.ticketCount) : 0,
+    timeSpanHours: Number.isFinite(theme.timeSpanHours) ? Math.round(theme.timeSpanHours) : 0,
     aiSummary: theme.aiSummary || null,
     recommendedAction: theme.recommendedAction || null,
     patternType: theme.patternType ? clip(theme.patternType, 32) : null,
@@ -136,23 +141,98 @@ export function buildThemePersistRow(theme: MultiFrequencyTheme): ThemePersistRo
   };
 }
 
+function toIsoOrNull(d?: Date | null): string | null {
+  return d instanceof Date && !Number.isNaN(d.getTime()) ? d.toISOString() : null;
+}
+
+function toIntOrNull(n?: number | null): number | null {
+  return typeof n === "number" && Number.isFinite(n) ? Math.round(n) : null;
+}
+
+async function bulkUpdateTicketPrimaryThemes(tenantDb: DB, themes: MultiFrequencyTheme[]): Promise<void> {
+  const deduped = new Map<string, { id: string; themeId: string; setFakeClosure: boolean }>();
+  for (const theme of themes) {
+    for (const t of theme.tickets || []) {
+      if (!t.id) continue;
+      deduped.set(t.id, {
+        id: t.id,
+        themeId: theme.id,
+        setFakeClosure: Boolean(t.isFakeClosure),
+      });
+    }
+  }
+  const updates = Array.from(deduped.values());
+  if (updates.length === 0) return;
+
+  const CHUNK = 500;
+  for (let i = 0; i < updates.length; i += CHUNK) {
+    const chunk = updates.slice(i, i + CHUNK);
+    const valuesSql = drizzleSql.join(
+      chunk.map(
+        (u) => drizzleSql`(${u.id}::varchar, ${u.themeId}::varchar, ${u.setFakeClosure}::boolean)`
+      ),
+      drizzleSql`, `
+    );
+    await tenantDb.execute(drizzleSql`
+      UPDATE tickets AS t
+      SET
+        primary_theme_id = v.primary_theme_id,
+        is_fake_closure = CASE WHEN v.set_fake_closure THEN true ELSE t.is_fake_closure END,
+        closure_status = CASE WHEN v.set_fake_closure THEN 'REOPENED' ELSE t.closure_status END
+      FROM (VALUES ${valuesSql}) AS v(id, primary_theme_id, set_fake_closure)
+      WHERE t.id = v.id
+    `);
+  }
+}
+
 export async function persistTicketAnalysis(
   tickets: EnrichedTicket[],
   opts?: { themeId?: string | null; regionId?: string }
 ) {
   if (tickets.length === 0) return;
+  const dedupedMap = new Map<string, { id: string; patch: TicketAgentPatch }>();
+  for (const t of tickets) {
+    if (!t.id) continue;
+    dedupedMap.set(t.id, { id: t.id, patch: buildTicketAgentPatch(t, opts) });
+  }
+  const rows = Array.from(dedupedMap.values());
+  if (rows.length === 0) return;
+
   const { db: tenantDb } = await getRegionDb(opts?.regionId);
-  const CHUNK = 40;
-  for (let i = 0; i < tickets.length; i += CHUNK) {
-    const chunk = tickets.slice(i, i + CHUNK);
-    await Promise.all(
-      chunk.map((t) =>
-        tenantDb
-          .update(ticketsTable)
-          .set(buildTicketAgentPatch(t, opts))
-          .where(eq(ticketsTable.id, t.id))
-      )
+  const CHUNK = 250;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const chunk = rows.slice(i, i + CHUNK);
+    const valuesSql = drizzleSql.join(
+      chunk.map(({ id, patch: p }) =>
+        drizzleSql`(${id}::varchar, ${p.district}::varchar, ${p.subdistrict}::varchar, ${p.sourceCategory}::varchar, ${p.address}::varchar, ${toIntOrNull(p.confidence)}::integer, ${p.summarizeTitle}::text, ${p.primaryThemeId}::varchar, ${p.urgency}::varchar, ${toIntOrNull(p.slaHours)}::integer, ${p.stabilityRisk ?? null}::boolean, ${p.canonicalSubject}::varchar, ${p.eventType}::varchar, ${Boolean(p.isFakeClosure)}::boolean, ${p.isFakeClosure ?? null}::boolean, ${p.closureStatus ?? null}::varchar, ${toIsoOrNull(p.createTime)}::timestamptz)`
+      ),
+      drizzleSql`, `
     );
+    await tenantDb.execute(drizzleSql`
+      UPDATE tickets AS t
+      SET
+        district = v.district,
+        subdistrict = v.subdistrict,
+        source_category = v.source_category,
+        address = v.address,
+        confidence = v.confidence,
+        summarize_title = v.summarize_title,
+        primary_theme_id = v.primary_theme_id,
+        urgency = v.urgency,
+        sla_hours = v.sla_hours,
+        stability_risk = v.stability_risk,
+        canonical_subject = v.canonical_subject,
+        event_type = v.event_type,
+        is_fake_closure = CASE WHEN v.set_fake_closure THEN v.is_fake_closure ELSE t.is_fake_closure END,
+        closure_status = CASE WHEN v.set_fake_closure THEN v.closure_status ELSE t.closure_status END,
+        create_time = COALESCE(v.create_time, t.create_time)
+      FROM (VALUES ${valuesSql}) AS v(
+        id, district, subdistrict, source_category, address, confidence,
+        summarize_title, primary_theme_id, urgency, sla_hours, stability_risk,
+        canonical_subject, event_type, set_fake_closure, is_fake_closure, closure_status, create_time
+      )
+      WHERE t.id = v.id
+    `);
   }
 }
 
@@ -170,7 +250,7 @@ export async function persistClusterResult(input: {
 
   const themeRecords = themes.map(buildThemePersistRow);
   if (themeRecords.length > 0) {
-    const THEME_CHUNK = 40;
+    const THEME_CHUNK = 200;
     for (let i = 0; i < themeRecords.length; i += THEME_CHUNK) {
       await tenantDb
         .insert(themesTable)
@@ -188,19 +268,9 @@ export async function persistClusterResult(input: {
       await tenantDb.insert(ticketThemesTable).values(ticketThemeMappings.slice(i, i + 500)).onConflictDoNothing();
     }
 
-    for (const theme of themes) {
-      for (const t of theme.tickets || []) {
-        await tenantDb
-          .update(ticketsTable)
-          .set({
-            primaryThemeId: theme.id,
-            ...(t.isFakeClosure ? { isFakeClosure: true, closureStatus: "REOPENED" as const } : {}),
-          })
-          .where(eq(ticketsTable.id, t.id));
-      }
-    }
+    await bulkUpdateTicketPrimaryThemes(tenantDb, themes);
   }
-  invalidateCivicAggregates();
+  invalidateCivicAggregates(regionId);
 }
 
 /**
@@ -217,7 +287,7 @@ export async function persistIncrementalResult(input: {
   const { db: tenantDb } = await getRegionDb(regionId);
 
   const newRecords = newThemes.map(buildThemePersistRow);
-  const THEME_CHUNK = 40;
+  const THEME_CHUNK = 200;
   for (let i = 0; i < newRecords.length; i += THEME_CHUNK) {
     await tenantDb
       .insert(themesTable)
@@ -225,25 +295,45 @@ export async function persistIncrementalResult(input: {
       .onConflictDoNothing({ target: themesTable.id });
   }
 
-  for (let i = 0; i < attachedThemes.length; i += THEME_CHUNK) {
-    const chunk = attachedThemes.slice(i, i + THEME_CHUNK);
-    await Promise.all(
-      chunk.map((theme) =>
-        tenantDb
-          .update(themesTable)
-          .set({
-            ticketCount: theme.ticketCount,
-            timeSpanHours: theme.timeSpanHours,
-            firstAt: parseThemeDate(theme.firstOccurrence),
-            lastAt: parseThemeDate(theme.lastOccurrence),
-            riskLevel: theme.riskLevel,
-            riskReason: theme.riskReason || null,
-            aiSummary: theme.aiSummary || null,
-            recommendedAction: theme.recommendedAction || null,
-          })
-          .where(eq(themesTable.id, theme.id))
-      )
-    );
+  if (attachedThemes.length > 0) {
+    const dedupedAttachedMap = new Map<string, MultiFrequencyTheme>();
+    for (const theme of attachedThemes) {
+      if (!theme.id) continue;
+      dedupedAttachedMap.set(theme.id, theme);
+    }
+    const dedupedAttached = Array.from(dedupedAttachedMap.values());
+    const ATTACH_CHUNK = 200;
+    for (let i = 0; i < dedupedAttached.length; i += ATTACH_CHUNK) {
+      const chunk = dedupedAttached.slice(i, i + ATTACH_CHUNK);
+      const valuesSql = drizzleSql.join(
+        chunk.map((theme) => {
+          const ticketCount = Number.isFinite(theme.ticketCount) ? Math.round(theme.ticketCount) : 0;
+          const timeSpanHours = Number.isFinite(theme.timeSpanHours) ? Math.round(theme.timeSpanHours) : 0;
+          return drizzleSql`(${clip(theme.id, 64)}::varchar, ${ticketCount}::integer, ${timeSpanHours}::integer, ${toIsoOrNull(parseThemeDate(theme.firstOccurrence))}::timestamptz, ${toIsoOrNull(parseThemeDate(theme.lastOccurrence))}::timestamptz, ${clip(theme.riskLevel, 32) || "LOW"}::varchar, ${theme.riskReason || null}::text, ${theme.aiSummary || null}::text, ${theme.recommendedAction || null}::text, ${theme.handlingStatus ? clip(theme.handlingStatus, 16) : null}::varchar, ${toIntOrNull(theme.handlingProgress)}::integer)`;
+        }),
+        drizzleSql`, `
+      );
+      await tenantDb.execute(drizzleSql`
+        UPDATE themes AS th
+        SET
+          ticket_count = v.ticket_count,
+          time_span_hours = v.time_span_hours,
+          first_at = v.first_at,
+          last_at = v.last_at,
+          risk_level = v.risk_level,
+          risk_reason = v.risk_reason,
+          ai_summary = v.ai_summary,
+          recommended_action = v.recommended_action,
+          handling_status = COALESCE(v.handling_status, th.handling_status),
+          handling_progress = COALESCE(v.handling_progress, th.handling_progress)
+        FROM (VALUES ${valuesSql}) AS v(
+          id, ticket_count, time_span_hours, first_at, last_at,
+          risk_level, risk_reason, ai_summary, recommended_action,
+          handling_status, handling_progress
+        )
+        WHERE th.id = v.id
+      `);
+    }
   }
 
   await persistTicketAnalysis(tickets, { regionId });
@@ -261,17 +351,25 @@ export async function persistIncrementalResult(input: {
       .onConflictDoNothing();
   }
 
-  for (const theme of newThemes) {
-    for (const ticket of theme.tickets || []) {
-      await tenantDb
-        .update(ticketsTable)
-        .set({
-          primaryThemeId: theme.id,
-          ...(ticket.isFakeClosure ? { isFakeClosure: true, closureStatus: "REOPENED" as const } : {}),
-        })
-        .where(eq(ticketsTable.id, ticket.id));
+  await bulkUpdateTicketPrimaryThemes(tenantDb, newThemes);
+
+  for (const theme of attachedThemes) {
+    if ((theme.reopenCount || 0) > 0 && (theme.reopenTicketIds?.length || 0) > 0) {
+      await recordDisposalLog({
+        regionId,
+        targetType: "THEME",
+        targetId: theme.id,
+        action: "REOPEN",
+        fromStatus: "RESOLVED",
+        toStatus: theme.handlingStatus || "IN_PROGRESS",
+        owner: theme.handlingOwner || null,
+        operator: "system",
+        note: `假闭环复发重开：新增 ${theme.reopenTicketIds!.length} 条疑似假闭环工单，主题自动回弹处理中并升级高危`,
+        meta: { ticketIds: theme.reopenTicketIds },
+      }).catch(() => {});
     }
   }
 
-  invalidateCivicAggregates();
+  invalidateCivicAggregates(regionId);
+  broadcastDataRefresh(regionId);
 }

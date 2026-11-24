@@ -191,7 +191,8 @@ async function main() {
   });
   const nextEnv = { ...process.env };
   if (embedAction === "reuse" || embedAction === "start") {
-    const localEmbed = `http://${EMBED_DEV_HOST}:${EMBED_DEV_PORT}/v1`;
+    const embedClientHost = EMBED_DEV_HOST === "0.0.0.0" ? "127.0.0.1" : EMBED_DEV_HOST;
+    const localEmbed = `http://${embedClientHost}:${EMBED_DEV_PORT}/v1`;
     nextEnv.EMBEDDING_ENDPOINTS = embedEndpointsWithLocal(
       localEmbed,
       process.env.EMBEDDING_ENDPOINTS || process.env.EMBEDDING_BASE_URL

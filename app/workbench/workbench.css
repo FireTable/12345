@@ -148,7 +148,12 @@
   border: 2px solid rgba(22, 119, 255, 0.2);
   border-top-color: #1677FF;
   border-radius: 50%;
-  animation: workbench-canvas-spin 0.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .workbench-canvas-spinner {
+    animation: workbench-canvas-spin 0.8s linear infinite;
+  }
 }
 
 .workbench-canvas-pending__title {
@@ -165,6 +170,7 @@
 
 .workbench-canvas-pending__retry {
   margin-top: 4px;
+  min-height: 44px;
   padding: 6px 14px;
   border: 1px solid #E2E8F0;
   border-radius: 8px;
@@ -240,9 +246,15 @@
 }
 
 .pipeline-node--active {
-  animation: pipelineBorderGlow 2.4s ease-in-out infinite !important;
   position: relative;
   z-index: 5;
+  border-color: var(--node-accent, #2563EB) !important;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .pipeline-node--active {
+    animation: pipelineBorderGlow 2.4s ease-in-out infinite !important;
+  }
 }
 
 .pipeline-node--completed {
@@ -285,7 +297,7 @@
   font-size: 10px;
   font-weight: 800;
   font-family: monospace;
-  color: #94A3B8;
+  color: #64748B;
   letter-spacing: 0.5px;
   white-space: nowrap;
 }
@@ -345,7 +357,7 @@
 
 .pipeline-metric-sub {
   font-size: 11px;
-  color: #94A3B8;
+  color: #64748B;
 }
 
 /* 进度槽条 */
@@ -367,7 +379,12 @@
 
 .pipeline-progress-bar--animated {
   background-size: 200% 100%;
-  animation: progressPulse 1.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .pipeline-progress-bar--animated {
+    animation: progressPulse 1.8s linear infinite;
+  }
 }
 
 @keyframes progressPulse {
@@ -501,8 +518,8 @@
   right: 0;
   z-index: 1250;
   width: 100vw;
-  height: 88vh;
-  min-height: 580px;
+  height: min(88dvh, 100dvh);
+  min-height: min(580px, 92dvh);
   background: #F8FAFC;
   box-shadow: 0 24px 70px -10px rgba(15, 23, 42, 0.32), 0 0 1px rgba(15, 23, 42, 0.25);
   border-bottom: 2px solid #E2E8F0;
@@ -575,6 +592,19 @@
     right: 12px;
     bottom: calc(12px + env(safe-area-inset-bottom));
     max-width: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pipeline-drawer,
+  .pipeline-drawer-overlay,
+  .pipeline-node,
+  .pipeline-progress-bar {
+    transition: opacity 0.15s ease;
+  }
+
+  .pipeline-node:hover {
+    transform: none;
   }
 }
 

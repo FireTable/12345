@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   customType,
   pgTable,
@@ -108,6 +109,20 @@ export const ticketsTable = pgTable(
     index("idx_tickets_source_category").on(table.sourceCategory),
     index("idx_tickets_primary_theme_id").on(table.primaryThemeId),
     index("idx_tickets_status_create_time").on(table.status, table.createTime),
+    index("idx_tickets_title_trgm").using("gin", table.title.op("gin_trgm_ops")),
+    index("idx_tickets_summarize_title_trgm").using("gin", table.summarizeTitle.op("gin_trgm_ops")),
+    index("idx_tickets_content_trgm").using("gin", table.content.op("gin_trgm_ops")),
+    index("idx_tickets_canonical_subject_trgm").using("gin", table.canonicalSubject.op("gin_trgm_ops")),
+    index("idx_tickets_address_trgm").using("gin", table.address.op("gin_trgm_ops")),
+    index("idx_tickets_ticket_no_trgm").using("gin", table.ticketNo.op("gin_trgm_ops")),
+    index("idx_tickets_subdistrict_trgm").using("gin", table.subdistrict.op("gin_trgm_ops")),
+    index("idx_tickets_district_trgm").using("gin", table.district.op("gin_trgm_ops")),
+    index("idx_tickets_source_category_trgm").using("gin", table.sourceCategory.op("gin_trgm_ops")),
+    index("idx_tickets_subdistrict_create_time").on(table.subdistrict, table.createTime.desc()),
+    index("idx_tickets_create_time_id_desc").on(table.createTime.desc(), table.id.desc()),
+    index("idx_tickets_primary_theme_create_time").on(table.primaryThemeId, table.createTime.desc()),
+    index("idx_tickets_fake_closure_true").on(table.createTime.desc()).where(sql`${table.isFakeClosure} = true`),
+    index("idx_tickets_stability_risk_true").on(table.createTime.desc()).where(sql`${table.stabilityRisk} = true`),
   ]
 );
 
@@ -165,6 +180,11 @@ export const themesTable = pgTable(
     index("idx_themes_subject").on(table.canonicalSubject),
     index("idx_themes_pattern_type").on(table.patternType),
     index("idx_themes_ticket_count").on(table.ticketCount),
+    index("idx_themes_title_trgm").using("gin", table.title.op("gin_trgm_ops")),
+    index("idx_themes_canonical_subject_trgm").using("gin", table.canonicalSubject.op("gin_trgm_ops")),
+    index("idx_themes_canonical_location_trgm").using("gin", table.canonicalLocation.op("gin_trgm_ops")),
+    index("idx_themes_event_type_trgm").using("gin", table.eventType.op("gin_trgm_ops")),
+    index("idx_themes_category_trgm").using("gin", table.category.op("gin_trgm_ops")),
   ]
 );
 
@@ -210,6 +230,8 @@ export const reviewQueueTable = pgTable(
   (table) => [
     index("idx_review_queue_status").on(table.status),
     index("idx_review_queue_ticket_id").on(table.ticketId),
+    index("idx_review_queue_status_created_at").on(table.status, table.createdAt.desc(), table.id.desc()),
+    index("idx_review_queue_created_at_desc").on(table.createdAt.desc(), table.id.desc()),
   ]
 );
 
@@ -302,6 +324,61 @@ export const taskProgressTable = pgTable(
 
 export type TaskProgressRecord = typeof taskProgressTable.$inferSelect;
 export type NewTaskProgressRecord = typeof taskProgressTable.$inferInsert;
+
+/**
+ * 8. 处置流转与人工纠偏审计日志表 (Disposal Logs Table)
+ */
+export const disposalLogsTable = pgTable(
+  "disposal_logs",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    targetType: varchar("target_type", { length: 16 }).notNull(), // THEME | TICKET
+    targetId: varchar("target_id", { length: 64 }).notNull(),
+    action: varchar("action", { length: 32 }).notNull(), // DISPATCH | ADVANCE | ESCALATE | RESOLVE | REOPEN | CORRECT_ENTITY | DETACH_TICKET | REVIEW_APPROVE | REVIEW_DISMISS
+    fromStatus: varchar("from_status", { length: 32 }),
+    toStatus: varchar("to_status", { length: 32 }),
+    owner: varchar("owner", { length: 128 }),
+    operator: varchar("operator", { length: 64 }),
+    note: text("note"),
+    metaJson: text("meta_json"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_disposal_logs_target").on(table.targetType, table.targetId),
+    index("idx_disposal_logs_created_at").on(table.createdAt),
+  ]
+);
+
+export type DisposalLogRecord = typeof disposalLogsTable.$inferSelect;
+export type NewDisposalLogRecord = typeof disposalLogsTable.$inferInsert;
+
+/**
+ * 9. 动态算力节点花名册表 (Compute Nodes Registry Table, in public schema)
+ */
+export const computeNodesTable = pgTable(
+  "compute_nodes",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    name: varchar("name", { length: 128 }).notNull(),
+    role: varchar("role", { length: 32 }).default("SYSTEM_TWO").notNull(), // SYSTEM_TWO | EMBEDDING
+    provider: varchar("provider", { length: 32 }).default("COLAB").notNull(), // LOCAL | COLAB | CLOUD
+    endpoint: varchar("endpoint", { length: 512 }).notNull(),
+    apiKey: varchar("api_key", { length: 255 }),
+    model: varchar("model", { length: 128 }),
+    enabled: boolean("enabled").default(true).notNull(),
+    lastStatus: varchar("last_status", { length: 32 }), // ONLINE | OFFLINE
+    lastLatencyMs: integer("last_latency_ms"),
+    lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_compute_nodes_role_enabled").on(table.role, table.enabled),
+  ]
+);
+
+export type ComputeNodeRecord = typeof computeNodesTable.$inferSelect;
+export type NewComputeNodeRecord = typeof computeNodesTable.$inferInsert;
 
 export * from "@/lib/auth/schema";
 

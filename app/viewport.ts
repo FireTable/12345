@@ -4,8 +4,9 @@ import type { Viewport } from "next";
 export const appViewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  viewportFit: "cover",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#FFFFFF" },
-    { media: "(prefers-color-scheme: dark)", color: "#0F172A" },
+    { media: "(prefers-color-scheme: light)", color: "#F6F8FB" },
+    { media: "(prefers-color-scheme: dark)", color: "#060911" },
   ],
 };

@@ -1,23 +1,83 @@
 import { NextRequest } from "next/server";
+import { createHash } from "node:crypto";
 import { geocodeAddress, reverseGeocode } from "@/lib/map/tianditu-service";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 import { getRegionDb } from "@/db/client";
 import { vocabulariesTable } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { apiSuccess, apiError, ApiCode } from "@/lib/api-codes";
+import { requireAdmin } from "@/lib/auth/rbac";
+
+function buildLocationId(cleanAddress: string): string {
+  return `LOC-${createHash("sha256").update(cleanAddress).digest("base64url").slice(0, 32)}`;
+}
+
+async function resolveLocationId(
+  tenantDb: Awaited<ReturnType<typeof getRegionDb>>["db"],
+  cleanAddress: string
+): Promise<string> {
+  const existing = await tenantDb
+    .select({ id: vocabulariesTable.id })
+    .from(vocabulariesTable)
+    .where(
+      and(
+        eq(vocabulariesTable.type, "LOCATION"),
+        eq(vocabulariesTable.name, cleanAddress)
+      )
+    )
+    .limit(1);
+  return existing[0]?.id ?? buildLocationId(cleanAddress);
+}
+
+function parseCoordinate(value: unknown, min: number, max: number): number | null {
+  if (typeof value === "number") {
+    return Number.isFinite(value) && value >= min && value <= max ? value : null;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const num = Number(trimmed);
+    return Number.isFinite(num) && num >= min && num <= max ? num : null;
+  }
+  return null;
+}
 
 export async function POST(req: NextRequest) {
   try {
-    const regionId = await resolveRequestRegionId(req);
-    const body = await req.json();
-    const { address, lng, lat, mode = "forward" } = body;
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
+    let body: Record<string, unknown>;
+    try {
+      const raw = await req.json();
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+        return apiError(ApiCode.BAD_REQUEST, "请求体必须是有效的 JSON 对象", 400);
+      }
+      body = raw as Record<string, unknown>;
+    } catch {
+      return apiError(ApiCode.BAD_REQUEST, "请求体 JSON 格式无效", 400);
+    }
+
+    const explicitRegionId = typeof body.regionId === "string" ? body.regionId : undefined;
+    const regionId = await resolveRequestRegionId(req, explicitRegionId);
+
+    const rawMode = body.mode;
+    if (rawMode !== undefined && rawMode !== "forward" && rawMode !== "reverse") {
+      return apiError(ApiCode.BAD_REQUEST, "mode 参数仅支持 forward 或 reverse", 400);
+    }
+    const mode = rawMode ?? "forward";
 
     // 1. 逆地理编码（坐标反查行政区与详细地点，用于站点管理与地图点选）
-    if (mode === "reverse" || (lng !== undefined && lat !== undefined && !address)) {
-      const numLng = parseFloat(lng);
-      const numLat = parseFloat(lat);
-      if (isNaN(numLng) || isNaN(numLat)) {
-        return apiError(ApiCode.BAD_REQUEST, "经纬度格式不正确", 400);
+    const isImplicitReverse =
+      rawMode === undefined &&
+      body.lng !== undefined &&
+      body.lat !== undefined &&
+      (body.address === undefined || body.address === null || body.address === "");
+    if (mode === "reverse" || isImplicitReverse) {
+      const numLng = parseCoordinate(body.lng, -180, 180);
+      const numLat = parseCoordinate(body.lat, -90, 90);
+      if (numLng === null || numLat === null) {
+        return apiError(ApiCode.BAD_REQUEST, "经纬度格式或范围不正确", 400);
       }
       const rev = await reverseGeocode(numLng, numLat);
       if (!rev.success) {
@@ -27,26 +87,65 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. 正地理编码：地址解析为经纬度（优先查标准字典 Canonical 缓存）
-    const cleanAddress = (address || "").trim();
-    if (!cleanAddress) {
-      return apiError(ApiCode.BAD_REQUEST, "地址不能为空", 400);
+    if (typeof body.address !== "string") {
+      return apiError(ApiCode.BAD_REQUEST, "地址必须是非空字符串", 400);
+    }
+    const cleanAddress = body.address.trim();
+    if (!cleanAddress || cleanAddress.length > 128) {
+      return apiError(ApiCode.BAD_REQUEST, "地址不能为空且长度不能超过 128 个字符", 400);
+    }
+
+    let cleanFormattedAddress = cleanAddress;
+    if (body.formattedAddress !== undefined && body.formattedAddress !== null) {
+      if (typeof body.formattedAddress !== "string") {
+        return apiError(ApiCode.BAD_REQUEST, "formattedAddress 必须是字符串", 400);
+      }
+      const trimmedFmt = body.formattedAddress.trim();
+      if (trimmedFmt.length > 255) {
+        return apiError(ApiCode.BAD_REQUEST, "formattedAddress 长度不能超过 255 个字符", 400);
+      }
+      if (trimmedFmt) {
+        cleanFormattedAddress = trimmedFmt;
+      }
+    }
+
+    let cleanTownship = "";
+    if (body.township !== undefined && body.township !== null) {
+      if (typeof body.township !== "string") {
+        return apiError(ApiCode.BAD_REQUEST, "township 必须是字符串", 400);
+      }
+      const trimmedTownship = body.township.trim();
+      if (trimmedTownship.length > 128) {
+        return apiError(ApiCode.BAD_REQUEST, "township 长度不能超过 128 个字符", 400);
+      }
+      cleanTownship = trimmedTownship;
+    }
+
+    const hasOverrideLng = body.overrideLng !== undefined && body.overrideLng !== null;
+    const hasOverrideLat = body.overrideLat !== undefined && body.overrideLat !== null;
+    let overrideLng: number | null = null;
+    let overrideLat: number | null = null;
+    if (hasOverrideLng || hasOverrideLat) {
+      overrideLng = parseCoordinate(body.overrideLng, -180, 180);
+      overrideLat = parseCoordinate(body.overrideLat, -90, 90);
+      if (overrideLng === null || overrideLat === null) {
+        return apiError(ApiCode.BAD_REQUEST, "覆盖经纬度格式或范围不正确", 400);
+      }
     }
 
     const { db: tenantDb } = await getRegionDb(regionId);
 
     // 2.0 若前端已通过国内直连 Key 成功解析出经纬度，直接将其沉淀写入标准词典并返回
-    const overrideLng = parseFloat(body.overrideLng);
-    const overrideLat = parseFloat(body.overrideLat);
-    if (!isNaN(overrideLng) && !isNaN(overrideLat)) {
+    if (overrideLng !== null && overrideLat !== null) {
       try {
-        const locationId = `LOC-${Buffer.from(cleanAddress).toString("base64url").slice(0, 32)}`;
+        const locationId = await resolveLocationId(tenantDb, cleanAddress);
         const meta = {
           lng: overrideLng,
           lat: overrideLat,
           score: 100,
           level: "前端直连",
-          formattedAddress: body.formattedAddress || cleanAddress,
-          township: body.township || "",
+          formattedAddress: cleanFormattedAddress,
+          township: cleanTownship,
           source: "CLIENT_TIANDITU",
           updatedAt: new Date().toISOString(),
         };
@@ -56,8 +155,8 @@ export async function POST(req: NextRequest) {
             id: locationId,
             type: "LOCATION",
             name: cleanAddress,
-            fullName: body.formattedAddress || cleanAddress,
-            parentName: body.township || null,
+            fullName: cleanFormattedAddress,
+            parentName: cleanTownship || null,
             metaJson: JSON.stringify(meta),
             description: "前端直连天地图解析标准坐标",
             isStandard: true,
@@ -65,7 +164,8 @@ export async function POST(req: NextRequest) {
           .onConflictDoUpdate({
             target: vocabulariesTable.id,
             set: {
-              fullName: body.formattedAddress || cleanAddress,
+              fullName: cleanFormattedAddress,
+              ...(cleanTownship ? { parentName: cleanTownship } : {}),
               metaJson: JSON.stringify(meta),
             },
           });
@@ -76,8 +176,8 @@ export async function POST(req: NextRequest) {
         success: true,
         lng: overrideLng,
         lat: overrideLat,
-        formattedAddress: body.formattedAddress || cleanAddress,
-        township: body.township || "",
+        formattedAddress: cleanFormattedAddress,
+        township: cleanTownship,
         fromCache: false,
         canonical: cleanAddress,
       });
@@ -99,11 +199,13 @@ export async function POST(req: NextRequest) {
       if (cached.length > 0 && cached[0].metaJson) {
         try {
           const meta = JSON.parse(cached[0].metaJson);
-          if (meta.lng && meta.lat) {
+          const cachedLng = parseCoordinate(meta?.lng, -180, 180);
+          const cachedLat = parseCoordinate(meta?.lat, -90, 90);
+          if (cachedLng !== null && cachedLat !== null) {
             return apiSuccess({
               success: true,
-              lng: parseFloat(meta.lng),
-              lat: parseFloat(meta.lat),
+              lng: cachedLng,
+              lat: cachedLat,
               score: meta.score || 100,
               level: meta.level || "标准字典",
               formattedAddress: meta.formattedAddress || cached[0].fullName || cleanAddress,
@@ -114,7 +216,7 @@ export async function POST(req: NextRequest) {
           }
         } catch {}
       }
-    } catch (e) {
+    } catch {
       // 租户未建表或缓存未命中，继续请求外部服务
     }
 
@@ -135,7 +237,7 @@ export async function POST(req: NextRequest) {
 
     // 2.4 将解析出的准确坐标沉淀存入标准字典 (type: LOCATION, Canonical)
     try {
-      const locationId = `LOC-${Buffer.from(cleanAddress).toString("base64url").slice(0, 32)}`;
+      const locationId = await resolveLocationId(tenantDb, cleanAddress);
       const meta = {
         lng: geo.lng,
         lat: geo.lat,
@@ -182,6 +284,6 @@ export async function POST(req: NextRequest) {
       canonical: cleanAddress,
     });
   } catch (err: any) {
-    return apiError(err.message || "地理编码服务内部错误", ApiCode.INTERNAL_ERROR, 500);
+    return apiError(ApiCode.INTERNAL_ERROR, err?.message || "地理编码服务内部错误", 500);
   }
 }

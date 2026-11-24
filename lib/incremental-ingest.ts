@@ -1,8 +1,8 @@
-import { asc, desc, sql as drizzleSql } from "drizzle-orm";
+import { asc, desc, eq, sql as drizzleSql } from "drizzle-orm";
 import { batchSizeForProfile } from "@civic/embed";
 import { HANDLING_STATUS, normalizeStatusCode } from "@/lib/civic-dto";
 import { getRegionDb } from "@/db/client";
-import { themesTable, ticketsTable } from "@/db/schema";
+import { themesTable, ticketsTable, ticketThemesTable } from "@/db/schema";
 import { persistIncrementalResult } from "@/lib/civic-persist";
 import { seedReviewQueue } from "@/lib/review-queue";
 import { updateTaskProgress } from "@/lib/task-progress";
@@ -88,25 +88,45 @@ export async function ingestNewTickets(job: ClusterJob): Promise<number> {
     .orderBy(asc(ticketsTable.createTime));
   const rawTickets = rows.map((row) => toRawTicket(row));
 
-  const themeRows = await tenantDb
-    .select({
-      id: themesTable.id,
-      title: themesTable.title,
-      canonicalSubject: themesTable.canonicalSubject,
-      canonicalLocation: themesTable.canonicalLocation,
-      eventType: themesTable.eventType,
-      category: themesTable.category,
-      riskLevel: themesTable.riskLevel,
-      riskReason: themesTable.riskReason,
-      ticketCount: themesTable.ticketCount,
-      timeSpanHours: themesTable.timeSpanHours,
-      firstAt: themesTable.firstAt,
-      lastAt: themesTable.lastAt,
-      aiSummary: themesTable.aiSummary,
-      recommendedAction: themesTable.recommendedAction,
-      handlingStatus: themesTable.handlingStatus,
-    })
-    .from(themesTable);
+  const [themeRows, closedRows] = await Promise.all([
+    tenantDb
+      .select({
+        id: themesTable.id,
+        title: themesTable.title,
+        canonicalSubject: themesTable.canonicalSubject,
+        canonicalLocation: themesTable.canonicalLocation,
+        eventType: themesTable.eventType,
+        category: themesTable.category,
+        riskLevel: themesTable.riskLevel,
+        riskReason: themesTable.riskReason,
+        ticketCount: themesTable.ticketCount,
+        timeSpanHours: themesTable.timeSpanHours,
+        firstAt: themesTable.firstAt,
+        lastAt: themesTable.lastAt,
+        aiSummary: themesTable.aiSummary,
+        recommendedAction: themesTable.recommendedAction,
+        handlingStatus: themesTable.handlingStatus,
+        handlingProgress: themesTable.handlingProgress,
+        handlingOwner: themesTable.handlingOwner,
+        handlingEta: themesTable.handlingEta,
+      })
+      .from(themesTable),
+    tenantDb
+      .select({
+        themeId: ticketThemesTable.themeId,
+        maxClosedAt: drizzleSql<Date | null>`max(${ticketsTable.closedAt})`,
+      })
+      .from(ticketThemesTable)
+      .innerJoin(ticketsTable, eq(ticketsTable.id, ticketThemesTable.ticketId))
+      .groupBy(ticketThemesTable.themeId),
+  ]);
+  const closedAtByTheme = new Map<string, string>();
+  for (const r of closedRows) {
+    if (r.maxClosedAt) {
+      const d = r.maxClosedAt instanceof Date ? r.maxClosedAt : new Date(r.maxClosedAt);
+      if (!Number.isNaN(d.getTime())) closedAtByTheme.set(r.themeId, d.toISOString());
+    }
+  }
   const serialStart = nextThemeSerial(themeRows.map((row) => row.id));
   const activeThemes: MultiFrequencyTheme[] = themeRows
     .map((row) => ({
@@ -120,11 +140,15 @@ export async function ingestNewTickets(job: ClusterJob): Promise<number> {
       riskReason: row.riskReason || "",
       ticketCount: row.ticketCount,
       timeSpanHours: row.timeSpanHours || 1,
-      firstOccurrence: row.firstAt ? row.firstAt.toISOString().slice(0, 19).replace("T", " ") : "",
-      lastOccurrence: row.lastAt ? row.lastAt.toISOString().slice(0, 19).replace("T", " ") : "",
+      firstOccurrence: row.firstAt ? row.firstAt.toISOString() : "",
+      lastOccurrence: row.lastAt ? row.lastAt.toISOString() : "",
       aiSummary: row.aiSummary || "",
       recommendedAction: row.recommendedAction || "",
       handlingStatus: row.handlingStatus || HANDLING_STATUS.PENDING,
+      handlingProgress: row.handlingProgress ?? 0,
+      handlingOwner: row.handlingOwner || undefined,
+      handlingEta: row.handlingEta ? row.handlingEta.toISOString() : undefined,
+      closedAt: closedAtByTheme.get(row.id),
       status: "CONFIRMED",
       tickets: [],
       relatedSubjects: [row.canonicalSubject],
@@ -277,8 +301,9 @@ export async function ingestNewTickets(job: ClusterJob): Promise<number> {
     newThemes,
     regionId: job.regionId,
   });
-  if (!summarized) {
-    await fillThemesMissingAdvice(job.regionId, job.taskId);
+  const touchedThemeIds = [...new Set([...attached.keys(), ...newThemes.map((t) => t.id)])];
+  if (!summarized && touchedThemeIds.length > 0) {
+    await fillThemesMissingAdvice(job.regionId, job.taskId, { themeIds: touchedThemeIds });
   }
   if (lowConfidence.length > 0) {
     await seedReviewQueue(lowConfidence, job.regionId);

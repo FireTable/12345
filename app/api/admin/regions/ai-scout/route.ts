@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { getChatModel } from "@/backend/model";
 import { buildAiScoutPrompt } from "@/backend/prompt";
 import { apiSuccess, apiError, ApiCode } from "@/lib/api-codes";
+import { requireAdmin } from "@/lib/auth/rbac";
 
 /**
  * POST /api/admin/regions/ai-scout
@@ -13,6 +14,9 @@ import { apiSuccess, apiError, ApiCode } from "@/lib/api-codes";
  */
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const body = await req.json();
     const { province = "广东省", city = "广州市", district = "海珠区" } = body;
 

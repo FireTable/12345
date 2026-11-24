@@ -9,6 +9,8 @@ export const BULK_BATCH_SIZE = 32;
 export const ONLINE_BATCH_SIZE = 4;
 /** 云端 429 的退避。本地端点不走这段等待。 */
 export const CLOUD_RATE_LIMIT_BACKOFF_MS = 70_000;
+/** 节点被标为不健康后的默认冷却恢复时间 */
+export const DEFAULT_UNHEALTHY_COOLDOWN_MS = 30_000;
 
 export type EmbedProfile = "bulk" | "online";
 export type EndpointKind = "local" | "cloud";
@@ -18,6 +20,11 @@ export interface ParsedEndpoint {
   kind: EndpointKind;
 }
 
+export interface EmbedRequestOptions {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+}
+
 export interface EmbedClientOptions {
   /** 逗号分隔，或数组。`cloud:` / `local:` 前缀覆盖按主机名的判断。 */
   endpoints: string | string[];
@@ -25,7 +32,9 @@ export interface EmbedClientOptions {
   profile?: EmbedProfile;
   apiKey?: string;
   fetchImpl?: typeof fetch;
-  sleep?: (ms: number) => Promise<void>;
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
+  unhealthyCooldownMs?: number;
+  now?: () => number;
 }
 
 interface EndpointNode {
@@ -33,6 +42,15 @@ interface EndpointNode {
   kind: EndpointKind;
   inFlight: number;
   healthy: boolean;
+  unhealthyAt?: number;
+}
+
+export interface EmbedNodeHealth {
+  baseUrl: string;
+  kind: EndpointKind;
+  healthy: boolean;
+  unhealthyAt?: number;
+  inFlight: number;
 }
 
 export function batchSizeForProfile(profile: EmbedProfile): number {
@@ -89,8 +107,33 @@ function embeddingsUrl(baseUrl: string): string {
   return `${base}/embeddings`;
 }
 
-function defaultSleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function createAbortError(signal?: AbortSignal): Error {
+  const reason = signal?.reason;
+  if (reason instanceof Error) {
+    if (reason.name !== "AbortError") reason.name = "AbortError";
+    return reason;
+  }
+  const message = typeof reason === "string" && reason.trim() ? reason : "The operation was aborted";
+  const err = new Error(message);
+  err.name = "AbortError";
+  return err;
+}
+
+function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) {
+    return Promise.reject(createAbortError(signal));
+  }
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(createAbortError(signal));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 export class CivicEmbedClient {
@@ -98,7 +141,9 @@ export class CivicEmbedClient {
   private readonly profile: EmbedProfile;
   private readonly apiKey: string;
   private readonly fetchImpl: typeof fetch;
-  private readonly sleep: (ms: number) => Promise<void>;
+  private readonly sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
+  private readonly unhealthyCooldownMs: number;
+  private readonly now: () => number;
   private cursor = 0;
 
   constructor(options: EmbedClientOptions) {
@@ -116,10 +161,22 @@ export class CivicEmbedClient {
     this.apiKey = options.apiKey ?? "";
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.sleep = options.sleep ?? defaultSleep;
+    this.unhealthyCooldownMs = Math.max(0, options.unhealthyCooldownMs ?? DEFAULT_UNHEALTHY_COOLDOWN_MS);
+    this.now = options.now ?? (() => Date.now());
   }
 
   get batchSize(): number {
     return batchSizeForProfile(this.profile);
+  }
+
+  getNodeHealth(): EmbedNodeHealth[] {
+    return this.nodes.map((node) => ({
+      baseUrl: node.baseUrl,
+      kind: node.kind,
+      healthy: node.healthy,
+      unhealthyAt: node.unhealthyAt,
+      inFlight: node.inFlight,
+    }));
   }
 
   /** 配置里只要有一个云端端点，429 就按云端退避。全是本地则不等。 */
@@ -131,19 +188,32 @@ export class CivicEmbedClient {
    * 按运行档分批。每一批发出去之后才发下一批，所以单个 embed() 同时只有一个批次在飞。
    * 批次之间不休眠。
    */
-  async embed(texts: string[]): Promise<number[][]> {
+  async embed(texts: string[], options?: EmbedRequestOptions): Promise<number[][]> {
+    if (options?.signal?.aborted) {
+      throw createAbortError(options.signal);
+    }
     if (texts.length === 0) return [];
     const size = this.batchSize;
     const vectors: number[][] = [];
     for (let offset = 0; offset < texts.length; offset += size) {
+      if (options?.signal?.aborted) {
+        throw createAbortError(options.signal);
+      }
       const slice = texts.slice(offset, offset + size);
-      const batch = await this.embedBatch(slice);
+      const batch = await this.embedBatch(slice, options);
       vectors.push(...batch);
     }
     return vectors;
   }
 
   private pickOrder(): EndpointNode[] {
+    const now = this.now();
+    for (const node of this.nodes) {
+      if (!node.healthy && node.unhealthyAt !== undefined && now - node.unhealthyAt >= this.unhealthyCooldownMs) {
+        node.healthy = true;
+        node.unhealthyAt = undefined;
+      }
+    }
     const healthy = this.nodes.filter((node) => node.healthy);
     const pool = healthy.length > 0 ? healthy : this.nodes;
     const start = this.cursor % pool.length;
@@ -155,16 +225,26 @@ export class CivicEmbedClient {
       .map((row) => row.node);
   }
 
-  private async embedBatch(texts: string[]): Promise<number[][]> {
+  private async embedBatch(texts: string[], options?: EmbedRequestOptions): Promise<number[][]> {
     const order = this.pickOrder();
     let lastError: Error | null = null;
     for (const node of order) {
+      if (options?.signal?.aborted) {
+        throw createAbortError(options.signal);
+      }
       node.inFlight += 1;
       try {
-        return await this.postWithRateLimit(node, texts);
+        const result = await this.postWithRateLimit(node, texts, options);
+        node.healthy = true;
+        node.unhealthyAt = undefined;
+        return result;
       } catch (error) {
+        if (options?.signal?.aborted) {
+          throw createAbortError(options.signal);
+        }
         lastError = error instanceof Error ? error : new Error(String(error));
         node.healthy = false;
+        node.unhealthyAt = this.now();
       } finally {
         node.inFlight = Math.max(0, node.inFlight - 1);
       }
@@ -172,36 +252,90 @@ export class CivicEmbedClient {
     throw lastError ?? new Error("All embedding endpoints failed");
   }
 
-  private async postWithRateLimit(node: EndpointNode, texts: string[]): Promise<number[][]> {
+  private async postWithRateLimit(
+    node: EndpointNode,
+    texts: string[],
+    options?: EmbedRequestOptions
+  ): Promise<number[][]> {
+    if (options?.signal?.aborted) {
+      throw createAbortError(options.signal);
+    }
     try {
-      return await this.post(node, texts);
+      return await this.post(node, texts, options);
     } catch (error) {
+      if (options?.signal?.aborted) {
+        throw createAbortError(options.signal);
+      }
       const message = error instanceof Error ? error.message : String(error);
       const rateLimited = /429|rate limit|qpm limit/i.test(message);
       if (!rateLimited) throw error;
       if (this.cloudBackoffEnabled()) {
-        await this.sleep(CLOUD_RATE_LIMIT_BACKOFF_MS);
+        await this.sleep(CLOUD_RATE_LIMIT_BACKOFF_MS, options?.signal);
       }
-      return await this.post(node, texts);
+      if (options?.signal?.aborted) {
+        throw createAbortError(options.signal);
+      }
+      return await this.post(node, texts, options);
     }
   }
 
-  private async post(node: EndpointNode, texts: string[]): Promise<number[][]> {
+  private async post(
+    node: EndpointNode,
+    texts: string[],
+    options?: EmbedRequestOptions
+  ): Promise<number[][]> {
+    const externalSignal = options?.signal;
+    if (externalSignal?.aborted) {
+      throw createAbortError(externalSignal);
+    }
+
+    const timeoutMs = options?.timeoutMs && options.timeoutMs > 0 ? options.timeoutMs : undefined;
+    let combinedController: AbortController | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let onExternalAbort: (() => void) | undefined;
+
+    if (externalSignal || timeoutMs) {
+      combinedController = new AbortController();
+      if (timeoutMs) {
+        const timeoutErr = new Error(`Embedding request timed out after ${timeoutMs}ms`);
+        timeoutErr.name = "AbortError";
+        timer = setTimeout(() => combinedController?.abort(timeoutErr), timeoutMs);
+      }
+      if (externalSignal) {
+        onExternalAbort = () => combinedController?.abort(createAbortError(externalSignal));
+        externalSignal.addEventListener("abort", onExternalAbort, { once: true });
+      }
+    }
+
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (this.apiKey) headers.Authorization = `Bearer ${this.apiKey}`;
-    const response = await this.fetchImpl(embeddingsUrl(node.baseUrl), {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ model: EMBEDDING_MODEL, input: texts }),
-    });
-    if (!response.ok) {
-      const detail = await response.text().catch(() => "");
-      throw new Error(`Embedding API error (${response.status}): ${detail || response.statusText}`);
+
+    try {
+      const response = await this.fetchImpl(embeddingsUrl(node.baseUrl), {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ model: EMBEDDING_MODEL, input: texts }),
+        ...(combinedController ? { signal: combinedController.signal } : {}),
+      });
+      if (!response.ok) {
+        const detail = await response.text().catch(() => "");
+        throw new Error(`Embedding API error (${response.status}): ${detail || response.statusText}`);
+      }
+      const payload = (await response.json()) as {
+        data?: Array<{ embedding?: unknown; index?: number }>;
+      };
+      return readVectors(payload, texts.length);
+    } catch (error) {
+      if (externalSignal?.aborted) {
+        throw createAbortError(externalSignal);
+      }
+      throw error;
+    } finally {
+      if (timer) clearTimeout(timer);
+      if (externalSignal && onExternalAbort) {
+        externalSignal.removeEventListener("abort", onExternalAbort);
+      }
     }
-    const payload = (await response.json()) as {
-      data?: Array<{ embedding?: unknown; index?: number }>;
-    };
-    return readVectors(payload, texts.length);
   }
 }
 

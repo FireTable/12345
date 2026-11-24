@@ -1,49 +1,51 @@
 /* ==================================================================
-   _shared/css/tokens.css — 全局设计令牌
-   4 个页面共用，颜色 / 间距 / 字号 / 阴影 / 动画
+   tokens.css — Civic Light 全局设计令牌与现代 Web 基础规范
    ================================================================== */
 
 :root {
   /* 品牌色 */
   --c-brand:        #1677FF;
+  --c-brand-text:   #1565D8;
   --c-brand-dark:   #0958D9;
-  --c-brand-soft:   #E6F4FF;
+  --c-brand-soft:   #EFF6FF;
   --c-brand-tint:   #F0F7FF;
 
-  /* 中性色 */
-  --c-bg:           #F5F7FA;
-  --c-surface:      #FFFFFF;
-  --c-surface-2:    #FAFBFC;
-  --c-border:       #E5E7EB;
-  --c-border-soft:  #F0F1F3;
-  --c-ink:          #1F2329;
-  --c-ink-2:        #4E5969;
-  --c-ink-3:        #86909C;
-  --c-ink-4:        #C9CDD4;
+  /* 中性色（全站高清浅灰底 + 细腻边框 + 高对比文字） */
+  --c-bg:             #F6F8FB;
+  --c-surface:        #FFFFFF;
+  --c-surface-2:      #F8FAFC;
+  --c-surface-subtle: #F8FAFC;
+  --c-border-card:    rgba(15, 23, 42, 0.08);
+  --c-border:         rgba(15, 23, 42, 0.12);
+  --c-border-soft:    rgba(15, 23, 42, 0.06);
+  --c-ink:            #0F172A;
+  --c-ink-2:          #334155;
+  --c-ink-3:          #525E70;
+  --c-ink-4:          #94A3B8;
 
   /* 状态色 */
-  --c-success:      #00B42A;
-  --c-success-bg:   #E8FFEA;
-  --c-warning:      #FF7D00;
-  --c-warning-bg:   #FFF3E0;
-  --c-danger:       #F53F3F;
-  --c-danger-bg:    #FFECE8;
+  --c-success:      #059669;
+  --c-success-bg:   #ECFDF5;
+  --c-warning:      #D97706;
+  --c-warning-bg:   #FFFBEB;
+  --c-danger:       #DC2626;
+  --c-danger-bg:    #FEF2F2;
   --c-info:         #1677FF;
-  --c-info-bg:      #E6F4FF;
+  --c-info-bg:      #EFF6FF;
 
   /* KPI 卡片图标背景色 */
-  --c-kpi-blue:     #E6F4FF;
-  --c-kpi-green:    #E8FFEA;
-  --c-kpi-purple:   #F2E9FF;
-  --c-kpi-orange:   #FFF3E0;
+  --c-kpi-blue:     #EFF6FF;
+  --c-kpi-green:    #ECFDF5;
+  --c-kpi-purple:   #F5F3FF;
+  --c-kpi-orange:   #FFFBEB;
 
   /* 三模式专用色（multifreq/detail/analysis 用） */
-  --c-mode-crowd:      #F53F3F;
-  --c-mode-crowd-bg:   #FFECE8;
-  --c-mode-repeat:     #FF7D00;
-  --c-mode-repeat-bg:  #FFF3E0;
-  --c-mode-hotspot:    #1677FF;
-  --c-mode-hotspot-bg: #E6F4FF;
+  --c-mode-crowd:      #E11D48;
+  --c-mode-crowd-bg:   #FFF1F2;
+  --c-mode-repeat:     #D97706;
+  --c-mode-repeat-bg:  #FFFBEB;
+  --c-mode-hotspot:    #2563EB;
+  --c-mode-hotspot-bg: #EFF6FF;
 
   /* 间距 8px 栅格 */
   --s-1: 4px;
@@ -59,13 +61,13 @@
   /* 圆角 */
   --r-sm: 6px;
   --r-md: 8px;
-  --r-lg: 12px;
+  --r-lg: 14px;
   --r-xl: 16px;
 
-  /* 阴影 */
-  --sh-1: 0 1px 2px rgba(0, 0, 0, 0.04);
-  --sh-2: 0 2px 8px rgba(0, 0, 0, 0.06);
-  --sh-3: 0 6px 16px rgba(0, 0, 0, 0.08);
+  /* 克制多层阴影 */
+  --sh-1: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 12px rgba(15, 23, 42, 0.03);
+  --sh-2: 0 2px 6px rgba(15, 23, 42, 0.04), 0 10px 24px -4px rgba(15, 23, 42, 0.08);
+  --sh-3: 0 8px 20px rgba(15, 23, 42, 0.08), 0 20px 44px -8px rgba(15, 23, 42, 0.12);
 
   /* 字号 */
   --fs-xs: 12px;
@@ -77,8 +79,13 @@
   --fs-2xl: 30px;
   --fs-3xl: 36px;
 
-  /* 顶栏 */
+  /* 顶栏与触控目标基线 */
   --nav-h: 60px;
+  --target-size: 24px;
+
+  /* 滚动条语义令牌（>= 3:1 非文本对比度） */
+  --scrollbar-thumb: #64748B;
+  --scrollbar-track: #F1F5F9;
 
   /* 动效曲线 */
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
@@ -88,22 +95,307 @@
   --dur-slow: 0.4s;
 }
 
-/* 只提供 token，禁止全局 * / button reset，否则会盖掉 Tailwind（上传框、副驾驶、Shadcn）。 */
-html { height: 100%; }
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
-               "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue",
-               Helvetica, Arial, sans-serif;
-  font-size: var(--fs-base);
-  color: var(--c-ink);
-  background: var(--c-bg);
-  -webkit-font-smoothing: antialiased;
-  line-height: 1.5;
+@media (max-width: 640px), (pointer: coarse) {
+  :root {
+    --target-size: 44px;
+  }
 }
-.navbar a,
-.main a {
-  color: var(--c-brand);
+
+/* 只提供 token 与无特异度兜底，不干扰 Tailwind / Shadcn 组件层。 */
+html {
+  height: 100%;
+  color-scheme: light;
+  scroll-padding-top: calc(var(--nav-h) + 16px + env(safe-area-inset-top, 0px));
+  scroll-padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+  scrollbar-width: auto;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+.skip-link {
+  position: fixed;
+  top: max(12px, env(safe-area-inset-top, 0px));
+  left: max(12px, env(safe-area-inset-left, 0px));
+  z-index: 3000;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 2px solid var(--c-brand);
+  background: var(--c-surface);
+  color: var(--c-brand-dark);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow: var(--sh-2);
+}
+
+.skip-link:not(:focus, :focus-visible) {
+  position: absolute !important;
+  clip-path: inset(50%) !important;
+  overflow: hidden !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  white-space: nowrap !important;
+}
+
+@layer base {
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue",
+                 Helvetica, Arial, sans-serif;
+    font-size: var(--fs-base);
+    color: var(--c-ink);
+    background: var(--c-bg);
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.5;
+    overflow-wrap: break-word;
+    text-align: start;
+  }
+
+  img,
+  video {
+    max-inline-size: 100%;
+    block-size: auto;
+  }
+
+  :where(a, code) {
+    overflow-wrap: anywhere;
+  }
+
+  :where(button, select, textarea, input:not([type="checkbox"], [type="radio"]), [role="button"], nav a, label:has(input[type="checkbox"], input[type="radio"])) {
+    min-block-size: var(--target-size);
+    min-inline-size: var(--target-size);
+  }
+
+  :where(nav a, label:has(input[type="checkbox"], input[type="radio"])) {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  :where(.quad-dot, .brand-morph-capsule, .cockpit-shell button, .cockpit-shell [role="button"], .cockpit-shell select, .leaflet-container a, .react-flow__controls button, [data-sonner-toast] button) {
+    min-block-size: 0;
+    min-inline-size: 0;
+  }
+
+  :where(a, button, summary, input, select, textarea, [role="tab"], [role="button"], [role="option"], [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline: 2px solid var(--c-brand);
+    outline-offset: 2px;
+  }
+}
+
+/* 仅对短标题平衡换行、长段正文防孤字（绝不用于 * 或胶囊徽章） */
+h1,
+h2,
+h3,
+.page-hero__title {
+  text-wrap: balance;
+}
+
+p,
+.page-hero__sub,
+.insight-card__text,
+.member-item__content,
+.content-box {
+  text-wrap: pretty;
+}
+
+/* 等宽数字对齐 */
+.kpi-card__value,
+.kpi-bar__value,
+.cluster-hero__stat-val,
+.ranking-item__count,
+.rank-row__n,
+.heatmap-cell,
+.freq-badge,
+.col-id,
+.col-title__id {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 标准滚动条（>= 3:1 对比度，避免 thin 缩窄滑块操作热区） */
+.table-wrapper,
+.table-scroll,
+.heatmap-scroll,
+.drawer__body,
+.modal__body,
+.content-box,
+.navbar__panel,
+.video-playlist-items,
+.pipeline-drawer__body {
+  --scrollbar-thumb: #64748B;
+  --scrollbar-track: #F1F5F9;
+  scrollbar-width: auto;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+/* 覆盖 globals.css 的浅灰 6px webkit 滚动条，确保全站浅色滚动条满足 >= 3:1 对比度 */
+:where(*):not(.cockpit-shell):not(.cockpit-shell *)::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+:where(*):not(.cockpit-shell):not(.cockpit-shell *)::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+:where(*):not(.cockpit-shell):not(.cockpit-shell *)::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 5px;
+  border: 2px solid var(--scrollbar-track);
+}
+
+:where(*):not(.cockpit-shell):not(.cockpit-shell *)::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* 阻止模态框背后页面穿透滚动（不锁 body.style.overflow） */
+dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+.navbar a {
   text-decoration: none;
 }
-.navbar a:hover,
+.main a {
+  color: var(--c-brand-text);
+  text-decoration: none;
+}
 .main a:hover { color: var(--c-brand-dark); }
+
+/* 防止右下角 .chat-fab (48px + 20px) 长期遮挡底部按钮/分页 */
+body:has(.chat-fab) .main {
+  padding-block-end: calc(84px + env(safe-area-inset-bottom, 0px));
+}
+
+/* 390px 窄屏折行与高度自适应 */
+body .quadrant-footer {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+body .chart-legend {
+  flex-wrap: wrap;
+}
+@media (max-width: 900px) {
+  body .video-info-card {
+    height: auto;
+    min-height: 92px;
+  }
+}
+
+/* 移动端与粗指针设备 >= 44px 触控热区（紧凑控件用 ::after 扩展热区而不视觉膨胀） */
+@media (max-width: 640px), (pointer: coarse) {
+  body :is(
+    .filter-tab,
+    .page-size-select,
+    .filter-select
+  ):not(.cockpit-shell *) {
+    min-block-size: 44px;
+  }
+
+  body :is(
+    .btn:not([class*="min-h-[4"]),
+    button.page-btn,
+    .navbar-icon-btn,
+    .pipeline-console-icon-btn,
+    .drawer__close,
+    .modal__close
+  ) {
+    position: relative;
+  }
+
+  body .btn:not([class*="min-h-[4"]):not(.navbar__actions--login *)::after {
+    content: "";
+    position: absolute;
+    inset: -5px 0;
+  }
+
+  body button.page-btn::after {
+    content: "";
+    position: absolute;
+    inset: -7px -5px;
+  }
+
+  body .navbar-icon-btn::after,
+  body .pipeline-console-icon-btn::after {
+    content: "";
+    position: absolute;
+    inset: -5px;
+  }
+
+  body button.navbar-user-card::after {
+    content: "";
+    position: absolute;
+    inset: -5px 0;
+  }
+
+  body .drawer__close::after {
+    content: "";
+    position: absolute;
+    inset: -6px;
+  }
+
+  body .modal__close::after {
+    content: "";
+    position: absolute;
+    inset: -8px;
+  }
+
+  body .search-input,
+  body .page-jump input {
+    min-block-size: 44px;
+    height: auto;
+  }
+
+  body .filter-bar {
+    flex-wrap: wrap;
+  }
+
+  body .search-input {
+    min-width: 0;
+    max-width: 100%;
+  }
+}
+
+/* Windows 高对比度 / Forced Colors Mode 焦点与边界兜底 */
+@media (forced-colors: active) {
+  :where(a, button, summary, input, select, textarea, [role="tab"], [role="button"], [role="option"], [tabindex]:not([tabindex="-1"])):focus-visible,
+  .search-input:focus-within {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+
+  [role="tab"][aria-selected="true"],
+  .filter-tab.is-active,
+  .filter-tab[aria-selected="true"],
+  .page-btn.is-active,
+  .page-btn--active,
+  .video-playlist-item.is-active {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  .btn,
+  .card,
+  .drawer,
+  .modal,
+  .pipeline-drawer,
+  .login-card,
+  .login-form .form-input,
+  .filter-select,
+  .page-size-select,
+  .search-input {
+    border: 1px solid CanvasText;
+  }
+
+  .status-dot,
+  .urgency-dot::before,
+  .risk-pill__dot {
+    forced-color-adjust: none;
+  }
+}

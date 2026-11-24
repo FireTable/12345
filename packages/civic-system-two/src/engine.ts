@@ -2,13 +2,15 @@ import { z } from 'zod';
 import {
   CivicChatCompletion,
   CivicChatCompletionParams,
+  CivicChatStreamChunk,
+  ClusterNodeSpec,
   SystemTwoConfig,
 } from './types';
 import { ISystemTwoAdapter } from './adapters/types';
-import { LocalMetalAdapter } from './adapters/local-metal-adapter';
 import { PooledMetalAdapter } from './adapters/pooled-metal-adapter';
 import { CloudOpenAIAdapter } from './adapters/cloud-openai-adapter';
 import { FallbackAdapter } from './adapters/fallback-adapter';
+import { createAbortError } from './adapters/abort-utils';
 import { parseStructuredJson } from './parser';
 
 export interface CreateJSONOptions {
@@ -18,6 +20,7 @@ export interface CreateJSONOptions {
   maxTokens?: number;
   model?: string;
   response_format?: CivicChatCompletionParams['response_format'];
+  signal?: AbortSignal;
 }
 
 export interface StructuredJSONResult<T> {
@@ -51,6 +54,11 @@ export class SystemTwoEngine {
   private fallbackAdapter: FallbackAdapter;
   private activeAdapter: ISystemTwoAdapter;
   private config: SystemTwoConfig;
+  private readonly clusterSwitchbackCooldownMs: number;
+  private lastClusterProbeAt: number;
+  private clusterProbePromise: Promise<boolean> | null = null;
+  private lastLocalWaitTimeoutAt = 0;
+  private readonly localSlowCooldownMs = 45_000;
 
   // Per-endpoint 最近处理过的工单预览（in-memory，进程级单例；不落库）
   // 用于 workbench 按节点展示"该 endpoint 最新处理了哪些工单"。
@@ -70,21 +78,33 @@ export class SystemTwoEngine {
     this.clusterAdapter = clusterAdapter;
     this.cloudAdapter = cloudAdapter;
     this.fallbackAdapter = fallbackAdapter || new FallbackAdapter();
+    const cfgCooldown = (config as SystemTwoConfig & { clusterSwitchbackCooldownMs?: number })
+      .clusterSwitchbackCooldownMs;
+    const envCooldown = Number(process.env.SYSTEM_TWO_SWITCHBACK_COOLDOWN_MS);
+    this.clusterSwitchbackCooldownMs =
+      typeof cfgCooldown === 'number' && Number.isFinite(cfgCooldown) && cfgCooldown >= 0
+        ? cfgCooldown
+        : Number.isFinite(envCooldown) && envCooldown >= 0
+          ? envCooldown
+          : 30_000;
+    this.lastClusterProbeAt = activeAdapter === clusterAdapter ? 0 : Date.now();
   }
 
   /**
    * 初始化并探测可用后端 (优先 Local Metal 集群池 -> 其次 Cloud -> 最后 Fallback)
    */
   static async create(config: SystemTwoConfig = {}): Promise<SystemTwoEngine> {
-    const rawEndpoints =
-      config.endpoints && config.endpoints.length > 0
-        ? config.endpoints
-        : (config.endpoint || 'http://127.0.0.1:8132/v1')
-            .split(',')
-            .map((s) => s.trim())
-            .filter(Boolean);
+    const rawSpecs: ClusterNodeSpec[] =
+      config.nodes && config.nodes.length > 0
+        ? config.nodes
+        : config.endpoints && config.endpoints.length > 0
+          ? config.endpoints
+          : (config.endpoint || 'http://127.0.0.1:8132/v1')
+              .split(',')
+              .map((s) => s.trim())
+              .filter(Boolean);
 
-    const clusterAdapter = new PooledMetalAdapter(rawEndpoints, config);
+    const clusterAdapter = new PooledMetalAdapter(rawSpecs, config);
     const cloudAdapter = config.cloudFallback
       ? new CloudOpenAIAdapter(config.cloudFallback, config.timeoutMs)
       : undefined;
@@ -147,32 +167,355 @@ export class SystemTwoEngine {
   }
 
   /**
+   * 是否配置了云端灾备链路
+   */
+  hasCloudFallback(): boolean {
+    return Boolean(this.cloudAdapter);
+  }
+
+  /**
+   * 当前所有健康本地算力节点是否均已有在途请求（无空闲槽位）
+   */
+  isLocalClusterBusy(): boolean {
+    if (this.activeAdapter !== this.clusterAdapter) return false;
+    const healthyMetas = this.clusterAdapter.getNodeMetas().filter((n) => n.isHealthy);
+    return healthyMetas.length > 0 && healthyMetas.every((n) => n.inFlight > 0);
+  }
+
+  /**
    * 刷新并重新探测健康状态
    */
   async refreshBackend(): Promise<string> {
     if (await this.clusterAdapter.isAvailable()) {
       this.activeAdapter = this.clusterAdapter;
+      this.lastClusterProbeAt = 0;
     } else if (this.cloudAdapter && (await this.cloudAdapter.isAvailable())) {
       this.activeAdapter = this.cloudAdapter;
+      this.lastClusterProbeAt = Date.now();
     } else {
       this.activeAdapter = this.fallbackAdapter;
+      this.lastClusterProbeAt = Date.now();
     }
     return this.activeAdapter.name;
   }
 
   /**
-   * 100% 兼容 OpenAI chat.completions.create 接口
+   * 处于降级态（cloud / fallback）时，按冷却时间单飞探活本地集群并在恢复后自动切回。
+   */
+  private async maybeSwitchbackToCluster(signal?: AbortSignal): Promise<void> {
+    if (this.activeAdapter === this.clusterAdapter) return;
+    if (signal?.aborted) {
+      throw createAbortError(signal);
+    }
+    if (
+      !this.clusterProbePromise &&
+      Date.now() - this.lastClusterProbeAt < this.clusterSwitchbackCooldownMs
+    ) {
+      return;
+    }
+
+    if (!this.clusterProbePromise) {
+      this.lastClusterProbeAt = Date.now();
+      this.clusterProbePromise = (async () => {
+        try {
+          const ok = await this.clusterAdapter.isAvailable();
+          if (ok) {
+            this.activeAdapter = this.clusterAdapter;
+            this.lastClusterProbeAt = 0;
+            console.log('[SystemTwoEngine] ✅ 本地算力集群已恢复可用，已自动切回 PooledMetalAdapter。');
+            return true;
+          }
+          if (
+            this.activeAdapter === this.fallbackAdapter &&
+            this.cloudAdapter &&
+            (await this.cloudAdapter.isAvailable())
+          ) {
+            this.activeAdapter = this.cloudAdapter;
+          }
+          this.lastClusterProbeAt = Date.now();
+          return false;
+        } catch {
+          this.lastClusterProbeAt = Date.now();
+          return false;
+        } finally {
+          this.clusterProbePromise = null;
+        }
+      })();
+    }
+
+    const probe = this.clusterProbePromise;
+    if (!signal) {
+      await probe;
+      return;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      if (signal.aborted) {
+        reject(createAbortError(signal));
+        return;
+      }
+      const onAbort = () => {
+        reject(createAbortError(signal));
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+      probe.then(
+        () => {
+          signal.removeEventListener('abort', onAbort);
+          resolve();
+        },
+        (err) => {
+          signal.removeEventListener('abort', onAbort);
+          reject(err);
+        }
+      );
+    });
+  }
+
+  /**
+   * 热插拔重载算力集群节点；若之前处于兜底状态且新节点探测可用，则自动切换至集群池
+   */
+  async reloadClusterNodes(specs: ClusterNodeSpec[]): Promise<{
+    activeBackend: string;
+    activeNodes: number;
+    endpoints: string[];
+  }> {
+    this.clusterAdapter.syncNodes(specs);
+    await this.refreshBackend();
+    return {
+      activeBackend: this.activeAdapter.name,
+      activeNodes: this.clusterAdapter.getActiveNodeCount(),
+      endpoints: this.clusterAdapter.getAllEndpoints(),
+    };
+  }
+
+  private async *streamFromAdapter(
+    adapter: ISystemTwoAdapter,
+    params: CivicChatCompletionParams
+  ): AsyncGenerator<CivicChatStreamChunk> {
+    if (params.signal?.aborted) {
+      throw createAbortError(params.signal);
+    }
+    if (adapter.chatCompletionsStream) {
+      yield* adapter.chatCompletionsStream(params);
+      return;
+    }
+    const completion = await adapter.chatCompletions(params);
+    const choice = completion.choices[0];
+    yield {
+      deltaContent: choice?.message.content || '',
+      deltaReasoning: choice?.message.reasoning_content,
+      finishReason: choice?.finish_reason || 'stop',
+      endpoint: null,
+      usage: completion.usage,
+      timings: completion.timings,
+    };
+  }
+
+  private async *streamCompletions(
+    params: CivicChatCompletionParams
+  ): AsyncGenerator<CivicChatStreamChunk> {
+    if (params.signal?.aborted) {
+      throw createAbortError(params.signal);
+    }
+
+    await this.maybeSwitchbackToCluster(params.signal);
+    if (params.signal?.aborted) {
+      throw createAbortError(params.signal);
+    }
+
+    // 若要求直连云端、或本地节点全满/近期刚发生首包慢超时，不等待本地 6s，直走 cloudAdapter（失败再回退本地）
+    const inLocalSlowCooldown =
+      this.lastLocalWaitTimeoutAt > 0 &&
+      Date.now() - this.lastLocalWaitTimeoutAt < this.localSlowCooldownMs;
+    const shouldRouteCloudFast =
+      Boolean(params.preferCloudDirect) ||
+      Boolean(params.preferCloudWhenLocalBusy && (this.isLocalClusterBusy() || inLocalSlowCooldown));
+
+    if (
+      shouldRouteCloudFast &&
+      this.activeAdapter === this.clusterAdapter &&
+      this.cloudAdapter &&
+      (await this.cloudAdapter.isAvailable())
+    ) {
+      if (params.signal?.aborted) {
+        throw createAbortError(params.signal);
+      }
+      let fastCloudYielded = false;
+      try {
+        for await (const chunk of this.streamFromAdapter(this.cloudAdapter, params)) {
+          if (
+            chunk.deltaContent ||
+            chunk.deltaReasoning ||
+            (chunk.finishReason !== undefined && chunk.finishReason !== null)
+          ) {
+            fastCloudYielded = true;
+          }
+          yield chunk;
+        }
+        return;
+      } catch (fastCloudError: any) {
+        if (params.signal?.aborted || fastCloudYielded) {
+          throw fastCloudError;
+        }
+        console.warn(
+          `[SystemTwoEngine] 本地繁忙直切云端失败 (${fastCloudError?.message || fastCloudError})，回退本地链路尝试...`
+        );
+      }
+    }
+
+    const useLocalWaitTimeout =
+      this.activeAdapter === this.clusterAdapter &&
+      Boolean(this.cloudAdapter) &&
+      typeof params.localWaitTimeoutMs === 'number' &&
+      Number.isFinite(params.localWaitTimeoutMs) &&
+      params.localWaitTimeoutMs > 0;
+
+    let hasYielded = false;
+    let localWaitTimedOut = false;
+
+    if (useLocalWaitTimeout) {
+      // 使用独立的内部 localAttemptController：首包等待超时只中止本次本地尝试，绝不污染调用方 params.signal
+      const localAttemptController = new AbortController();
+      const onCallerAbort = () => {
+        localAttemptController.abort(createAbortError(params.signal));
+      };
+      params.signal?.addEventListener('abort', onCallerAbort, { once: true });
+      let localWaitTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+        localWaitTimedOut = true;
+        const timeoutErr = new Error(
+          `Local System-2 first-chunk wait exceeded ${params.localWaitTimeoutMs}ms`
+        );
+        timeoutErr.name = 'AbortError';
+        localAttemptController.abort(timeoutErr);
+      }, params.localWaitTimeoutMs);
+
+      try {
+        for await (const chunk of this.streamFromAdapter(this.activeAdapter, {
+          ...params,
+          signal: localAttemptController.signal,
+        })) {
+          if (
+            chunk.deltaContent ||
+            chunk.deltaReasoning ||
+            (chunk.finishReason !== undefined && chunk.finishReason !== null)
+          ) {
+            hasYielded = true;
+            if (localWaitTimer) {
+              clearTimeout(localWaitTimer);
+              localWaitTimer = null;
+            }
+          }
+          yield chunk;
+        }
+        return;
+      } catch (error: any) {
+        if (params.signal?.aborted || hasYielded) {
+          throw error;
+        }
+        if (localWaitTimedOut) {
+          this.lastLocalWaitTimeoutAt = Date.now();
+          console.warn(
+            `[SystemTwoEngine] 本地集群首包等待超过 ${params.localWaitTimeoutMs}ms，快速切换至 CloudOpenAIAdapter...`
+          );
+        } else {
+          console.warn(
+            `[SystemTwoEngine] 主后端 (${this.activeAdapter.name}) 流式调用失败: ${error?.message || error}，正在尝试灾备链路...`
+          );
+        }
+      } finally {
+        if (localWaitTimer) {
+          clearTimeout(localWaitTimer);
+          localWaitTimer = null;
+        }
+        params.signal?.removeEventListener('abort', onCallerAbort);
+      }
+    } else {
+      try {
+        for await (const chunk of this.streamFromAdapter(this.activeAdapter, params)) {
+          if (
+            chunk.deltaContent ||
+            chunk.deltaReasoning ||
+            (chunk.finishReason !== undefined && chunk.finishReason !== null)
+          ) {
+            hasYielded = true;
+          }
+          yield chunk;
+        }
+        return;
+      } catch (error: any) {
+        if (params.signal?.aborted || hasYielded) {
+          throw error;
+        }
+        console.warn(
+          `[SystemTwoEngine] 主后端 (${this.activeAdapter.name}) 流式调用失败: ${error?.message || error}，正在尝试灾备链路...`
+        );
+      }
+    }
+
+    if (
+      this.activeAdapter !== this.cloudAdapter &&
+      this.cloudAdapter &&
+      (await this.cloudAdapter.isAvailable())
+    ) {
+      if (params.signal?.aborted) {
+        throw createAbortError(params.signal);
+      }
+      // 仅当本地真实异常失败时切换全局 activeAdapter；若是本地排队繁忙导致的首包快切，保留 clusterAdapter 供批处理继续使用
+      if (!localWaitTimedOut) {
+        this.activeAdapter = this.cloudAdapter;
+        this.lastClusterProbeAt = Date.now();
+      }
+      let cloudYielded = false;
+      try {
+        for await (const chunk of this.streamFromAdapter(this.cloudAdapter, params)) {
+          if (
+            chunk.deltaContent ||
+            chunk.deltaReasoning ||
+            (chunk.finishReason !== undefined && chunk.finishReason !== null)
+          ) {
+            cloudYielded = true;
+          }
+          yield chunk;
+        }
+        return;
+      } catch (cloudError) {
+        if (params.signal?.aborted || cloudYielded) {
+          throw cloudError;
+        }
+      }
+    }
+
+    if (params.signal?.aborted) {
+      throw createAbortError(params.signal);
+    }
+    this.activeAdapter = this.fallbackAdapter;
+    this.lastClusterProbeAt = Date.now();
+    yield* this.streamFromAdapter(this.fallbackAdapter, params);
+  }
+
+  /**
+   * 100% 兼容 OpenAI chat.completions.create 接口，并补充 createStream 流式接口
    */
   readonly chat = {
     completions: {
       create: async <T = unknown>(
         params: CivicChatCompletionParams
       ): Promise<CivicChatCompletion<T>> => {
+        if (params.signal?.aborted) {
+          throw createAbortError(params.signal);
+        }
+        await this.maybeSwitchbackToCluster(params.signal);
+        if (params.signal?.aborted) {
+          throw createAbortError(params.signal);
+        }
         try {
           return (await this.activeAdapter.chatCompletions(
             params
           )) as CivicChatCompletion<T>;
         } catch (error: any) {
+          if (params.signal?.aborted) {
+            throw error;
+          }
           console.warn(
             `[SystemTwoEngine] 主后端 (${this.activeAdapter.name}) 调用失败: ${error.message}，正在尝试灾备链路...`
           );
@@ -183,18 +526,29 @@ export class SystemTwoEngine {
             this.cloudAdapter &&
             (await this.cloudAdapter.isAvailable())
           ) {
+            if (params.signal?.aborted) {
+              throw createAbortError(params.signal);
+            }
             this.activeAdapter = this.cloudAdapter;
+            this.lastClusterProbeAt = Date.now();
             return (await this.cloudAdapter.chatCompletions(
               params
             )) as CivicChatCompletion<T>;
           }
 
+          if (params.signal?.aborted) {
+            throw createAbortError(params.signal);
+          }
           this.activeAdapter = this.fallbackAdapter;
+          this.lastClusterProbeAt = Date.now();
           return (await this.fallbackAdapter.chatCompletions(
             params
           )) as CivicChatCompletion<T>;
         }
       },
+      createStream: (
+        params: CivicChatCompletionParams
+      ): AsyncGenerator<CivicChatStreamChunk> => this.streamCompletions(params),
     },
   };
 
@@ -217,6 +571,7 @@ export class SystemTwoEngine {
       temperature: options.temperature,
       max_tokens: options.maxTokens ?? (enableThinking ? 4096 : 2048),
       response_format: format,
+      signal: options.signal,
     });
 
     const raw = completion.choices[0]?.message.content || '';
@@ -280,6 +635,7 @@ export class SystemTwoEngine {
       maxTokens: params.max_tokens,
       model: params.model,
       response_format: params.response_format,
+      signal: params.signal,
     });
   }
 }

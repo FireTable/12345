@@ -1,6 +1,7 @@
 import { MODE_META, civicModeFromPattern } from "@/backend/theme-metrics";
 import type { CivicMode, PatternType } from "@/backend/state";
 import { parseAdminArea, isTownLabel } from "@/lib/admin-area";
+import { detectMissingTicketSlots, isTicketResolvedStatus } from "@/lib/civic-missing";
 import { calendarDay } from "@/lib/work-order-date";
 
 export const UNKNOWN_TOWN = "未知";
@@ -30,8 +31,8 @@ export const HANDLING_STATUS = {
 export type HandlingStatusCode = (typeof HANDLING_STATUS)[keyof typeof HANDLING_STATUS];
 
 const HANDLING_STATUS_LABEL: Record<HandlingStatusCode, string> = {
-  PENDING: "未处理",
-  IN_PROGRESS: "处置中",
+  PENDING: "待派单",
+  IN_PROGRESS: "处理中",
   RESOLVED: "已办结",
 };
 
@@ -77,6 +78,47 @@ export function normalizeStatusCode(status?: string | null): HandlingStatusCode 
 
 export function handlingStatusLabel(status?: string | null): string {
   return HANDLING_STATUS_LABEL[normalizeStatusCode(status)];
+}
+
+export const TICKET_STATUS = {
+  PENDING: "PENDING",
+  DISPATCHED: "DISPATCHED",
+  IN_PROGRESS: "IN_PROGRESS",
+  RESOLVED: "RESOLVED",
+} as const;
+
+export type TicketStatusCode = (typeof TICKET_STATUS)[keyof typeof TICKET_STATUS];
+
+export const TICKET_STATUS_LABEL: Record<TicketStatusCode, string> = {
+  PENDING: "待派单",
+  DISPATCHED: "已派单",
+  IN_PROGRESS: "处理中",
+  RESOLVED: "已办结",
+};
+
+export function normalizeTicketStatus(status?: string | null): TicketStatusCode {
+  const trimmed = (status || "").trim();
+  const s = trimmed.toUpperCase();
+  if (s === "RESOLVED" || s === "FINISHED" || s === "CLOSED" || trimmed === "已办结" || trimmed === "办结") {
+    return "RESOLVED";
+  }
+  if (s === "DISPATCHED" || trimmed === "已派单") {
+    return "DISPATCHED";
+  }
+  if (
+    s === "IN_PROGRESS" ||
+    s === "PROCESSING" ||
+    s === "VERIFIED" ||
+    trimmed === "处理中" ||
+    trimmed === "处置中"
+  ) {
+    return "IN_PROGRESS";
+  }
+  return "PENDING";
+}
+
+export function ticketStatusLabel(status?: string | null): string {
+  return TICKET_STATUS_LABEL[normalizeTicketStatus(status)];
 }
 
 export function getUrgencyLabel(urgency?: string | null): string {
@@ -261,34 +303,48 @@ export function toClusterDto(theme: {
   };
 }
 
-export function toWorkorderDto(row: {
-  id: string;
-  ticketNo?: string | null;
-  title?: string | null;
-  summarizeTitle?: string | null;
-  sourceCategory?: string | null;
-  category?: string | null;
-  subdistrict?: string | null;
-  district?: string | null;
-  urgency?: string | null;
-  status?: string | null;
-  createTime?: Date | string | null;
-  content?: string | null;
-  maskedContent?: string | null;
-  citizenName?: string | null;
-  citizenPhone?: string | null;
-  address?: string | null;
-  primaryThemeId?: string | null;
-  confidence?: number | null;
-  channel?: string | null;
-  slaHours?: number | null;
-  stabilityRisk?: boolean | null;
-  canonicalSubject?: string | null;
-  eventType?: string | null;
-  isFakeClosure?: boolean | null;
-}) {
+export function toWorkorderDto(
+  row: {
+    id: string;
+    ticketNo?: string | null;
+    title?: string | null;
+    summarizeTitle?: string | null;
+    sourceCategory?: string | null;
+    category?: string | null;
+    subdistrict?: string | null;
+    district?: string | null;
+    urgency?: string | null;
+    status?: string | null;
+    createTime?: Date | string | null;
+    content?: string | null;
+    maskedContent?: string | null;
+    citizenName?: string | null;
+    citizenPhone?: string | null;
+    address?: string | null;
+    primaryThemeId?: string | null;
+    confidence?: number | null;
+    channel?: string | null;
+    slaHours?: number | null;
+    stabilityRisk?: boolean | null;
+    canonicalSubject?: string | null;
+    eventType?: string | null;
+    isFakeClosure?: boolean | null;
+  },
+  options?: { isEcommerce?: boolean }
+) {
   const created = calendarDay(row.createTime);
   const defaultConfidence = row.confidence ?? (row.sourceCategory ? 85 : 80);
+  const missingSlots = isTicketResolvedStatus(row.status)
+    ? []
+    : detectMissingTicketSlots(
+        {
+          address: row.address,
+          canonicalSubject: row.canonicalSubject,
+          subdistrict: row.subdistrict,
+          confidence: row.confidence,
+        },
+        Boolean(options?.isEcommerce)
+      );
   return {
     id: row.ticketNo || row.id,
     ticketId: row.id,
@@ -298,7 +354,7 @@ export function toWorkorderDto(row: {
     category: row.sourceCategory || row.category || "",
     region: regionLabel(row.subdistrict),
     urgency: row.urgency || "NORMAL",
-    status: mapTicketStatus(row.status),
+    status: normalizeTicketStatus(row.status),
     createdAt: created,
     content: row.maskedContent || row.content || "",
     rawContent: row.content || "",
@@ -314,5 +370,6 @@ export function toWorkorderDto(row: {
     canonicalSubject: row.canonicalSubject || "",
     eventType: row.eventType || "",
     isFakeClosure: Boolean(row.isFakeClosure),
+    missingSlots,
   };
 }

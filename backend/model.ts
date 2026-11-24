@@ -1,6 +1,5 @@
 import { ChatOpenAI } from "@langchain/openai";
 import { Embeddings, type EmbeddingsParams } from "@langchain/core/embeddings";
-import { z } from "zod";
 import * as nextEnvPkg from "@next/env";
 
 try {
@@ -75,70 +74,39 @@ export function isLocalSystemTwo(): boolean {
   );
 }
 
+let lastMergedNodeCount = 0;
+let lastActiveNodeCount: number | null = null;
+let lastSystemTwoEngine: SystemTwoEngine | null = null;
+
 /**
  * 动态并发度调度：
  * 1. 若配置了环境变量 SYSTEM_TWO_CONCURRENCY，优先采用
- * 2. 否则按节点池中的节点数自动并发（如本机+Win双机 = 2并发，3机 = 3并发），充分压榨多机吞吐
+ * 2. 否则优先按当前健康活跃节点数自动调度（避免离线 LAN 节点虚高并发拖垮单槽位本地服务）
  */
 export function systemTwoConcurrency(): number {
   const raw = Number(process.env.SYSTEM_TWO_CONCURRENCY);
   if (Number.isFinite(raw) && raw >= 1) return Math.trunc(raw);
 
-  const endpoints = getSystemTwoEndpoints();
-  return Math.max(1, endpoints.length);
-}
-
-const ToolProbeSchema = z.object({ ping: z.string() });
-
-let toolCallingSupported: boolean | null = null;
-let toolCallingProbe: Promise<boolean> | null = null;
-
-/** 进程内缓存：一次探测，整场研判复用。 */
-export function modelSupportsToolCallingCached(): boolean | null {
-  return toolCallingSupported;
-}
-
-export function markToolCallingUnsupported(reason?: string): void {
-  if (toolCallingSupported !== false) {
-    console.warn(
-      `[llm] tool calling disabled, fallback to JSON${reason ? `: ${reason}` : ""}`
-    );
+  if (lastSystemTwoEngine) {
+    return Math.max(1, lastSystemTwoEngine.getActiveNodeCount());
   }
-  toolCallingSupported = false;
+  if (lastActiveNodeCount !== null) {
+    return Math.max(1, lastActiveNodeCount);
+  }
+  const endpoints = getSystemTwoEndpoints();
+  return Math.max(1, lastMergedNodeCount || endpoints.length);
 }
 
-/**
- * 优先探测当前端点是否支持 tool / function calling。
- * 支持则后续走 withStructuredOutput；失败只记一次，整场回退 JSON。
- */
-export async function modelSupportsToolCalling(): Promise<boolean> {
-  if (toolCallingSupported !== null) return toolCallingSupported;
-  if (toolCallingProbe) return toolCallingProbe;
-
-  toolCallingProbe = (async () => {
-    try {
-      const chat = getChatModel(0);
-      const structured = chat.withStructuredOutput(ToolProbeSchema);
-      const raced = await Promise.race([
-        structured.invoke('只通过函数/工具调用返回 {"ping":"ok"}，不要输出其它文字。'),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("tool-calling probe timeout")), 12000)
-        ),
-      ]);
-      const ping = (raced as { ping?: unknown })?.ping;
-      toolCallingSupported = typeof ping === "string" && ping.length > 0;
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      toolCallingSupported = false;
-      console.warn(`[llm] tool calling probe failed, fallback to JSON: ${message}`);
-    }
-    if (toolCallingSupported) {
-      console.info("[llm] tool calling available, using structured output");
-    }
-    return toolCallingSupported;
-  })();
-
-  return toolCallingProbe;
+async function syncLlmPoolFromEngine(engine: SystemTwoEngine): Promise<number> {
+  lastSystemTwoEngine = engine;
+  lastActiveNodeCount = Math.max(1, engine.getActiveNodeCount());
+  const concurrency = systemTwoConcurrency();
+  try {
+    const { syncLlmPoolConcurrency } = await import("./llm-pool");
+    return syncLlmPoolConcurrency(concurrency);
+  } catch {
+    return concurrency;
+  }
 }
 
 export function getChatModel(temperature: number = 0.2): ChatOpenAI {
@@ -310,36 +278,101 @@ export function getRerankModel(): RerankModel | null {
 }
 
 // ==========================================
-// System-2 慢思考通用认知大模型引擎 (单例)
+// System-2 慢思考通用认知大模型引擎 (单例 + 热插拔)
 // ==========================================
-import { SystemTwoEngine } from "@civic/system-two";
+import { SystemTwoEngine, type ClusterNodeSpec } from "@civic/system-two";
 import { LLM_TIMEOUTS } from "@/lib/tokens";
+import { listEnabledComputeNodes } from "@/lib/compute-nodes";
 
 let systemTwoEnginePromise: Promise<SystemTwoEngine> | null = null;
+
+export async function buildSystemTwoNodeSpecs(): Promise<ClusterNodeSpec[]> {
+  const envEndpoints = getSystemTwoEndpoints();
+  const merged = new Map<string, ClusterNodeSpec>();
+
+  for (const raw of envEndpoints) {
+    const ep = raw.trim().replace(/\/+$/, "");
+    if (!ep) continue;
+    merged.set(ep, { endpoint: ep });
+  }
+
+  try {
+    const dbNodes = await listEnabledComputeNodes("SYSTEM_TWO");
+    for (const node of dbNodes) {
+      const ep = (node.endpoint || "").trim().replace(/\/+$/, "");
+      if (!ep) continue;
+      merged.set(ep, {
+        endpoint: ep,
+        apiKey: node.apiKey?.trim() || undefined,
+        model: node.model?.trim() || undefined,
+        provider: node.provider,
+        name: node.name,
+      });
+    }
+  } catch {
+    // 数据库未就绪或无表时平滑退回环境变量节点
+  }
+
+  const specs = Array.from(merged.values());
+  if (specs.length === 0) {
+    specs.push({ endpoint: "http://127.0.0.1:8132/v1" });
+  }
+  lastMergedNodeCount = specs.length;
+  return specs;
+}
 
 export async function getSystemTwoEngine(): Promise<SystemTwoEngine> {
   if (systemTwoEnginePromise) {
     return systemTwoEnginePromise;
   }
 
-  const endpoints = getSystemTwoEndpoints();
   const cloudApiKey = process.env.OPENAI_API_KEY;
   const cloudEndpoint = process.env.OPENAI_BASE_URL || "https://api.edgefn.net/v1";
   const cloudModel = process.env.OPENAI_MODEL || "DeepSeek-V4-Flash-0731";
 
-  systemTwoEnginePromise = SystemTwoEngine.create({
-    endpoints,
-    endpoint: endpoints[0],
-    timeoutMs: LLM_TIMEOUTS.DEFAULT,
-    cloudFallback: cloudApiKey
-      ? {
-          endpoint: cloudEndpoint,
-          apiKey: cloudApiKey,
-          model: cloudModel,
-        }
-      : undefined,
+  systemTwoEnginePromise = (async () => {
+    const specs = await buildSystemTwoNodeSpecs();
+    const firstEndpoint = typeof specs[0] === "string" ? specs[0] : specs[0]?.endpoint;
+    const engine = await SystemTwoEngine.create({
+      nodes: specs,
+      endpoints: specs.map((s) => (typeof s === "string" ? s : s.endpoint)),
+      endpoint: firstEndpoint,
+      timeoutMs: LLM_TIMEOUTS.DEFAULT,
+      cloudFallback: cloudApiKey
+        ? {
+            endpoint: cloudEndpoint,
+            apiKey: cloudApiKey,
+            model: cloudModel,
+          }
+        : undefined,
+    });
+    await syncLlmPoolFromEngine(engine);
+    return engine;
+  })().catch((err) => {
+    systemTwoEnginePromise = null;
+    lastSystemTwoEngine = null;
+    throw err;
   });
 
   return systemTwoEnginePromise;
+}
+
+/**
+ * 热重载 System-2 算力集群节点池（合并环境变量与 public.compute_nodes）并刷新 LLM 并发度。
+ */
+export async function reloadSystemTwoPool(): Promise<{
+  activeBackend: string;
+  activeNodes: number;
+  endpoints: string[];
+  concurrency: number;
+}> {
+  const specs = await buildSystemTwoNodeSpecs();
+  const engine = await getSystemTwoEngine();
+  const reloaded = await engine.reloadClusterNodes(specs);
+  const concurrency = await syncLlmPoolFromEngine(engine);
+  return {
+    ...reloaded,
+    concurrency,
+  };
 }
 

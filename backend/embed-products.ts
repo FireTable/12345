@@ -1,4 +1,25 @@
-import { createEmbedClient, type EmbedProfile } from "@civic/embed";
+import { createHash } from "node:crypto";
+import {
+  CivicEmbedClient,
+  createEmbedClient,
+  parseEndpointList,
+  type EmbedProfile,
+  type EmbedRequestOptions,
+} from "@civic/embed";
+import { isLocalEndpoint, listEnabledComputeNodes, normalizeProvider, type ComputeNodeProvider } from "@/lib/compute-nodes";
+
+declare global {
+  var __civic_embed_clients: Map<string, CivicEmbedClient> | undefined;
+}
+
+export interface ActiveEmbedEndpointSpec {
+  endpoint: string;
+  apiKey?: string;
+  model?: string;
+  provider: ComputeNodeProvider;
+  name?: string;
+  source: "ENV" | "DB";
+}
 
 export function embedProfileFromEnv(): EmbedProfile {
   return process.env.EMBEDDING_PROFILE === "online" ? "online" : "bulk";
@@ -6,6 +27,47 @@ export function embedProfileFromEnv(): EmbedProfile {
 
 export function embedEndpointsFromEnv(): string {
   return process.env.EMBEDDING_ENDPOINTS || process.env.EMBEDDING_BASE_URL || "https://api.edgefn.net/v1";
+}
+
+/**
+ * 合并环境变量 Embedding 端点与 public.compute_nodes 中启用的 EMBEDDING 节点。
+ */
+export async function resolveActiveEmbedEndpoints(): Promise<ActiveEmbedEndpointSpec[]> {
+  const merged = new Map<string, ActiveEmbedEndpointSpec>();
+  const envKey = (process.env.EMBEDDING_API_KEY || process.env.OPENAI_API_KEY || "").trim() || undefined;
+  const envModel = (process.env.EMBEDDING_MODEL || "BAAI/bge-m3").trim();
+
+  for (const part of embedEndpointsFromEnv().split(",")) {
+    let ep = part.trim().replace(/^(?:cloud|local):/i, "").trim().replace(/\/+$/, "");
+    if (!ep) continue;
+    merged.set(ep, {
+      endpoint: ep,
+      apiKey: isLocalEndpoint(ep) ? undefined : envKey,
+      model: envModel,
+      provider: isLocalEndpoint(ep) ? "LOCAL" : "CLOUD",
+      source: "ENV",
+    });
+  }
+
+  try {
+    const dbNodes = await listEnabledComputeNodes("EMBEDDING");
+    for (const node of dbNodes) {
+      const ep = (node.endpoint || "").trim().replace(/\/+$/, "");
+      if (!ep) continue;
+      merged.set(ep, {
+        endpoint: ep,
+        apiKey: node.apiKey?.trim() || undefined,
+        model: node.model?.trim() || envModel,
+        provider: normalizeProvider(node.provider, ep),
+        name: node.name,
+        source: "DB",
+      });
+    }
+  } catch {
+    // 数据库未就绪时平滑回退环境变量端点
+  }
+
+  return Array.from(merged.values());
 }
 
 export function extractionProductText(ticket: {
@@ -48,18 +110,46 @@ export function themeProductText(theme: {
     .join("\n");
 }
 
+export interface SharedEmbedClientOptions {
+  endpoints?: string | string[];
+  profile?: EmbedProfile;
+  apiKey?: string;
+  unhealthyCooldownMs?: number;
+}
+
+export function getSharedEmbedClient(options?: SharedEmbedClientOptions): CivicEmbedClient {
+  const endpoints = options?.endpoints ?? embedEndpointsFromEnv();
+  const profile = options?.profile ?? embedProfileFromEnv();
+  const apiKey = options?.apiKey ?? (process.env.EMBEDDING_API_KEY || process.env.OPENAI_API_KEY || "");
+  const cooldown = options?.unhealthyCooldownMs ?? 30_000;
+
+  const parsed = parseEndpointList(endpoints);
+  const endpointKey = parsed.map((e) => `${e.kind}:${e.baseUrl}`).join(",");
+  const keyHash = createHash("sha256").update(apiKey).digest("hex").slice(0, 16);
+  const cacheKey = `${profile}|${cooldown}|${endpointKey}|${keyHash}`;
+
+  const cache = (globalThis.__civic_embed_clients ??= new Map<string, CivicEmbedClient>());
+  let client = cache.get(cacheKey);
+  if (!client) {
+    client = createEmbedClient({
+      endpoints,
+      profile,
+      apiKey,
+      unhealthyCooldownMs: cooldown,
+    });
+    cache.set(cacheKey, client);
+  }
+  return client;
+}
+
 /** 嵌入抽取产物。分批、故障转移和 429 退避都在 @civic/embed 里。 */
 export async function embedTextsWithRetry(
   texts: string[],
-  client?: { embed: (texts: string[]) => Promise<number[][]> }
+  client?: { embed: (texts: string[], options?: EmbedRequestOptions) => Promise<number[][]> },
+  options?: EmbedRequestOptions
 ): Promise<number[][]> {
   if (texts.length === 0) return [];
-  const embedder =
-    client ??
-    createEmbedClient({
-      endpoints: embedEndpointsFromEnv(),
-      profile: embedProfileFromEnv(),
-      apiKey: process.env.EMBEDDING_API_KEY || process.env.OPENAI_API_KEY || "",
-    });
-  return embedder.embed(texts.map((text) => text.trim() || "空工单"));
+  const embedder = client ?? getSharedEmbedClient();
+  const normalized = texts.map((text) => text.trim() || "空工单");
+  return options !== undefined ? embedder.embed(normalized, options) : embedder.embed(normalized);
 }

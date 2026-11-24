@@ -6,6 +6,7 @@ import { normalizeAliasesInText, registerAlias, getAllAliases, getRegionAliasMap
 import { getRegionVocabulary } from "@/lib/vocabulary";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 import { apiSuccess, apiError, ApiCode } from "@/lib/api-codes";
+import { requireAdmin } from "@/lib/auth/rbac";
 
 function aliasListRank(row: { alias: string; canonical: string; type: string; source: string }): number {
   const canon = row.canonical || "";
@@ -19,6 +20,9 @@ function aliasListRank(row: { alias: string; canonical: string; type: string; so
 
 export async function GET(req: NextRequest) {
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const regionId = await resolveRequestRegionId(req);
     const { searchParams } = new URL(req.url);
     const q = (searchParams.get("q") || "").trim();
@@ -120,6 +124,9 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const regionId = await resolveRequestRegionId(req);
     const { db: tenantDb } = await getRegionDb(regionId);
     const body = await req.json();

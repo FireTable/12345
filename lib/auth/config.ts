@@ -72,13 +72,15 @@ export const auth =
     session: {
       expiresIn: 60 * 60 * 24 * 7, // 7 days
       updateAge: 60 * 60 * 24, // 1 day
+      cookieCache: {
+        enabled: true,
+        maxAge: 5 * 60, // 5 分钟 HMAC 签名 Cookie 缓存，避免每次并发 API 都回查 session/user 表
+      },
     },
     trustedOrigins,
   });
 
-if (process.env.NODE_ENV !== "production") {
-  globalThis.__auth = auth;
-}
+globalThis.__auth = auth;
 
 export type Session = typeof auth.$Infer.Session;
 export type User = typeof auth.$Infer.Session.user;

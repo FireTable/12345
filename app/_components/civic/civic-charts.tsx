@@ -1,7 +1,23 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { categoryColor } from "@/lib/civic-cluster";
+
+function escapeHtml(text: string): string {
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
 
 declare global {
   interface Window {
@@ -24,21 +40,86 @@ export function loadEcharts() {
   if (typeof window === "undefined") return Promise.reject(new Error("ssr"));
   if (window.echarts) return Promise.resolve(window.echarts);
   if (echartsPromise) return echartsPromise;
+
   echartsPromise = new Promise((resolve, reject) => {
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const cleanupTimer = () => {
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    };
+
+    const fail = (message: string, scriptEl?: Element | null) => {
+      if (settled) return;
+      settled = true;
+      cleanupTimer();
+      echartsPromise = null;
+      if (scriptEl) {
+        try {
+          scriptEl.setAttribute("data-civic-echarts-state", "failed");
+          scriptEl.remove();
+        } catch {}
+      }
+      reject(new Error(message));
+    };
+
+    const succeed = (scriptEl?: Element | null) => {
+      if (settled) return;
+      if (window.echarts) {
+        settled = true;
+        cleanupTimer();
+        if (scriptEl) {
+          try {
+            scriptEl.setAttribute("data-civic-echarts-state", "loaded");
+          } catch {}
+        }
+        resolve(window.echarts);
+        return;
+      }
+      fail("echarts global missing after script load", scriptEl);
+    };
+
     const existing = document.querySelector("script[data-civic-echarts]");
     if (existing) {
-      existing.addEventListener("load", () => resolve(window.echarts!));
-      existing.addEventListener("error", () => reject(new Error("echarts load failed")));
-      return;
+      const state = existing.getAttribute("data-civic-echarts-state");
+      if (state === "failed" || (state === "loaded" && !window.echarts)) {
+        try {
+          existing.remove();
+        } catch {}
+      } else {
+        const onLoad = () => {
+          existing.removeEventListener("error", onError);
+          succeed(existing);
+        };
+        const onError = () => {
+          existing.removeEventListener("load", onLoad);
+          fail("echarts load failed", existing);
+        };
+        existing.addEventListener("load", onLoad, { once: true });
+        existing.addEventListener("error", onError, { once: true });
+        timer = setTimeout(() => {
+          existing.removeEventListener("load", onLoad);
+          existing.removeEventListener("error", onError);
+          fail("echarts load timeout", existing);
+        }, 15_000);
+        return;
+      }
     }
+
     const s = document.createElement("script");
     s.src = "/civic/echarts.min.js";
     s.async = true;
     s.dataset.civicEcharts = "1";
-    s.onload = () => resolve(window.echarts!);
-    s.onerror = () => reject(new Error("echarts load failed"));
+    s.dataset.civicEchartsState = "loading";
+    s.onload = () => succeed(s);
+    s.onerror = () => fail("echarts load failed", s);
+    timer = setTimeout(() => fail("echarts load timeout", s), 15_000);
     document.head.appendChild(s);
   });
+
   return echartsPromise;
 }
 
@@ -57,51 +138,76 @@ export function CivicEChart({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const chartInstanceRef = useRef<any>(null);
+  const onHoverRef = useRef(onHover);
+  onHoverRef.current = onHover;
   const key = JSON.stringify(option);
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
+  const [errorMsg, setErrorMsg] = useState("");
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-    loadEcharts().then((echarts) => {
-      if (cancelled || !ref.current) return;
-      const chart = echarts.init(ref.current);
-      chartInstanceRef.current = chart;
-      const parsedOption = JSON.parse(key);
-      chart.setOption(parsedOption);
+    setLoadState("loading");
+    setErrorMsg("");
 
-      // 监听鼠标悬停交互：动态实时切换环形图圆心百分比与分类，并通知外部聚焦
-      const defaultTitle = parsedOption.title ? JSON.parse(JSON.stringify(parsedOption.title)) : null;
-      if (parsedOption.series?.some((s: any) => s.type === "pie")) {
-        chart.on("mouseover", "series.pie", (params: any) => {
-          const pct = params.percent != null ? Number(params.percent).toFixed(1) : "0.0";
-          if (defaultTitle && defaultTitle.show !== false) {
-            chart.setOption({
-              title: {
-                ...defaultTitle,
-                text: `${pct}%`,
-                subtext: params.name,
-                textStyle: {
-                  ...defaultTitle.textStyle,
-                  color: params.color || defaultTitle.textStyle?.color || "#1E5AFF",
-                },
-                subtextStyle: {
-                  ...defaultTitle.subtextStyle,
-                },
-              },
+    loadEcharts()
+      .then((echarts) => {
+        if (cancelled || !ref.current) return;
+        try {
+          const chart = echarts.init(ref.current);
+          chartInstanceRef.current = chart;
+          const parsedOption = JSON.parse(key);
+          if (prefersReducedMotion()) {
+            parsedOption.animation = false;
+          }
+          chart.setOption(parsedOption);
+
+          // 监听鼠标悬停交互：动态实时切换环形图圆心百分比与分类，并通知外部聚焦
+          const defaultTitle = parsedOption.title ? JSON.parse(JSON.stringify(parsedOption.title)) : null;
+          if (parsedOption.series?.some((s: any) => s.type === "pie")) {
+            chart.on("mouseover", "series.pie", (params: any) => {
+              const pct = params.percent != null ? Number(params.percent).toFixed(1) : "0.0";
+              if (defaultTitle && defaultTitle.show !== false) {
+                chart.setOption({
+                  title: {
+                    ...defaultTitle,
+                    text: `${pct}%`,
+                    subtext: params.name,
+                    textStyle: {
+                      ...defaultTitle.textStyle,
+                      color: params.color || defaultTitle.textStyle?.color || "#1E5AFF",
+                    },
+                    subtextStyle: {
+                      ...defaultTitle.subtextStyle,
+                    },
+                  },
+                });
+              }
+              onHoverRef.current?.(params.name);
+            });
+
+            chart.on("mouseout", "series.pie", () => {
+              if (defaultTitle && defaultTitle.show !== false) {
+                chart.setOption({
+                  title: defaultTitle,
+                });
+              }
+              onHoverRef.current?.(null);
             });
           }
-          onHover?.(params.name);
-        });
-
-        chart.on("mouseout", "series.pie", () => {
-          if (defaultTitle && defaultTitle.show !== false) {
-            chart.setOption({
-              title: defaultTitle,
-            });
-          }
-          onHover?.(null);
-        });
-      }
-    });
+          setLoadState("ready");
+        } catch (err) {
+          chartInstanceRef.current?.dispose?.();
+          chartInstanceRef.current = null;
+          setLoadState("error");
+          setErrorMsg(err instanceof Error ? err.message : "图表初始化失败");
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setLoadState("error");
+        setErrorMsg(err instanceof Error ? err.message : "图表引擎加载失败");
+      });
 
     const onResize = () => chartInstanceRef.current?.resize();
     window.addEventListener("resize", onResize);
@@ -119,7 +225,7 @@ export function CivicEChart({
       chartInstanceRef.current?.dispose();
       chartInstanceRef.current = null;
     };
-  }, [key]);
+  }, [key, retryCount]);
 
   // 外部 hoverName 变化时，触发联动 highlight/downplay
   useEffect(() => {
@@ -167,7 +273,24 @@ export function CivicEChart({
   }, [hoveredName, key]);
 
   const heightStyle = typeof height === "number" ? `${height}px` : height;
-  return <div ref={ref} className={className} style={{ width: "100%", height: heightStyle }} />;
+  return (
+    <div className={className} style={{ position: "relative", width: "100%", height: heightStyle }}>
+      <div ref={ref} style={{ width: "100%", height: "100%" }} />
+      {loadState === "error" && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-lg bg-slate-50/95 p-4 text-center border border-slate-200">
+          <p className="text-xs font-medium text-slate-700">图表加载失败</p>
+          {errorMsg ? <p className="text-[11px] text-slate-500 max-w-xs break-words">{errorMsg}</p> : null}
+          <button
+            type="button"
+            onClick={() => setRetryCount((c) => c + 1)}
+            className="btn btn--default min-h-[44px] sm:min-h-[32px] px-3 text-xs"
+          >
+            重试加载图表
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function trendOption(daily: Record<string, number>, clusters: Record<string, number> = {}) {
@@ -274,7 +397,8 @@ export function trendOption(daily: Record<string, number>, clusters: Record<stri
         itemStyle: { color: "#FF7D00" },
       },
     ],
-    animationDuration: 1200,
+    animation: !prefersReducedMotion(),
+    animationDuration: prefersReducedMotion() ? 0 : 1200,
     animationEasing: "cubicOut",
   };
 }
@@ -320,7 +444,7 @@ export function donutOption(dist: Record<string, number>) {
       borderColor: "transparent",
       textStyle: { color: "#fff", fontSize: 12 },
       formatter: (p: { name: string; value: number; percent: number }) =>
-        `<b>${p.name}</b><br/>${Number(p.value).toLocaleString("zh-CN")} 件 (${Number(p.percent).toFixed(1)}%)`,
+        `<b>${escapeHtml(p.name)}</b><br/>${Number(p.value).toLocaleString("zh-CN")} 件 (${Number(p.percent).toFixed(1)}%)`,
     },
     legend: {
       bottom: 0,
@@ -352,7 +476,8 @@ export function donutOption(dist: Record<string, number>) {
         },
       },
     ],
-    animationDuration: 1000,
+    animation: !prefersReducedMotion(),
+    animationDuration: prefersReducedMotion() ? 0 : 1000,
     animationEasing: "cubicOut",
   };
 }
@@ -379,6 +504,7 @@ export function miniDonutOption(
   const topColor = topItem ? categoryColor(topItem.name) : "#1677FF";
 
   return {
+    animation: !prefersReducedMotion(),
     title: {
       show: false,
     },
@@ -411,6 +537,7 @@ export function miniDonutOption(
 export function radarOption(values: number[]) {
   const data = values.length === 5 ? values : [0, 0, 0, 0, 0];
   return {
+    animation: !prefersReducedMotion(),
     tooltip: {
       trigger: "item",
       backgroundColor: "rgba(15, 23, 42, 0.95)",
@@ -525,34 +652,37 @@ export function CivicHeatmap({
   if (!regions.length || !cats.length) return <div className="empty-hint">暂无交叉统计。请先启动 Agent 研判。</div>;
   const max = Math.max(1, ...regions.flatMap((r) => cats.map((c) => grid[r]?.[c] || 0)));
   const colors = [
-    "rgb(239, 248, 255)",
-    "rgb(186, 220, 255)",
-    "rgb(120, 188, 255)",
-    "rgb(60, 150, 255)",
-    "rgb(22, 119, 255)",
-    "rgb(9, 88, 217)",
+    "#EFF8FF",
+    "#BADFFF",
+    "#7CC0FF",
+    "#1D68D8",
+    "#0E52C4",
+    "#063A9B",
   ];
   return (
     <table className="heatmap">
+      <caption className="sr-only">区域与诉求类型交叉分布热力矩阵</caption>
       <thead>
         <tr>
-          <th className="row-label" />
+          <th scope="col" className="row-label">
+            <span className="sr-only">区域</span>
+          </th>
           {cats.map((c) => (
-            <th key={c}>{c}</th>
+            <th key={c} scope="col">{c}</th>
           ))}
         </tr>
       </thead>
       <tbody>
         {regions.map((r) => (
           <tr key={r}>
-            <th className="row-label">{r}</th>
+            <th scope="row" className="row-label">{r}</th>
             {cats.map((c) => {
               const n = grid[r]?.[c] || 0;
               const intensity = n / max;
               const lvl =
                 intensity > 0.75 ? 6 : intensity > 0.5 ? 5 : intensity > 0.3 ? 4 : intensity > 0.15 ? 3 : intensity > 0.05 ? 2 : 1;
               const bg = colors[lvl - 1];
-              const textColor = lvl >= 4 ? "#fff" : "#1E5AFF";
+              const textColor = lvl >= 4 ? "#FFFFFF" : "#0B2559";
               return (
                 <td key={c} style={{ overflow: "visible" }}>
                   <div

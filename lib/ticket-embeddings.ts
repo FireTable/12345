@@ -2,7 +2,7 @@
  * 工单嵌入旁路表。应用负责落库，@civic/embed 不碰数据库。
  * 回填写行时不建 HNSW；写完再建。
  */
-import { sql as drizzleSql } from "drizzle-orm";
+import { sql as drizzleSql, type SQL } from "drizzle-orm";
 import { getRegionDb } from "@/db/client";
 import { ticketsTable } from "@/db/schema";
 import {
@@ -119,38 +119,58 @@ export async function loadEmbedSnapshot(
 }
 
 export async function upsertTicketEmbeddings(regionId: string, rows: StoredEmbedding[]): Promise<void> {
-  const ready = rows.filter((row) => row.vector && row.vector.length === 1024);
+  const ready = rows.filter((row) => row.ticketId && row.vector && row.vector.length === 1024);
   if (ready.length === 0) return;
+
+  // 同一批内相同 ticket_id 去重（后写覆盖前写），避免 PostgreSQL ON CONFLICT 触发 21000 错误
+  const dedupedMap = new Map<string, StoredEmbedding>();
+  for (const row of ready) {
+    dedupedMap.set(row.ticketId, row);
+  }
+  const deduped = Array.from(dedupedMap.values());
+  if (deduped.length === 0) return;
+
   const tableReady = await ensureTicketEmbeddingsTable(regionId);
   if (!tableReady) return;
   const { db } = await getRegionDb(regionId);
-  for (const row of ready) {
-    const literal = halfvecLiteral(row.vector || []);
+
+  const CHUNK = 100;
+  for (let i = 0; i < deduped.length; i += CHUNK) {
+    const chunk = deduped.slice(i, i + CHUNK);
+    const valuesSql = drizzleSql.join(
+      chunk.map((row) => {
+        const literal = halfvecLiteral(row.vector || []);
+        return drizzleSql`(${row.ticketId}, ${literal}::halfvec(1024), ${row.productHash}, ${EMBEDDING_MODEL_LITERAL}, now())`;
+      }),
+      drizzleSql`, `
+    );
     await db.execute(drizzleSql`
       INSERT INTO ticket_embeddings (ticket_id, embedding, product_hash, model, embedded_at)
-      VALUES (
-        ${row.ticketId},
-        ${literal}::halfvec(1024),
-        ${row.productHash},
-        ${EMBEDDING_MODEL_LITERAL},
-        now()
-      )
+      VALUES ${valuesSql}
       ON CONFLICT (ticket_id) DO UPDATE SET
         embedding = EXCLUDED.embedding,
         product_hash = EXCLUDED.product_hash,
         model = EXCLUDED.model,
         embedded_at = now()
     `);
+    if (i + CHUNK < deduped.length) {
+      await yieldToEventLoop();
+    }
   }
 }
 
 export async function deleteIneligibleEmbeddings(regionId: string, ticketIds: string[]): Promise<void> {
-  if (ticketIds.length === 0) return;
+  const uniqueIds = Array.from(new Set(ticketIds.filter(Boolean)));
+  if (uniqueIds.length === 0) return;
   const tableReady = await ensureTicketEmbeddingsTable(regionId);
   if (!tableReady) return;
   const { db } = await getRegionDb(regionId);
-  const ids = drizzleSql.join(ticketIds.map((id) => drizzleSql`${id}`), drizzleSql`, `);
-  await db.execute(drizzleSql`DELETE FROM ticket_embeddings WHERE ticket_id IN (${ids})`);
+  const CHUNK = 2000;
+  for (let i = 0; i < uniqueIds.length; i += CHUNK) {
+    const chunk = uniqueIds.slice(i, i + CHUNK);
+    const ids = drizzleSql.join(chunk.map((id) => drizzleSql`${id}`), drizzleSql`, `);
+    await db.execute(drizzleSql`DELETE FROM ticket_embeddings WHERE ticket_id IN (${ids})`);
+  }
 }
 
 /** 写完之后才建索引。backfillInProgress 为真时直接返回。 */
@@ -256,21 +276,68 @@ export interface TicketVectorHit {
   similarity: number;
 }
 
+export interface TicketVectorSearchFilters {
+  status?: string;
+  urgency?: string;
+  subdistrict?: string;
+  category?: string;
+  isFakeClosure?: boolean;
+  stabilityRisk?: boolean;
+}
+
+function escapeVectorLike(value: string): string {
+  return value.replace(/[%_\\]/g, "").trim().slice(0, 60);
+}
+
 /**
- * 副驾驶语义检索。不按分类或镇街收窄，否则跨镇的同类事会查不到。
+ * 副驾驶语义检索。支持将结构化过滤条件直接下推到 SQL WHERE，避免全局 Top-K 过滤饥饿。
  * 聚类近邻仍走 loadStoredNeighborPairs。
  */
 export async function searchTicketsByVector(
   regionId: string,
   vector: number[],
-  limit: number
+  limit: number,
+  filters?: TicketVectorSearchFilters
 ): Promise<TicketVectorHit[]> {
   const literal = halfvecLiteral(vector);
-  const safeLimit = Math.min(8, Math.max(1, Math.trunc(limit) || 8));
+  const safeLimit = Math.min(32, Math.max(1, Math.trunc(limit) || 8));
+
+  const conditions: SQL[] = [drizzleSql`e.model = ${EMBEDDING_MODEL_LITERAL}`];
+  const status = (filters?.status || "").trim().toUpperCase();
+  if (status) {
+    conditions.push(drizzleSql`upper(coalesce(t.status, 'PENDING')) = ${status}`);
+  }
+  const urgency = (filters?.urgency || "").trim().toUpperCase();
+  if (urgency) {
+    conditions.push(drizzleSql`upper(coalesce(t.urgency, 'NORMAL')) = ${urgency}`);
+  }
+  const subdistrict = escapeVectorLike(filters?.subdistrict || "");
+  if (subdistrict) {
+    conditions.push(drizzleSql`t.subdistrict ILIKE ${`%${subdistrict}%`}`);
+  }
+  const category = escapeVectorLike(filters?.category || "");
+  if (category) {
+    conditions.push(drizzleSql`t.source_category ILIKE ${`%${category}%`}`);
+  }
+  if (filters?.isFakeClosure === true) {
+    conditions.push(drizzleSql`t.is_fake_closure = true`);
+  } else if (filters?.isFakeClosure === false) {
+    conditions.push(drizzleSql`coalesce(t.is_fake_closure, false) = false`);
+  }
+  if (filters?.stabilityRisk === true) {
+    conditions.push(drizzleSql`t.stability_risk = true`);
+  } else if (filters?.stabilityRisk === false) {
+    conditions.push(drizzleSql`coalesce(t.stability_risk, false) = false`);
+  }
+
+  const hasFilters = conditions.length > 1;
+  const efSearch = hasFilters ? Math.max(HNSW_EF_SEARCH, 160) : HNSW_EF_SEARCH;
+  const whereClause = drizzleSql.join(conditions, drizzleSql` AND `);
+
   try {
     const { db } = await getRegionDb(regionId);
     const result = await db.transaction(async (tx) => {
-      await tx.execute(drizzleSql.raw(`SET LOCAL hnsw.ef_search = ${HNSW_EF_SEARCH}`));
+      await tx.execute(drizzleSql.raw(`SET LOCAL hnsw.ef_search = ${efSearch}`));
       return tx.execute(drizzleSql`
         SELECT
           t.ticket_no,
@@ -285,7 +352,7 @@ export async function searchTicketsByVector(
           (e.embedding <=> ${literal}::halfvec(1024)) AS distance
         FROM ticket_embeddings e
         JOIN tickets t ON t.id = e.ticket_id
-        WHERE e.model = ${EMBEDDING_MODEL_LITERAL}
+        WHERE ${whereClause}
         ORDER BY e.embedding <=> ${literal}::halfvec(1024)
         LIMIT ${drizzleSql.raw(String(safeLimit))}
       `);
@@ -314,25 +381,45 @@ export async function searchTicketsByVector(
   }
 }
 
-/** 主题不单独存向量。增量挂接用成员工单里已经写下的一条。 */
+function l2NormalizeVector(vector: number[]): number[] | null {
+  if (vector.length !== 1024) return null;
+  let sumSq = 0;
+  for (let i = 0; i < vector.length; i++) {
+    const v = vector[i];
+    if (typeof v !== "number" || !Number.isFinite(v)) return null;
+    sumSq += v * v;
+  }
+  const norm = Math.sqrt(sumSq);
+  if (!Number.isFinite(norm) || norm <= 1e-12) return null;
+  return vector.map((v) => v / norm);
+}
+
+/** 主题不单独存向量。计算主题下所有已嵌入成员工单向量的 L2 归一化质心。 */
 export async function loadThemeMemberVectors(regionId: string, themeIds: string[]): Promise<Map<string, number[]>> {
   const vectors = new Map<string, number[]>();
-  if (themeIds.length === 0) return vectors;
+  const uniqueIds = Array.from(new Set(themeIds.filter(Boolean)));
+  if (uniqueIds.length === 0) return vectors;
   const tableReady = await ensureTicketEmbeddingsTable(regionId);
   if (!tableReady) return vectors;
   try {
     const { db } = await getRegionDb(regionId);
-    const ids = drizzleSql.join(themeIds.map((id) => drizzleSql`${id}`), drizzleSql`, `);
-    const result = await db.execute(drizzleSql`
-      SELECT DISTINCT ON (tt.theme_id) tt.theme_id, e.embedding::text AS embedding
-      FROM ticket_themes tt
-      JOIN ticket_embeddings e ON e.ticket_id = tt.ticket_id
-      WHERE tt.theme_id IN (${ids})
-    `);
-    for (const row of rowsOf(result)) {
-      const themeId = cell(row, "theme_id");
-      const vector = parseHalfvec(cell(row, "embedding"));
-      if (themeId && vector.length === 1024) vectors.set(themeId, vector);
+    const CHUNK = 2000;
+    for (let i = 0; i < uniqueIds.length; i += CHUNK) {
+      const chunk = uniqueIds.slice(i, i + CHUNK);
+      const ids = drizzleSql.join(chunk.map((id) => drizzleSql`${id}`), drizzleSql`, `);
+      const result = await db.execute(drizzleSql`
+        SELECT tt.theme_id, avg(e.embedding::vector)::text AS centroid
+        FROM ticket_themes tt
+        JOIN ticket_embeddings e ON e.ticket_id = tt.ticket_id
+        WHERE tt.theme_id IN (${ids})
+        GROUP BY tt.theme_id
+      `);
+      for (const row of rowsOf(result)) {
+        const themeId = cell(row, "theme_id");
+        if (!themeId) continue;
+        const normalized = l2NormalizeVector(parseHalfvec(cell(row, "centroid")));
+        if (normalized) vectors.set(themeId, normalized);
+      }
     }
   } catch (error) {
     console.warn("[embed] theme member vectors failed:", error instanceof Error ? error.message : error);

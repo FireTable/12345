@@ -36,6 +36,8 @@
   "dependencies": {
     "@better-auth-ui/core": "^1.7.6",
     "@better-auth-ui/react": "^1.7.6",
+    "@firetable/project-xiaochun": "^0.2.16",
+    "@firetable/stream-asr": "^0.1.2",
     "@langchain/core": "^0.3.40",
     "@langchain/langgraph": "^0.2.54",
     "@langchain/openai": "^0.4.4",

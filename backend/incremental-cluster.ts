@@ -17,14 +17,19 @@ import { CADENCE, cadenceLabel, describeCadence, type ThemeCadence } from "./the
 import { legalTownshipName, loadPresetVocabulary, type RegionVocabulary, type TownshipInfo } from "@/lib/vocabulary";
 import { HANDLING_STATUS, normalizeStatusCode } from "@/lib/civic-dto";
 
-function safeParseDate(dateStr: string | Date | undefined | null): Date {
-  if (!dateStr) return new Date();
-  if (dateStr instanceof Date) return dateStr;
-  const d1 = parse(dateStr, "yyyy-MM-dd HH:mm:ss", new Date());
+function parseDateOrNull(dateStr: string | Date | undefined | null): Date | null {
+  if (!dateStr) return null;
+  if (dateStr instanceof Date) {
+    return isValid(dateStr) ? dateStr : null;
+  }
+  const trimmed = String(dateStr).trim();
+  if (!trimmed) return null;
+  const d1 = parse(trimmed, "yyyy-MM-dd HH:mm:ss", new Date());
   if (isValid(d1)) return d1;
-  const d2 = parseISO(dateStr);
+  const d2 = parseISO(trimmed);
   if (isValid(d2)) return d2;
-  return new Date();
+  const d3 = new Date(trimmed);
+  return isValid(d3) ? d3 : null;
 }
 
 export interface IncrementalClusterResult {
@@ -35,6 +40,8 @@ export interface IncrementalClusterResult {
   needDeepThinkingUpgrade: boolean;
   upgradeReason?: string;
   cadence?: ThemeCadence;
+  recurredAfterClose?: boolean;
+  fakeClosureDetected?: boolean;
 }
 
 /**
@@ -51,7 +58,7 @@ export function evaluateIncrementalTicket(
   }
 ): IncrementalClusterResult {
   const townships = options?.townships ?? loadPresetVocabulary().townships;
-  const ticketTime = safeParseDate(newTicket.createTime);
+  const ticketTime = parseDateOrNull(newTicket.createTime) ?? new Date();
   const incoming = profileTicket(
     {
       title: newTicket.title,
@@ -103,32 +110,58 @@ export function evaluateIncrementalTicket(
     );
     if (!linked) continue;
 
-    const lastThemeEventTime = safeParseDate(theme.lastOccurrence || theme.firstOccurrence);
-    const hoursSinceLast = Math.abs(differenceInHours(ticketTime, lastThemeEventTime));
+    const lastThemeEventTime =
+      parseDateOrNull(theme.lastOccurrence) ?? parseDateOrNull(theme.firstOccurrence);
+    const firstThemeEventTime =
+      parseDateOrNull(theme.firstOccurrence) ?? parseDateOrNull(theme.lastOccurrence);
+    const hoursSinceLast = lastThemeEventTime
+      ? Math.abs(differenceInHours(ticketTime, lastThemeEventTime))
+      : 0;
     const recurredAfterClose = normalizeStatusCode(theme.handlingStatus) === HANDLING_STATUS.RESOLVED;
+    const closeRefRaw = theme.closedAt || theme.handlingEta || theme.lastOccurrence || theme.firstOccurrence;
+    const closeRefTime = parseDateOrNull(closeRefRaw);
+    const daysSinceClose = closeRefTime
+      ? (ticketTime.getTime() - closeRefTime.getTime()) / (24 * 60 * 60 * 1000)
+      : null;
+    const withinFakeClosureWindow =
+      recurredAfterClose &&
+      daysSinceClose !== null &&
+      daysSinceClose >= -1 &&
+      daysSinceClose <= RULES.fakeClosure.windowDays;
 
+    const initialRiskReason = theme.riskReason || "";
     newTicket.clusterId = theme.id;
     const loadedMembers = theme.tickets.length;
     const previousCount = theme.ticketCount || 0;
     theme.tickets.push(newTicket);
     theme.ticketCount = attachedMemberCount(previousCount, loadedMembers);
-    if (ticketTime > lastThemeEventTime) {
-      theme.lastOccurrence = newTicket.createTime;
+    const ticketTimeStr = (newTicket.createTime || "").trim() || ticketTime.toISOString();
+    if (!lastThemeEventTime || ticketTime > lastThemeEventTime) {
+      theme.lastOccurrence = ticketTimeStr;
     }
-    const firstThemeEventTime = safeParseDate(theme.firstOccurrence);
-    if (ticketTime < firstThemeEventTime) {
-      theme.firstOccurrence = newTicket.createTime;
+    if (!firstThemeEventTime || ticketTime < firstThemeEventTime) {
+      theme.firstOccurrence = ticketTimeStr;
     }
-    theme.timeSpanHours = Math.max(
-      1,
-      differenceInHours(
-        safeParseDate(theme.lastOccurrence),
-        safeParseDate(theme.firstOccurrence)
-      )
-    );
+    const finalFirst = parseDateOrNull(theme.firstOccurrence);
+    const finalLast = parseDateOrNull(theme.lastOccurrence);
+    theme.timeSpanHours =
+      finalFirst && finalLast
+        ? Math.max(1, differenceInHours(finalLast, finalFirst))
+        : Math.max(1, theme.timeSpanHours || 1);
     if (recurredAfterClose) {
       theme.reopenCount = (theme.reopenCount || 0) + 1;
       theme.reopenTicketIds = [...(theme.reopenTicketIds || []), newTicket.id];
+    }
+    if (withinFakeClosureWindow) {
+      newTicket.isFakeClosure = true;
+      newTicket.closureStatus = "REOPENED";
+      theme.handlingStatus = HANDLING_STATUS.IN_PROGRESS;
+      theme.handlingProgress = 40;
+      theme.riskLevel = "HIGH";
+      const fakeNote = `已办结主题在 ${RULES.fakeClosure.windowDays} 天复发窗口期内再次收到同类诉求，判定疑似假闭环并自动重开升级为高风险`;
+      if (!theme.riskReason?.includes("疑似假闭环")) {
+        theme.riskReason = theme.riskReason ? `${theme.riskReason}；${fakeNote}` : fakeNote;
+      }
     }
     const cadence = describeCadence([
       theme.firstOccurrence,
@@ -137,9 +170,17 @@ export function evaluateIncrementalTicket(
     ]);
 
     // 6. 质变升级研判：研判是否需要触发 System-2 慢思考增量重推
-    const hasExtremeHazard = negativeTermsPattern().test(newTicket.content || "");
+    const hasExtremeHazard = negativeTermsPattern().test(
+      `${newTicket.title || ""}\n${newTicket.content || ""}`
+    );
     const crossedRiskThreshold = theme.ticketCount >= RULES.risk.highCount && theme.riskLevel !== "HIGH";
-    
+    const highCount = Math.max(1, RULES.risk.highCount);
+    const surgeMilestones = [highCount * 2, highCount * 4, highCount * 8, highCount * 16];
+    const hitSurgeMilestone = surgeMilestones.some(
+      (m) => previousCount < m && theme.ticketCount >= m
+    );
+    const missingAdvice = !theme.aiSummary?.trim() || !theme.recommendedAction?.trim();
+
     let needDeepThinkingUpgrade = false;
     let upgradeReason: string | undefined;
 
@@ -153,6 +194,23 @@ export function evaluateIncrementalTicket(
       upgradeReason = `工单数量达到 ${theme.ticketCount} 件，突破高风险群体事件阈值！`;
       theme.riskLevel = "HIGH";
       theme.riskReason = upgradeReason;
+    } else if (theme.riskLevel === "HIGH") {
+      if (hasExtremeHazard && !initialRiskReason.includes("突发严重险情")) {
+        needDeepThinkingUpgrade = true;
+        upgradeReason = `高风险主题新增突发严重险情关键字（如塌陷/事故/伤亡/断水断电），需立即刷新应急处置预案！`;
+        theme.riskReason = theme.riskReason
+          ? `${theme.riskReason}；${upgradeReason}`
+          : upgradeReason;
+      } else if (withinFakeClosureWindow && !initialRiskReason.includes("疑似假闭环")) {
+        needDeepThinkingUpgrade = true;
+        upgradeReason = `已办结高风险主题触发假闭环复发重开，需重新生成督办处置建议！`;
+      } else if (hitSurgeMilestone) {
+        needDeepThinkingUpgrade = true;
+        upgradeReason = `高风险主题诉求量突破 ${theme.ticketCount} 件，触发阶段性升级复盘与处置建议刷新！`;
+      } else if (missingAdvice) {
+        needDeepThinkingUpgrade = true;
+        upgradeReason = `高风险主题缺失摘要或处置建议，触发智能补全！`;
+      }
     }
 
     const rhythm =
@@ -173,6 +231,8 @@ export function evaluateIncrementalTicket(
       }。`,
       needDeepThinkingUpgrade,
       upgradeReason,
+      recurredAfterClose,
+      fakeClosureDetected: withinFakeClosureWindow,
     };
   }
 
@@ -194,7 +254,11 @@ export async function upgradeThemeWithSystemTwo(
   let advice = theme.recommendedAction || "";
   let summary = theme.aiSummary || "";
   const systemTwo = await getSystemTwoEngine();
-  const prompt = buildBatchThemeEnrichmentPrompt([theme]);
+  const promptTheme =
+    theme.tickets.length > 2
+      ? { ...theme, tickets: theme.tickets.slice(-2) }
+      : theme;
+  const prompt = buildBatchThemeEnrichmentPrompt([promptTheme]);
 
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
@@ -207,7 +271,7 @@ export async function upgradeThemeWithSystemTwo(
       const res = (data as BatchThemeEnrichmentResult | null)?.results?.[0];
       if (res?.recommendedAction?.trim()) advice = res.recommendedAction;
       if (res?.aiSummary?.trim()) summary = res.aiSummary;
-      if (advice.trim()) break;
+      if (res?.recommendedAction?.trim()) break;
     } catch (err: any) {
       console.warn(`[incremental] theme upgrade attempt ${attempt + 1}:`, err?.message);
     }

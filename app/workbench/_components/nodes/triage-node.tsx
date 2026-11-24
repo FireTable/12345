@@ -71,16 +71,16 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
             <span>涉稳风险工单</span>
           </div>
           <div className="mt-1.5 flex items-baseline justify-between gap-1">
-            <div className="text-lg font-bold font-mono text-red-900 leading-none whitespace-nowrap inline-flex items-baseline">
+            <div className="text-lg font-bold font-mono tabular-nums text-red-900 leading-none whitespace-nowrap inline-flex items-baseline">
               {data.stabilityRiskCount.toLocaleString()}
               <span className="text-[11px] font-normal text-slate-500 ml-1 whitespace-nowrap">件</span>
             </div>
             {data.stabilityRiskCount > 0 ? (
-              <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-200 text-red-800 font-bold whitespace-nowrap shrink-0 animate-pulse">
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-200 text-red-800 font-bold whitespace-nowrap shrink-0 motion-safe:animate-pulse">
                 重点跟进
               </span>
             ) : (
-              <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-100/80 text-red-600 font-medium whitespace-nowrap shrink-0">
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-100/80 text-red-700 font-medium whitespace-nowrap shrink-0">
                 平稳正常
               </span>
             )}
@@ -89,11 +89,11 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
 
         <div className="bg-amber-50/70 border border-amber-100/80 rounded-lg p-2.5 flex flex-col justify-between">
           <div className="flex items-center gap-1 text-[11px] font-semibold text-amber-800 whitespace-nowrap">
-            <AlertTriangle size={12} className="text-amber-500 shrink-0" />
+            <AlertTriangle size={12} className="text-amber-500 shrink-0" aria-hidden="true" />
             <span>加急催办工单</span>
           </div>
           <div className="mt-1.5 flex items-baseline justify-between gap-1">
-            <div className="text-lg font-bold font-mono text-amber-900 leading-none whitespace-nowrap inline-flex items-baseline">
+            <div className="text-lg font-bold font-mono tabular-nums text-amber-900 leading-none whitespace-nowrap inline-flex items-baseline">
               {data.urgentCount.toLocaleString()}
               <span className="text-[11px] font-normal text-slate-500 ml-1 whitespace-nowrap">件</span>
             </div>
@@ -108,10 +108,10 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
       <div className="pipeline-snippet-box">
         <div className="pipeline-snippet-title">
           <span className="flex items-center gap-1 text-slate-700 font-semibold">
-            <PieChart size={11} className="shrink-0 text-blue-500" />
+            <PieChart size={11} className="shrink-0 text-blue-500" aria-hidden="true" />
             诉求业务分类分布
           </span>
-          <span className="text-[10px] text-slate-400 font-mono">
+          <span className="text-[10px] text-slate-500 font-mono tabular-nums">
             共 {data.categoryStats.length} 个分类
           </span>
         </div>
@@ -129,7 +129,7 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
               {/* 精准数学与视觉绝对几何正中覆盖层 */}
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none text-center">
                 <div
-                  className="font-bold text-[15px] font-mono leading-none tracking-tight transition-colors duration-150"
+                  className="font-bold text-[15px] font-mono tabular-nums leading-none tracking-tight transition-colors duration-150"
                   style={{ color: activeColor }}
                 >
                   {activePct}%
@@ -190,14 +190,14 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
                       </span>
                     </span>
                     <span
-                      className={`font-mono text-[9.5px] shrink-0 whitespace-nowrap ${
-                        isHovered ? "font-bold" : "text-slate-400"
+                      className={`font-mono tabular-nums text-[9.5px] shrink-0 whitespace-nowrap ${
+                        isHovered ? "font-bold" : "text-slate-500"
                       }`}
                       style={isHovered ? { color } : undefined}
                     >
                       {c.count.toLocaleString()}件{" "}
                       <span
-                        className={isHovered ? "font-bold" : "font-semibold text-slate-600"}
+                        className={isHovered ? "font-bold" : "font-semibold text-slate-700"}
                         style={isHovered ? { color } : undefined}
                       >
                         {pct}%
@@ -209,17 +209,17 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
             </div>
           </div>
         ) : (
-          <div className="py-4 text-center text-xs text-slate-400">暂无诉求分类数据</div>
+          <div className="py-4 text-center text-xs text-slate-500">暂无诉求分类数据</div>
         )}
 
         {/* 所属镇街分布 */}
         <div className="mt-2.5 pt-2 border-t border-slate-200/70">
           <div className="flex items-center justify-between text-[10.5px] font-semibold text-slate-700 mb-1.5">
             <span className="flex items-center gap-1">
-              <MapPin size={11} className="text-indigo-500 shrink-0" />
+              <MapPin size={11} className="text-indigo-500 shrink-0" aria-hidden="true" />
               所属镇街分布
             </span>
-            <span className="text-[10px] text-slate-400 font-mono">
+            <span className="text-[10px] text-slate-500 font-mono tabular-nums">
               {townships.length > 0 ? `覆盖 ${townships.length} 个镇街` : "暂无数据"}
             </span>
           </div>
@@ -227,27 +227,26 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
             <div className="flex flex-wrap gap-1">
               {townships.map((ts, i) => {
                 const isUnknown = ts.township === "未知";
-                const color = isUnknown ? "#86909C" : getTownshipColor(ts.township);
+                const color = isUnknown ? "#64748B" : getTownshipColor(ts.township);
                 return (
                   <span
                     key={i}
                     className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border font-medium transition-all whitespace-nowrap"
                     style={{
-                      backgroundColor: isUnknown ? "#F8FAFC" : `${color}0D`,
-                      borderColor: isUnknown ? "#E2E8F0" : `${color}35`,
-                      color: isUnknown ? "#64748B" : color,
+                      backgroundColor: isUnknown ? "#F8FAFC" : `${color}12`,
+                      borderColor: isUnknown ? "#E2E8F0" : `${color}45`,
+                      color: isUnknown ? "#475569" : "#1E293B",
                     }}
                   >
                     <span
                       className="w-1.5 h-1.5 rounded-full shrink-0"
                       style={{ backgroundColor: isUnknown ? "#94A3B8" : color }}
                     />
-                    <span className={isUnknown ? "text-slate-500 font-normal whitespace-nowrap" : "text-slate-700 font-medium whitespace-nowrap"}>
+                    <span className={isUnknown ? "text-slate-600 font-normal whitespace-nowrap" : "text-slate-700 font-medium whitespace-nowrap"}>
                       {ts.township}
                     </span>
                     <span
-                      className="font-mono font-bold whitespace-nowrap"
-                      style={{ color: isUnknown ? "#64748B" : color }}
+                      className="font-mono tabular-nums font-bold whitespace-nowrap text-slate-900"
                     >
                       {ts.count.toLocaleString()}
                     </span>
@@ -256,7 +255,7 @@ export function TriageNode({ data }: NodeProps<TriageNodeType>) {
               })}
             </div>
           ) : (
-            <div className="py-2 text-center text-xs text-slate-400">暂无镇街分布数据</div>
+            <div className="py-2 text-center text-xs text-slate-500">暂无镇街分布数据</div>
           )}
         </div>
       </div>

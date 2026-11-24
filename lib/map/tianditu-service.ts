@@ -112,14 +112,24 @@ export async function geocodeAddress(address: string, regionPrefix = ""): Promis
     if (key) {
       const ds = JSON.stringify({ keyWord: queryAddress });
       const url = `http://api.tianditu.gov.cn/geocoder?ds=${encodeURIComponent(ds)}&tk=${key}`;
-      const res = await fetch(url, { next: { revalidate: 86400 } });
+      const res = await fetch(url, {
+        next: { revalidate: 86400 },
+        signal: AbortSignal.timeout(5000),
+      });
       if (res.ok) {
         const data = await res.json();
         if (data.status === "0" || data.status === "001") {
           const loc = data.location || {};
           const lng = parseFloat(loc.lon);
           const lat = parseFloat(loc.lat);
-          if (!isNaN(lng) && !isNaN(lat)) {
+          if (
+            Number.isFinite(lng) &&
+            Number.isFinite(lat) &&
+            lng >= -180 &&
+            lng <= 180 &&
+            lat >= -90 &&
+            lat <= 90
+          ) {
             return {
               success: true,
               lng,
@@ -185,13 +195,27 @@ function fallbackReverseGeocode(lng: number, lat: number): ReverseGeocodeResult 
  * 逆向地理编码：经纬度反查行政区与详细地点（用于站点管理、反查网格区域）
  */
 export async function reverseGeocode(lng: number, lat: number): Promise<ReverseGeocodeResult> {
+  if (
+    !Number.isFinite(lng) ||
+    !Number.isFinite(lat) ||
+    lng < -180 ||
+    lng > 180 ||
+    lat < -90 ||
+    lat > 90
+  ) {
+    return { success: false, error: "经纬度超出有效范围" };
+  }
+
   const key = getTiandituKey();
 
   try {
     if (key) {
       const postStr = JSON.stringify({ lon: lng, lat, ver: 1 });
       const url = `http://api.tianditu.gov.cn/geocoder?postStr=${encodeURIComponent(postStr)}&type=geocode&tk=${key}`;
-      const res = await fetch(url, { next: { revalidate: 86400 } });
+      const res = await fetch(url, {
+        next: { revalidate: 86400 },
+        signal: AbortSignal.timeout(5000),
+      });
       if (res.ok) {
         const data = await res.json();
         if (data.status === "0" && data.result) {
@@ -223,14 +247,35 @@ export async function reverseGeocode(lng: number, lat: number): Promise<ReverseG
   }
 }
 
+const ALLOWED_TILE_TYPES = new Set(["vec", "cva", "img", "cia"] as const);
+
 /**
  * 构造天地图瓦片请求 URL (后端代理使用)
  * @param type vec (矢量底图) | cva (中文注记) | img (影像底图) | cia (影像中文注记)
  */
 export function getTiandituTileUrl(type: "vec" | "cva" | "img" | "cia", z: number, x: number, y: number): string {
+  if (!ALLOWED_TILE_TYPES.has(type)) {
+    throw new Error(`Invalid tile type: ${String(type)}`);
+  }
+  if (!Number.isInteger(z) || z < 0 || z > 18) {
+    throw new Error(`Invalid tile zoom: ${z}`);
+  }
+  const maxCoord = 2 ** z;
+  if (
+    !Number.isInteger(x) ||
+    !Number.isInteger(y) ||
+    x < 0 ||
+    x >= maxCoord ||
+    y < 0 ||
+    y >= maxCoord
+  ) {
+    throw new Error(`Invalid tile coordinates: z=${z}, x=${x}, y=${y}`);
+  }
+
   const key = getTiandituKey();
   const subdomains = ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7"];
-  const sub = subdomains[(x + y) % subdomains.length];
+  const idx = (((x + y) % subdomains.length) + subdomains.length) % subdomains.length;
+  const sub = subdomains[idx];
   const layer = type;
   return `http://${sub}.tianditu.gov.cn/${layer}_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=${layer}&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX=${z}&TILEROW=${y}&TILECOL=${x}&tk=${key}`;
 }

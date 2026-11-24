@@ -3,5 +3,7 @@ export const NAV_ITEMS = [
   { href: "/themes", key: "grouplist", label: "多频工单" },
   { href: "/multifreq", key: "multifreq", label: "工单透势" },
   { href: "/tickets", key: "center", label: "工单中心" },
+  { href: "/agent", key: "agent", label: "智能治理" },
   { href: "/dict", key: "dict", label: "标准字典" },
+  { href: "/sandbox", key: "sandbox", label: "实时演练" },
 ] as const;

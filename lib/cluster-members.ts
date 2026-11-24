@@ -1,6 +1,6 @@
 import type { DB } from "@/db/client";
 import { ticketsTable, ticketThemesTable } from "@/db/schema";
-import { regionLabel } from "@/lib/civic-dto";
+import { mapTicketStatus, regionLabel } from "@/lib/civic-dto";
 import { calendarDay } from "@/lib/work-order-date";
 import { and, eq, ilike, inArray, or, sql } from "drizzle-orm";
 
@@ -17,6 +17,8 @@ export type ThemeMemberItem = {
   createdAt: string;
   content: string;
   confidence: number | null;
+  status: string;
+  isFakeClosure: boolean;
 };
 
 type PageTheme = {
@@ -45,6 +47,8 @@ function toListItem(row: {
   subdistrict?: string | null;
   createTime?: Date | string | null;
   confidence?: number | null;
+  status?: string | null;
+  isFakeClosure?: boolean | null;
   excerpt?: string | null;
 }): ThemeMemberItem {
   const created = calendarDay(row.createTime);
@@ -57,6 +61,8 @@ function toListItem(row: {
     createdAt: typeof created === "string" ? created.slice(0, 10) : "",
     content: row.excerpt || "",
     confidence: row.confidence ?? null,
+    status: mapTicketStatus(row.status),
+    isFakeClosure: Boolean(row.isFakeClosure),
   };
 }
 
@@ -69,6 +75,8 @@ const listColumns = {
   subdistrict: ticketsTable.subdistrict,
   createTime: ticketsTable.createTime,
   confidence: ticketsTable.confidence,
+  status: ticketsTable.status,
+  isFakeClosure: ticketsTable.isFakeClosure,
   excerpt: sql<string>`left(coalesce(${ticketsTable.maskedContent}, ${ticketsTable.content}), 80)`,
 };
 
@@ -125,7 +133,10 @@ export async function loadThemeMemberPage(
     ? asRows(await db.select(listColumns).from(ticketsTable).where(inArray(ticketsTable.id, ids)))
     : [];
   const byId = new Map(details.map((row) => [row.id, row]));
-  const members = ids.map((id) => byId.get(id)).filter((row) => row != null).map((row) => toListItem(row));
+  const members = ids
+    .map((id) => byId.get(id))
+    .filter((row): row is NonNullable<typeof row> => row != null)
+    .map((row) => toListItem(row));
   const last = page[page.length - 1];
   const next = hasMore && last ? { time: cursorTime(last.createTime), id: last.id } : null;
   return { members, next };

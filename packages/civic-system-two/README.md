@@ -2,32 +2,33 @@
 
 **12345 慢思考通用认知大模型引擎 (Slow-Thinking Cognitive Engine)**
 
-基于 Apple Silicon Metal 硬件深度调优的通用 LLM 慢思考推理运行时，100% 遵循 OpenAI Chat Completions 协议标准，具备思维链（CoT）与正文完全分离、调用方自由格式驱动、强类型结构化解析与多层自适应容灾降级能力。
+基于 Apple Silicon Metal 硬件深度调优并支持远程 GPU（Colab / Linux）热挂载与云端灾备的通用 LLM 慢思考推理运行时。100% 遵循 OpenAI Chat Completions 协议标准，具备流式输出、思维链（CoT）与正文完全分离、强类型 Zod 结构化解析、多节点算力池自愈切回与云端末公里 PII 脱敏防护能力。
 
 ---
 
 ## 核心设计特性
 
-1. **100% 兼容 OpenAI 协议规范**：
-   - 遵循 `engine.chat.completions.create({...})` 签名。
-   - 完全支持 `messages`、`response_format`（`text` / `json_object` / `json_schema`）、`temperature`、`max_tokens` 等标准入参。
+1. **100% 兼容 OpenAI 协议与流式响应**：
+   - 支持非流式 `engine.chat.completions.create({...})` 与流式 `engine.chat.completions.createStream({...})`；
+   - 完整支持 `messages`、`response_format`（`text` / `json_object` / `json_schema`）、`temperature`、`max_tokens` 与标准 `AbortSignal` 取消传播（`createAbortError` / `linkAbortSignals`）。
 2. **思维链（CoT）与正文纯净分离**：
-   - **默认开启慢思考 (`enable_thinking: true`)**，深入拆解复杂诉求权责与争议点。
-   - 模型的思考过程自动剥离并置入 `choices[0].message.reasoning_content`，纯净答复置入 `choices[0].message.content`。
-   - 调用方亦可随时显式指定 `enable_thinking: false` 关闭思考进行低延迟直出。
-   - 本仓库的工单抽取和主题建议都传 `enableThinking: false`。思考打开时，输出额度会被思维链用完，JSON 正文变空。引擎自己的默认仍然是开启思考。
-3. **格式完全由调用方掌控**：
-   - 包内部**不硬编码**任何业务级 Prompt 或格式限制，业务层自由决定输出纯文本、Markdown 报告或 JSON 数据。
-   - 提供 `engine.createJSON<T>(schema, options)` 配合 Zod 实现带类型守卫的端到端安全解析。
-4. **Apple Silicon Metal 黄金调优**：
-   - 搭载 Bonsai 2 27B PTQ1_0 三值大模型（单量化权重仅 5.5GB）。
-   - 实测最佳参数配置：单流高吞吐（`-np 1`，彻底避免多 Batch 导致的 Metal 三值去量化带宽竞争瓶颈）、Flash Attention 开启（`-fa on`）、KV Cache 压缩减半（`-ctk q8_0 -ctv q8_0`），在 M 系列芯片上实现稳定 20+ tokens/s。
-5. **多层平滑灾备降级**：
-   - 链路：`本地 Metal (llama-server:8132)` ➔ `远程兼容云端 (DeepSeek / OpenAI)` ➔ `离线安全兜底 (FallbackAdapter)`。
-   - 多个本地地址走 `PooledMetalAdapter`。不健康节点超过 3 秒会再探一次，恢复后重新进池。候选先按轮询游标转动，再按在途请求数和连续失败次数排序，避免请求一直打在同一台、其余节点的耗时不刷新。
-6. **单次耗时**：
-   - 优先记 llama 返回的 `predicted_ms`（纯生成）。没有则用 `prompt_ms + predicted_ms`，再没有用本次请求的墙钟。
-   - `formatDuration` 一律显示成秒，例如 `0.4s`、`1.9s`。调用方不要再按毫秒原样贴到界面上。
+   - 引擎默认支持慢思考（`enable_thinking: true`），思考过程自动剥离至 `choices[0].message.reasoning_content`（流式为 `deltaReasoning`），纯净正文直出至 `choices[0].message.content`（流式为 `deltaContent`）；
+   - 调用方可显式传 `enable_thinking: false` / `enableThinking: false` 关闭思考实现低延迟结构化直出（主仓库的工单四要素抽取、主题建议与 `LightCopilot` 均显式关闭思考，避免输出配额被 CoT 占满）。
+3. **强类型结构化解析 (`createJSON<T>`)**：
+   - 包内部不硬编码业务 Prompt，提供 `engine.createJSON<T>(schema, options)` 配合 Zod 完成 JSON 清洗、反序列化与类型守卫，并返回实际命中的 `endpoint`、`usage` 与 `timings`。
+4. **Apple Silicon Metal 调优与异构多节点算力池**：
+   - 本地默认搭载 Bonsai 2 27B PTQ1_0 三值大模型（5.5GB 权重），黄金参数 `-np 1 -fa on -ctk q8_0 -ctv q8_0` 在 M 系列芯片稳定输出 **20 ~ 24 tokens/s**；
+   - 支持通过 `nodes: ClusterNodeSpec[]` 为每个节点独立配置 `endpoint`、`apiKey`、`model`、`provider`（`LOCAL` / `COLAB` / `CLOUD`）与 `name`，无缝承载本地 Metal 集群与 [`scripts/colab`](../../scripts/colab/README.md) 热挂载的远程 GPU 节点；
+   - 内置每节点最近 8 条工单预览环形缓冲（`ENDPOINT_TICKETS_MAX = 8`），供 AI 研判工作台按节点可视化监控。
+5. **三层容灾降级、繁忙直通与自愈切回**：
+   - 链路：`多节点算力池 (PooledMetalAdapter)` ➔ `远程兼容云端 (CloudOpenAIAdapter)` ➔ `离线安全兜底 (FallbackAdapter)`；
+   - `PooledMetalAdapter` 按轮询游标 + 在途请求数 + 连续失败次数选点，不健康节点超过 3 秒再探复原；
+   - 流式交互支持 `localWaitTimeoutMs`（首包等待超时无损切云端，不误标节点不健康）、`preferCloudWhenLocalBusy`（本地集群满载时避免交互请求被批处理饿死）与 `preferCloudDirect`；
+   - 处于降级态时按冷却窗口（默认 30s，可通过 `SYSTEM_TWO_SWITCHBACK_COOLDOWN_MS` 配置）单飞探活本地集群，恢复后自动切回。
+6. **云端末公里 PII 脱敏防护 (`scrubCloudPiiText`)**：
+   - `CloudOpenAIAdapter` 在任何非 `system` 消息发往外部云端端点前自动执行 `scrubCloudPiiText`，将漏网的身份证号、银行卡号、手机号、带区号固话与电子邮箱替换为 `{{ID_CARD_CLOUD}}` / `{{BANK_CARD_CLOUD}}` / `{{PHONE_NUMBER_CLOUD}}` / `{{EMAIL_CLOUD}}`，构成三层出网 PII 防火墙的最后一道防线。
+7. **统一秒级耗时统计**：
+   - 优先记录 llama 返回的 `predicted_ms`（纯生成），缺失时回退 `prompt_ms + predicted_ms` 或墙钟时间；`formatDuration` 一律格式化为秒（如 `0.4s`、`1.9s`）。
 
 ---
 
@@ -37,90 +38,87 @@
 
 ```bash
 cd packages/civic-system-two
-pnpm install # 或 npm install
+pnpm install
 
 # 检查本地 GGUF 模型物料与推理引擎
-npm run setup:model
+pnpm run setup:model
 ```
 
 ### 2. 启动本地推理服务
 
 ```bash
 # 启动调优参数的 llama-server (端口 8132)
-npm run serve
+pnpm run serve
 ```
 
 ### 3. 在 TypeScript 中调用
 
 ```typescript
-import { SystemTwoEngine, z } from '@civic/system-two';
+import { SystemTwoEngine, z } from "@civic/system-two";
 
-// 1. 初始化引擎（自动探测本地 8132 端口并自适应探测健康状态）
+// 1. 初始化引擎（支持单端点、多端点或含独立密钥的异构节点数组）
 const engine = await SystemTwoEngine.create({
-  endpoint: 'http://127.0.0.1:8132/v1',
-  timeoutMs: 120000,
-});
-
-// 2. 标准问答（默认开启慢思考 enable_thinking: true）
-const response = await engine.chat.completions.create({
-  messages: [
-    { role: 'user', content: '分析小区楼下餐饮夜间油烟直排扰民的部门管辖权限' }
+  nodes: [
+    { endpoint: "http://127.0.0.1:8132/v1", provider: "LOCAL", name: "Mac Metal 27B" },
   ],
-  enable_thinking: true,
+  timeoutMs: 120_000,
 });
 
-// 纯正文输出
-console.log(response.choices[0].message.content);
-// 慢思考思维链
-console.log(response.choices[0].message.reasoning_content);
+// 2. 流式对话（支持首包超时切云端与本地繁忙避让）
+for await (const chunk of engine.chat.completions.createStream({
+  messages: [{ role: "user", content: "生成当前辖区高风险多频主题研判摘要" }],
+  enable_thinking: false,
+  localWaitTimeoutMs: 6_000,
+  preferCloudWhenLocalBusy: true,
+})) {
+  if (chunk.deltaContent) process.stdout.write(chunk.deltaContent);
+}
 
-// 3. 结构化 JSON 输出与 Zod 强校验 (createJSON 显式传参)
+// 3. 结构化 JSON 输出与 Zod 强校验
 const ResultSchema = z.object({
   department: z.string(),
-  priority: z.enum(['high', 'medium', 'low']),
+  priority: z.enum(["high", "medium", "low"]),
   suggested_action: z.string(),
 });
 
-const result = await engine.createJSON(
-  ResultSchema,
-  {
-    messages: [
-      { role: 'system', content: '输出 JSON 格式的工单分派建议' },
-      { role: 'user', content: '某路段交通信号灯损坏' },
-    ],
-    enableThinking: false, // 结构化抽取任务显式关闭思考加速直出
-  }
-);
+const result = await engine.createJSON(ResultSchema, {
+  messages: [
+    { role: "system", content: "输出 JSON 格式的工单分派建议" },
+    { role: "user", content: "某路段交通信号灯损坏" },
+  ],
+  enableThinking: false,
+});
 
-console.log(result.data.department);
-console.log(result.data.priority);
+console.log(result.data.department, result.endpoint);
 ```
 
 ---
 
 ## 目录结构
 
-```
+```text
 packages/civic-system-two/
 ├── package.json
 ├── tsconfig.json
 ├── README.md
 ├── src/
-│   ├── index.ts                     # 统一导出
-│   ├── types.ts                     # OpenAI 兼容入参出参与核心配置类型
-│   ├── engine.ts                    # 引擎主入口、健康路由与 createJson 工具
+│   ├── index.ts                     # 统一导出（含 engine / adapters / parser / metrics / zod）
+│   ├── types.ts                     # OpenAI 兼容入参出参、流式 Chunk 与 ClusterNodeSpec 类型
+│   ├── engine.ts                    # 引擎主入口、健康路由、冷却自愈切回与 createJSON 工具
 │   ├── parser.ts                    # <think> 提取分离与 JSON Markdown 清洗器
-│   ├── metrics.ts                   # 节点最近一次耗时。优先 predicted_ms，展示一律为秒
+│   ├── metrics.ts                   # 节点最近耗时统计与秒级格式化
 │   └── adapters/
 │       ├── types.ts                 # 适配器接口标准 (ISystemTwoAdapter)
-│       ├── local-metal-adapter.ts   # 本地 Metal llama-server 适配器
-│       ├── pooled-metal-adapter.ts  # 多端点池：3 秒探活复位，轮询后按在途数挑选
-│       ├── cloud-openai-adapter.ts   # 远程通用云端 OpenAI 适配器
-│       └── fallback-adapter.ts       # 离线安全兜底适配器
+│       ├── abort-utils.ts           # AbortError 构造、识别与多信号联动
+│       ├── sse-stream.ts            # OpenAI 兼容 SSE 流解析器
+│       ├── local-metal-adapter.ts   # 单节点本地 Metal llama-server 适配器
+│       ├── pooled-metal-adapter.ts  # 多节点算力池：3 秒探活复位，轮询后按在途数挑选
+│       ├── cloud-openai-adapter.ts  # 远程云端 OpenAI 适配器（内置 scrubCloudPiiText 防护）
+│       └── fallback-adapter.ts      # 离线安全兜底适配器
 └── scripts/
     ├── setup.ts                     # 环境与模型物料自检脚本
     ├── serve.ts                     # 最优 Metal 参数本地启动脚本
-    └── test-engine.ts               # 端到端 4 项自动化集成测试套件
+    └── test-engine.ts               # 端到端自动化集成测试套件
 ```
 
 ---
@@ -128,5 +126,5 @@ packages/civic-system-two/
 ## 运行自动化测试
 
 ```bash
-npm run test
+pnpm --dir packages/civic-system-two test
 ```

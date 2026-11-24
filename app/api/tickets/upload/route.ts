@@ -9,6 +9,7 @@ import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 import { getRegionVocabulary } from "@/lib/vocabulary";
 import { apiSuccess, apiError, ApiCode } from "@/lib/api-codes";
 import { triggerClusterJobAuto } from "@/lib/cluster-runner";
+import { requireAdmin } from "@/lib/auth/rbac";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 5 minutes for large files (e.g. 10w+ rows)
@@ -277,6 +278,9 @@ export async function POST(req: NextRequest) {
   const startTime = Date.now();
 
   try {
+    const auth = await requireAdmin(req);
+    if ("response" in auth) return auth.response;
+
     const regionId = await resolveRequestRegionId(req);
     const uploaded = await extractUploadedFile(req);
 
