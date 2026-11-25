@@ -58,19 +58,33 @@
 }
 
 /* Light Mode Scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+:root,
+html {
+  --scrollbar-thumb: #64748B;
+  --scrollbar-track: #F1F5F9;
+  scrollbar-width: auto;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
-::-webkit-scrollbar-track {
-  background: hsl(var(--muted));
-}
-::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+
+@supports not (scrollbar-color: auto) {
+  html {
+    scrollbar-width: auto;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 5px;
+    border: 2px solid var(--scrollbar-track);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #475569;
+  }
 }
 
 @keyframes shimmer {
@@ -82,8 +96,10 @@
   }
 }
 
-.animate-shimmer {
-  animation: shimmer 1.8s infinite linear;
+@media (prefers-reduced-motion: no-preference) {
+  .animate-shimmer {
+    animation: shimmer 1.8s infinite linear;
+  }
 }
 
 @keyframes ticketBorderPulse {
@@ -98,14 +114,27 @@
 }
 
 .ticket-highlight-pulse {
-  animation: ticketBorderPulse 1.8s ease-in-out infinite !important;
+  box-shadow: 0 0 0 1.5px rgba(37, 99, 235, 0.8), 0 2px 8px rgba(37, 99, 235, 0.15);
+  border-color: #3b82f6;
   scroll-margin-top: 100px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ticket-highlight-pulse {
+    animation: ticketBorderPulse 1.8s ease-in-out infinite !important;
+  }
 }
 
 .ticket-highlight-settled {
   box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.6), 0 2px 8px rgba(37, 99, 235, 0.1) !important;
   border-color: #3b82f6 !important;
   scroll-margin-top: 100px;
-  transition: all 0.5s ease;
+  transition: box-shadow 0.5s ease, border-color 0.5s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ticket-highlight-settled {
+    transition: none;
+  }
 }
 

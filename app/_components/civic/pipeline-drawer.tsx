@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
-import { Cpu, X, CheckCircle2, AlertCircle, ChevronUp } from "lucide-react";
+import { Cpu, X, CheckCircle2, AlertCircle, ChevronUp, RotateCcw } from "lucide-react";
 import { useCivicSse } from "@/app/_hooks/use-civic-sse";
 import { useAuthRole } from "@/lib/auth/use-role";
 import { useCivicWorkflow } from "./civic-workflow";
@@ -31,8 +31,11 @@ export function PipelineDrawer() {
   const { activeRegion } = useRegion();
   const [pipelineData, setPipelineData] = useState<PipelineStateResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [hasOpened, setHasOpened] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const pressedOutsideRef = useRef(false);
+  const fitScheduledRef = useRef(false);
 
   const fetchState = useCallback(async () => {
     if (!isAdmin) return;
@@ -100,19 +103,91 @@ export function PipelineDrawer() {
 
   const isRunning = (pipelineData?.taskProgress?.status || "").toUpperCase() === "RUNNING";
 
+  const triggerCanvasFitView = useCallback(() => {
+    const dialog = dialogRef.current;
+    if (!dialog?.open) return;
+    const fitBtn = dialog.querySelector<HTMLButtonElement>(".react-flow__controls-fitview");
+    if (fitBtn) {
+      fitBtn.click();
+    }
+  }, []);
+
+  const scheduleFitView = useCallback(() => {
+    if (fitScheduledRef.current) return;
+    fitScheduledRef.current = true;
+    requestAnimationFrame(() => {
+      fitScheduledRef.current = false;
+      triggerCanvasFitView();
+    });
+  }, [triggerCanvasFitView]);
+
+  const handleResetLayout = useCallback(() => {
+    const dialog = dialogRef.current;
+    const panelResetBtn = dialog?.querySelector<HTMLButtonElement>(
+      ".react-flow__panel.top.right button"
+    );
+    if (panelResetBtn) {
+      panelResetBtn.click();
+    }
+    setTimeout(triggerCanvasFitView, 80);
+    setTimeout(triggerCanvasFitView, 240);
+  }, [triggerCanvasFitView]);
+
   // 原生 <dialog>.showModal() 提供顶层、inert、焦点围栏、Esc 退出与焦点回返；
   // 背景滚动隔离交给 tokens.css / components.css 中的 overscroll-behavior: contain，不修改 body.style.overflow。
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog || !isAdmin) return;
     if (pipelineDrawerOpen) {
+      setHasOpened(true);
       if (!dialog.open) {
         dialog.showModal();
       }
+      const rafId = requestAnimationFrame(() => {
+        requestAnimationFrame(triggerCanvasFitView);
+      });
+      const t1 = setTimeout(triggerCanvasFitView, 180);
+      const t2 = setTimeout(triggerCanvasFitView, 420);
+
+      const bodyEl = bodyRef.current;
+      let resizeObserver: ResizeObserver | null = null;
+      let mutationObserver: MutationObserver | null = null;
+      if (bodyEl) {
+        resizeObserver = new ResizeObserver(() => {
+          scheduleFitView();
+        });
+        resizeObserver.observe(bodyEl);
+
+        mutationObserver = new MutationObserver(() => {
+          if (bodyEl.querySelector(".react-flow__controls-fitview") && bodyEl.querySelector(".react-flow__node")) {
+            scheduleFitView();
+          }
+        });
+        mutationObserver.observe(bodyEl, { childList: true, subtree: true });
+      }
+
+      return () => {
+        cancelAnimationFrame(rafId);
+        clearTimeout(t1);
+        clearTimeout(t2);
+        resizeObserver?.disconnect();
+        mutationObserver?.disconnect();
+      };
     } else if (dialog.open) {
       dialog.close();
     }
-  }, [isAdmin, pipelineDrawerOpen]);
+  }, [isAdmin, pipelineDrawerOpen, triggerCanvasFitView, scheduleFitView]);
+
+  const hasPipelineData = Boolean(pipelineData);
+  useEffect(() => {
+    if (!isAdmin || !pipelineDrawerOpen || !hasPipelineData) return;
+    const rafId = requestAnimationFrame(triggerCanvasFitView);
+    const t = setTimeout(triggerCanvasFitView, 140);
+    return () => {
+      cancelAnimationFrame(rafId);
+      clearTimeout(t);
+    };
+  }, [isAdmin, pipelineDrawerOpen, hasPipelineData, triggerCanvasFitView]);
 
   // Safari 等尚未支持 <dialog closedby="any"> 的浏览器降级为坐标点外点击关闭（按压与抬起均在面板外）
   const isPointerOutsideDialog = (e: React.PointerEvent<HTMLDialogElement>, dialog: HTMLDialogElement) => {
@@ -131,23 +206,36 @@ export function PipelineDrawer() {
   return (
     <dialog
       ref={dialogRef}
-      className={`pipeline-drawer${pipelineDrawerOpen ? " is-open" : ""}`}
+      className="pipeline-drawer"
       aria-labelledby="pipeline-drawer-title"
       {...({ closedby: "any" } as Record<string, string>)}
       onClose={() => {
+        if (dialogRef.current) {
+          dialogRef.current.returnValue = "";
+        }
         if (pipelineDrawerOpen) setPipelineDrawerOpen(false);
       }}
       onPointerDown={(e) => {
         const dialog = dialogRef.current;
         if (!dialog || "closedBy" in HTMLDialogElement.prototype) return;
+        if (e.pointerType === "mouse" && e.button !== 0) {
+          pressedOutsideRef.current = false;
+          return;
+        }
         pressedOutsideRef.current = isPointerOutsideDialog(e, dialog);
       }}
       onPointerUp={(e) => {
         const dialog = dialogRef.current;
         if (!dialog || "closedBy" in HTMLDialogElement.prototype) return;
-        const shouldClose = pressedOutsideRef.current && isPointerOutsideDialog(e, dialog);
+        const shouldClose =
+          pressedOutsideRef.current &&
+          !(e.pointerType === "mouse" && e.button !== 0) &&
+          isPointerOutsideDialog(e, dialog);
         pressedOutsideRef.current = false;
         if (shouldClose) dialog.close();
+      }}
+      onPointerCancel={() => {
+        pressedOutsideRef.current = false;
       }}
     >
       {/* 顶部流水线工厂调度控制栏 (无手动开启按钮，系统自动研判) */}
@@ -157,9 +245,9 @@ export function PipelineDrawer() {
             <Cpu size={18} />
           </span>
           <div className="workbench-heading">
-            <h2 id="pipeline-drawer-title" className="text-sm font-bold text-slate-900 leading-tight">
+            <h1 id="pipeline-drawer-title" className="text-sm font-bold text-slate-900 leading-tight">
               {activeRegion ? `${activeRegion.name} · ` : ""}全流程 AI 研判流水线工厂
-            </h2>
+            </h1>
             <p className="workbench-heading__sub text-[11px] text-slate-500 leading-tight mt-0.5">
               端到端自动化工序：诉求接入 ➔ 要素初筛 ➔ 微观主体研判 ➔ 空间聚类 ➔ 案卷生成
             </p>
@@ -191,9 +279,19 @@ export function PipelineDrawer() {
         <div className="workbench-header__actions">
           <button
             type="button"
+            onClick={handleResetLayout}
+            className="inline-flex items-center gap-1.5 min-h-[44px] sm:min-h-[32px] px-2.5 py-1 text-xs font-medium text-slate-600 bg-white hover:bg-slate-50 hover:text-slate-900 border border-slate-200 rounded-lg transition-colors cursor-pointer whitespace-nowrap"
+            title="恢复 3列2行 蛇形无交叉标准排版并自适应居中"
+          >
+            <RotateCcw size={13} className="text-slate-500 shrink-0" aria-hidden="true" />
+            <span className="hidden sm:inline">复位标准排版</span>
+            <span className="sm:hidden">复位排版</span>
+          </button>
+          <button
+            type="button"
             autoFocus
             onClick={() => setPipelineDrawerOpen(false)}
-            className="workbench-close-btn relative flex items-center justify-center w-8 h-8 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer after:content-[''] after:absolute after:-inset-[6px]"
+            className="workbench-close-btn flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-[32px] sm:min-w-[32px] w-11 h-11 sm:w-8 sm:h-8 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
             title="收起控制台 (ESC)"
             aria-label="关闭控制台"
           >
@@ -202,8 +300,8 @@ export function PipelineDrawer() {
         </div>
       </header>
 
-      <div className="pipeline-drawer__body">
-        {pipelineDrawerOpen && (
+      <div ref={bodyRef} className="pipeline-drawer__body">
+        {(pipelineDrawerOpen || hasOpened) && (
           <PipelineCanvas stateData={pipelineData} onRefresh={fetchState} pending={loading && !pipelineData} />
         )}
       </div>

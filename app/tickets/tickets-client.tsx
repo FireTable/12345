@@ -764,12 +764,12 @@ function TicketsClientInner() {
                     <caption className="sr-only">待人工复核工单列表</caption>
                     <thead>
                       <tr>
-                        <th scope="col" className="min-w-[140px] whitespace-nowrap">工单号</th>
-                        <th scope="col" className="min-w-[200px]">{isEcommerce ? "客诉标题" : "诉求标题"}</th>
-                        <th scope="col" className="min-w-[104px] whitespace-nowrap">{regionUnit}</th>
-                        <th scope="col" className="min-w-[88px] whitespace-nowrap">置信度</th>
-                        <th scope="col" className="min-w-[160px] whitespace-nowrap">复核原因</th>
-                        <th scope="col" className="min-w-[240px] whitespace-nowrap text-right">复核操作</th>
+                        <th scope="col" className="min-w-[116px] whitespace-nowrap">工单号</th>
+                        <th scope="col" className="min-w-[180px]">{isEcommerce ? "客诉标题" : "诉求标题"}</th>
+                        <th scope="col" className="min-w-[84px] whitespace-nowrap">{regionUnit}</th>
+                        <th scope="col" className="min-w-[76px] whitespace-nowrap">置信度</th>
+                        <th scope="col" className="min-w-[140px] whitespace-nowrap">复核原因</th>
+                        <th scope="col" className="min-w-[220px] whitespace-nowrap text-right">复核操作</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -801,37 +801,38 @@ function TicketsClientInner() {
                               })
                             }
                           >
-                            <td className="col-id min-w-[140px] whitespace-nowrap tabular-nums">
+                            <td data-label="工单号" className="col-id min-w-[116px] whitespace-nowrap tabular-nums">
                               {item.ticketNo || item.ticketId}
                             </td>
-                            <td className="col-title min-w-[200px]">
+                            <td data-label={isEcommerce ? "客诉标题" : "诉求标题"} className="col-title min-w-[180px]">
                               <div className="col-title__text" title={titleText}>
                                 {titleText}
                               </div>
                             </td>
-                            <td className="min-w-[104px] whitespace-nowrap">{town}</td>
-                            <td className="min-w-[88px] whitespace-nowrap tabular-nums">
+                            <td data-label={regionUnit} className="col-region min-w-[84px] whitespace-nowrap">{town}</td>
+                            <td data-label="置信度" className="col-conf min-w-[76px] whitespace-nowrap tabular-nums">
                               <span className="badge-pill badge-pill--warning font-mono tabular-nums whitespace-nowrap">
                                 {item.confidence != null ? `${item.confidence}%` : "—"}
                               </span>
                             </td>
-                            <td className="min-w-[160px] whitespace-nowrap">
+                            <td data-label="复核原因" className="col-reason min-w-[140px] whitespace-nowrap">
                               <span className="text-xs text-slate-600 whitespace-nowrap">
                                 {formatReviewReason(item.reason, isEcommerce)}
                               </span>
                             </td>
                             <td
-                              className="min-w-[240px] whitespace-nowrap text-right"
+                              data-label="复核操作"
+                              className="col-actions min-w-[220px] whitespace-nowrap text-right"
                               onClick={(e) => e.stopPropagation()}
                             >
-                              <div className="inline-flex items-center justify-end gap-2 whitespace-nowrap">
+                              <div className="workorder-actions-wrap inline-flex items-center justify-end gap-2 whitespace-nowrap">
                                 <button
                                   type="button"
                                   disabled={Boolean(actingReviewId)}
                                   onClick={() =>
                                     void handleReviewAction(item, "REVIEWED")
                                   }
-                                  className="relative inline-flex items-center gap-1 px-2.5 min-h-[28px] min-w-0 py-1 rounded-md text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 disabled:opacity-50 cursor-pointer whitespace-nowrap after:content-[''] after:absolute after:-inset-y-[8px] after:inset-x-0"
+                                  className="relative inline-flex items-center justify-center gap-1 px-2.5 min-h-[44px] sm:min-h-[30px] min-w-0 py-1 rounded-md text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 disabled:opacity-50 cursor-pointer whitespace-nowrap"
                                 >
                                   <Check className="w-3 h-3 shrink-0" aria-hidden="true" />
                                   <span>{busy ? "处理中" : "确认无误"}</span>
@@ -842,14 +843,14 @@ function TicketsClientInner() {
                                   onClick={() =>
                                     void handleReviewAction(item, "DISMISSED")
                                   }
-                                  className="relative inline-flex items-center gap-1 px-2.5 min-h-[28px] min-w-0 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 disabled:opacity-50 cursor-pointer whitespace-nowrap after:content-[''] after:absolute after:-inset-y-[8px] after:inset-x-0"
+                                  className="relative inline-flex items-center justify-center gap-1 px-2.5 min-h-[44px] sm:min-h-[30px] min-w-0 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 disabled:opacity-50 cursor-pointer whitespace-nowrap"
                                 >
                                   <X className="w-3 h-3 shrink-0" aria-hidden="true" />
                                   <span>忽略</span>
                                 </button>
                                 <Link
                                   href={`/tickets/${encodeURIComponent(item.ticketId)}`}
-                                  className="relative inline-flex items-center gap-1 px-2.5 min-h-[28px] py-1 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 whitespace-nowrap after:content-[''] after:absolute after:-inset-y-[8px] after:inset-x-0"
+                                  className="relative inline-flex items-center justify-center gap-1 px-2.5 min-h-[44px] sm:min-h-[30px] py-1 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 whitespace-nowrap"
                                 >
                                   <Wrench className="w-3 h-3 shrink-0" aria-hidden="true" />
                                   <span>去纠偏</span>
@@ -1018,38 +1019,38 @@ function TicketsClientInner() {
                     <caption className="sr-only">工单列表</caption>
                     <thead>
                       <tr>
-                        <th scope="col" className="min-w-[140px] whitespace-nowrap">工单号</th>
-                        <th scope="col" className="min-w-[220px]">{isEcommerce ? "客诉标题" : "诉求标题"}</th>
-                        <th scope="col" className="min-w-[104px] whitespace-nowrap">{regionUnit}</th>
-                        <th scope="col" className="min-w-[128px] whitespace-nowrap">类型</th>
-                        <th scope="col" className="min-w-[84px] whitespace-nowrap">紧急度</th>
-                        <th scope="col" className="min-w-[116px] whitespace-nowrap">时间</th>
-                        <th scope="col" className="min-w-[88px] whitespace-nowrap">状态</th>
-                        <th scope="col" className="min-w-[140px] whitespace-nowrap text-right">操作</th>
+                        <th scope="col" className="min-w-[116px] whitespace-nowrap">工单号</th>
+                        <th scope="col" className="min-w-[180px]">{isEcommerce ? "客诉标题" : "诉求标题"}</th>
+                        <th scope="col" className="min-w-[84px] whitespace-nowrap">{regionUnit}</th>
+                        <th scope="col" className="min-w-[104px] whitespace-nowrap">类型</th>
+                        <th scope="col" className="min-w-[72px] whitespace-nowrap">紧急度</th>
+                        <th scope="col" className="min-w-[98px] whitespace-nowrap">时间</th>
+                        <th scope="col" className="min-w-[76px] whitespace-nowrap">状态</th>
+                        <th scope="col" className="min-w-[144px] whitespace-nowrap text-right">操作</th>
                       </tr>
                     </thead>
                     <tbody>
                       {data.data.map((r) => (
                         <tr key={r.ticketId} onClick={() => openDrawer(r)}>
-                          <td className="col-id min-w-[140px] whitespace-nowrap tabular-nums">{r.id}</td>
-                          <td className="col-title min-w-[220px]">
+                          <td data-label="工单号" className="col-id min-w-[116px] whitespace-nowrap tabular-nums">{r.id}</td>
+                          <td data-label={isEcommerce ? "客诉标题" : "诉求标题"} className="col-title min-w-[180px]">
                             <div className="col-title__text flex items-center gap-1.5 min-w-0" title={r.title}>
                               <span className="truncate min-w-0">{r.title}</span>
                               {r.multifreq && (
-                                <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200 shrink-0 whitespace-nowrap" title="已归入多频聚类群组">
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 shrink-0 whitespace-nowrap" title="已归入多频聚类群组">
                                   多频
                                 </span>
                               )}
                               {r.missingSlots && r.missingSlots.length > 0 && (
                                 <span
-                                  className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-medium bg-amber-50 text-amber-800 border border-amber-200 shrink-0 whitespace-nowrap"
+                                  className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200 shrink-0 whitespace-nowrap"
                                   title={`缺失：${r.missingSlots.join("、")}`}
                                 >
                                   缺资料
                                 </span>
                               )}
                               {r.isFakeClosure && (
-                                <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-medium bg-amber-50 text-amber-800 border border-amber-200 shrink-0 whitespace-nowrap" title="办结后短期内再次投诉">
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200 shrink-0 whitespace-nowrap" title="办结后短期内再次投诉">
                                   假闭环
                                 </span>
                               )}
@@ -1058,7 +1059,7 @@ function TicketsClientInner() {
                               {r.address ? <span className="truncate" title={r.address}>{r.address}</span> : null}
                               {r.canonicalSubject && !isGenericSubject(r.canonicalSubject) ? (
                                 <span
-                                  className="text-[11px] text-gray-500 font-normal truncate"
+                                  className="text-xs text-gray-500 font-normal truncate"
                                   title={`研判${subjectLabel}: ${r.canonicalSubject}`}
                                 >
                                   · {subjectLabel}: {r.canonicalSubject}
@@ -1072,7 +1073,7 @@ function TicketsClientInner() {
                                     slot.includes("商品")
                                 ) ? (
                                 <span
-                                  className="text-[11px] text-gray-400 font-normal truncate"
+                                  className="text-xs text-gray-500 font-normal truncate"
                                   title={
                                     r.canonicalSubject
                                       ? `原提取为泛化词「${r.canonicalSubject}」，待补充具体${subjectLabel}`
@@ -1084,8 +1085,8 @@ function TicketsClientInner() {
                               ) : null}
                             </div>
                           </td>
-                          <td className="min-w-[104px] whitespace-nowrap">{r.region || "—"}</td>
-                          <td className="min-w-[128px] whitespace-nowrap">
+                          <td data-label={regionUnit} className="col-region min-w-[84px] whitespace-nowrap">{r.region || "—"}</td>
+                          <td data-label="类型" className="col-cat min-w-[104px] whitespace-nowrap">
                             {r.category ? (
                               <span
                                 className={`badge-pill whitespace-nowrap ${catPill(r.category)}`}
@@ -1097,19 +1098,19 @@ function TicketsClientInner() {
                               "—"
                             )}
                           </td>
-                          <td className="min-w-[84px] whitespace-nowrap">
+                          <td data-label="紧急度" className="col-urgency min-w-[72px] whitespace-nowrap">
                             <span className={`badge-pill whitespace-nowrap ${r.urgency === "URGENT" ? "badge-pill--danger" : r.urgency === "MEDIUM" ? "badge-pill--warning" : "badge-pill--default"}`}>
                               {urgencyLabel(r.urgency)}
                             </span>
                           </td>
-                          <td className="min-w-[116px] whitespace-nowrap tabular-nums">{r.createdAt}</td>
-                          <td className="min-w-[88px] whitespace-nowrap">
+                          <td data-label="时间" className="col-time min-w-[98px] whitespace-nowrap tabular-nums">{r.createdAt}</td>
+                          <td data-label="状态" className="col-status min-w-[76px] whitespace-nowrap">
                             <span className={`status-tag whitespace-nowrap status-tag--${statusTag(r.status)}`}>
                               {statusLabel(r.status)}
                             </span>
                           </td>
-                          <td className="min-w-[140px] whitespace-nowrap text-right">
-                            <div className="inline-flex items-center justify-end gap-2.5">
+                          <td data-label="操作" className="col-actions min-w-[144px] whitespace-nowrap text-right">
+                            <div className="workorder-actions-wrap inline-flex items-center justify-end gap-2">
                               {isAdmin && r.missingSlots && r.missingSlots.length > 0 && (
                                 <button
                                   type="button"
@@ -1120,12 +1121,12 @@ function TicketsClientInner() {
                                   }}
                                   aria-label={`让 Agent 跟进工单 ${r.id}`}
                                   title={`一键让 Agent 外呼补全：${r.missingSlots.join("、")}`}
-                                  className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 min-h-[26px] text-[11px] font-semibold text-amber-800 hover:bg-amber-100 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                  className="inline-flex items-center justify-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 min-h-[44px] sm:min-h-[30px] text-xs font-semibold text-amber-800 hover:bg-amber-100 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   {followUpPendingId === (r.ticketId || r.id) ? (
-                                    <Loader2 className="w-3 h-3 animate-spin shrink-0" aria-hidden="true" />
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" aria-hidden="true" />
                                   ) : (
-                                    <Bot className="w-3 h-3 shrink-0" aria-hidden="true" />
+                                    <Bot className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                                   )}
                                   <span>Agent 跟进</span>
                                 </button>
@@ -1137,7 +1138,7 @@ function TicketsClientInner() {
                                   openDrawer(r);
                                 }}
                                 aria-label={`查看工单 ${r.id} 详情`}
-                                className="relative inline-flex items-center justify-end min-h-[28px] min-w-0 py-1 px-2 sm:px-0 text-[var(--c-brand)] font-medium text-xs bg-transparent border-0 cursor-pointer hover:underline after:content-[''] after:absolute after:-inset-y-[8px] after:-inset-x-[4px]"
+                                className="table-card-action-btn relative inline-flex items-center justify-end min-h-[44px] sm:min-h-[30px] min-w-0 py-1.5 px-3 sm:px-1 text-[var(--c-brand)] font-medium text-xs bg-transparent border-0 cursor-pointer hover:underline"
                               >
                                 查看
                               </button>

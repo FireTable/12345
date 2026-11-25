@@ -67,6 +67,24 @@ type Overview = {
 
 type Trends = { daily: Record<string, number>; dailyNewClusters?: Record<string, number> };
 
+function formatInsightTitle(rawTitle: string): string {
+  const title = rawTitle.replace(/\s+/g, " ").trim();
+  const parts = title.split(/\s*·\s*/).filter(Boolean);
+  if (parts.length >= 2) {
+    const firstBase = parts[0].replace(/(街道|镇|区)$/, "");
+    if (
+      parts[1].startsWith(parts[0]) ||
+      (firstBase.length >= 2 && parts[1].startsWith(firstBase))
+    ) {
+      return parts.slice(1).join(" · ");
+    }
+  }
+  return title.replace(
+    /^([\u4e00-\u9fa5]{2,6}(?:街道|镇)?)\s*[·•\-:\s]\s*\1(?=[\u4e00-\u9fa5])/,
+    "$1"
+  );
+}
+
 export default function DashboardPage() {
   const { activeRegion, isLoading: regionLoading } = useRegion();
   const { isAdmin, isPending: isRolePending } = useAuthRole();
@@ -237,7 +255,7 @@ export default function DashboardPage() {
           <button
             type="button"
             onClick={() => setShowCockpit(true)}
-            className="btn btn--primary group inline-flex items-center gap-1.5 min-h-[44px] sm:min-h-0 sm:h-[34px] px-3.5 rounded-lg text-xs font-semibold text-white bg-[#1677FF] hover:bg-[#0958d9] border border-transparent shadow-[0_2px_6px_rgba(22,119,255,0.28)] hover:shadow-[0_4px_12px_rgba(22,119,255,0.38)] transition-all cursor-pointer active:scale-[0.98]"
+            className="btn btn--primary group inline-flex items-center gap-1.5 min-h-[44px] sm:min-h-0 sm:h-[34px] px-3.5 rounded-lg text-[13px] font-semibold text-white bg-[#1677FF] hover:bg-[#0958d9] border border-transparent shadow-[0_2px_6px_rgba(22,119,255,0.28)] hover:shadow-[0_4px_12px_rgba(22,119,255,0.38)] transition-[background-color,box-shadow,transform] duration-150 cursor-pointer active:scale-[0.98]"
             title="展开智能研判全景指挥大屏 (全域态势调度驾驶舱)"
           >
             <MonitorPlay
@@ -254,7 +272,7 @@ export default function DashboardPage() {
           >
             <SelectTrigger
               aria-label="统计时间区间"
-              className="w-[105px] min-h-[44px] sm:min-h-0 sm:h-[34px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg"
+              className="w-[105px] min-h-[44px] sm:min-h-0 sm:h-[34px] bg-[var(--c-surface)] border-[var(--c-border)] text-[13px] text-[var(--c-ink-2)] font-medium rounded-lg"
             >
               <SelectValue placeholder="统计区间" />
             </SelectTrigger>
@@ -277,7 +295,7 @@ export default function DashboardPage() {
         >
           <div className="space-y-1 min-w-0">
             <h2 className="text-sm font-semibold text-rose-900">数据总览加载失败</h2>
-            <p className="text-xs text-rose-700 break-words">{loadError}</p>
+            <p className="text-[13px] text-rose-700 break-words">{loadError}</p>
           </div>
           <button
             type="button"
@@ -285,7 +303,7 @@ export default function DashboardPage() {
               setReady(false);
               void load();
             }}
-            className="btn btn--primary min-h-[44px] sm:min-h-0 px-4 text-xs shrink-0"
+            className="btn btn--primary min-h-[44px] sm:min-h-0 px-4 text-[13px] shrink-0"
           >
             重试加载
           </button>
@@ -330,7 +348,7 @@ export default function DashboardPage() {
             <div className="card__header">
               <h2 className="card__title" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <span>工单透势</span>
-                <span style={{ fontSize: 11, fontWeight: 400, color: "var(--c-ink-3)" }}>由 AI 实时分析生成</span>
+                <span style={{ fontSize: 13, fontWeight: 400, color: "var(--c-ink-3)" }}>由 AI 实时分析生成</span>
               </h2>
             </div>
             <div className="card__body" style={{ padding: "14px 16px" }}>
@@ -340,7 +358,7 @@ export default function DashboardPage() {
                     <Link key={c.title} href={c.href || "/themes"} className={`insight-card insight-card--${c.tone}`}>
                       <div className="insight-card__icon">{(c as any).type === "GATHERING" || c.tag === "聚集" ? "🚨" : (c as any).type === "REPEAT" || c.tag === "重复" ? "🔁" : (c as any).type === "DIVERGE" || c.tag === "发散" ? "📍" : "📉"}</div>
                       <div className="insight-card__body">
-                        <div className="insight-card__title">{c.title}</div>
+                        <div className="insight-card__title">{formatInsightTitle(c.title)}</div>
                         <div className="insight-card__text">{c.text}</div>
                       </div>
                     </Link>
@@ -390,7 +408,7 @@ export default function DashboardPage() {
                 <h2 className="card__title">
                   {hasGeoMap ? "镇街工单量排行" : `${regionUnit}客诉热度分布矩阵`}
                 </h2>
-                <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>
+                <div style={{ fontSize: 13, color: "var(--c-ink-3)" }}>
                   {hasGeoMap
                     ? daysRange === 0
                       ? "全周期 · 已研判"
@@ -462,7 +480,7 @@ export default function DashboardPage() {
             <div className="card" style={{ display: "flex", flexDirection: "column" }}>
               <div className="card__header">
                 <h2 className="card__title">工单类型分布</h2>
-                <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>
+                <div style={{ fontSize: 13, color: "var(--c-ink-3)" }}>
                   已研判 <b>{ov?.analyzedCount || 0}</b> / {ov?.totalWorkorders || 0} 件
                 </div>
               </div>
@@ -486,19 +504,19 @@ export default function DashboardPage() {
                 )}
               </div>
             </div>
-            <div className="card">
+            <div className="card flex flex-col">
               <div className="card__header">
                 <h2 className="card__title">
                   {hasGeoMap ? "镇街 × 类型 工单数量" : `${regionUnit} × 类型 工单数量`}
                 </h2>
-                <div style={{ fontSize: 11, color: "var(--c-ink-3)" }}>色深表示工单数量</div>
+                <div style={{ fontSize: 13, color: "var(--c-ink-3)" }}>色深表示工单数量</div>
               </div>
               <div
                 className="card__body heatmap-scroll table-wrapper"
                 tabIndex={0}
                 role="region"
                 aria-label={hasGeoMap ? "镇街与诉求类型热力矩阵" : "渠道与诉求类型热力矩阵"}
-                style={{ padding: "0 12px 12px 0" }}
+                style={{ padding: "4px 16px 20px 12px", scrollPaddingBottom: 16 }}
               >
                 <CivicHeatmap
                   regions={regions.map((r) => r[0])}
@@ -506,6 +524,14 @@ export default function DashboardPage() {
                   grid={ov?.regionCategory || {}}
                 />
               </div>
+              {regions.length > 0 && cats.length > 0 ? (
+                <div className="px-4 py-2 border-t border-[var(--c-border-soft)] text-[13px] text-[var(--c-ink-3)] flex items-center justify-between gap-2 flex-wrap">
+                  <span className="tabular-nums">
+                    共 {regions.length} 个{hasGeoMap ? "镇街" : regionUnit} · {cats.slice(0, 7).length} 类诉求
+                  </span>
+                  <span>支持横纵滚动查看完整矩阵</span>
+                </div>
+              ) : null}
             </div>
           </section>
         </>

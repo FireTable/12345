@@ -648,9 +648,9 @@ export default function AgentCenterPage() {
             className="btn btn--primary min-h-[44px] sm:min-h-[36px] px-3.5 text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap disabled:opacity-60"
           >
             {patrolling ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+              <Loader2 className="h-3.5 w-3.5 motion-safe:animate-spin shrink-0" aria-hidden="true" />
             ) : (
-              <Radar className="h-3.5 w-3.5 shrink-0" />
+              <Radar className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             )}
             <span>{patrolling ? "巡检中…" : "立即巡检"}</span>
           </button>
@@ -661,9 +661,9 @@ export default function AgentCenterPage() {
             className="btn btn--default min-h-[44px] sm:min-h-[36px] px-3.5 text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap disabled:opacity-60"
           >
             {generatingReport ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0 text-blue-600" />
+              <Loader2 className="h-3.5 w-3.5 motion-safe:animate-spin shrink-0 text-blue-600" aria-hidden="true" />
             ) : (
-              <Sparkles className="h-3.5 w-3.5 shrink-0 text-blue-600" />
+              <Sparkles className="h-3.5 w-3.5 shrink-0 text-blue-600" aria-hidden="true" />
             )}
             <span>{generatingReport ? "生成中…" : "生成今日专报"}</span>
           </button>
@@ -726,7 +726,7 @@ export default function AgentCenterPage() {
               type="button"
               aria-pressed={isSelected}
               onClick={() => selectAutonomyFilter(card.level)}
-              className={`w-full text-left rounded-xl border px-4 py-3.5 shadow-2xs flex items-center justify-between gap-3 min-w-0 max-w-full cursor-pointer transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 ${
+              className={`w-full text-left rounded-xl border px-4 py-3.5 shadow-2xs flex items-center justify-between gap-3 min-w-0 max-w-full cursor-pointer transition-[border-color,background-color,box-shadow] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 ${
                 isSelected
                   ? card.activeCardClass
                   : "bg-white border-slate-200/90 hover:border-slate-300 hover:bg-slate-50/50"
@@ -830,7 +830,7 @@ export default function AgentCenterPage() {
                   type="button"
                   aria-pressed={statusFilter === opt.key}
                   onClick={() => setStatusFilter(opt.key)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer min-h-[44px] sm:min-h-[34px] ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer min-h-[44px] sm:min-h-[36px] ${
                     statusFilter === opt.key
                       ? "bg-blue-50 text-blue-700 border-blue-200"
                       : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
@@ -841,16 +841,16 @@ export default function AgentCenterPage() {
               ))}
 
               {autonomyFilter !== "ALL" && (
-                <div className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50/80 px-2.5 py-1 text-xs text-blue-800 max-w-full min-h-[34px]">
+                <div className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50/80 px-2.5 py-1 text-xs text-blue-800 max-w-full min-h-[44px] sm:min-h-[36px]">
                   <span className="font-semibold whitespace-nowrap">
                     分层：{AUTONOMY_FILTER_LABELS[autonomyFilter]}
                   </span>
                   <button
                     type="button"
                     onClick={() => setAutonomyFilter("ALL")}
-                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-semibold text-blue-700 hover:bg-blue-100 cursor-pointer whitespace-nowrap min-h-[44px] sm:min-h-[24px]"
+                    className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100 cursor-pointer whitespace-nowrap min-h-[44px] sm:min-h-[36px]"
                   >
-                    <XCircle className="w-3 h-3 shrink-0" aria-hidden="true" />
+                    <XCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                     <span>清除筛选</span>
                   </button>
                 </div>
@@ -874,7 +874,7 @@ export default function AgentCenterPage() {
                 type="button"
                 disabled={loadingTasks}
                 onClick={() => void fetchTasks()}
-                className="btn btn--default text-xs min-h-[44px] sm:min-h-[32px] shrink-0"
+                className="btn btn--default text-xs min-h-[44px] sm:min-h-[36px] shrink-0"
               >
                 重新加载
               </button>
@@ -954,7 +954,7 @@ export default function AgentCenterPage() {
                   >
                     {/* 顶部标签行 */}
                     <div className="flex items-start justify-between gap-2 flex-wrap">
-                      <div className="flex items-center gap-2 flex-wrap min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap min-w-0 text-xs text-slate-600">
                         <span
                           className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold border whitespace-nowrap ${
                             isL3
@@ -971,12 +971,6 @@ export default function AgentCenterPage() {
                             : "L2 待批"}
                         </span>
 
-                        {!isL3 && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200 whitespace-nowrap">
-                            {TASK_TYPE_LABELS[task.taskType] || task.taskType}
-                          </span>
-                        )}
-
                         {!(isL3 && task.status === "BLOCKED") && (
                           <span
                             className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border whitespace-nowrap ${statusMeta.className}`}
@@ -985,15 +979,21 @@ export default function AgentCenterPage() {
                           </span>
                         )}
 
+                        {!isL3 && (
+                          <span className="font-medium text-slate-700 whitespace-nowrap">
+                            {TASK_TYPE_LABELS[task.taskType] || task.taskType}
+                          </span>
+                        )}
+
                         {task.maskedContact && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-mono bg-slate-50 text-slate-700 border border-slate-200 whitespace-nowrap">
-                            脱敏联系：{task.maskedContact}
+                          <span className="font-mono text-slate-600 whitespace-nowrap">
+                            · 脱敏联系：{task.maskedContact}
                           </span>
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2 text-[11px] text-slate-500 font-mono shrink-0">
-                        <Clock className="w-3 h-3" aria-hidden="true" />
+                      <div className="flex items-center gap-1.5 text-xs text-slate-500 font-mono tabular-nums shrink-0">
+                        <Clock className="w-3.5 h-3.5" aria-hidden="true" />
                         <span>{formatTaskTime(task.createdAt)}</span>
                       </div>
                     </div>
@@ -1009,7 +1009,7 @@ export default function AgentCenterPage() {
                             <span className="break-words">{task.targetTitle}</span>
                             <ExternalLink className="w-3.5 h-3.5 text-slate-500 shrink-0" aria-hidden="true" />
                           </Link>
-                          <span className="text-[11px] font-mono text-slate-500 break-all">
+                          <span className="text-xs font-mono text-slate-500 break-all">
                             {task.targetType} #{task.targetId}
                           </span>
                         </div>
@@ -1017,16 +1017,8 @@ export default function AgentCenterPage() {
                         {/* 缺失槽位或超期/红线原因 */}
                         <div className="flex items-center gap-1.5 flex-wrap text-xs text-slate-600 min-w-0">
                           {task.missingSlots.length > 0 && (
-                            <span className="inline-flex items-center gap-1 flex-wrap">
-                              <span className="text-slate-500">缺失要素：</span>
-                              {task.missingSlots.map((slot) => (
-                                <span
-                                  key={slot}
-                                  className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 text-[11px]"
-                                >
-                                  {slot}
-                                </span>
-                              ))}
+                            <span className="text-amber-800 font-medium">
+                              缺失要素：{task.missingSlots.join("、")}
                             </span>
                           )}
                           {task.reason && (
@@ -1039,24 +1031,24 @@ export default function AgentCenterPage() {
                       </div>
 
                       {task.suggestedOwner && (
-                        <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200/80 rounded-lg px-2.5 py-1 max-w-full sm:shrink-0 sm:max-w-[42%] min-w-0 break-words">
+                        <div className="text-xs text-slate-600 bg-slate-50 rounded-md px-2.5 py-1 max-w-full sm:shrink-0 sm:max-w-[42%] min-w-0 break-words">
                           建议责任方：<b className="text-slate-800 break-words">{task.suggestedOwner}</b>
                         </div>
                       )}
                     </div>
 
                     {/* AI 拟定话术 */}
-                    <div className="rounded-lg border border-slate-200/80 bg-slate-50/75 px-3 py-2.5 text-xs text-slate-700 leading-relaxed space-y-1">
-                      <div className="text-[11px] font-semibold text-slate-600 flex items-center justify-between gap-2">
+                    <div className="rounded-lg bg-slate-50/90 px-3 py-2.5 text-xs text-slate-700 leading-relaxed space-y-1">
+                      <div className="text-xs font-semibold text-slate-600 flex items-center justify-between gap-2">
                         <span>AI 拟定外联/催办话术</span>
-                        <span className="font-mono text-[10px] text-slate-500">
+                        <span className="font-mono text-slate-500">
                           通道：{task.channel}
                         </span>
                       </div>
                       <p className="break-words text-slate-800">{task.draftMessage}</p>
                       {task.resultSummary && (
-                        <p className="pt-1.5 mt-1.5 border-t border-slate-200/70 text-[11px] text-emerald-700 font-medium flex items-center gap-1">
-                          <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                        <p className="pt-1.5 mt-1.5 border-t border-slate-200/70 text-xs text-emerald-700 font-medium flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                           <span>执行结果：{task.resultSummary}</span>
                         </p>
                       )}
@@ -1066,8 +1058,8 @@ export default function AgentCenterPage() {
                     <div className="flex items-center justify-between gap-2 flex-wrap pt-1">
                       {isL3 ? (
                         <>
-                          <div className="inline-flex items-center gap-1.5 text-xs font-medium text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-2.5 py-1.5">
-                            <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
+                          <div className="inline-flex items-center gap-1.5 text-xs font-medium text-rose-700 py-1">
+                            <ShieldAlert className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                             <span>命中安全红线 · 已强制禁用自动外联与语音外呼</span>
                           </div>
                           <div className="flex items-center gap-2 ml-auto flex-wrap">
@@ -1083,7 +1075,7 @@ export default function AgentCenterPage() {
                               className="btn btn--primary text-xs min-h-[44px] sm:min-h-[36px]"
                             >
                               <span>人工核查接管</span>
-                              <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                              <ExternalLink className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                             </Link>
                           </div>
                         </>
@@ -1091,10 +1083,10 @@ export default function AgentCenterPage() {
                         <>
                           <Link
                             href={targetHref}
-                            className="text-xs text-slate-500 hover:text-blue-600 inline-flex items-center gap-1 min-h-[44px] sm:min-h-[28px] py-1.5 sm:py-0.5"
+                            className="text-xs text-slate-500 hover:text-blue-600 inline-flex items-center gap-1 min-h-[44px] sm:min-h-[36px] py-1.5 sm:py-0.5"
                           >
                             <span>查看关联对象详情</span>
-                            <ExternalLink className="w-3 h-3" />
+                            <ExternalLink className="w-3 h-3" aria-hidden="true" />
                           </Link>
 
                           <div className="flex items-center gap-2 flex-wrap ml-auto">
@@ -1111,7 +1103,7 @@ export default function AgentCenterPage() {
                                   }}
                                   className="btn btn--primary text-xs min-h-[44px] sm:min-h-[36px] disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                  <PhoneCall className="w-3.5 h-3.5 shrink-0" />
+                                  <PhoneCall className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                                   <span>发起 AI 语音外呼</span>
                                 </button>
                                 <button
@@ -1121,9 +1113,9 @@ export default function AgentCenterPage() {
                                   className="btn btn--default text-xs min-h-[44px] sm:min-h-[36px] text-blue-700 border-blue-200 hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   {isBusy ? (
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                                    <Loader2 className="w-3.5 h-3.5 motion-safe:animate-spin shrink-0" aria-hidden="true" />
                                   ) : (
-                                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                                   )}
                                   <span>批准执行</span>
                                 </button>
@@ -1138,9 +1130,9 @@ export default function AgentCenterPage() {
                                 className="btn btn--primary text-xs min-h-[44px] sm:min-h-[36px] disabled:opacity-50 disabled:cursor-not-allowed"
                               >
                                 {isBusy ? (
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                                  <Loader2 className="w-3.5 h-3.5 motion-safe:animate-spin shrink-0" aria-hidden="true" />
                                 ) : (
-                                  <Play className="w-3.5 h-3.5 shrink-0" />
+                                  <Play className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                                 )}
                                 <span>一键催办执行</span>
                               </button>
@@ -1152,7 +1144,7 @@ export default function AgentCenterPage() {
                               onClick={() => void handleTaskAction(task, "REJECT")}
                               className="btn btn--default text-xs min-h-[44px] sm:min-h-[36px] text-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                              <XCircle className="w-3.5 h-3.5 shrink-0" />
+                              <XCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                               <span>驳回</span>
                             </button>
                           </div>
@@ -1188,7 +1180,7 @@ export default function AgentCenterPage() {
                 type="button"
                 disabled={loadingReport}
                 onClick={() => void fetchReports()}
-                className="btn btn--default text-xs min-h-[44px] sm:min-h-[32px] shrink-0"
+                className="btn btn--default text-xs min-h-[44px] sm:min-h-[36px] shrink-0"
               >
                 重新加载
               </button>

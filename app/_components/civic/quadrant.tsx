@@ -25,23 +25,9 @@ function quadKey(c: QuadCluster): Q {
 }
 
 /**
- * Per-quadrant bounding box in % coords. Each quadrant is 50×50 of the
- * chart, with an inner padding so dots don't sit on the cross / border.
- *   tl: x ∈ [pad, 50-pad]  y ∈ [pad, 50-pad]
- *   tr: x ∈ [50+pad, 100-pad] y ∈ [pad, 50-pad]
- *   bl: x ∈ [pad, 50-pad]  y ∈ [50+pad, 100-pad]
- *   br: x ∈ [50+pad, 100-pad] y ∈ [50+pad, 100-pad]
- */
-const QBOX: Record<Q, { xMin: number; xMax: number; yMin: number; yMax: number }> = {
-  tl: { xMin: 8,  xMax: 46, yMin: 18, yMax: 44 },
-  tr: { xMin: 54, xMax: 92, yMin: 18, yMax: 44 },
-  bl: { xMin: 8,  xMax: 46, yMin: 56, yMax: 88 },
-  br: { xMin: 54, xMax: 92, yMin: 56, yMax: 88 },
-};
-
-/**
- * FNV-1a mix → number in [0, 1). Two different salts give independent
- * x / y streams so neighbours don't fall on the same row or column.
+ * Per-quadrant local plot zone inside `.quad__plot` (which sits cleanly BELOW `.quad__head`).
+ * Keeping dots within [12%, 88%] horizontally and [18%, 82%] vertically prevents
+ * dot centers/edges from colliding with quadrant titles, borders, or crosshairs.
  */
 function hash01(id: string, salt: number): number {
   let h = 2166136261 ^ salt;
@@ -84,75 +70,93 @@ export function QuadrantBoard({
     return result;
   }, [pending]);
 
-  type Dot = { c: QuadCluster; left: number; top: number; size: number; cls: string };
-  const dots: Dot[] = displayPending.map((c) => {
+  type Dot = { c: QuadCluster; q: Q; left: number; top: number; size: number; cls: string };
+  const dotsByQuad: Record<Q, Dot[]> = { tl: [], tr: [], bl: [], br: [] };
+  for (const c of displayPending) {
     const q = quadKey(c);
-    const box = QBOX[q];
-    // Pseudo-random scatter inside the quadrant's inner box.
-    // hash01 returns [0, 1) so we span the full box width/height.
+    // Scatter inside each quadrant's dedicated `.quad__plot` box (below `.quad__head`).
     const rx = hash01(c.id, 0xA1);
     const ry = hash01(c.id, 0xB2);
-    const left = box.xMin + rx * (box.xMax - box.xMin);
-    const top  = box.yMin + ry * (box.yMax - box.yMin);
-    const size = Math.max(14, Math.min(38, 12 + Math.log10((c.count || 1) + 1) * 9));
+    const left = 12 + rx * 76;
+    const top = 18 + ry * 64;
+    const size = Math.max(18, Math.min(38, 14 + Math.log10((c.count || 1) + 1) * 9));
     const cls =
       c.urgency === "urgent" ? "quad-dot--urgent"
       : c.urgency === "high" ? "quad-dot--high"
       : c.urgency === "medium" ? "quad-dot--medium"
       : "quad-dot--low";
-    return { c, left, top, size, cls };
-  });
+    dotsByQuad[q].push({ c, q, left, top, size, cls });
+  }
+
+  const renderDot = (d: Dot) => (
+    <button
+      key={d.c.id}
+      type="button"
+      className={`quad-dot ${d.cls}`}
+      aria-label={`${d.c.region} · ${d.c.type}，${d.c.count} 件工单`}
+      title={`${d.c.region}·${d.c.type}`}
+      style={{ left: `${d.left}%`, top: `${d.top}%`, width: d.size, height: d.size, fontSize: d.size > 24 ? 10 : 9 }}
+      onClick={() => router.push(`/themes/${d.c.id}`)}
+    >
+      {d.c.count >= 1000 ? `${(d.c.count / 1000).toFixed(1)}k` : d.c.count}
+    </button>
+  );
 
   return (
     <div className="quadrant-wrap">
       <div className="quadrant-grid">
         <div className="quad quad--tl">
-          <div className="quad__inner">
-            <div className="quad__label">🟠 重要不紧急</div>
-            <div className="quad__count">{grouped.tl}</div>
+          <div className="quad__head">
+            <div className="quad__head-main">
+              <span className="quad__label">🟠 重要不紧急</span>
+              <span className="quad__count">{grouped.tl}</span>
+            </div>
             <div className="quad__hint">计划安排处理</div>
+          </div>
+          <div className="quad__plot">
+            {dotsByQuad.tl.map(renderDot)}
           </div>
         </div>
         <div className="quad quad--tr">
-          <div className="quad__inner" style={{ textAlign: "right" }}>
-            <div className="quad__label">🔴 紧急且重要</div>
-            <div className="quad__count">{grouped.tr}</div>
+          <div className="quad__head quad__head--right">
+            <div className="quad__head-main">
+              <span className="quad__label">🔴 紧急且重要</span>
+              <span className="quad__count">{grouped.tr}</span>
+            </div>
             <div className="quad__hint">立即处置</div>
+          </div>
+          <div className="quad__plot">
+            {dotsByQuad.tr.map(renderDot)}
           </div>
         </div>
         <div className="quad quad--bl">
-          <div className="quad__inner">
-            <div className="quad__label">🟢 观察等待</div>
-            <div className="quad__count">{grouped.bl}</div>
+          <div className="quad__head">
+            <div className="quad__head-main">
+              <span className="quad__label">🟢 观察等待</span>
+              <span className="quad__count">{grouped.bl}</span>
+            </div>
             <div className="quad__hint">暂不紧急</div>
+          </div>
+          <div className="quad__plot">
+            {dotsByQuad.bl.map(renderDot)}
           </div>
         </div>
         <div className="quad quad--br">
-          <div className="quad__inner" style={{ textAlign: "right" }}>
-            <div className="quad__label">🟡 快速处置</div>
-            <div className="quad__count">{grouped.br}</div>
+          <div className="quad__head quad__head--right">
+            <div className="quad__head-main">
+              <span className="quad__label">🟡 快速处置</span>
+              <span className="quad__count">{grouped.br}</span>
+            </div>
             <div className="quad__hint">快速分流</div>
+          </div>
+          <div className="quad__plot">
+            {dotsByQuad.br.map(renderDot)}
           </div>
         </div>
         <div className="quad-cross-x" />
         <div className="quad-cross-y" />
         <div className="quad-axis-y">紧 急 程 度 ↑</div>
         <div className="quad-axis-x">→ 重 要 程 度</div>
-        <div className="quad-priority-flag">右上：优先处置</div>
-        <div className="quad-dots">
-          {dots.map((d) => (
-            <button
-              key={d.c.id}
-              type="button"
-              className={`quad-dot ${d.cls}`}
-              title={`${d.c.region}·${d.c.type}`}
-              style={{ left: `${d.left}%`, top: `${d.top}%`, width: d.size, height: d.size, fontSize: d.size > 24 ? 10 : 8 }}
-              onClick={() => router.push(`/themes/${d.c.id}`)}
-            >
-              {d.c.count >= 1000 ? `${(d.c.count / 1000).toFixed(1)}k` : d.c.count}
-            </button>
-          ))}
-        </div>
       </div>
       <div className="quadrant-footer">
         <div className="quad-legend-item">

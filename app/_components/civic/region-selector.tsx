@@ -87,7 +87,7 @@ export function RegionSelector() {
   if (!activeRegion) {
     if (isLoading) {
       return (
-        <div className="inline-flex items-center gap-1.5 h-[34px] sm:h-7 px-2.5 bg-slate-100 border border-slate-300 rounded-md text-xs text-slate-500 max-w-[170px] sm:max-w-none min-w-0">
+        <div className="inline-flex items-center gap-1.5 h-[34px] sm:h-7 px-2.5 bg-slate-100 border border-slate-300 rounded-md text-xs text-slate-500 max-w-full sm:max-w-none min-w-0">
           <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" aria-hidden="true" />
           <span className="truncate">加载辖区...</span>
         </div>
@@ -185,7 +185,7 @@ export function RegionSelector() {
 
   return (
     <div
-      className="relative inline-block text-left min-w-0"
+      className="relative inline-block text-left min-w-0 flex-1 max-w-full"
       ref={containerRef}
       onBlur={(e) => {
         if (
@@ -237,7 +237,7 @@ export function RegionSelector() {
         aria-haspopup="listbox"
         aria-controls={open ? listboxId : undefined}
         aria-label={`切换业务辖区，当前为 ${activeRegion.city} · ${activeRegion.name}`}
-        className="region-selector-btn relative inline-flex items-center gap-1.5 h-[34px] min-h-[34px] sm:h-7 sm:min-h-7 px-2.5 bg-slate-100 hover:bg-slate-200/70 border border-slate-300 rounded-md text-xs font-semibold text-slate-900 cursor-pointer transition-colors max-w-[170px] sm:max-w-none min-w-0 after:content-[''] after:absolute after:-inset-y-[5px] sm:after:-inset-y-[8px] after:inset-x-0"
+        className="region-selector-btn relative inline-flex items-center gap-1.5 h-[34px] min-h-[34px] sm:h-7 sm:min-h-7 px-2.5 bg-slate-100 hover:bg-slate-200/70 border border-slate-300 rounded-md text-xs font-semibold text-slate-900 cursor-pointer transition-colors max-w-full min-w-0 after:content-[''] after:absolute after:-inset-y-[6px] sm:after:-inset-y-[8px] after:inset-x-0"
       >
         <MapPin
           className={`w-3.5 h-3.5 shrink-0 ${isActiveEcom ? "text-amber-600" : "text-blue-600"}`}

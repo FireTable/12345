@@ -90,7 +90,10 @@ export function TablePager({
             value={String(size)}
             onValueChange={(val) => onPageSizeChange(Number(val))}
           >
-            <SelectTrigger className="w-[88px] h-[30px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] rounded-md font-medium">
+            <SelectTrigger
+              aria-label="每页显示条数"
+              className="w-[88px] min-h-[44px] sm:min-h-[32px] sm:h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] rounded-md font-medium"
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -153,12 +156,17 @@ export function TablePager({
           跳至
           <input
             type="number"
+            aria-label="跳转到指定页码"
             min={1}
             max={safePages}
             value={jump}
             onChange={(e) => setJump(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") commitJump();
+              if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+              if (e.key === "Enter") {
+                e.preventDefault();
+                commitJump();
+              }
             }}
             onBlur={commitJump}
           />

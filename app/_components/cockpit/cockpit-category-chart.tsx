@@ -110,25 +110,26 @@ export function CockpitCategoryChart({
       title: {
         text: totalCount.toLocaleString(),
         subtext: isEcommerce ? "客诉总数" : "诉求总数",
-        left: "center",
-        top: "38%",
+        left: "50%",
+        top: "39%",
+        padding: 0,
         textAlign: "center",
         itemGap: 2,
         textStyle: {
           color: "#f8fafc",
           fontSize:
             totalCount.toLocaleString().length >= 6
-              ? 12
+              ? 13
               : totalCount.toLocaleString().length >= 4
-                ? 13
-                : 15,
+                ? 14
+                : 16,
           fontWeight: "bold",
           fontFamily: "ui-sans-serif, system-ui, -apple-system, sans-serif",
         },
         subtextStyle: {
           color: "#94a3b8",
-          fontSize: 9,
-          width: 78,
+          fontSize: 11,
+          width: 84,
           overflow: "truncate",
         },
       },
@@ -170,9 +171,6 @@ export function CockpitCategoryChart({
             {isEcommerce ? "七大电商客诉分类态势" : "七大民生诉求分类态势"}
           </h2>
         </div>
-        <span className="text-[10px] font-mono text-slate-400 uppercase whitespace-nowrap shrink-0">
-          CATEGORY RATIO
-        </span>
       </div>
 
       <div className="flex-1 w-full min-h-[140px] pt-2 flex items-center gap-2.5 min-w-0 overflow-hidden">
@@ -208,13 +206,13 @@ export function CockpitCategoryChart({
                           style={{ backgroundColor: item.color }}
                         />
                         <span
-                          className="text-[11px] text-slate-200 cockpit-single-line leading-tight"
+                          className="text-xs text-slate-200 cockpit-single-line leading-tight"
                           title={`${item.name} (${item.value.toLocaleString()} 件)`}
                         >
                           {item.name}
                         </span>
                       </div>
-                      <span className="text-[11px] font-mono tabular-nums text-slate-400 whitespace-nowrap shrink-0 leading-tight">
+                      <span className="text-xs font-mono tabular-nums text-slate-300 whitespace-nowrap shrink-0 leading-tight">
                         {item.pct.toFixed(1)}%
                       </span>
                     </div>

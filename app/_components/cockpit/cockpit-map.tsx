@@ -44,13 +44,13 @@ function buildCockpitBadgeElement(
     pill.style.gap = "4px";
     pill.style.background = isSelected ? safeColor : "rgba(6, 9, 17, 0.88)";
     pill.style.border = `1px solid ${isSelected ? "#FFFFFF" : safeColor}`;
-    pill.style.padding = "2px 7px";
+    pill.style.padding = "2px 8px";
     pill.style.color = "#F8FAFC";
-    pill.style.fontSize = "9px";
-    pill.style.lineHeight = "1.2";
+    pill.style.fontSize = "11px";
+    pill.style.lineHeight = "1.25";
 
-    dot.style.width = "4px";
-    dot.style.height = "4px";
+    dot.style.width = "5px";
+    dot.style.height = "5px";
     dot.style.background = isSelected ? "#FFFFFF" : safeColor;
 
     pill.appendChild(dot);
@@ -300,6 +300,7 @@ export function CockpitMap({
   useEffect(() => {
     if (!mapInstance || !geoData) return;
     let isMounted = true;
+    let zoomCleanup: (() => void) | null = null;
 
     import("leaflet").then((module) => {
       const m = mapInstance as unknown as { _loaded?: boolean; _mapPane?: unknown };
@@ -428,54 +429,77 @@ export function CockpitMap({
           return b.count - a.count;
         });
 
-        const placedPoints: Array<{ x: number; y: number }> = [];
+        const renderMarkers = () => {
+          if (!isMounted || !markersLayerRef.current) return;
+          markersLayerRef.current.clearLayers();
+          const curW = mapContainerRef.current?.clientWidth || window.innerWidth || 0;
+          const compact = curW < 1024;
+          const placedRects: Array<{ x: number; y: number; halfW: number; halfH: number }> = [];
 
-        for (const item of candidates) {
-          if (isCompactMap) {
+          for (const item of candidates) {
+            const shortLabel = item.name.replace(/(街道|镇|区)$/, "");
             const pt = map.latLngToContainerPoint(item.centerLatLng);
-            const collides = placedPoints.some(
-              (p) => Math.abs(pt.x - p.x) < 54 && Math.abs(pt.y - p.y) < 22
+            const estW = compact
+              ? Math.max(54, shortLabel.length * 11 + 24)
+              : Math.max(
+                  76,
+                  shortLabel.length * 12 +
+                    (item.count > 0 ? item.count.toLocaleString().length * 7 + 34 : 28)
+                );
+            const estH = compact ? 24 : 28;
+            const halfW = estW / 2 + 4;
+            const halfH = estH / 2 + 3;
+
+            const collides = placedRects.some(
+              (p) => Math.abs(pt.x - p.x) < p.halfW + halfW && Math.abs(pt.y - p.y) < p.halfH + halfH
             );
             if (collides && !item.isSelected) continue;
-            placedPoints.push({ x: pt.x, y: pt.y });
+            placedRects.push({ x: pt.x, y: pt.y, halfW, halfH });
+
+            const badgeEl = buildCockpitBadgeElement(
+              shortLabel,
+              item.count,
+              item.townColor,
+              item.isSelected,
+              compact
+            );
+
+            const icon = L.divIcon({
+              html: badgeEl,
+              className: "cockpit-leaflet-div-icon",
+              iconSize: [0, 0],
+            });
+
+            const marker = L.marker(item.centerLatLng, {
+              icon,
+              interactive: true,
+            });
+
+            marker.on("click", (e: any) => {
+              L.DomEvent.stopPropagation(e);
+              if (item.isSelected) {
+                onSelectTownship(null);
+              } else {
+                onSelectTownship(shortLabel);
+              }
+            });
+
+            markersLayerRef.current.addLayer(marker);
           }
+        };
 
-          const shortLabel = item.name.replace(/(街道|镇|区)$/, "");
-          const badgeEl = buildCockpitBadgeElement(
-            shortLabel,
-            item.count,
-            item.townColor,
-            item.isSelected,
-            isCompactMap
-          );
-
-          const icon = L.divIcon({
-            html: badgeEl,
-            className: "cockpit-leaflet-div-icon",
-            iconSize: [0, 0],
-          });
-
-          const marker = L.marker(item.centerLatLng, {
-            icon,
-            interactive: true,
-          });
-
-          marker.on("click", (e: any) => {
-            L.DomEvent.stopPropagation(e);
-            if (item.isSelected) {
-              onSelectTownship(null);
-            } else {
-              onSelectTownship(shortLabel);
-            }
-          });
-
-          markersLayerRef.current.addLayer(marker);
-        }
+        renderMarkers();
+        const onZoomEnd = () => renderMarkers();
+        map.on("zoomend", onZoomEnd);
+        zoomCleanup = () => {
+          map.off("zoomend", onZoomEnd);
+        };
       }
     });
 
     return () => {
       isMounted = false;
+      zoomCleanup?.();
     };
   }, [mapInstance, geoData, counts, selectedTownship, onSelectTownship, activeRegion, totalCount, regionId]);
 

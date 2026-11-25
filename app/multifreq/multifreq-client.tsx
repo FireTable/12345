@@ -380,7 +380,7 @@ function MultifreqInner() {
           </div>
         </div>
         <PageHeaderActions onRefresh={() => void load(true)}>
-          <button id="cycle-time-btn" type="button" className="btn btn--default min-h-[44px] sm:min-h-0 sm:h-[34px] px-3 text-xs font-medium" onClick={cycleTime}>
+          <button id="cycle-time-btn" type="button" className="btn btn--default min-h-[44px] md:min-h-[34px] md:h-[34px] px-3 text-xs font-medium" onClick={cycleTime}>
             {timeLabel}
           </button>
           <Select
@@ -391,7 +391,7 @@ function MultifreqInner() {
           >
             <SelectTrigger
               aria-label="筛选镇街或业务区划"
-              className={`${hasGeoMap ? "w-full sm:w-[125px]" : "w-full sm:min-w-[138px] sm:w-auto"} min-h-[44px] sm:min-h-0 sm:h-[34px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg`}
+              className={`${hasGeoMap ? "w-full sm:w-[125px]" : "w-full sm:min-w-[138px] sm:w-auto"} min-h-[44px] md:min-h-[34px] md:h-[34px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg`}
             >
               <SelectValue placeholder={hasGeoMap ? "全部镇街" : `全部${regionUnit}`} />
             </SelectTrigger>
@@ -404,7 +404,7 @@ function MultifreqInner() {
               ))}
             </SelectContent>
           </Select>
-          <button type="button" className="btn btn--default min-h-[44px] sm:min-h-0 sm:h-[34px] px-3 text-xs font-medium" onClick={() => setThresholdOpen(true)}>
+          <button type="button" className="btn btn--default min-h-[44px] md:min-h-[34px] md:h-[34px] px-3 text-xs font-medium" onClick={() => setThresholdOpen(true)}>
             阈值设置
           </button>
         </PageHeaderActions>
@@ -539,7 +539,7 @@ function MultifreqInner() {
               role="region"
               aria-label="TOP 5 多频聚类列表"
             >
-              <table className="group-table">
+              <table className="group-table multifreq-top-table">
                 <caption className="sr-only">TOP 5 多频聚类列表</caption>
                 <thead>
                   <tr>
@@ -560,62 +560,64 @@ function MultifreqInner() {
                     const u = URGENCY_META[c.urgency] || { label: "普通", cls: "urgency-tag--low" };
                     const statusCode = c.status.code || normalizeStatusCode(c.status.label);
                     const sCls = statusCode === HANDLING_STATUS.RESOLVED ? "status-tag--done" : statusCode === HANDLING_STATUS.IN_PROGRESS ? "status-tag--progress" : "status-tag--pending";
+                    const regionColLabel = hasGeoMap ? "辖区 · 业务" : `${regionUnit} · 业务`;
                     return (
                       <tr key={c.id} onClick={() => router.push(`/themes/${c.id}`)} className="hover:bg-blue-50/40 transition-colors">
-                        <td style={{ textAlign: "center" }}>
+                        <td data-label="排名" className="col-rank" style={{ textAlign: "center" }}>
                           <span className={`rank-badge rank-badge--${i + 1}`}>{i + 1}</span>
                         </td>
-                        <td style={{ fontFeatureSettings: "'tnum'", color: "var(--c-ink-3)", fontSize: 12 }} className="font-mono">
+                        <td data-label="群组编号" className="col-code font-mono" style={{ fontFeatureSettings: "'tnum'", color: "var(--c-ink-3)", fontSize: 12 }}>
                           {c.code || c.id.slice(0, 8)}
                         </td>
-                        <td>
+                        <td data-label="研判模式" className="col-mode">
                           <span className={`mode-badge mode-badge--${c.mode}`}>
                             {c.mode_icon} {c.mode_name}
                           </span>
                         </td>
-                        <td>
+                        <td data-label={regionColLabel} className="col-region">
                           <div style={{ fontWeight: 600, color: "var(--c-ink)", fontSize: 12, whiteSpace: "nowrap" }}>
                             {c.region}
                           </div>
-                          <div style={{ fontSize: 11, color: "var(--c-ink-3)", marginTop: 2, whiteSpace: "nowrap" }}>
+                          <div style={{ fontSize: 12, color: "var(--c-ink-3)", marginTop: 2, whiteSpace: "nowrap" }}>
                             {c.type}
                           </div>
                         </td>
-                        <td>
+                        <td data-label="代表性诉求标题" className="col-title">
                           <Link
                             href={`/themes/${encodeURIComponent(c.id)}`}
                             onClick={(e) => e.stopPropagation()}
-                            className="inline-flex items-center min-h-[44px] sm:min-h-[24px] py-0.5 max-w-full font-semibold text-[13px] text-[var(--c-ink)] hover:text-[var(--c-brand)] hover:underline"
-                            style={{ maxWidth: "min(38vw, 520px)" }}
+                            className="group-table__title-link inline-flex items-center min-h-[44px] sm:min-h-[24px] py-0.5 max-w-full font-semibold text-[13px] text-[var(--c-ink)] hover:text-[var(--c-brand)] hover:underline"
                             title={c.title || c.sample_titles?.[0] || `${c.region} · ${c.type}`}
                           >
-                            <span className="truncate">
+                            <span className="group-table__title-span truncate">
                               {c.title || c.sample_titles?.[0] || `${c.region} · ${c.type}`}
                             </span>
                           </Link>
-                          <div style={{ fontSize: 11, color: "var(--c-ink-3)", marginTop: 2, fontFamily: "ui-monospace, monospace" }}>
+                          <div style={{ fontSize: 12, color: "var(--c-ink-3)", marginTop: 2, fontFamily: "ui-monospace, monospace" }}>
                             {c.first_date || "—"} ~ {c.last_date || "—"}
                           </div>
                         </td>
-                        <td style={{ textAlign: "center", fontFeatureSettings: "'tnum'" }}>
-                          <span style={{ fontWeight: 700, color: c.unprocessed > 0 ? "#F53F3F" : "var(--c-ink-3)", fontSize: 13 }}>
-                            {c.unprocessed}
-                          </span>
-                          <span style={{ color: "#94A3B8", margin: "0 3px", fontSize: 12 }}>/</span>
-                          <span style={{ fontWeight: 600, color: "#1E293B", fontSize: 13 }}>
-                            {c.count}
+                        <td data-label="待派单 / 总数" className="col-counts" style={{ textAlign: "center", fontFeatureSettings: "'tnum'" }}>
+                          <span>
+                            <span style={{ fontWeight: 700, color: c.unprocessed > 0 ? "#F53F3F" : "var(--c-ink-3)", fontSize: 13 }}>
+                              {c.unprocessed}
+                            </span>
+                            <span style={{ color: "#94A3B8", margin: "0 3px", fontSize: 12 }}>/</span>
+                            <span style={{ fontWeight: 600, color: "#1E293B", fontSize: 13 }}>
+                              {c.count}
+                            </span>
                           </span>
                         </td>
-                        <td style={{ textAlign: "center" }}>
+                        <td data-label="紧急度" className="col-urgency" style={{ textAlign: "center" }}>
                           <span className={`urgency-tag ${u.cls}`}>{u.label}</span>
                         </td>
-                        <td style={{ textAlign: "right", fontFeatureSettings: "'tnum'", color: "var(--c-ink-2)" }}>
+                        <td data-label="持续天数" className="col-days" style={{ textAlign: "right", fontFeatureSettings: "'tnum'", color: "var(--c-ink-2)" }}>
                           {c.days ?? 1} 天
                         </td>
-                        <td>
+                        <td data-label="处置状态" className="col-status">
                           <span className={`status-tag ${sCls}`}>{c.status.label}</span>
                         </td>
-                        <td style={{ textAlign: "right" }}>
+                        <td data-label="操作" className="col-actions" style={{ textAlign: "right" }}>
                           <button
                             type="button"
                             onClick={(e) => {
@@ -623,7 +625,7 @@ function MultifreqInner() {
                               router.push(`/themes/${c.id}`);
                             }}
                             aria-label={`查看聚类 ${c.title || c.code || c.id} 详情`}
-                            className="inline-flex items-center justify-end min-h-[44px] min-w-[44px] sm:min-h-[24px] sm:min-w-[28px] px-2 sm:px-1 text-[var(--c-brand)] font-medium text-xs bg-transparent border-0 cursor-pointer hover:underline"
+                            className="table-card-action-btn inline-flex items-center justify-end min-h-[44px] min-w-[44px] sm:min-h-[28px] sm:min-w-[28px] px-3 sm:px-1 text-[var(--c-brand)] font-medium text-xs bg-transparent border-0 cursor-pointer hover:underline"
                           >
                             查看
                           </button>
@@ -704,12 +706,12 @@ function MultifreqInner() {
             </div>
           </div>
           <DialogFooter className="flex-row justify-end gap-2 border-t border-[var(--c-border-soft)] px-5 py-3">
-            <button type="button" className="btn btn--default min-h-[44px] sm:min-h-0" onClick={() => setThresholdOpen(false)}>
+            <button type="button" className="btn btn--default min-h-[44px] md:min-h-[34px]" onClick={() => setThresholdOpen(false)}>
               取消
             </button>
             <button
               type="button"
-              className="btn btn--primary min-h-[44px] sm:min-h-0"
+              className="btn btn--primary min-h-[44px] md:min-h-[34px]"
               onClick={() => {
                 setTimeLabel(`近 ${windowDays} 天`);
                 setThresholdOpen(false);

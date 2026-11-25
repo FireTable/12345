@@ -232,7 +232,7 @@
   outline-offset: 2px;
 }
 
-@media (max-width: 640px), (pointer: coarse) {
+@media (max-width: 768px), (pointer: coarse) {
   .voice-record-btn,
   .voice-record-btn.is-recording,
   .voice-record-btn.is-initializing {
@@ -254,11 +254,11 @@
   .voice-send-btn::after {
     content: "";
     position: absolute;
-    inset: -3px;
+    inset: -4px;
   }
 
   .voice-composer__input {
     font-size: 1rem;
-    min-block-size: max(38px, 1.5lh);
+    min-block-size: max(44px, 1.5lh);
   }
 }

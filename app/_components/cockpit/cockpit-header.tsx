@@ -24,7 +24,6 @@ import type { DomainProfile, RegionInfo } from "../civic/region-context";
 export function CockpitTitleCrown({
   title,
   titleId,
-  domainProfile,
   align = "center",
 }: {
   title: string;
@@ -32,11 +31,6 @@ export function CockpitTitleCrown({
   domainProfile?: DomainProfile | null;
   align?: "left" | "center" | "responsive";
 }) {
-  const isEcommerce = domainProfile?.domainType === "ECOMMERCE_CS";
-  const subtitle = isEcommerce
-    ? "ECOMMERCE COMPLAINT INTELLIGENCE COCKPIT"
-    : "12345 CIVIC INTELLIGENCE COCKPIT";
-
   const alignClasses =
     align === "left"
       ? "items-start text-left"
@@ -48,15 +42,12 @@ export function CockpitTitleCrown({
     <div className={`flex flex-col ${alignClasses} min-w-0 max-w-full select-none`}>
       <h1
         id={titleId}
-        className="cockpit-single-line font-semibold tracking-[0.03em] sm:tracking-[0.11em] bg-gradient-to-b from-white via-slate-100 to-slate-300 bg-clip-text text-transparent max-w-full leading-snug"
-        style={{ fontSize: "clamp(0.875rem, 0.82rem + 0.45vw, 1.3rem)" }}
+        className="cockpit-single-line font-semibold tracking-[0.03em] sm:tracking-[0.08em] bg-gradient-to-b from-white via-slate-100 to-slate-300 bg-clip-text text-transparent max-w-full leading-snug"
+        style={{ fontSize: "clamp(0.9375rem, 0.85rem + 0.45vw, 1.3rem)" }}
         title={`${title} · 智能研判全景指挥大屏`}
       >
         {title} · 智能研判全景指挥大屏
       </h1>
-      <span className="cockpit-single-line text-[9px] sm:text-[10px] font-mono tracking-[0.03em] sm:tracking-[0.2em] text-slate-400 uppercase max-w-full">
-        {subtitle}
-      </span>
     </div>
   );
 }
@@ -194,7 +185,7 @@ export function CockpitHeader({
     : "选择站点";
 
   const glassBtnShape =
-    "cockpit-action-btn items-center justify-center h-8 rounded-full border border-white/10 bg-[#0d1424]/85 text-slate-200 hover:text-white hover:border-white/25 hover:bg-[#141e33]/90 transition-colors cursor-pointer backdrop-blur-xl";
+    "cockpit-action-btn items-center justify-center !min-h-[44px] !min-w-[44px] h-11 w-11 xl:!min-h-[32px] xl:!min-w-[32px] xl:h-8 xl:w-8 rounded-full border border-white/10 bg-[#0d1424]/85 text-slate-200 hover:text-white hover:border-white/25 hover:bg-[#141e33]/90 transition-colors cursor-pointer backdrop-blur-xl";
 
   const streamBtn = (compactOnMobile: boolean) => (
     <button
@@ -203,7 +194,7 @@ export function CockpitHeader({
       aria-label={isPolling ? "暂停实时流轮询" : "开启实时流轮询"}
       aria-pressed={isPolling}
       title={isPolling ? "实时流自动刷新已开启" : "实时流自动刷新已暂停"}
-      className={`cockpit-action-btn inline-flex items-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-full border text-xs font-medium transition-colors cursor-pointer backdrop-blur-xl whitespace-nowrap shrink-0 ${
+      className={`cockpit-action-btn inline-flex items-center gap-1.5 !min-h-[44px] h-11 xl:!min-h-[32px] xl:h-8 px-3 rounded-full border text-xs font-medium transition-colors cursor-pointer backdrop-blur-xl whitespace-nowrap shrink-0 ${
         isPolling
           ? "bg-emerald-500/12 border-emerald-400/30 text-emerald-200 hover:bg-emerald-500/20"
           : "bg-[#0d1424]/85 border-white/10 text-slate-400 hover:text-slate-200 hover:border-white/20"
@@ -258,7 +249,7 @@ export function CockpitHeader({
             disabled={isRefreshing}
             aria-label="强制刷新全域数据"
             title="强制刷新全域数据"
-            className={`${glassBtnShape} inline-flex w-8 px-0 disabled:opacity-50`}
+            className={`${glassBtnShape} inline-flex px-0 disabled:opacity-50`}
           >
             <RotateCw
               size={14}
@@ -272,7 +263,7 @@ export function CockpitHeader({
             onClick={onToggleFullscreen}
             aria-label={isFullscreen ? "退出全屏" : "进入全屏"}
             title={isFullscreen ? "退出全屏" : "进入全屏"}
-            className={`${glassBtnShape} hidden sm:inline-flex w-8 px-0`}
+            className={`${glassBtnShape} hidden sm:inline-flex px-0`}
           >
             {isFullscreen ? (
               <Minimize2 size={14} aria-hidden="true" />
@@ -286,22 +277,22 @@ export function CockpitHeader({
             onClick={onClose}
             aria-label="退出大屏返回数据总览"
             title="退出大屏返回数据总览 (ESC)"
-            className="cockpit-action-btn inline-flex items-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-full border border-white/10 bg-[#0d1424]/85 text-slate-200 hover:border-rose-400/40 hover:bg-rose-500/15 hover:text-rose-200 transition-colors cursor-pointer text-xs font-medium backdrop-blur-xl whitespace-nowrap shrink-0"
+            className="cockpit-action-btn inline-flex items-center gap-1.5 !min-h-[44px] h-11 xl:!min-h-[32px] xl:h-8 px-3 rounded-full border border-white/10 bg-[#0d1424]/85 text-slate-200 hover:border-rose-400/40 hover:bg-rose-500/15 hover:text-rose-200 transition-colors cursor-pointer text-xs font-medium backdrop-blur-xl whitespace-nowrap shrink-0"
           >
             <X size={14} aria-hidden="true" className="shrink-0" />
             <span>退出</span>
-            <kbd className="hidden md:inline-block px-1.5 py-0.5 rounded bg-white/[0.06] border border-white/10 font-mono text-[9px] text-slate-400">
+            <kbd className="hidden md:inline-block px-1.5 py-0.5 rounded bg-white/[0.06] border border-white/10 font-mono text-[11px] text-slate-300">
               ESC
             </kbd>
           </button>
         </div>
 
         {/* 左侧控制区（移动端为第二行：时钟 + 域切换 + 状态） */}
-        <div className="col-span-2 row-start-2 xl:col-span-1 xl:col-start-1 xl:row-start-1 xl:justify-self-start flex items-center justify-between xl:justify-start gap-3 min-w-0">
-          <div className="flex items-center gap-2.5 min-w-0 flex-1 xl:flex-initial">
+        <div className="col-span-2 row-start-2 xl:col-span-1 xl:col-start-1 xl:row-start-1 xl:justify-self-start flex items-center justify-between xl:justify-start gap-2.5 sm:gap-3 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 flex-1 xl:flex-initial">
             {/* 极简静态时钟徽章 */}
             <div
-              className="inline-flex items-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-full bg-[#0d1424]/85 border border-white/10 text-slate-200 backdrop-blur-xl text-xs font-mono tabular-nums whitespace-nowrap shrink-0"
+              className="inline-flex items-center gap-1.5 h-11 xl:h-8 px-2.5 sm:px-3 rounded-full bg-[#0d1424]/85 border border-white/10 text-slate-200 backdrop-blur-xl text-xs font-mono tabular-nums whitespace-nowrap shrink-0"
               aria-label="当前系统时间"
             >
               <Clock size={12} aria-hidden="true" className="text-slate-400 shrink-0" />
@@ -324,7 +315,7 @@ export function CockpitHeader({
                 aria-haspopup="listbox"
                 aria-expanded={showRegionMenu}
                 aria-label={`切换业务域或站点，当前为 ${regionDisplay}`}
-                className="cockpit-action-btn inline-flex items-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-full bg-[#0d1424]/85 border border-white/10 text-slate-100 hover:text-white hover:border-white/25 transition-colors cursor-pointer backdrop-blur-xl text-xs font-medium max-w-[172px] sm:max-w-[240px] min-w-0"
+                className="cockpit-action-btn inline-flex items-center gap-1.5 !min-h-[44px] h-11 xl:!min-h-[32px] xl:h-8 px-2.5 sm:px-3 rounded-full bg-[#0d1424]/85 border border-white/10 text-slate-100 hover:text-white hover:border-white/25 transition-colors cursor-pointer backdrop-blur-xl text-xs font-medium max-w-[172px] sm:max-w-[240px] min-w-0"
               >
                 {isEcommerce ? (
                   <Layers size={13} aria-hidden="true" className="text-amber-400 shrink-0" />
@@ -353,7 +344,7 @@ export function CockpitHeader({
                     <div role="group" aria-labelledby="cockpit-region-group-gov">
                       <div
                         id="cockpit-region-group-gov"
-                        className="px-3 py-1.5 text-[10px] text-slate-400 tracking-wider font-mono border-b border-white/[0.06] flex items-center justify-between"
+                        className="px-3 py-1.5 text-xs text-slate-300 tracking-wider font-mono border-b border-white/[0.06] flex items-center justify-between"
                       >
                         <span>政务 12345 热线</span>
                         <span className="tabular-nums">{govRegions.length}</span>
@@ -398,7 +389,7 @@ export function CockpitHeader({
                     >
                       <div
                         id="cockpit-region-group-ecom"
-                        className="px-3 py-1.5 text-[10px] text-amber-300/90 tracking-wider font-mono border-b border-white/[0.06] flex items-center justify-between"
+                        className="px-3 py-1.5 text-xs text-amber-300 tracking-wider font-mono border-b border-white/[0.06] flex items-center justify-between"
                       >
                         <span>{govRegions.length > 0 ? "跨行业示范 · 电商客诉" : "电商客诉站点"}</span>
                         <span className="tabular-nums">{ecomRegions.length}</span>

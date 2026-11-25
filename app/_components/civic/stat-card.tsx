@@ -92,7 +92,7 @@ export function StatCard({
   const cardContent = (
     <div
       className={cn(
-        "relative flex items-center gap-2.5 sm:gap-3.5 p-3 sm:p-4 rounded-xl border border-[var(--c-border-card,rgba(15,23,42,0.08))] bg-[var(--c-surface)] shadow-[var(--sh-1)] transition-all duration-200 motion-reduce:transition-none min-w-0",
+        "relative flex items-center gap-2.5 sm:gap-3.5 p-3 sm:p-4 rounded-xl border border-[var(--c-border-card,rgba(15,23,42,0.08))] bg-[var(--c-surface)] shadow-[var(--sh-1)] transition-[border-color,box-shadow,transform] duration-200 motion-reduce:transition-none min-w-0",
         isInteractive && "cursor-pointer group hover:shadow-[var(--sh-2)] hover:border-[var(--c-border)] hover:-translate-y-0.5 motion-reduce:hover:translate-y-0",
         styles.border,
         className

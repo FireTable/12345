@@ -37,6 +37,46 @@ export function CockpitView({ onClose, modal = true }: CockpitViewProps) {
   const hasGeoMap = hasResolvedRegion && domainProfile?.hasGeoMap !== false;
   const showEcomMatrix = hasResolvedRegion && domainProfile?.hasGeoMap === false;
   const cockpit = useCockpitData(regionId);
+  const shellRef = useRef<HTMLElement>(null);
+
+  // Standalone /screen mount: mark underlying sibling nav/content inert so Tab never escapes to hidden navbar links
+  useEffect(() => {
+    if (modal) return;
+    const shellEl = shellRef.current;
+    const targets = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        "a.skip-link, nav.navbar, .chat-fab, main.main:not(.cockpit-shell)"
+      )
+    );
+    const cleanups: Array<() => void> = [];
+    for (const el of targets) {
+      if (shellEl && (el === shellEl || el.contains(shellEl))) continue;
+      const prevInert = el.inert;
+      el.inert = true;
+      cleanups.push(() => {
+        el.inert = prevInert;
+      });
+    }
+    const parentMain = shellEl?.closest("main.main");
+    if (parentMain) {
+      for (const child of Array.from(parentMain.children)) {
+        if (
+          child instanceof HTMLElement &&
+          child !== shellEl &&
+          !(shellEl && child.contains(shellEl))
+        ) {
+          const prevInert = child.inert;
+          child.inert = true;
+          cleanups.push(() => {
+            child.inert = prevInert;
+          });
+        }
+      }
+    }
+    return () => {
+      for (const restore of cleanups) restore();
+    };
+  }, [modal]);
 
   // 监听浏览器全屏状态
   useEffect(() => {
@@ -295,7 +335,10 @@ export function CockpitView({ onClose, modal = true }: CockpitViewProps) {
   }
 
   return (
-    <main className="cockpit-shell fixed inset-0 z-[9999] w-dvw min-h-dvh h-dvh overflow-y-auto xl:overflow-hidden flex flex-col custom-cockpit-scrollbar">
+    <main
+      ref={shellRef}
+      className="cockpit-shell fixed inset-0 z-[9999] w-dvw min-h-dvh h-dvh overflow-y-auto xl:overflow-hidden flex flex-col custom-cockpit-scrollbar"
+    >
       {bodyContent}
     </main>
   );
@@ -341,7 +384,7 @@ function CockpitHourlyBarCard({
             {isEcommerce ? "24h 客诉波峰" : "24h 来电波峰"}
           </h2>
         </div>
-        <span className="text-[10px] font-mono tabular-nums text-sky-300 whitespace-nowrap shrink-0 px-1.5 py-0.5 rounded-md bg-sky-500/10 border border-sky-400/20">
+        <span className="text-xs font-mono tabular-nums text-sky-300 whitespace-nowrap shrink-0">
           {totalTimed > 0
             ? `峰值 ${peak.label} · ${peak.count.toLocaleString()}`
             : loading
@@ -365,7 +408,7 @@ function CockpitHourlyBarCard({
                 className="flex-1 h-full flex items-end group"
               >
                 <div
-                  className={`w-full rounded-t transition-all duration-300 ${
+                  className={`w-full rounded-t transition-[height,background-color] duration-300 ${
                     isPeak
                       ? "bg-gradient-to-t from-amber-500/90 to-amber-300"
                       : b.count > 0
@@ -378,7 +421,7 @@ function CockpitHourlyBarCard({
             );
           })}
         </div>
-        <div className="mt-1 flex items-center justify-between text-[9px] font-mono tabular-nums text-slate-400">
+        <div className="mt-1 flex items-center justify-between text-[11px] font-mono tabular-nums text-slate-400">
           <span>00</span>
           <span>06</span>
           <span>12</span>
@@ -449,7 +492,7 @@ function CockpitClosureFunnelCard({
             闭环处置全链路漏斗
           </h2>
         </div>
-        <span className="text-[10px] font-mono tabular-nums text-rose-200 px-2 py-0.5 rounded-md bg-rose-500/12 border border-rose-400/25 whitespace-nowrap shrink-0">
+        <span className="text-xs font-mono tabular-nums text-rose-200 whitespace-nowrap shrink-0">
           {loading ? "读取中" : `拦截 ${funnel.fakeClosureIntercepted.toLocaleString()} 件`}
         </span>
       </div>
@@ -461,7 +504,7 @@ function CockpitClosureFunnelCard({
           return (
             <div
               key={st.key}
-              className="grid grid-cols-[70px_1fr_62px] items-center gap-2 text-[11px] min-w-0"
+              className="grid grid-cols-[78px_1fr_64px] items-center gap-2 text-xs min-w-0"
             >
               <span className="text-slate-300 cockpit-single-line">{st.label}</span>
               <div className="h-1.5 rounded-full bg-white/[0.06] overflow-hidden">

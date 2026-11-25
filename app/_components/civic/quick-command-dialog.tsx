@@ -405,7 +405,7 @@ export function QuickCommandDialog({
         快速搜索与功能跳转
       </h1>
 
-      <div className="flex items-center gap-2.5 px-4 py-3 border-b border-slate-200 bg-slate-50/70">
+      <div className="flex items-center gap-2.5 px-4 py-3 border-b border-slate-200 bg-slate-50/70 transition-colors focus-within:bg-white focus-within:ring-2 focus-within:ring-blue-600 focus-within:ring-inset forced-colors:focus-within:outline forced-colors:focus-within:outline-2 forced-colors:focus-within:outline-[Highlight]">
         <Search size={17} className="text-slate-400 shrink-0" aria-hidden="true" />
         <label htmlFor={inputId} className="sr-only">
           搜索页面或工具关键词
@@ -437,7 +437,7 @@ export function QuickCommandDialog({
               setQuery("");
               inputRef.current?.focus({ preventScroll: true });
             }}
-            className="relative text-[11px] font-medium px-2 py-1 rounded-md text-slate-500 hover:text-slate-800 hover:bg-slate-200/70 transition-colors cursor-pointer shrink-0 after:content-[''] after:absolute after:-inset-y-[9px] after:-inset-x-1"
+            className="relative text-[11px] font-medium px-2 py-1 rounded-md text-slate-500 hover:text-slate-800 hover:bg-slate-200/70 transition-colors cursor-pointer shrink-0 after:content-[''] after:absolute after:-inset-y-[11px] after:-inset-x-1"
           >
             清空
           </button>
@@ -445,7 +445,7 @@ export function QuickCommandDialog({
         <button
           type="button"
           onClick={closeDialog}
-          className="relative flex items-center justify-center w-7 h-7 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-200/70 transition-colors cursor-pointer shrink-0 after:content-[''] after:absolute after:-inset-[8px]"
+          className="relative flex items-center justify-center w-7 h-7 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-200/70 transition-colors cursor-pointer shrink-0 after:content-[''] after:absolute after:-inset-[9px]"
           aria-label="关闭快速搜索"
           title="关闭 (ESC)"
         >
@@ -473,7 +473,7 @@ export function QuickCommandDialog({
                 setQuery("");
                 inputRef.current?.focus({ preventScroll: true });
               }}
-              className="mt-3 inline-flex items-center px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
+              className="mt-3 inline-flex min-h-[44px] sm:min-h-[38px] items-center justify-center px-4 py-2 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
             >
               重置搜索条件
             </button>
@@ -578,8 +578,16 @@ export function QuickCommandDialog({
             <span>关闭</span>
           </span>
         </div>
-        <span className="font-mono tabular-nums text-slate-400 shrink-0">
-          {filteredItems.length} 项
+        <span
+          className="font-mono tabular-nums text-slate-600 shrink-0"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {filteredItems.length === 0
+            ? "无匹配结果"
+            : query.trim()
+            ? `匹配 ${filteredItems.length} 项`
+            : `共 ${filteredItems.length} 项`}
         </span>
       </div>
     </dialog>

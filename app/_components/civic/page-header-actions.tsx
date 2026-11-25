@@ -77,7 +77,7 @@ export function PageHeaderActions({
       {onExport && (
         <button
           type="button"
-          className="btn btn--default group inline-flex items-center gap-1.5 h-[34px] px-3 rounded-lg text-xs font-medium shadow-2xs hover:shadow-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          className="btn btn--default group inline-flex items-center gap-1.5 h-[34px] px-3 rounded-lg text-xs font-medium shadow-2xs hover:shadow-xs transition-[color,background-color,border-color,box-shadow] disabled:opacity-50 disabled:cursor-not-allowed"
           onClick={handleExport}
           disabled={isExporting}
           title={exportText}
@@ -96,7 +96,7 @@ export function PageHeaderActions({
       {onRefresh && (
         <button
           type="button"
-          className="btn btn--default group inline-flex items-center gap-1.5 h-[34px] px-3 rounded-lg text-xs font-medium shadow-2xs hover:shadow-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          className="btn btn--default group inline-flex items-center gap-1.5 h-[34px] px-3 rounded-lg text-xs font-medium shadow-2xs hover:shadow-xs transition-[color,background-color,border-color,box-shadow] disabled:opacity-50 disabled:cursor-not-allowed"
           onClick={handleRefresh}
           disabled={isRefreshing}
           title={refreshText}

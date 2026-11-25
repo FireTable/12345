@@ -248,15 +248,13 @@ function SlotStatusTag({
 }) {
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium border whitespace-nowrap ${
-        filled
-          ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-          : "bg-amber-50 text-amber-800 border-amber-200"
+      className={`inline-flex items-center gap-1 text-xs font-medium whitespace-nowrap ${
+        filled ? "text-emerald-700" : "text-amber-700"
       }`}
     >
       {filled ? (
         <>
-          <CheckCircle2 size={11} aria-hidden="true" />
+          <CheckCircle2 size={13} aria-hidden="true" />
           <span>{filledLabel}</span>
         </>
       ) : (
@@ -1729,10 +1727,8 @@ export default function SubmitPage() {
                     </span>
                     {hasAnyVoiceDraft && (
                       <span
-                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium border tabular-nums whitespace-nowrap ${
-                          isVoiceDraftReady
-                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                            : "bg-blue-50 text-blue-700 border-blue-200"
+                        className={`text-xs font-medium tabular-nums whitespace-nowrap ${
+                          isVoiceDraftReady ? "text-emerald-700" : "text-blue-700"
                         }`}
                       >
                         已填齐 {filledRequiredCount}/4 项必填
@@ -1810,16 +1806,16 @@ export default function SubmitPage() {
                     </div>
                   )}
 
-                  {/* 对话内联：实时抽取的诉求工单确认卡（首屏零滚动闭环） */}
+                  {/* 对话内联：实时抽取的诉求工单确认卡（扁平网格布局，无嵌套白框） */}
                   {hasAnyVoiceDraft && (
-                    <div className="mt-1 rounded-xl border border-slate-200 bg-slate-50/90 p-3.5 space-y-3">
+                    <div className="mt-1 rounded-xl border border-slate-200 bg-slate-50/75 p-3.5 sm:p-4 space-y-3">
                       <div className="flex items-start justify-between gap-2 flex-wrap">
                         <div className="min-w-0">
-                          <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                            <Sparkles size={13} className="text-blue-600 shrink-0" aria-hidden="true" />
+                          <div className="text-[13px] font-bold text-slate-900 flex items-center gap-1.5">
+                            <Sparkles size={14} className="text-blue-600 shrink-0" aria-hidden="true" />
                             <span>诉求工单草稿</span>
                           </div>
-                          <p id="voice-draft-status" className="text-[11px] text-slate-600 mt-0.5">
+                          <p id="voice-draft-status" className="text-[13px] text-slate-600 mt-0.5">
                             {isVoiceDraftReady
                               ? readyToSubmit || missingFields.length === 0
                                 ? "关键要素已齐全，可直接确认提交。"
@@ -1829,11 +1825,11 @@ export default function SubmitPage() {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                        <div className="rounded-lg bg-white border border-slate-200/80 px-2.5 py-2 min-w-0">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                        <div className="min-w-0">
                           <label
                             htmlFor="draft-category-select"
-                            className="flex items-center justify-between gap-1.5 text-[11px] text-slate-500"
+                            className="flex items-center justify-between gap-2 text-[13px] font-medium text-slate-700"
                           >
                             <span>
                               所属分类 <span className="text-red-600" aria-hidden="true">*</span>
@@ -1844,7 +1840,7 @@ export default function SubmitPage() {
                             id="draft-category-select"
                             value={voiceDraft.category}
                             onChange={(e) => updateVoiceDraftField("category", e.target.value)}
-                            className="mt-1.5 w-full rounded-md border border-slate-200 bg-slate-50/70 px-2 py-1.5 min-h-[40px] sm:min-h-[32px] text-base sm:text-xs font-medium text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none"
+                            className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 min-h-[44px] sm:min-h-[40px] text-base sm:text-sm font-medium text-slate-900 focus:border-blue-500 focus:outline-none"
                           >
                             <option value="">请选择投诉分类</option>
                             {categories.map((cat) => (
@@ -1858,10 +1854,10 @@ export default function SubmitPage() {
                           </select>
                         </div>
 
-                        <div className="rounded-lg bg-white border border-slate-200/80 px-2.5 py-2 min-w-0">
+                        <div className="min-w-0">
                           <label
                             htmlFor="draft-subdistrict-select"
-                            className="flex items-center justify-between gap-1.5 text-[11px] text-slate-500"
+                            className="flex items-center justify-between gap-2 text-[13px] font-medium text-slate-700"
                           >
                             <span>
                               {regionUnitLabel} <span className="text-red-600" aria-hidden="true">*</span>
@@ -1873,7 +1869,7 @@ export default function SubmitPage() {
                               id="draft-subdistrict-select"
                               value={voiceDraft.subdistrict}
                               onChange={(e) => updateVoiceDraftField("subdistrict", e.target.value)}
-                              className="mt-1.5 w-full rounded-md border border-slate-200 bg-slate-50/70 px-2 py-1.5 min-h-[40px] sm:min-h-[32px] text-base sm:text-xs font-medium text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none"
+                              className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 min-h-[44px] sm:min-h-[40px] text-base sm:text-sm font-medium text-slate-900 focus:border-blue-500 focus:outline-none"
                             >
                               <option value="">请选择{regionUnitLabel}</option>
                               {subdistricts.map((item) => (
@@ -1892,13 +1888,13 @@ export default function SubmitPage() {
                               value={voiceDraft.subdistrict}
                               onChange={(e) => updateVoiceDraftField("subdistrict", e.target.value)}
                               placeholder={`请输入${regionUnitLabel}`}
-                              className="mt-1.5 w-full rounded-md border border-slate-200 bg-slate-50/70 px-2 py-1.5 min-h-[40px] sm:min-h-[32px] text-base sm:text-xs font-medium text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none"
+                              className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 min-h-[44px] sm:min-h-[40px] text-base sm:text-sm font-medium text-slate-900 focus:border-blue-500 focus:outline-none"
                             />
                           )}
                         </div>
 
-                        <div className="rounded-lg bg-white border border-slate-200/80 px-2.5 py-2 min-w-0">
-                          <label htmlFor="draft-subject-input" className="block text-[11px] text-slate-500">
+                        <div className="min-w-0">
+                          <label htmlFor="draft-subject-input" className="block text-[13px] font-medium text-slate-700">
                             {subjectLabel}（选填）
                           </label>
                           <input
@@ -1907,12 +1903,12 @@ export default function SubmitPage() {
                             value={voiceDraft.subject}
                             onChange={(e) => updateVoiceDraftField("subject", e.target.value)}
                             placeholder={isEcommerce ? "例如：SKU-GD2026-881 生鲜礼盒" : "例如：老广烧烤档"}
-                            className="mt-1.5 w-full rounded-md border border-slate-200 bg-slate-50/70 px-2 py-1.5 min-h-[40px] sm:min-h-[32px] text-base sm:text-xs font-medium text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none"
+                            className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 min-h-[44px] sm:min-h-[40px] text-base sm:text-sm font-medium text-slate-900 focus:border-blue-500 focus:outline-none"
                           />
                         </div>
 
-                        <div className="rounded-lg bg-white border border-slate-200/80 px-2.5 py-2 min-w-0">
-                          <label htmlFor="draft-address-input" className="block text-[11px] text-slate-500">
+                        <div className="min-w-0">
+                          <label htmlFor="draft-address-input" className="block text-[13px] font-medium text-slate-700">
                             {addressLabel}（选填）
                           </label>
                           <input
@@ -1929,12 +1925,12 @@ export default function SubmitPage() {
                                     ? "例如：天河南一路 88 号"
                                     : "例如：新城路 88 号"
                             }
-                            className="mt-1.5 w-full rounded-md border border-slate-200 bg-slate-50/70 px-2 py-1.5 min-h-[40px] sm:min-h-[32px] text-base sm:text-xs font-medium text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none"
+                            className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 min-h-[44px] sm:min-h-[40px] text-base sm:text-sm font-medium text-slate-900 focus:border-blue-500 focus:outline-none"
                           />
                         </div>
 
-                        <div className="rounded-lg bg-white border border-slate-200/80 px-2.5 py-2 sm:col-span-2 min-w-0">
-                          <div className="flex items-center justify-between gap-1.5 text-[11px] text-slate-500">
+                        <div className="sm:col-span-2 min-w-0 border-t border-slate-200/80 pt-3">
+                          <div className="flex items-center justify-between gap-2 text-[13px] font-medium text-slate-700">
                             <span>
                               联系方式（电话或邮箱至少填一项） <span className="text-red-600" aria-hidden="true">*</span>
                             </span>
@@ -1946,7 +1942,7 @@ export default function SubmitPage() {
                               }
                             />
                           </div>
-                          <div className="mt-1.5 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <div className="mt-1.5 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                             <div className="min-w-0">
                               <label htmlFor="draft-phone-input" className="sr-only">
                                 联系电话
@@ -1960,10 +1956,10 @@ export default function SubmitPage() {
                                 onChange={(e) => updateVoiceDraftField("contactPhone", e.target.value)}
                                 placeholder="联系电话（如 13800138000）"
                                 aria-invalid={draftPhoneFormatError}
-                                className={`w-full rounded-md border px-2 py-1.5 min-h-[40px] sm:min-h-[32px] text-base sm:text-xs text-slate-900 focus:bg-white focus:outline-none ${
+                                className={`w-full rounded-lg border px-3 py-2 min-h-[44px] sm:min-h-[40px] text-base sm:text-sm text-slate-900 focus:bg-white focus:outline-none ${
                                   draftPhoneFormatError
                                     ? "border-red-400 bg-red-50/40 focus:border-red-500"
-                                    : "border-slate-200 bg-slate-50/70 focus:border-blue-500"
+                                    : "border-slate-300 bg-white focus:border-blue-500"
                                 }`}
                               />
                             </div>
@@ -1980,16 +1976,16 @@ export default function SubmitPage() {
                                 onChange={(e) => updateVoiceDraftField("contactEmail", e.target.value)}
                                 placeholder="或电子邮箱（如 user@example.com）"
                                 aria-invalid={draftEmailFormatError}
-                                className={`w-full rounded-md border px-2 py-1.5 min-h-[40px] sm:min-h-[32px] text-base sm:text-xs text-slate-900 focus:bg-white focus:outline-none ${
+                                className={`w-full rounded-lg border px-3 py-2 min-h-[44px] sm:min-h-[40px] text-base sm:text-sm text-slate-900 focus:bg-white focus:outline-none ${
                                   draftEmailFormatError
                                     ? "border-red-400 bg-red-50/40 focus:border-red-500"
-                                    : "border-slate-200 bg-slate-50/70 focus:border-blue-500"
+                                    : "border-slate-300 bg-white focus:border-blue-500"
                                 }`}
                               />
                             </div>
                           </div>
                           {(draftPhoneFormatError || draftEmailFormatError) && (
-                            <p className="mt-1 text-[11px] text-red-600">
+                            <p className="mt-1 text-[13px] text-red-600">
                               {draftPhoneFormatError
                                 ? "电话格式不正确（支持 11 位手机号或区号座机）"
                                 : "邮箱格式不正确（如 name@example.com）"}
@@ -1997,10 +1993,10 @@ export default function SubmitPage() {
                           )}
                         </div>
 
-                        <div className="rounded-lg bg-white border border-slate-200/80 px-2.5 py-2 sm:col-span-2 min-w-0">
+                        <div className="sm:col-span-2 min-w-0 border-t border-slate-200/80 pt-3">
                           <label
                             htmlFor="draft-content-textarea"
-                            className="flex items-center justify-between gap-1.5 text-[11px] text-slate-500"
+                            className="flex items-center justify-between gap-2 text-[13px] font-medium text-slate-700"
                           >
                             <span>
                               诉求内容 <span className="text-red-600" aria-hidden="true">*</span>
@@ -2018,7 +2014,7 @@ export default function SubmitPage() {
                             value={voiceDraft.content}
                             onChange={(e) => updateVoiceDraftField("content", e.target.value)}
                             placeholder="可以直接修改或补充具体情况（至少 6 个字）"
-                            className="mt-1.5 w-full rounded-md border border-slate-200 bg-slate-50/70 px-2 py-1.5 text-base sm:text-xs font-medium leading-relaxed text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none resize-y"
+                            className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 min-h-[76px] text-base sm:text-sm font-medium leading-relaxed text-slate-900 focus:border-blue-500 focus:outline-none resize-y"
                           />
                         </div>
                       </div>
@@ -2031,8 +2027,8 @@ export default function SubmitPage() {
                           onClick={() => void handleVoiceDraftSubmit()}
                           className={
                             isVoiceDraftReady
-                              ? "inline-flex min-h-11 sm:min-h-10 w-full items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-700 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-                              : "inline-flex min-h-11 sm:min-h-10 w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-100 px-3.5 py-2 text-xs font-medium text-slate-500 cursor-not-allowed"
+                              ? "inline-flex min-h-11 sm:min-h-10 w-full items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-blue-700 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed [text-wrap:balance]"
+                              : "inline-flex min-h-11 sm:min-h-10 w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-100 px-3.5 py-2 text-sm font-medium text-slate-500 cursor-not-allowed [text-wrap:balance]"
                           }
                         >
                           {submitting ? (

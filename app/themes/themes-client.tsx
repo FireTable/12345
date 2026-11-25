@@ -546,54 +546,59 @@ export default function ThemesPage() {
                     const u = URGENCY_META[g.urgency];
                     const statusCode = g.status.code || normalizeStatusCode(g.status.label);
                     const sCls = statusCode === HANDLING_STATUS.RESOLVED ? "status-tag--done" : statusCode === HANDLING_STATUS.IN_PROGRESS ? "status-tag--progress" : "status-tag--pending";
+                    const codeLabel = isEcommerce ? "案卷编号" : "群组编号";
+                    const regionColLabel = isEcommerce ? `${regionUnit} · 业务` : "辖区 · 业务";
+                    const titleColLabel = isEcommerce ? "代表性客诉标题" : "代表性诉求标题";
                     return (
                       <tr key={g.id} onClick={() => router.push(`/themes/${g.id}`)} className="hover:bg-blue-50/40 transition-colors">
-                        <td style={{ fontFeatureSettings: "'tnum'", color: "var(--c-ink-3)", fontSize: 12 }} className="font-mono">
+                        <td data-label={codeLabel} className="col-code font-mono" style={{ fontFeatureSettings: "'tnum'", color: "var(--c-ink-3)", fontSize: 12 }}>
                           {g.code || g.id.slice(0, 8)}
                         </td>
-                        <td>
+                        <td data-label="研判模式" className="col-mode">
                           <span className={`mode-badge mode-badge--${g.mode}`}>
                             {g.mode_icon} {g.mode_name}
                           </span>
                         </td>
-                        <td>
+                        <td data-label={regionColLabel} className="col-region">
                           <div style={{ fontWeight: 600, color: "var(--c-ink)", fontSize: 12, whiteSpace: "nowrap" }}>
                             {g.region}
                           </div>
-                          <div style={{ fontSize: 11, color: "var(--c-ink-3)", marginTop: 2, whiteSpace: "nowrap" }}>
+                          <div style={{ fontSize: 12, color: "var(--c-ink-3)", marginTop: 2, whiteSpace: "nowrap" }}>
                             {g.type}
                           </div>
                         </td>
-                        <td>
+                        <td data-label={titleColLabel} className="col-title">
                           <div
-                            style={{ maxWidth: "min(42vw, 560px)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600, color: "var(--c-ink)", fontSize: 13 }}
+                            className="group-table__title-text"
                             title={g.title || `${g.region} · ${g.type}`}
                           >
                             {g.title || `${g.region} · ${g.type}`}
                           </div>
-                          <div style={{ fontSize: 11, color: "var(--c-ink-3)", marginTop: 2, fontFamily: "ui-monospace, monospace" }}>
+                          <div style={{ fontSize: 12, color: "var(--c-ink-3)", marginTop: 2, fontFamily: "ui-monospace, monospace" }}>
                             {g.first_date} ~ {g.last_date}
                           </div>
                         </td>
-                        <td style={{ textAlign: "center", fontFeatureSettings: "'tnum'" }}>
-                          <span style={{ fontWeight: 700, color: g.unprocessed > 0 ? "#F53F3F" : "var(--c-ink-3)", fontSize: 13 }}>
-                            {g.unprocessed}
-                          </span>
-                          <span style={{ color: "#94A3B8", margin: "0 3px", fontSize: 12 }}>/</span>
-                          <span style={{ fontWeight: 600, color: "#1E293B", fontSize: 13 }}>
-                            {g.count}
+                        <td data-label="待派单 / 总数" className="col-counts" style={{ textAlign: "center", fontFeatureSettings: "'tnum'" }}>
+                          <span>
+                            <span style={{ fontWeight: 700, color: g.unprocessed > 0 ? "#F53F3F" : "var(--c-ink-3)", fontSize: 13 }}>
+                              {g.unprocessed}
+                            </span>
+                            <span style={{ color: "#94A3B8", margin: "0 3px", fontSize: 12 }}>/</span>
+                            <span style={{ fontWeight: 600, color: "#1E293B", fontSize: 13 }}>
+                              {g.count}
+                            </span>
                           </span>
                         </td>
-                        <td style={{ textAlign: "center" }}>
+                        <td data-label="紧急度" className="col-urgency" style={{ textAlign: "center" }}>
                           <span className={`urgency-tag ${u.cls}`}>{u.label}</span>
                         </td>
-                        <td style={{ textAlign: "right", fontFeatureSettings: "'tnum'", color: "var(--c-ink-2)" }}>
+                        <td data-label="持续天数" className="col-days" style={{ textAlign: "right", fontFeatureSettings: "'tnum'", color: "var(--c-ink-2)" }}>
                           {g.days} 天
                         </td>
-                        <td>
+                        <td data-label="处置状态" className="col-status">
                           <span className={`status-tag ${sCls}`}>{g.status.label}</span>
                         </td>
-                        <td style={{ textAlign: "right" }}>
+                        <td data-label="操作" className="col-actions" style={{ textAlign: "right" }}>
                           <button
                             type="button"
                             onClick={(e) => {
@@ -601,7 +606,7 @@ export default function ThemesPage() {
                               router.push(`/themes/${g.id}`);
                             }}
                             aria-label={`查看群组 ${g.title || g.code || g.id} 详情`}
-                            className="relative inline-flex items-center justify-end whitespace-nowrap min-h-[28px] min-w-0 py-1 px-2 sm:px-0 text-[var(--c-brand)] font-medium text-xs bg-transparent border-0 cursor-pointer hover:underline after:content-[''] after:absolute after:-inset-y-[8px] after:-left-[12px] after:-right-[4px]"
+                            className="table-card-action-btn relative inline-flex items-center justify-end whitespace-nowrap min-h-[44px] md:min-h-[28px] min-w-0 py-1 px-3 md:px-1 text-[var(--c-brand)] font-medium text-xs bg-transparent border-0 cursor-pointer hover:underline"
                           >
                             查看
                           </button>

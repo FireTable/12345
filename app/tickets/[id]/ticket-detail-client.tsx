@@ -652,45 +652,8 @@ export default function TicketDetailPage() {
       </div>
 
       <div className="page-hero" style={{ marginBottom: 20 }}>
-        <div>
-          <div className="flex items-center gap-2 mb-2 flex-wrap">
-            <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-              #{row.id}
-            </span>
-            {row.category && (
-              <span
-                className={`badge-pill ${getCategoryBadgeClass(row.category)}`}
-                style={categoryBadgeStyle(row.category)}
-              >
-                {row.category}
-              </span>
-            )}
-            <span className={`status-tag status-tag--${statusTag(row.status)}`}>
-              {statusLabel(row.status)}
-            </span>
-            <span
-              className={`badge-pill ${row.urgency === "URGENT" ? "badge-pill--danger" : row.urgency === "MEDIUM" ? "badge-pill--warning" : "badge-pill--default"}`}
-            >
-              {getUrgencyLabel(row.urgency)}
-            </span>
-            {row.isFakeClosure && (
-              <span className="badge-pill badge-pill--danger inline-flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3" aria-hidden="true" />
-                疑似假闭环
-              </span>
-            )}
-            {row.closureStatus === "REOPENED" && (
-              <span className="badge-pill badge-pill--warning">
-                复发重开
-              </span>
-            )}
-            {clusterId && (
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                多频专题已归集
-              </span>
-            )}
-          </div>
-          <h1 className="page-hero__title" style={{ fontSize: 20, fontWeight: 700 }}>
+        <div className="min-w-0">
+          <h1 className="page-hero__title m-0" style={{ fontSize: 20, fontWeight: 700 }}>
             {row.title}
           </h1>
           {row.rawTitle && row.rawTitle !== row.title && (
@@ -698,7 +661,35 @@ export default function TicketDetailPage() {
               市民原报原由：{row.rawTitle}
             </div>
           )}
-          <div className="page-hero__sub" style={{ marginTop: 6 }}>
+          <div className="flex items-center gap-x-3 gap-y-1.5 mt-2.5 flex-wrap text-xs text-slate-600">
+            <span className="font-mono font-semibold text-slate-800 tabular-nums">#{row.id}</span>
+            {row.category && (
+              <>
+                <span className="text-slate-300" aria-hidden="true">·</span>
+                <span>{row.category}</span>
+              </>
+            )}
+            <span className="text-slate-300" aria-hidden="true">·</span>
+            <span className={`status-tag status-tag--${statusTag(row.status)}`}>
+              {statusLabel(row.status)}
+            </span>
+            <span className={row.urgency === "URGENT" ? "font-semibold text-rose-600" : row.urgency === "MEDIUM" ? "font-semibold text-amber-700" : "text-slate-600"}>
+              {getUrgencyLabel(row.urgency)}
+            </span>
+            {row.isFakeClosure && (
+              <span className="inline-flex items-center gap-1 font-semibold text-rose-600">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                疑似假闭环
+              </span>
+            )}
+            {row.closureStatus === "REOPENED" && (
+              <span className="font-semibold text-amber-700">复发重开</span>
+            )}
+            {clusterId && (
+              <span className="font-medium text-blue-700">多频专题已归集</span>
+            )}
+          </div>
+          <div className="page-hero__sub" style={{ marginTop: 4 }}>
             {[row.region, formatLocalDateTime(row.createdAt), row.closedAt ? `办结于 ${formatLocalDate(row.closedAt)}` : ""].filter(Boolean).join(" · ")}
           </div>
         </div>
@@ -806,33 +797,33 @@ export default function TicketDetailPage() {
               )}
 
               {revealedPii && (
-                <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3 space-y-2.5 text-xs">
-                  <div className="flex items-center justify-between gap-2 flex-wrap text-[11px] text-slate-600 pb-2 border-b border-slate-200/80">
+                <div className="rounded-lg bg-slate-50 p-3.5 space-y-3 text-xs">
+                  <div className="flex items-center justify-between gap-2 flex-wrap text-xs text-slate-600 pb-2 border-b border-slate-200/80">
                     <span className="font-mono">审计编号：{revealedPii.auditId}</span>
                     <span>已留痕 · 仅本页临时展示，刷新或切换工单自动清除</span>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <div className="bg-white rounded-md border border-slate-200/80 px-2.5 py-2 min-w-0">
-                      <div className="text-[11px] text-slate-500 mb-0.5">{isEcommerce ? "反馈买家" : "反映人"}</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="min-w-0">
+                      <div className="text-xs text-slate-500 mb-0.5">{isEcommerce ? "反馈买家" : "反映人"}</div>
                       <div className="font-medium text-slate-900 break-words">
                         {revealedPii.callerName || "—"}
                       </div>
                     </div>
-                    <div className="bg-white rounded-md border border-slate-200/80 px-2.5 py-2 min-w-0">
-                      <div className="text-[11px] text-slate-500 mb-0.5">联系电话</div>
+                    <div className="min-w-0">
+                      <div className="text-xs text-slate-500 mb-0.5">联系电话</div>
                       <div className="font-mono font-medium text-slate-900 break-all">
                         {revealedPii.callerPhone || "—"}
                       </div>
                     </div>
-                    <div className="bg-white rounded-md border border-slate-200/80 px-2.5 py-2 min-w-0">
-                      <div className="text-[11px] text-slate-500 mb-0.5">事发地址</div>
+                    <div className="min-w-0">
+                      <div className="text-xs text-slate-500 mb-0.5">事发地址</div>
                       <div className="font-medium text-slate-900 break-words">
                         {revealedPii.address || "—"}
                       </div>
                     </div>
                   </div>
-                  <div className="bg-white rounded-md border border-slate-200/80 px-2.5 py-2 space-y-1">
-                    <div className="text-[11px] text-slate-500">原始诉求正文</div>
+                  <div className="pt-2.5 border-t border-slate-200/80 space-y-1">
+                    <div className="text-xs text-slate-500">原始诉求正文</div>
                     <div className="text-slate-800 leading-relaxed whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto">
                       {revealedPii.rawContent || "—"}
                     </div>
@@ -860,7 +851,7 @@ export default function TicketDetailPage() {
                       {piiAuditLogs.map((item) => (
                         <div
                           key={item.id}
-                          className="rounded-md border border-slate-200/70 bg-slate-50/60 px-2.5 py-2 text-[11px] space-y-1"
+                          className="rounded-md bg-slate-50 px-3 py-2 text-xs space-y-1"
                         >
                           <div className="flex items-center justify-between gap-2 flex-wrap text-slate-600">
                             <span className="font-medium text-slate-800">
@@ -1110,7 +1101,7 @@ export default function TicketDetailPage() {
                     />
                   </div>
 
-                  <div className="rounded-lg border border-slate-200/80 bg-slate-50/70 p-2.5 space-y-2">
+                  <div className="rounded-lg bg-slate-50/90 p-2.5 space-y-2">
                     <label className="flex items-center gap-2 min-h-[44px] sm:min-h-[28px] text-xs font-medium text-slate-700 cursor-pointer select-none">
                       <input
                         type="checkbox"

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { useReducedMotion } from "motion/react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
@@ -122,6 +122,14 @@ interface Message {
   status?: string;
 }
 
+function isPointerOutsideDialog(
+  e: React.PointerEvent<HTMLDialogElement>,
+  dialog: HTMLDialogElement
+) {
+  const r = dialog.getBoundingClientRect();
+  return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+}
+
 export const LightCopilot: React.FC<LightCopilotProps> = ({
   isOpen,
   onClose,
@@ -129,12 +137,9 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
   const titleId = useId();
   const inputId = useId();
   const prefersReducedMotion = useReducedMotion();
-  const dialogRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const openerRef = useRef<HTMLElement | null>(null);
-  const openerWasFabRef = useRef(false);
-  const wasOpenRef = useRef(false);
-  const backdropPointerDownRef = useRef(false);
+  const pressedOutsideRef = useRef(false);
   const copilotAbortRef = useRef<AbortController | null>(null);
   const { activeRegion } = useRegion();
   const { isAdmin } = useAuthRole();
@@ -243,95 +248,26 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
     if (el) el.scrollTop = el.scrollHeight;
   }
 
-  // Modal focus management, background inert, Esc + Tab containment, focus return & ASR/TTS cleanup
-  React.useEffect(() => {
-    if (!isOpen) {
-      asr.stop();
-      stageRef.current?.stop();
-      if (wasOpenRef.current) {
-        wasOpenRef.current = false;
-        const opener = openerRef.current;
-        const shouldFallbackToFab = openerWasFabRef.current;
-        openerRef.current = null;
-        openerWasFabRef.current = false;
-        if (opener && opener !== document.body && opener.isConnected) {
-          opener.focus({ preventScroll: true });
-        } else if (shouldFallbackToFab) {
-          document.querySelector<HTMLElement>(".chat-fab")?.focus({ preventScroll: true });
-        }
+  // Native <dialog>.showModal() provides inert background, top layer, focus containment, Esc/back dismissal & focus restoration
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (isOpen) {
+      if (!dialog.open) {
+        dialog.showModal();
       }
+      requestAnimationFrame(() => {
+        inputRef.current?.focus({ preventScroll: true });
+      });
       return;
     }
-
-    if (!wasOpenRef.current) {
-      const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-      openerRef.current = active && active !== document.body ? active : null;
-      // CivicNav unmounts .chat-fab as soon as copilotOpen flips true, which drops activeElement to body
-      openerWasFabRef.current =
-        !active || active === document.body || active.classList.contains("chat-fab");
-      wasOpenRef.current = true;
+    asr.stop();
+    stageRef.current?.stop();
+    if (dialog.open) {
+      dialog.close();
     }
-
-    const backgroundNodes = Array.from(
-      document.querySelectorAll<HTMLElement>("nav.navbar, nav.page-nav, main.main")
-    );
-    const modifiedInert: HTMLElement[] = [];
-    for (const node of backgroundNodes) {
-      if (!node.inert) {
-        node.inert = true;
-        modifiedInert.push(node);
-      }
-    }
-
-    const dialogEl = dialogRef.current;
-    if (dialogEl && !dialogEl.contains(document.activeElement)) {
-      dialogEl.focus({ preventScroll: true });
-    }
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        if (e.isComposing || e.keyCode === 229) return;
-        e.preventDefault();
-        onClose();
-        return;
-      }
-      if (e.key === "Tab" && dialogRef.current) {
-        const focusables = Array.from(
-          dialogRef.current.querySelectorAll<HTMLElement>(
-            'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])'
-          )
-        ).filter(
-          (el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden"
-        );
-        if (focusables.length === 0) {
-          e.preventDefault();
-          dialogRef.current.focus({ preventScroll: true });
-          return;
-        }
-        const first = focusables[0];
-        const last = focusables[focusables.length - 1];
-        const active = document.activeElement;
-        if (e.shiftKey) {
-          if (active === first || active === dialogRef.current || !dialogRef.current.contains(active)) {
-            e.preventDefault();
-            last.focus({ preventScroll: true });
-          }
-        } else if (active === last || !dialogRef.current.contains(active)) {
-          e.preventDefault();
-          first.focus({ preventScroll: true });
-        }
-      }
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      for (const node of modifiedInert) {
-        node.inert = false;
-      }
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   // 折叠展开 3D 语音助手时，自动播报最新 AI 回复
   useEffect(() => {
@@ -540,27 +476,58 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
 
   return (
     <TooltipProvider delayDuration={150} skipDelayDuration={300}>
-    <AnimatePresence>
-      {isOpen && (
-      <motion.div
-        key="copilot-backdrop"
-        className="fixed inset-0 z-[1000] flex justify-end bg-slate-900/50 backdrop-blur-xs overflow-hidden overscroll-contain"
-        onPointerDown={(e) => {
-          backdropPointerDownRef.current = e.target === e.currentTarget;
-        }}
-        onClick={(e) => {
-          if (e.target === e.currentTarget && backdropPointerDownRef.current) {
+      <dialog
+        ref={dialogRef}
+        aria-labelledby={titleId}
+        {...({ closedby: "any" } as Record<string, string>)}
+        className={`copilot-dialog w-full ${
+          showStage && stageOnBackdrop ? "sm:max-w-xl lg:max-w-[960px]" : "sm:max-w-xl lg:max-w-2xl"
+        } shrink-0 h-full bg-white sm:border-l border-slate-200 shadow-2xl overflow-hidden text-slate-900`}
+        onClose={() => {
+          if (dialogRef.current) {
+            dialogRef.current.returnValue = "";
+          }
+          asr.stop();
+          stageRef.current?.stop();
+          if (isOpen) {
             onClose();
           }
-          backdropPointerDownRef.current = false;
+          requestAnimationFrame(() => {
+            const active = document.activeElement;
+            if (!active || active === document.body) {
+              document
+                .querySelector<HTMLElement>('[data-copilot-trigger="true"]')
+                ?.focus({ preventScroll: true });
+            }
+          });
         }}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: prefersReducedMotion ? 0 : 0.2, ease: "easeOut" }}
+        onPointerDown={(e) => {
+          const dialog = dialogRef.current;
+          if (!dialog || "closedBy" in HTMLDialogElement.prototype) return;
+          if (e.pointerType === "mouse" && e.button !== 0) {
+            pressedOutsideRef.current = false;
+            return;
+          }
+          pressedOutsideRef.current = isPointerOutsideDialog(e, dialog);
+        }}
+        onPointerUp={(e) => {
+          const dialog = dialogRef.current;
+          if (!dialog || "closedBy" in HTMLDialogElement.prototype) return;
+          const shouldClose =
+            pressedOutsideRef.current &&
+            !(e.pointerType === "mouse" && e.button !== 0) &&
+            isPointerOutsideDialog(e, dialog);
+          pressedOutsideRef.current = false;
+          if (shouldClose) {
+            dialog.close();
+          }
+        }}
+        onPointerCancel={() => {
+          pressedOutsideRef.current = false;
+        }}
       >
         {showStage && stageOnBackdrop && (
-          <div className="flex-1 min-w-0 h-full relative pointer-events-none">
+          <div className="hidden lg:block w-[320px] shrink-0 h-full bg-slate-900 border-r border-slate-800 relative">
             <XiaochunStage
               variant="stage"
               backdropTone="dark"
@@ -574,19 +541,7 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
             />
           </div>
         )}
-        <motion.div
-          ref={dialogRef}
-          tabIndex={-1}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby={titleId}
-          className="w-full sm:max-w-xl lg:max-w-2xl shrink-0 h-full bg-white sm:border-l border-slate-200 shadow-2xl flex flex-col overflow-hidden overscroll-contain text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
-          onClick={(e) => e.stopPropagation()}
-          initial={prefersReducedMotion ? { x: 0 } : { x: "100%" }}
-          animate={{ x: 0 }}
-          exit={prefersReducedMotion ? { x: 0 } : { x: "100%" }}
-          transition={{ duration: prefersReducedMotion ? 0 : 0.28, ease: [0.32, 0.72, 0.18, 1] }}
-        >
+        <div className="flex-1 min-w-0 h-full flex flex-col overflow-hidden overscroll-contain bg-white">
         {/* Header */}
         <div className="p-3 sm:p-4 border-b border-slate-200 flex items-center justify-between gap-2 bg-slate-50">
           <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -595,9 +550,9 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 min-w-0">
-                <h2 id={titleId} className="text-[13px] sm:text-xs font-bold text-slate-900 leading-tight">
+                <h1 id={titleId} className="text-sm font-bold text-slate-900 leading-tight">
                   {isEcommerce ? "AI 客诉研判副驾驶" : "AI 智能研判副驾驶"}
-                </h2>
+                </h1>
                 <span className="hidden sm:inline-flex text-[10px] font-mono px-1.5 py-0.2 rounded bg-blue-50 text-blue-700 border border-blue-200 font-medium shrink-0">
                   {isEcommerce ? "本站检索" : "本区检索"}
                 </span>
@@ -624,7 +579,7 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
               onClick={handleClearChat}
               aria-label="清空对话"
               title="清空当前对话并重新提问"
-              className="relative inline-flex items-center justify-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-45 disabled:cursor-not-allowed transition-colors cursor-pointer whitespace-nowrap min-h-[34px] min-w-[34px] sm:min-w-0 sm:min-h-8 after:content-[''] after:absolute after:-inset-[5px]"
+              className="inline-flex items-center justify-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-45 disabled:cursor-not-allowed transition-colors cursor-pointer whitespace-nowrap min-h-[44px] min-w-[44px] sm:min-w-0 sm:min-h-8 sm:px-2.5"
             >
               <RotateCcw className="w-3.5 h-3.5 sm:w-3 sm:h-3 shrink-0" aria-hidden="true" />
               <span className="hidden sm:inline">清空对话</span>
@@ -641,7 +596,7 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
                   return next;
                 });
               }}
-              className={`relative inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium border transition-colors cursor-pointer whitespace-nowrap min-h-[34px] sm:min-h-8 after:content-[''] after:absolute after:-inset-y-[5px] after:inset-x-0 ${
+              className={`inline-flex items-center justify-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium border transition-colors cursor-pointer whitespace-nowrap min-h-[44px] sm:min-h-8 ${
                 showStage
                   ? "bg-blue-50 text-blue-700 border-blue-200"
                   : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
@@ -655,8 +610,8 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
             <button
               type="button"
               aria-label="关闭 AI 研判副驾驶"
-              onClick={onClose}
-              className="relative p-1.5 rounded-md text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer min-h-[34px] min-w-[34px] sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center after:content-[''] after:absolute after:-inset-[5px]"
+              onClick={() => dialogRef.current?.close()}
+              className="p-1.5 rounded-md text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer min-h-[44px] min-w-[44px] sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center"
             >
               <X className="w-5 h-5" aria-hidden="true" />
             </button>
@@ -967,7 +922,7 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
                         type="button"
                         onClick={() => handleExportMessageMarkdown(m, parsed.cleanText)}
                         aria-label="导出此条回复为 Markdown"
-                        className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 min-h-[28px] text-[10px] font-medium text-slate-600 hover:text-blue-700 hover:bg-blue-50 transition-colors cursor-pointer"
+                        className="inline-flex items-center gap-1 rounded px-2.5 py-1 min-h-[44px] sm:min-h-[32px] text-[11px] font-medium text-slate-600 hover:text-blue-700 hover:bg-blue-50 transition-colors cursor-pointer"
                       >
                         <Download className="w-3 h-3 shrink-0" aria-hidden="true" />
                         <span>导出 Markdown</span>
@@ -1020,10 +975,8 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
           submitAriaLabel="发送提问"
           compact
         />
-        </motion.div>
-      </motion.div>
-      )}
-    </AnimatePresence>
+        </div>
+      </dialog>
     </TooltipProvider>
   );
 };

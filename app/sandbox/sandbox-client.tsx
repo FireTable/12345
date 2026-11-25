@@ -413,14 +413,14 @@ export default function SandboxXrayPage() {
             <button
               type="button"
               onClick={applyPreset1}
-              className="btn btn--default text-xs min-h-[44px] sm:min-h-0 py-2 sm:py-1.5 px-2.5"
+              className="btn btn--default text-xs min-h-[44px] sm:min-h-[36px] py-2 sm:py-1.5 px-2.5"
             >
               {isEcommerce ? "① 冷链食安红线归因" : "① 主体违停精确对齐"}
             </button>
             <button
               type="button"
               onClick={applyPreset2}
-              className="btn btn--default text-xs min-h-[44px] sm:min-h-0 py-2 sm:py-1.5 px-2.5"
+              className="btn btn--default text-xs min-h-[44px] sm:min-h-[36px] py-2 sm:py-1.5 px-2.5"
             >
               {isEcommerce ? "② 虚假宣传与物流履约" : "② 口语俗称别名归一"}
             </button>
@@ -428,7 +428,7 @@ export default function SandboxXrayPage() {
               type="button"
               disabled={loadingPreset3}
               onClick={() => void applyPreset3()}
-              className="btn btn--default text-xs min-h-[44px] sm:min-h-0 py-2 sm:py-1.5 px-2.5 text-rose-700 border-rose-200 hover:border-rose-400"
+              className="btn btn--default text-xs min-h-[44px] sm:min-h-[36px] py-2 sm:py-1.5 px-2.5 text-rose-700 border-rose-200 hover:border-rose-400"
             >
               {loadingPreset3 ? "正在检索已办结群组…" : "③ 已办结复发假闭环预警"}
             </button>
@@ -444,7 +444,7 @@ export default function SandboxXrayPage() {
           <form onSubmit={handleRunXray} className="space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div className="md:col-span-2 min-w-0">
-                <label htmlFor="sandbox-ticket-title" className="block text-xs font-medium text-slate-600 mb-1">
+                <label htmlFor="sandbox-ticket-title" className="block text-[13px] font-medium text-slate-700 mb-1">
                   工单标题（可选）
                 </label>
                 <input
@@ -453,11 +453,11 @@ export default function SandboxXrayPage() {
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="例如：夜间建筑施工噪音扰民诉求（留空则由 AI 自动提炼）"
-                  className="w-full min-h-[44px] sm:min-h-[38px] px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
+                  className="w-full min-h-[44px] sm:min-h-[38px] px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-[13px] text-slate-900 focus:outline-none focus:border-blue-500"
                 />
               </div>
               <div className="min-w-0">
-                <label htmlFor="sandbox-ticket-subdistrict" className="block text-xs font-medium text-slate-600 mb-1">
+                <label htmlFor="sandbox-ticket-subdistrict" className="block text-[13px] font-medium text-slate-700 mb-1">
                   {activeRegion?.domainProfile?.terminology?.regionUnit || "所属镇街"}（可选）
                 </label>
                 <input
@@ -474,12 +474,12 @@ export default function SandboxXrayPage() {
                           ? "如：大良街道"
                           : "如：镇街名称"
                   }
-                  className="w-full min-h-[44px] sm:min-h-[38px] px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-500"
+                  className="w-full min-h-[44px] sm:min-h-[38px] px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-[13px] text-slate-900 focus:outline-none focus:border-blue-500"
                 />
               </div>
             </div>
             <div>
-              <label htmlFor="sandbox-ticket-content" className="block text-xs font-medium text-slate-600 mb-1">
+              <label htmlFor="sandbox-ticket-content" className="block text-[13px] font-medium text-slate-700 mb-1">
                 {isEcommerce ? "客诉工单正文（必填）" : "市民诉求正文（必填）"}
               </label>
               <textarea
@@ -509,17 +509,17 @@ export default function SandboxXrayPage() {
                     ? "输入电商客诉原文（可包含手机号、SKU、渠道仓网或运单号，系统将演示可逆脱敏与全链路研判）…"
                     : "输入市民热线诉求原文（可包含电话、门牌、车牌或口语地标俗称，系统将演示可逆脱敏与全链路研判）…"
                 }
-                className="w-full p-3 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 leading-relaxed focus:outline-none focus:border-blue-500 resize-y"
+                className="w-full p-3 rounded-lg border border-slate-200 bg-white text-[13px] text-slate-900 leading-relaxed focus:outline-none focus:border-blue-500 resize-y"
               />
             </div>
             <div className="flex items-center justify-between gap-3 flex-wrap pt-1">
-              <span id="sandbox-xray-hint" className="text-[11px] text-slate-500 min-w-0 break-words">
+              <span id="sandbox-xray-hint" className="text-xs text-slate-500 min-w-0 break-words">
                 支持 Cmd/Ctrl + Enter 提交；演练过程不会修改数据库，也不会影响 {activeRegion?.name || "当前区"} 基线工单计数。
               </span>
               <button
                 type="submit"
                 disabled={running || !content.trim()}
-                className="btn btn--primary text-xs min-h-[44px] sm:min-h-0 px-4 py-2 disabled:opacity-50"
+                className="btn btn--primary text-[13px] min-h-[44px] sm:min-h-[36px] px-4 py-2 disabled:opacity-50"
               >
                 {running ? (
                   <>
@@ -551,7 +551,7 @@ export default function SandboxXrayPage() {
             type="button"
             disabled={running || !content.trim()}
             onClick={() => void executeRunXray()}
-            className="btn btn--default text-xs min-h-[44px] sm:min-h-0 px-3 text-rose-700 border-rose-300 hover:bg-rose-100 shrink-0"
+            className="btn btn--default text-xs min-h-[44px] sm:min-h-[36px] px-3 text-rose-700 border-rose-300 hover:bg-rose-100 shrink-0"
           >
             重试透视
           </button>
@@ -567,21 +567,21 @@ export default function SandboxXrayPage() {
           return (
             <div
               key={st.key}
-              className={`min-w-0 rounded-xl border px-3 py-2.5 flex items-center gap-2 transition-all ${
+              className={`min-w-0 rounded-xl border px-3 py-2.5 flex items-start sm:items-center gap-2 transition-[border-color,background-color,box-shadow] ${
                 lit
                   ? "bg-blue-50/80 border-blue-300 text-blue-900 shadow-2xs"
                   : active
                     ? "bg-white border-blue-200 text-slate-700"
-                    : "bg-white border-slate-900/[0.08] text-slate-500"
+                    : "bg-white border-slate-900/[0.08] text-slate-600"
               }`}
             >
               <Icon
                 aria-hidden="true"
-                className={`w-4 h-4 shrink-0 ${
+                className={`w-4 h-4 shrink-0 mt-0.5 sm:mt-0 ${
                   lit ? "text-blue-600" : active ? "text-blue-400" : "text-slate-400"
                 }`}
               />
-              <span className="text-[11px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis min-w-0">
+              <span className="text-[13px] font-semibold leading-snug break-words min-w-0">
                 {st.title}
               </span>
             </div>
@@ -611,15 +611,15 @@ export default function SandboxXrayPage() {
               </div>
               <div className="card__body space-y-3 text-xs">
                 <div>
-                  <div className="text-[11px] text-slate-500 mb-1.5">识别并替换的敏感实体</div>
+                  <div className="text-xs text-slate-500 mb-1.5">识别并替换的敏感实体</div>
                   {s1 && s1.entities.length > 0 ? (
                     <div className="flex flex-wrap gap-1.5">
                       {s1.entities.map((ent, idx) => (
                         <span
                           key={`${ent.token}-${idx}`}
-                          className="inline-flex flex-wrap items-center gap-1.5 max-w-full px-2 py-1 rounded-md bg-emerald-50 border border-emerald-200 text-[11px]"
+                          className="inline-flex flex-wrap items-center gap-1.5 max-w-full px-2 py-1 rounded-md bg-emerald-50 text-xs"
                         >
-                          <span className="font-mono text-[10px] text-emerald-700 font-semibold shrink-0">
+                          <span className="font-mono text-[11px] text-emerald-700 font-semibold shrink-0">
                             {ent.type}
                           </span>
                           <span className="line-through text-slate-500 break-all">{ent.original}</span>
@@ -629,14 +629,14 @@ export default function SandboxXrayPage() {
                       ))}
                     </div>
                   ) : (
-                    <div className="text-[11px] text-slate-500 bg-slate-50 px-2.5 py-2 rounded-lg border border-slate-200/70">
+                    <div className="text-xs text-slate-500 bg-slate-50/90 px-2.5 py-2 rounded-lg">
                       未检测到需替换的手机/身份证/姓名/门牌号等个人隐私实体
                     </div>
                   )}
                 </div>
                 <div>
-                  <div className="text-[11px] text-slate-500 mb-1">送入大模型前的脱敏文本</div>
-                  <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80 text-slate-700 leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                  <div className="text-xs text-slate-500 mb-1">送入大模型前的脱敏文本</div>
+                  <div className="p-2.5 rounded-lg bg-slate-50/90 text-slate-700 leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
                     {s1?.maskedText || content}
                   </div>
                 </div>
@@ -655,22 +655,22 @@ export default function SandboxXrayPage() {
                   <span>02 · System-1 快思考神经引擎</span>
                 </h2>
                 <div className="flex items-center gap-1.5 flex-wrap shrink-0">
-                  <span className="px-2 py-0.5 rounded text-[10px] font-mono whitespace-nowrap bg-blue-50 text-blue-700 border border-blue-200">
+                  <span className="px-2 py-0.5 rounded text-[11px] font-mono whitespace-nowrap bg-blue-50 text-blue-700">
                     {s2?.adapter || "onnx"}
                   </span>
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono tabular-nums whitespace-nowrap bg-slate-100 text-slate-700 border border-slate-200">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono tabular-nums whitespace-nowrap bg-slate-100 text-slate-700">
                     <Clock className="w-3 h-3 shrink-0" aria-hidden="true" />
                     {s2?.durationMs ?? 0} ms
                   </span>
                 </div>
               </div>
               <div className="card__body grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
-                <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80 min-w-0">
-                  <div className="text-[11px] text-slate-500 mb-1">诉求意图</div>
+                <div className="p-2.5 rounded-lg bg-slate-50/90 min-w-0">
+                  <div className="text-xs text-slate-500 mb-1">诉求意图</div>
                   <div className="font-semibold text-slate-900 break-words">{s2?.intent || "—"}</div>
                 </div>
-                <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80 min-w-0">
-                  <div className="text-[11px] text-slate-500 mb-1">法定分类初判</div>
+                <div className="p-2.5 rounded-lg bg-slate-50/90 min-w-0">
+                  <div className="text-xs text-slate-500 mb-1">法定分类初判</div>
                   <div className="min-w-0">
                     {s2?.category ? (
                       <span
@@ -684,14 +684,14 @@ export default function SandboxXrayPage() {
                     )}
                   </div>
                 </div>
-                <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80 min-w-0">
-                  <div className="text-[11px] text-slate-500 mb-1">紧迫度 / 建议时限</div>
+                <div className="p-2.5 rounded-lg bg-slate-50/90 min-w-0">
+                  <div className="text-xs text-slate-500 mb-1">紧迫度 / 建议时限</div>
                   <div className="font-semibold text-slate-900 tabular-nums">
                     {getUrgencyLabel(s2?.urgency)} · {s2?.slaHours ?? "—"}h
                   </div>
                 </div>
-                <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80 min-w-0">
-                  <div className="text-[11px] text-slate-500 mb-1">涉稳护栏判定</div>
+                <div className="p-2.5 rounded-lg bg-slate-50/90 min-w-0">
+                  <div className="text-xs text-slate-500 mb-1">涉稳护栏判定</div>
                   <div className="font-semibold">
                     {s2?.stabilityRisk ? (
                       <span className="text-rose-600">存在涉稳风险</span>
@@ -714,26 +714,26 @@ export default function SandboxXrayPage() {
                   <BookOpen className="w-4 h-4 text-indigo-600 shrink-0" aria-hidden="true" />
                   <span>03 · 法定白名单与别名归一</span>
                 </h2>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono tabular-nums whitespace-nowrap bg-slate-100 text-slate-700 border border-slate-200 shrink-0">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono tabular-nums whitespace-nowrap bg-slate-100 text-slate-700 shrink-0">
                   <Clock className="w-3 h-3 shrink-0" aria-hidden="true" />
                   {s3?.durationMs ?? 0} ms
                 </span>
               </div>
               <div className="card__body space-y-3 text-xs">
-                <div className="flex items-center justify-between gap-2 flex-wrap p-2.5 rounded-lg bg-slate-50 border border-slate-200/80">
+                <div className="flex items-center justify-between gap-2 flex-wrap p-2.5 rounded-lg bg-slate-50/90">
                   <span className="text-slate-500 shrink-0">命中法定镇街 / 节点</span>
                   <span className="font-semibold text-slate-900 break-words min-w-0">
                     {s3?.matchedTownship || "未匹配到明确镇街"}
                   </span>
                 </div>
                 <div>
-                  <div className="text-[11px] text-slate-500 mb-1.5">口语俗称 ➔ 标准名词映射</div>
+                  <div className="text-xs text-slate-500 mb-1.5">口语俗称 ➔ 标准名词映射</div>
                   {s3 && s3.aliasHits.length > 0 ? (
                     <div className="flex flex-wrap gap-1.5">
                       {s3.aliasHits.map((hit, idx) => (
                         <span
                           key={`${hit.alias}-${idx}`}
-                          className="inline-flex flex-wrap items-center gap-1.5 max-w-full px-2.5 py-1 rounded-md bg-indigo-50 border border-indigo-200 text-[11px]"
+                          className="inline-flex flex-wrap items-center gap-1.5 max-w-full px-2.5 py-1 rounded-md bg-indigo-50 text-xs"
                         >
                           <span className="text-slate-700 break-words">{hit.alias}</span>
                           <ArrowRight className="w-3 h-3 text-indigo-500 shrink-0" aria-hidden="true" />
@@ -742,7 +742,7 @@ export default function SandboxXrayPage() {
                       ))}
                     </div>
                   ) : (
-                    <div className="text-[11px] text-slate-500 bg-slate-50 px-2.5 py-2 rounded-lg border border-slate-200/70">
+                    <div className="text-xs text-slate-500 bg-slate-50/90 px-2.5 py-2 rounded-lg">
                       未命中额外口语别名映射条目
                     </div>
                   )}
@@ -763,15 +763,15 @@ export default function SandboxXrayPage() {
                 </h2>
                 <div className="flex items-center gap-1.5 flex-wrap shrink-0">
                   <span
-                    className={`px-2 py-0.5 rounded text-[10px] font-mono whitespace-nowrap border ${
+                    className={`px-2 py-0.5 rounded text-[11px] font-mono whitespace-nowrap ${
                       s4?.backend === "fallback"
-                        ? "bg-amber-50 text-amber-800 border-amber-200"
-                        : "bg-purple-50 text-purple-700 border-purple-200"
+                        ? "bg-amber-50 text-amber-800"
+                        : "bg-purple-50 text-purple-700"
                     }`}
                   >
                     {s4?.backend === "fallback" ? "fallback 规则兜底" : s4?.backend || "llm"}
                   </span>
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono tabular-nums whitespace-nowrap bg-slate-100 text-slate-700 border border-slate-200">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono tabular-nums whitespace-nowrap bg-slate-100 text-slate-700">
                     <Clock className="w-3 h-3 shrink-0" aria-hidden="true" />
                     {s4?.durationMs ?? 0} ms
                   </span>
@@ -779,26 +779,26 @@ export default function SandboxXrayPage() {
               </div>
               <div className="card__body space-y-2.5 text-xs">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <div className="sm:col-span-2 p-2.5 rounded-lg bg-slate-50 border border-slate-200/80 min-w-0">
-                    <div className="text-[11px] text-slate-500 mb-0.5">提炼标准标题</div>
+                  <div className="sm:col-span-2 p-2.5 rounded-lg bg-slate-50/90 min-w-0">
+                    <div className="text-xs text-slate-500 mb-0.5">提炼标准标题</div>
                     <div className="font-semibold text-slate-900 break-words">{s4?.summarizeTitle || "—"}</div>
                   </div>
-                  <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80 min-w-0">
-                    <div className="text-[11px] text-slate-500 mb-0.5">涉事主体</div>
+                  <div className="p-2.5 rounded-lg bg-slate-50/90 min-w-0">
+                    <div className="text-xs text-slate-500 mb-0.5">涉事主体</div>
                     <div className="font-semibold text-slate-900 break-words">{s4?.subject || "—"}</div>
                   </div>
-                  <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80 min-w-0">
-                    <div className="text-[11px] text-slate-500 mb-0.5">标准地点</div>
+                  <div className="p-2.5 rounded-lg bg-slate-50/90 min-w-0">
+                    <div className="text-xs text-slate-500 mb-0.5">标准地点</div>
                     <div className="font-semibold text-slate-900 break-words">{s4?.location || "—"}</div>
                   </div>
-                  <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80 min-w-0">
-                    <div className="text-[11px] text-slate-500 mb-0.5">细分事件 / 分类</div>
+                  <div className="p-2.5 rounded-lg bg-slate-50/90 min-w-0">
+                    <div className="text-xs text-slate-500 mb-0.5">细分事件 / 分类</div>
                     <div className="font-semibold text-slate-900 break-words">
                       {s4?.eventType || "—"} · {s4?.category || "—"}
                     </div>
                   </div>
-                  <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80 min-w-0">
-                    <div className="text-[11px] text-slate-500 mb-0.5">抽取置信度 / 节点</div>
+                  <div className="p-2.5 rounded-lg bg-slate-50/90 min-w-0">
+                    <div className="text-xs text-slate-500 mb-0.5">抽取置信度 / 节点</div>
                     <div className="font-semibold text-slate-900 font-mono tabular-nums break-all">
                       {s4?.confidence ?? 0}%
                       {s4?.endpoint ? ` · ${s4.endpoint}` : ""}
@@ -811,13 +811,13 @@ export default function SandboxXrayPage() {
                       type="button"
                       aria-expanded={reasoningOpen}
                       onClick={() => setReasoningOpen((prev) => !prev)}
-                      className="inline-flex items-center gap-1 min-h-[44px] sm:min-h-[24px] py-1 text-[11px] font-semibold text-purple-700 hover:underline cursor-pointer"
+                      className="inline-flex items-center gap-1 min-h-[44px] sm:min-h-[36px] py-1 text-xs font-semibold text-purple-700 hover:underline cursor-pointer"
                     >
                       <span>{reasoningOpen ? "收起思维链 (Reasoning)" : "展开思维链 (Reasoning)"}</span>
                       {reasoningOpen ? <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" /> : <ChevronDown className="w-3.5 h-3.5" aria-hidden="true" />}
                     </button>
                     {reasoningOpen && (
-                      <div className="mt-1.5 p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-[11px] text-slate-600 leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere] max-h-40 overflow-y-auto">
+                      <div className="mt-1.5 p-2.5 rounded-lg bg-slate-50/90 text-xs text-slate-600 leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere] max-h-40 overflow-y-auto">
                         {s4.reasoning}
                       </div>
                     )}
@@ -838,10 +838,10 @@ export default function SandboxXrayPage() {
                   <span>05 · 语义吸附与假闭环探测</span>
                 </h2>
                 <div className="flex items-center gap-1.5 flex-wrap shrink-0">
-                  <span className="px-2 py-0.5 rounded text-[10px] font-mono tabular-nums whitespace-nowrap bg-cyan-50 text-cyan-800 border border-cyan-200">
+                  <span className="px-2 py-0.5 rounded text-[11px] font-mono tabular-nums whitespace-nowrap bg-cyan-50 text-cyan-800">
                     阈值 {s5?.threshold ?? 0.72}
                   </span>
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono tabular-nums whitespace-nowrap bg-slate-100 text-slate-700 border border-slate-200">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono tabular-nums whitespace-nowrap bg-slate-100 text-slate-700">
                     <Clock className="w-3 h-3 shrink-0" aria-hidden="true" />
                     {s5?.durationMs ?? 0} ms
                   </span>
@@ -849,13 +849,13 @@ export default function SandboxXrayPage() {
               </div>
               <div className="card__body space-y-3 text-xs">
                 {s5?.willTriggerFakeClosure && (
-                  <div className="p-3 rounded-lg bg-rose-50 border border-rose-300 text-rose-800 flex items-start gap-2">
+                  <div className="p-3 rounded-lg bg-rose-50/90 text-rose-800 flex items-start gap-2">
                     <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" aria-hidden="true" />
                     <div className="min-w-0">
                       <div className="font-bold text-rose-900">
                         触发假闭环复发预警！
                       </div>
-                      <div className="text-[11px] mt-0.5 break-words">
+                      <div className="text-xs mt-0.5 break-words">
                         该诉求命中已办结专题群组并在复发检测时间窗内，真实入库后将自动标记「疑似假闭环」并将原群组重开升级为高危督办。
                       </div>
                     </div>
@@ -863,34 +863,34 @@ export default function SandboxXrayPage() {
                 )}
 
                 <div>
-                  <div className="text-[11px] text-slate-500 mb-1">匹配多频专题群组</div>
+                  <div className="text-xs text-slate-500 mb-1">匹配多频专题群组</div>
                   {s5?.matchedTheme ? (
-                    <div className="p-2.5 rounded-lg bg-blue-50/70 border border-blue-200 flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
+                    <div className="p-2.5 rounded-lg bg-blue-50/70 flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
                       <div className="min-w-0 flex-1">
-                        <div className="font-semibold text-blue-950 whitespace-nowrap overflow-hidden text-ellipsis">
+                        <div className="font-semibold text-blue-950 break-words">
                           {s5.matchedTheme.title}
                         </div>
-                        <div className="text-[11px] text-blue-700 mt-0.5 break-words">
+                        <div className="text-xs text-blue-700 mt-0.5 break-words">
                           状态：{s5.matchedTheme.handlingStatus} · 风险：{s5.matchedTheme.riskLevel}
                         </div>
                       </div>
                       <Link
                         href={`/themes/${encodeURIComponent(s5.matchedTheme.id)}`}
-                        className="inline-flex items-center gap-1 min-h-[44px] sm:min-h-[24px] px-1.5 py-1 sm:py-0.5 text-[11px] font-semibold text-blue-700 hover:underline shrink-0 whitespace-nowrap"
+                        className="inline-flex items-center gap-1 min-h-[44px] sm:min-h-[36px] px-2 py-1 text-xs font-semibold text-blue-700 hover:underline shrink-0 whitespace-nowrap"
                       >
                         <span>查看群组</span>
                         <ExternalLink className="w-3 h-3 shrink-0" aria-hidden="true" />
                       </Link>
                     </div>
                   ) : (
-                    <div className="text-[11px] text-slate-500 bg-slate-50 px-2.5 py-2 rounded-lg border border-slate-200/70">
+                    <div className="text-xs text-slate-500 bg-slate-50/90 px-2.5 py-2 rounded-lg">
                       未吸附到既有群组，入库后将作为独立新诉求或新专题起点
                     </div>
                   )}
                 </div>
 
                 <div>
-                  <div className="text-[11px] text-slate-500 mb-1">
+                  <div className="text-xs text-slate-500 mb-1">
                     检索到的相似历史工单 ({s5?.similarTickets?.length ?? 0})
                   </div>
                   {s5 && s5.similarTickets.length > 0 ? (
@@ -898,28 +898,28 @@ export default function SandboxXrayPage() {
                       {s5.similarTickets.map((t, idx) => (
                         <div
                           key={`${t.ticketNo}-${idx}`}
-                          className="p-2 rounded-lg bg-slate-50 border border-slate-200/80 flex items-center justify-between gap-2 min-w-0"
+                          className="p-2 rounded-lg bg-slate-50/90 flex items-center justify-between gap-2 min-w-0"
                         >
                           <div className="min-w-0 flex-1">
-                            <div className="font-medium text-slate-800 whitespace-nowrap overflow-hidden text-ellipsis">
-                              <span className="font-mono text-[11px] text-slate-500 mr-1.5">
+                            <div className="font-medium text-slate-800 break-words">
+                              <span className="font-mono text-xs text-slate-500 mr-1.5">
                                 #{t.ticketNo}
                               </span>
                               {t.title}
                             </div>
-                            <div className="text-[10px] text-slate-500 mt-0.5 truncate">
+                            <div className="text-[11px] text-slate-500 mt-0.5">
                               状态：{t.status}
                               {t.closedAt ? ` · 办结：${String(t.closedAt).slice(0, 10)}` : ""}
                             </div>
                           </div>
-                          <span className="font-mono text-[11px] font-semibold tabular-nums text-cyan-800 bg-cyan-50 border border-cyan-200 px-2 py-0.5 rounded shrink-0 whitespace-nowrap">
+                          <span className="font-mono text-xs font-semibold tabular-nums text-cyan-800 bg-cyan-50 px-2 py-0.5 rounded shrink-0 whitespace-nowrap">
                             {Math.round(t.similarity * 100)}%
                           </span>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <div className="text-[11px] text-slate-500">暂无相似历史工单</div>
+                    <div className="text-xs text-slate-500">暂无相似历史工单</div>
                   )}
                 </div>
               </div>
@@ -942,28 +942,28 @@ export default function SandboxXrayPage() {
               </div>
               <div className="card__body space-y-2.5 text-xs">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80 min-w-0">
-                    <div className="text-[11px] text-slate-500 mb-0.5">还原后涉事主体</div>
+                  <div className="p-2.5 rounded-lg bg-slate-50/90 min-w-0">
+                    <div className="text-xs text-slate-500 mb-0.5">还原后涉事主体</div>
                     <div className="font-semibold text-slate-900 break-words">
                       {s6?.restoredSubject || "—"}
                     </div>
                   </div>
-                  <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80 min-w-0">
-                    <div className="text-[11px] text-slate-500 mb-0.5">还原后事发地点</div>
+                  <div className="p-2.5 rounded-lg bg-slate-50/90 min-w-0">
+                    <div className="text-xs text-slate-500 mb-0.5">还原后事发地点</div>
                     <div className="font-semibold text-slate-900 break-words">
                       {s6?.restoredLocation || "—"}
                     </div>
                   </div>
-                  <div className="sm:col-span-2 p-2.5 rounded-lg bg-slate-50 border border-slate-200/80 min-w-0">
-                    <div className="text-[11px] text-slate-500 mb-0.5">建议牵头承办部门</div>
+                  <div className="sm:col-span-2 p-2.5 rounded-lg bg-slate-50/90 min-w-0">
+                    <div className="text-xs text-slate-500 mb-0.5">建议牵头承办部门</div>
                     <div className="font-semibold text-blue-800 break-words">
                       {s6?.leadDepartment || "—"}
                     </div>
                   </div>
                 </div>
                 <div>
-                  <div className="text-[11px] text-slate-500 mb-1">公文级协同处置建议</div>
-                  <div className="p-3 rounded-lg bg-emerald-50/50 border border-emerald-200/80 text-slate-800 leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                  <div className="text-xs text-slate-500 mb-1">公文级协同处置建议</div>
+                  <div className="p-3 rounded-lg bg-emerald-50/60 text-slate-800 leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
                     {s6?.recommendedAction || "—"}
                   </div>
                 </div>
@@ -984,7 +984,7 @@ export default function SandboxXrayPage() {
                 {persistedOk ? (
                   <Link
                     href="/tickets"
-                    className="inline-flex items-center gap-1.5 min-h-[44px] sm:min-h-0 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 max-w-full flex-wrap"
+                    className="inline-flex items-center gap-1.5 min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-lg text-[13px] sm:text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 max-w-full flex-wrap"
                   >
                     <CheckCircle2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                     <span>已入库流转，前往工单中心查看</span>
@@ -995,7 +995,7 @@ export default function SandboxXrayPage() {
                     type="button"
                     disabled={persisting}
                     onClick={() => setPersistConfirmOpen(true)}
-                    className="btn btn--default min-h-[44px] sm:min-h-0 text-xs border-blue-200 text-blue-700 hover:border-blue-400 !whitespace-normal text-center leading-snug max-w-full"
+                    className="btn btn--default min-h-[44px] sm:min-h-[36px] text-[13px] sm:text-xs border-blue-200 text-blue-700 hover:border-blue-400 !whitespace-normal text-center leading-snug max-w-full"
                   >
                     <Database className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                     <span>真实入库流转（写入本区并触发增量研判）</span>

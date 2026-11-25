@@ -19,6 +19,32 @@ function prefersReducedMotion(): boolean {
   );
 }
 
+function cloneOptionPreservingFunctions<T>(value: T): T {
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+  if (value instanceof Date) {
+    return new Date(value.getTime()) as T;
+  }
+  if (value instanceof RegExp) {
+    return new RegExp(value.source, value.flags) as T;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => cloneOptionPreservingFunctions(item)) as T;
+  }
+  const cloned: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    cloned[k] = cloneOptionPreservingFunctions(v);
+  }
+  return cloned as T;
+}
+
+function serializeOptionKey(option: unknown): string {
+  return JSON.stringify(option, (_k, v) =>
+    typeof v === "function" ? `__fn__:${v.toString()}` : v
+  );
+}
+
 declare global {
   interface Window {
     echarts?: {
@@ -138,9 +164,11 @@ export function CivicEChart({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const chartInstanceRef = useRef<any>(null);
+  const optionRef = useRef(option);
+  optionRef.current = option;
   const onHoverRef = useRef(onHover);
   onHoverRef.current = onHover;
-  const key = JSON.stringify(option);
+  const key = serializeOptionKey(option);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [errorMsg, setErrorMsg] = useState("");
   const [retryCount, setRetryCount] = useState(0);
@@ -156,14 +184,39 @@ export function CivicEChart({
         try {
           const chart = echarts.init(ref.current);
           chartInstanceRef.current = chart;
-          const parsedOption = JSON.parse(key);
+          const parsedOption = cloneOptionPreservingFunctions(optionRef.current) as Record<
+            string,
+            any
+          >;
           if (prefersReducedMotion()) {
             parsedOption.animation = false;
+          }
+          // Narrow mobile screens: let ECharts auto-space category dates cleanly across full width
+          const containerW = ref.current.clientWidth || 0;
+          if (
+            containerW > 0 &&
+            containerW < 520 &&
+            parsedOption.xAxis &&
+            !Array.isArray(parsedOption.xAxis) &&
+            parsedOption.xAxis.type === "category" &&
+            Array.isArray(parsedOption.xAxis.data)
+          ) {
+            const prevLabel = parsedOption.xAxis.axisLabel || {};
+            parsedOption.xAxis = {
+              ...parsedOption.xAxis,
+              axisLabel: {
+                ...prevLabel,
+                hideOverlap: true,
+                interval: "auto",
+              },
+            };
           }
           chart.setOption(parsedOption);
 
           // 监听鼠标悬停交互：动态实时切换环形图圆心百分比与分类，并通知外部聚焦
-          const defaultTitle = parsedOption.title ? JSON.parse(JSON.stringify(parsedOption.title)) : null;
+          const defaultTitle = parsedOption.title
+            ? cloneOptionPreservingFunctions(parsedOption.title)
+            : null;
           if (parsedOption.series?.some((s: any) => s.type === "pie")) {
             chart.on("mouseover", "series.pie", (params: any) => {
               const pct = params.percent != null ? Number(params.percent).toFixed(1) : "0.0";
@@ -231,8 +284,13 @@ export function CivicEChart({
   useEffect(() => {
     const chart = chartInstanceRef.current;
     if (!chart) return;
-    const parsedOption = JSON.parse(key);
-    const defaultTitle = parsedOption.title ? JSON.parse(JSON.stringify(parsedOption.title)) : null;
+    const parsedOption = cloneOptionPreservingFunctions(optionRef.current) as Record<
+      string,
+      any
+    >;
+    const defaultTitle = parsedOption.title
+      ? cloneOptionPreservingFunctions(parsedOption.title)
+      : null;
     if (hoveredName) {
       chart.dispatchAction({
         type: "highlight",
@@ -324,7 +382,8 @@ export function trendOption(daily: Record<string, number>, clusters: Record<stri
       axisLabel: {
         color: "#86909C",
         fontSize: 11,
-        interval: Math.max(0, Math.floor(dates.length / 8) - 1),
+        hideOverlap: true,
+        interval: Math.max(0, Math.ceil(dates.length / 6) - 1),
         formatter: (v: string) => {
           const parts = v.split("-");
           if (parts.length >= 3) {
@@ -332,10 +391,10 @@ export function trendOption(daily: Record<string, number>, clusters: Record<stri
             const month = parseInt(parts[1] || "", 10);
             const day = parseInt(parts[2] || "", 10);
             if (crossYear) return `${year.slice(2)}/${month}/${day}`;
-            return `${month}月${day}日`;
+            return `${String(month).padStart(2, "0")}/${String(day).padStart(2, "0")}`;
           }
           const [m, d] = v.split("-");
-          return `${parseInt(m, 10)}月${parseInt(d, 10)}日`;
+          return `${String(parseInt(m, 10)).padStart(2, "0")}/${String(parseInt(d, 10)).padStart(2, "0")}`;
         },
       },
     },
@@ -347,7 +406,7 @@ export function trendOption(daily: Record<string, number>, clusters: Record<stri
         axisLine: { show: false },
         axisTick: { show: false },
         splitLine: { lineStyle: { color: "#F0F1F3", type: "dashed" } },
-        axisLabel: { color: "#94A3B8", fontSize: 10 },
+        axisLabel: { color: "#94A3B8", fontSize: 11 },
       },
       {
         type: "value",
@@ -356,7 +415,7 @@ export function trendOption(daily: Record<string, number>, clusters: Record<stri
         axisLine: { show: false },
         axisTick: { show: false },
         splitLine: { show: false },
-        axisLabel: { color: "#94A3B8", fontSize: 10 },
+        axisLabel: { color: "#94A3B8", fontSize: 11 },
         min: 0,
       },
     ],

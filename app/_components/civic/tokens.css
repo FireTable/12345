@@ -95,7 +95,7 @@
   --dur-slow: 0.4s;
 }
 
-@media (max-width: 640px), (pointer: coarse) {
+@media (max-width: 768px), (pointer: coarse) {
   :root {
     --target-size: 44px;
   }
@@ -106,7 +106,7 @@ html {
   height: 100%;
   color-scheme: light;
   scroll-padding-top: calc(var(--nav-h) + 16px + env(safe-area-inset-top, 0px));
-  scroll-padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+  scroll-padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   scrollbar-width: auto;
   scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
@@ -182,6 +182,15 @@ html {
     outline: 2px solid var(--c-brand);
     outline-offset: 2px;
   }
+
+  .navbar a {
+    text-decoration: none;
+  }
+  .main a {
+    color: var(--c-brand-text);
+    text-decoration: none;
+  }
+  .main a:hover { color: var(--c-brand-dark); }
 }
 
 /* 仅对短标题平衡换行、长段正文防孤字（绝不用于 * 或胶囊徽章） */
@@ -229,24 +238,39 @@ p,
   scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
 
-/* 覆盖 globals.css 的浅灰 6px webkit 滚动条，确保全站浅色滚动条满足 >= 3:1 对比度 */
-:where(*):not(.cockpit-shell):not(.cockpit-shell *)::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
+@supports not (scrollbar-color: auto) {
+  html,
+  .table-wrapper,
+  .table-scroll,
+  .heatmap-scroll,
+  .drawer__body,
+  .modal__body,
+  .content-box,
+  .navbar__panel,
+  .video-playlist-items,
+  .pipeline-drawer__body {
+    scrollbar-width: auto;
+  }
 
-:where(*):not(.cockpit-shell):not(.cockpit-shell *)::-webkit-scrollbar-track {
-  background: var(--scrollbar-track);
-}
+  /* 覆盖浅灰 6px webkit 滚动条，确保全站浅色滚动条满足 >= 3:1 对比度 */
+  :where(*):not(.cockpit-shell):not(.cockpit-shell *)::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
 
-:where(*):not(.cockpit-shell):not(.cockpit-shell *)::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb);
-  border-radius: 5px;
-  border: 2px solid var(--scrollbar-track);
-}
+  :where(*):not(.cockpit-shell):not(.cockpit-shell *)::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+  }
 
-:where(*):not(.cockpit-shell):not(.cockpit-shell *)::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  :where(*):not(.cockpit-shell):not(.cockpit-shell *)::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 5px;
+    border: 2px solid var(--scrollbar-track);
+  }
+
+  :where(*):not(.cockpit-shell):not(.cockpit-shell *)::-webkit-scrollbar-thumb:hover {
+    background: #475569;
+  }
 }
 
 /* 阻止模态框背后页面穿透滚动（不锁 body.style.overflow） */
@@ -257,20 +281,6 @@ dialog:modal {
 dialog::backdrop {
   overflow: hidden;
   overscroll-behavior: contain;
-}
-
-.navbar a {
-  text-decoration: none;
-}
-.main a {
-  color: var(--c-brand-text);
-  text-decoration: none;
-}
-.main a:hover { color: var(--c-brand-dark); }
-
-/* 防止右下角 .chat-fab (48px + 20px) 长期遮挡底部按钮/分页 */
-body:has(.chat-fab) .main {
-  padding-block-end: calc(84px + env(safe-area-inset-bottom, 0px));
 }
 
 /* 390px 窄屏折行与高度自适应 */
@@ -288,8 +298,8 @@ body .chart-legend {
   }
 }
 
-/* 移动端与粗指针设备 >= 44px 触控热区（紧凑控件用 ::after 扩展热区而不视觉膨胀） */
-@media (max-width: 640px), (pointer: coarse) {
+/* 移动端与粗指针设备 >= 44px 触控热区（紧凑控件用 ::after 扩展热区而不视觉膨胀，并扣减 1px border 盒偏移） */
+@media (max-width: 768px), (pointer: coarse) {
   body :is(
     .filter-tab,
     .page-size-select,
@@ -298,9 +308,13 @@ body .chart-legend {
     min-block-size: 44px;
   }
 
+  body button.page-btn {
+    min-block-size: 44px;
+    min-inline-size: 44px;
+  }
+
   body :is(
     .btn:not([class*="min-h-[4"]),
-    button.page-btn,
     .navbar-icon-btn,
     .pipeline-console-icon-btn,
     .drawer__close,
@@ -312,32 +326,26 @@ body .chart-legend {
   body .btn:not([class*="min-h-[4"]):not(.navbar__actions--login *)::after {
     content: "";
     position: absolute;
-    inset: -5px 0;
-  }
-
-  body button.page-btn::after {
-    content: "";
-    position: absolute;
-    inset: -7px -5px;
+    inset: -6px -2px;
   }
 
   body .navbar-icon-btn::after,
   body .pipeline-console-icon-btn::after {
     content: "";
     position: absolute;
-    inset: -5px;
+    inset: -6px;
   }
 
   body button.navbar-user-card::after {
     content: "";
     position: absolute;
-    inset: -5px 0;
+    inset: -6px 0;
   }
 
   body .drawer__close::after {
     content: "";
     position: absolute;
-    inset: -6px;
+    inset: -8px;
   }
 
   body .modal__close::after {

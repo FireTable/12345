@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import {
   Building2,
@@ -37,7 +37,7 @@ import {
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/app/_components/ui/confirm-dialog";
 import { TablePager } from "@/app/_components/civic/table-pager";
-import { useRegion } from "@/app/_components/civic/region-context";
+import { useRegion, type RegionInfo } from "@/app/_components/civic/region-context";
 import { useAuthRole } from "@/lib/auth/use-role";
 import { resolveApiError } from "@/lib/api-codes";
 import { categoryVisual, getTownshipColor, KNOWN_TOWNSHIP_COLORS } from "@/lib/civic-cluster";
@@ -96,6 +96,109 @@ export interface LocationItem {
   metaJson?: string;
   isStandard: boolean;
   createdAt: string;
+}
+
+interface LocationMeta {
+  lng?: number;
+  lat?: number;
+  score?: number;
+  level?: string;
+  formattedAddress?: string;
+  township?: string;
+  source?: string;
+}
+
+function parseLocationMeta(metaJson?: string): LocationMeta {
+  if (!metaJson) return {};
+  try {
+    const parsed = JSON.parse(metaJson);
+    return parsed && typeof parsed === "object" ? (parsed as LocationMeta) : {};
+  } catch {
+    return {};
+  }
+}
+
+function findMatchingTownship(text: string, townships: TownshipItem[]): TownshipItem | null {
+  const clean = text.trim();
+  if (!clean || townships.length === 0) return null;
+
+  // 精确匹配全称 / 简称 / 别名
+  for (const t of townships) {
+    if (
+      t.fullName === clean ||
+      t.name === clean ||
+      (t.aliases || []).some((a) => a === clean)
+    ) {
+      return t;
+    }
+  }
+
+  // 按候选词长度降序做子串匹配，避免短词误匹配
+  const candidates: Array<{ token: string; township: TownshipItem; priority: number }> = [];
+  for (const t of townships) {
+    if (t.fullName) candidates.push({ token: t.fullName, township: t, priority: 3 });
+    if (t.name && t.name.length >= 2) candidates.push({ token: t.name, township: t, priority: 2 });
+    for (const a of t.aliases || []) {
+      if (a.length >= 2) candidates.push({ token: a, township: t, priority: 2 });
+    }
+    for (const c of t.communities || []) {
+      if (c.length >= 2) candidates.push({ token: c, township: t, priority: 1 });
+    }
+    for (const lm of t.landmarks || []) {
+      if (lm.length >= 3) candidates.push({ token: lm, township: t, priority: 1 });
+    }
+  }
+  candidates.sort((a, b) => b.priority - a.priority || b.token.length - a.token.length);
+
+  for (const item of candidates) {
+    if (clean.includes(item.token)) {
+      return item.township;
+    }
+  }
+  return null;
+}
+
+function resolveLocationTownship(
+  loc: LocationItem,
+  meta: LocationMeta,
+  townships: TownshipItem[]
+): string {
+  const explicitTown = String(loc.parentName || meta.township || "").trim();
+  if (townships.length === 0) return explicitTown;
+  if (explicitTown) {
+    const matched = findMatchingTownship(explicitTown, townships);
+    return matched ? matched.fullName : explicitTown;
+  }
+  const haystack = `${loc.name || ""} ${loc.fullName || ""} ${meta.formattedAddress || ""}`.trim();
+  const matched = findMatchingTownship(haystack, townships);
+  return matched ? matched.fullName : "";
+}
+
+function isCrossRegionLocation(
+  loc: LocationItem,
+  meta: LocationMeta,
+  townships: TownshipItem[],
+  activeRegion: RegionInfo | null
+): boolean {
+  if (!activeRegion || townships.length === 0) return false;
+  const explicitTown = String(loc.parentName || meta.township || "").trim();
+  if (explicitTown) {
+    const matchesLocalTownship = Boolean(findMatchingTownship(explicitTown, townships));
+    if (!matchesLocalTownship && !explicitTown.includes(activeRegion.name)) {
+      return true;
+    }
+  }
+  const fullText = `${loc.fullName || ""} ${meta.formattedAddress || ""}`.trim();
+  if (fullText) {
+    const mentionsLocal =
+      fullText.includes(activeRegion.name) ||
+      (activeRegion.city ? fullText.includes(activeRegion.city) : false);
+    if (!mentionsLocal && /(?:佛山市|顺德区|南海区|禅城区|三水区|高明区|广州市|深圳市|珠海市|东莞市|中山市).+?(?:街道|镇)/.test(fullText)) {
+      const matchesLocalTownship = Boolean(findMatchingTownship(fullText, townships));
+      if (!matchesLocalTownship) return true;
+    }
+  }
+  return false;
 }
 
 export default function DictionaryManagementPage() {
@@ -235,12 +338,35 @@ export default function DictionaryManagementPage() {
   );
 
   useEffect(() => {
+    setTownshipFilter("ALL");
+    setActiveMapLocId(null);
+    setPreviewLocation(null);
+  }, [activeRegion?.id]);
+
+  useEffect(() => {
     if (isRolePending || !isAdmin) return;
     if (activeTab === "locations" && loadedRegionRef.current === activeRegion?.id) {
       return;
     }
     void fetchData(activeTab === "locations" ? "" : debouncedSearchQuery);
   }, [fetchData, activeTab, activeRegion?.id, debouncedSearchQuery, isRolePending, isAdmin]);
+
+  const regionLocations = useMemo(() => {
+    return locations
+      .map((loc) => {
+        const meta = parseLocationMeta(loc.metaJson);
+        if (isCrossRegionLocation(loc, meta, townships, activeRegion)) {
+          return null;
+        }
+        const resolvedTownship = resolveLocationTownship(loc, meta, townships);
+        return {
+          loc,
+          meta,
+          resolvedTownship,
+        };
+      })
+      .filter((entry): entry is { loc: LocationItem; meta: LocationMeta; resolvedTownship: string } => entry !== null);
+  }, [locations, townships, activeRegion]);
 
   const tabs = [
     { key: "aliases", label: "别名知识库映射" },
@@ -521,7 +647,7 @@ export default function DictionaryManagementPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
               <div>
-                <label htmlFor="dict-sandbox-input" className="text-[11px] font-medium text-slate-600 mb-1 block">
+                <label htmlFor="dict-sandbox-input" className="text-[13px] font-medium text-slate-700 mb-1 block">
                   输入包含口语/俗称的原始文本：
                 </label>
                 <input
@@ -530,18 +656,18 @@ export default function DictionaryManagementPage() {
                   value={testText}
                   onChange={(e) => handleTestReplace(e.target.value)}
                   placeholder="输入文本测试别名替换..."
-                  className="w-full min-h-[44px] sm:min-h-0 rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none transition-all"
+                  className="w-full min-h-[44px] sm:min-h-[36px] rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-[13px] text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none transition-[border-color,background-color]"
                 />
               </div>
               <div>
-                <div id="dict-sandbox-output-label" className="text-[11px] font-medium text-emerald-700 mb-1 block">
+                <div id="dict-sandbox-output-label" className="text-[13px] font-medium text-emerald-700 mb-1 block">
                   归一化替换结果（大模型输入标准）：
                 </div>
                 <div
                   role="status"
                   aria-live="polite"
                   aria-labelledby="dict-sandbox-output-label"
-                  className="w-full rounded-lg border border-emerald-200 bg-emerald-50/40 px-3 py-2 text-xs font-medium text-emerald-800 min-h-[34px] flex items-center"
+                  className="w-full rounded-lg border border-emerald-200 bg-emerald-50/40 px-3 py-2 text-[13px] font-medium text-emerald-800 min-h-[44px] sm:min-h-[36px] flex items-center"
                 >
                   {normalizedTestResult || <span className="text-slate-500 text-xs">输入文本后即时呈现替换结果...</span>}
                 </div>
@@ -583,7 +709,7 @@ export default function DictionaryManagementPage() {
                   aria-selected={activeTab === t.key}
                   aria-controls={`dict-panel-${t.key}`}
                   tabIndex={activeTab === t.key ? 0 : -1}
-                  className={`filter-tab border-b-2 ${activeTab === t.key ? "is-active border-[#1E5AFF]" : "border-transparent"}`}
+                  className={`filter-tab min-h-[44px] sm:min-h-[36px] inline-flex items-center border-b-2 ${activeTab === t.key ? "is-active border-[#1E5AFF]" : "border-transparent"}`}
                   onClick={() => {
                     setActiveTab(t.key as any);
                     setPage(1);
@@ -594,7 +720,7 @@ export default function DictionaryManagementPage() {
                     {t.key === "aliases"
                       ? aliases.length
                       : t.key === "locations"
-                        ? locations.length
+                        ? regionLocations.length
                         : t.key === "townships"
                           ? townships.length
                           : categories.length}
@@ -637,7 +763,10 @@ export default function DictionaryManagementPage() {
                       setPage(1);
                     }}
                   >
-                    <SelectTrigger className="w-full sm:w-[140px] min-h-[44px] sm:min-h-0 sm:h-[32px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg">
+                    <SelectTrigger
+                      aria-label="筛选别名实体类型"
+                      className="w-full sm:w-[140px] min-h-[44px] sm:min-h-[36px] bg-[var(--c-surface)] border-[var(--c-border)] text-xs text-[var(--c-ink-2)] font-medium rounded-lg"
+                    >
                       <SelectValue placeholder="类型：全部" />
                     </SelectTrigger>
                     <SelectContent>
@@ -654,7 +783,7 @@ export default function DictionaryManagementPage() {
                     </span>
                     <button
                       type="button"
-                      className="btn btn--primary min-h-[44px] sm:min-h-0 sm:h-[32px] px-3.5 text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer"
+                      className="btn btn--primary min-h-[44px] sm:min-h-[36px] px-3.5 text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer"
                       onClick={() => setShowAddModal(true)}
                     >
                       <Plus size={14} className="shrink-0" aria-hidden="true" />
@@ -692,7 +821,7 @@ export default function DictionaryManagementPage() {
                         pagedAliases.map((item) => (
                           <tr key={item.id} className="hover:bg-blue-50/40 transition-colors">
                             <td>
-                              <span className="rounded bg-amber-50 border border-amber-200/80 px-2 py-0.5 text-[11px] font-mono text-amber-800 font-semibold">
+                              <span className="rounded bg-amber-50 border border-amber-200/80 px-2 py-0.5 text-xs font-mono text-amber-800 font-semibold">
                                 {item.alias}
                               </span>
                             </td>
@@ -701,7 +830,7 @@ export default function DictionaryManagementPage() {
                               {item.canonical}
                             </td>
                             <td>
-                              <span className="inline-flex items-center rounded-full bg-blue-50 border border-blue-200/80 px-2.5 py-0.5 text-[10px] font-medium text-blue-700">
+                              <span className="text-xs font-medium text-blue-700">
                                 {item.type === "TOWNSHIP"
                                   ? "镇街区划"
                                   : item.type === "DEPARTMENT"
@@ -713,11 +842,11 @@ export default function DictionaryManagementPage() {
                             </td>
                             <td>
                               <span
-                                className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium border ${item.source === "AI_MINED"
-                                  ? "bg-purple-50 text-purple-700 border-purple-200/80"
+                                className={`text-xs font-medium ${item.source === "AI_MINED"
+                                  ? "text-purple-700"
                                   : item.source === "MANUAL"
-                                    ? "bg-amber-50 text-amber-700 border-amber-200/80"
-                                    : "bg-slate-100 text-slate-600 border-slate-200/80"
+                                    ? "text-amber-700"
+                                    : "text-slate-600"
                                   }`}
                               >
                                 {item.source === "AI_MINED"
@@ -728,8 +857,8 @@ export default function DictionaryManagementPage() {
                               </span>
                             </td>
                             <td>
-                              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600">
-                                <CheckCircle2 className="h-3.5 w-3.5" />
+                              <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600">
+                                <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
                                 已启用
                               </span>
                             </td>
@@ -738,7 +867,7 @@ export default function DictionaryManagementPage() {
                                 type="button"
                                 onClick={() => setPendingDelete({ id: item.id, alias: item.alias })}
                                 aria-label={`删除别名 ${item.alias}`}
-                                className="min-h-[44px] min-w-[44px] sm:min-h-[32px] sm:min-w-[32px] p-1 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors inline-flex items-center justify-center cursor-pointer"
+                                className="min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] p-1 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors inline-flex items-center justify-center cursor-pointer"
                                 title="删除别名"
                               >
                                 <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
@@ -771,38 +900,32 @@ export default function DictionaryManagementPage() {
 
             {/* Tab: 空间地理坐标库 (Canonical Locations) */}
             {activeTab === "locations" && (() => {
-              // 过滤匹配的地点数据
-              const filteredLocs = locations.filter((loc) => {
+              // 过滤匹配的地点数据（已剔除跨区脏数据并解析所属法定镇街）
+              const filteredLocEntries = regionLocations.filter(({ loc, resolvedTownship }) => {
                 if (townshipFilter !== "ALL") {
-                  let m: any = {};
-                  try { m = JSON.parse(loc.metaJson || "{}"); } catch { }
-                  const town = loc.parentName || m.township || "";
-                  if (!town.includes(townshipFilter)) return false;
+                  if (!resolvedTownship || !resolvedTownship.includes(townshipFilter)) return false;
                 }
                 if (!searchQuery) return true;
                 const q = searchQuery.toLowerCase();
                 return (
                   loc.name.toLowerCase().includes(q) ||
-                  (loc.parentName || "").toLowerCase().includes(q) ||
+                  resolvedTownship.toLowerCase().includes(q) ||
                   (loc.fullName || "").toLowerCase().includes(q)
                 );
               });
 
               // 提取有经纬度的点位供地图全览批量打点
-              const geoPoints: GeoPoint[] = filteredLocs
-                .map((loc) => {
-                  let meta: any = {};
-                  try { meta = JSON.parse(loc.metaJson || "{}"); } catch { }
+              const geoPoints: GeoPoint[] = filteredLocEntries
+                .map(({ loc, meta, resolvedTownship }) => {
                   if (!isValidCoordinate(meta.lng, meta.lat)) return null;
-                  const town = loc.parentName || meta.township || "";
                   return {
                     id: loc.id,
-                    lng: meta.lng,
-                    lat: meta.lat,
+                    lng: meta.lng as number,
+                    lat: meta.lat as number,
                     title: loc.name,
-                    township: town,
+                    township: resolvedTownship,
                     address: meta.formattedAddress || loc.fullName || loc.name,
-                    color: TOWNSHIP_COLORS[town] || "#1E5AFF",
+                    color: TOWNSHIP_COLORS[resolvedTownship] || "#1E5AFF",
                     raw: loc,
                   };
                 })
@@ -811,22 +934,19 @@ export default function DictionaryManagementPage() {
               // 提取当前辖区下出现的所有镇街选项
               const availableTownships = Array.from(
                 new Set(
-                  locations
-                    .map((loc) => {
-                      let m: any = {};
-                      try { m = JSON.parse(loc.metaJson || "{}"); } catch { }
-                      return loc.parentName || m.township || "";
-                    })
+                  regionLocations
+                    .map((entry) => entry.resolvedTownship)
                     .filter(Boolean)
                 )
               );
 
               // 当前选中的全览点位
-              const activeLocItem = activeMapLocId ? locations.find((l) => l.id === activeMapLocId) : null;
-              let activeMeta: any = {};
-              if (activeLocItem) {
-                try { activeMeta = JSON.parse(activeLocItem.metaJson || "{}"); } catch { }
-              }
+              const activeEntry = activeMapLocId
+                ? regionLocations.find((entry) => entry.loc.id === activeMapLocId) || null
+                : null;
+              const activeLocItem = activeEntry?.loc || null;
+              const activeMeta = activeEntry?.meta || {};
+              const activeTown = activeEntry?.resolvedTownship || "";
 
               return (
                 <>
@@ -850,7 +970,7 @@ export default function DictionaryManagementPage() {
                         type="button"
                         aria-pressed={locViewMode === "table"}
                         onClick={() => setLocViewMode("table")}
-                        className={`flex items-center gap-1.5 min-h-[44px] sm:min-h-[28px] px-3 py-1.5 text-xs rounded-md border-0 cursor-pointer transition-all whitespace-nowrap shrink-0 ${
+                        className={`flex items-center gap-1.5 min-h-[44px] sm:min-h-[36px] px-3 py-1.5 text-xs rounded-md border-0 cursor-pointer transition-[background-color,color,box-shadow] whitespace-nowrap shrink-0 ${
                           locViewMode === "table"
                             ? "font-semibold text-slate-900 bg-white shadow-xs"
                             : "font-medium text-slate-600 bg-transparent"
@@ -863,7 +983,7 @@ export default function DictionaryManagementPage() {
                         type="button"
                         aria-pressed={locViewMode === "map"}
                         onClick={() => setLocViewMode("map")}
-                        className={`flex items-center gap-1.5 min-h-[44px] sm:min-h-[28px] px-3 py-1.5 text-xs rounded-md border-0 cursor-pointer transition-all whitespace-nowrap shrink-0 ${
+                        className={`flex items-center gap-1.5 min-h-[44px] sm:min-h-[36px] px-3 py-1.5 text-xs rounded-md border-0 cursor-pointer transition-[background-color,color,box-shadow] whitespace-nowrap shrink-0 ${
                           locViewMode === "map"
                             ? "font-semibold text-[#1E5AFF] bg-white shadow-xs"
                             : "font-medium text-slate-600 bg-transparent"
@@ -871,14 +991,8 @@ export default function DictionaryManagementPage() {
                       >
                         <MapIcon className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                         <span>地图全览</span>
-                        <span
-                          className={`text-[10px] px-1.5 py-0.5 rounded-full tabular-nums ${
-                            locViewMode === "map"
-                              ? "bg-blue-50 text-[#1E5AFF]"
-                              : "bg-slate-200 text-slate-600"
-                          }`}
-                        >
-                          {geoPoints.length}
+                        <span className="text-[11px] font-mono tabular-nums text-slate-500">
+                          ({geoPoints.length})
                         </span>
                       </button>
                     </div>
@@ -886,7 +1000,7 @@ export default function DictionaryManagementPage() {
                     <button
                       type="button"
                       onClick={() => setShowAddLocationModal(true)}
-                      className="btn btn--primary sm:ml-auto min-h-[44px] sm:min-h-0 sm:h-[32px] px-3.5 text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+                      className="btn btn--primary sm:ml-auto min-h-[44px] sm:min-h-[36px] px-3.5 text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
                     >
                       <Plus size={14} className="shrink-0" aria-hidden="true" />
                       <span>录入微观点位</span>
@@ -904,32 +1018,30 @@ export default function DictionaryManagementPage() {
                         overflowX: "auto",
                       }}
                     >
-                      <span style={{ fontSize: 11, color: "#475569", whiteSpace: "nowrap" }}>镇街过滤:</span>
+                      <span style={{ fontSize: 12, color: "#475569", whiteSpace: "nowrap" }}>镇街过滤:</span>
                       <button
                         type="button"
                         aria-pressed={townshipFilter === "ALL"}
                         onClick={() => setTownshipFilter("ALL")}
-                        className="min-h-[44px] sm:min-h-[28px] py-1 px-3 sm:px-2.5 shrink-0 whitespace-nowrap"
+                        className="min-h-[44px] sm:min-h-[36px] py-1 px-3 shrink-0 whitespace-nowrap"
                         style={{
-                          borderRadius: 14,
-                          fontSize: 11,
+                          borderRadius: 10,
+                          fontSize: 12,
                           border: "1px solid",
                           cursor: "pointer",
-                          transition: "all 0.12s",
+                          transition: "border-color 0.12s, background-color 0.12s, color 0.12s",
                           borderColor: townshipFilter === "ALL" ? "#1E5AFF" : "#E2E8F0",
                           background: townshipFilter === "ALL" ? "#1E5AFF" : "#FFFFFF",
                           color: townshipFilter === "ALL" ? "#FFFFFF" : "#334155",
                           fontWeight: townshipFilter === "ALL" ? 600 : 400,
                         }}
                       >
-                        全部 ({locations.length})
+                        全部 ({regionLocations.length})
                       </button>
                       {availableTownships.map((town) => {
-                        const count = locations.filter((loc) => {
-                          let m: any = {};
-                          try { m = JSON.parse(loc.metaJson || "{}"); } catch { }
-                          return (loc.parentName || m.township || "") === town;
-                        }).length;
+                        const count = regionLocations.filter(
+                          (entry) => entry.resolvedTownship === town
+                        ).length;
                         const isActive = townshipFilter === town;
                         const color = TOWNSHIP_COLORS[town] || "#1E5AFF";
                         return (
@@ -938,25 +1050,24 @@ export default function DictionaryManagementPage() {
                             type="button"
                             aria-pressed={isActive}
                             onClick={() => setTownshipFilter(isActive ? "ALL" : town)}
-                            className="min-h-[44px] sm:min-h-[28px] py-1 px-3 sm:px-2.5 shrink-0 whitespace-nowrap"
+                            className="min-h-[44px] sm:min-h-[36px] py-1 px-3 shrink-0 whitespace-nowrap"
                             style={{
                               display: "inline-flex",
                               alignItems: "center",
-                              gap: 4,
-                              borderRadius: 14,
-                              fontSize: 11,
+                              gap: 5,
+                              borderRadius: 10,
+                              fontSize: 12,
                               border: "1px solid",
                               cursor: "pointer",
-                              transition: "all 0.12s",
+                              transition: "border-color 0.12s, background-color 0.12s, color 0.12s",
                               borderColor: isActive ? color : "#E2E8F0",
                               background: isActive ? `${color}15` : "#FFFFFF",
                               color: isActive ? "#0F172A" : "#334155",
                               fontWeight: isActive ? 600 : 400,
                             }}
                           >
-                            <span style={{ width: 6, height: 6, borderRadius: "50%", background: color }} />
                             <span>{town}</span>
-                            <span className="tabular-nums" style={{ color: "#475569", fontSize: 10 }}>({count})</span>
+                            <span className="tabular-nums" style={{ color: "#475569", fontSize: 11 }}>({count})</span>
                           </button>
                         );
                       })}
@@ -1001,14 +1112,6 @@ export default function DictionaryManagementPage() {
                             <div>
                               <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 6 }}>
                                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                  <span
-                                    style={{
-                                      width: 8,
-                                      height: 8,
-                                      borderRadius: "50%",
-                                      background: TOWNSHIP_COLORS[activeLocItem.parentName || activeMeta.township || ""] || "#1E5AFF",
-                                    }}
-                                  />
                                   <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#0F172A" }}>
                                     {activeLocItem.name}
                                   </h3>
@@ -1018,23 +1121,23 @@ export default function DictionaryManagementPage() {
                                   onClick={() => setActiveMapLocId(null)}
                                   aria-label="关闭详情卡片"
                                   title="关闭详情卡片"
-                                  className="min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 sm:w-7 sm:h-7 inline-flex items-center justify-center rounded-md text-slate-500 hover:text-slate-800 hover:bg-slate-100 cursor-pointer border-0 bg-transparent text-[13px]"
+                                  className="min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] inline-flex items-center justify-center rounded-md text-slate-500 hover:text-slate-800 hover:bg-slate-100 cursor-pointer border-0 bg-transparent text-[13px]"
                                 >
                                   ✕
                                 </button>
                               </div>
 
                               {activeLocItem.fullName && activeLocItem.fullName !== activeLocItem.name && (
-                                <div style={{ fontSize: 11, color: "#475569", marginBottom: 8, paddingLeft: 14 }}>
+                                <div style={{ fontSize: 12, color: "#475569", marginBottom: 8 }}>
                                   {activeLocItem.fullName}
                                 </div>
                               )}
 
-                              <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 11, color: "#334155", marginTop: 8 }}>
+                              <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#334155", marginTop: 8 }}>
                                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                                   <span style={{ color: "#475569" }}>所属法定辖区:</span>
                                   <span style={{ fontWeight: 600, color: "#1E5AFF" }}>
-                                    {activeLocItem.parentName || activeMeta.township || activeRegion?.name || "当前辖区"}
+                                    {activeTown || activeRegion?.name || "当前辖区"}
                                   </span>
                                 </div>
                                 <div style={{ display: "flex", justifyContent: "space-between" }}>
@@ -1062,12 +1165,12 @@ export default function DictionaryManagementPage() {
                                     setLocViewMode("table");
                                     setSearchQuery(activeLocItem.name);
                                   }}
-                                  className="min-h-[44px] sm:min-h-[28px]"
+                                  className="min-h-[44px] sm:min-h-[36px]"
                                   style={{
                                     display: "inline-flex",
                                     alignItems: "center",
                                     gap: 4,
-                                    fontSize: 11,
+                                    fontSize: 12,
                                     color: "#1E5AFF",
                                     background: "#EFF6FF",
                                     border: "1px solid #DBEAFE",
@@ -1082,12 +1185,12 @@ export default function DictionaryManagementPage() {
                                 <button
                                   type="button"
                                   onClick={() => setPendingDeleteLoc(activeLocItem)}
-                                  className="min-h-[44px] sm:min-h-[28px]"
+                                  className="min-h-[44px] sm:min-h-[36px]"
                                   style={{
                                     display: "inline-flex",
                                     alignItems: "center",
                                     gap: 3,
-                                    fontSize: 11,
+                                    fontSize: 12,
                                     color: "#BE123C",
                                     background: "#FFF1F2",
                                     border: "1px solid #FFE4E6",
@@ -1109,7 +1212,7 @@ export default function DictionaryManagementPage() {
                                   点击任意点位查看坐标详情
                                 </h3>
                               </div>
-                              <p style={{ margin: "4px 0 0 0", fontSize: 11, color: "#475569", lineHeight: 1.5 }}>
+                              <p style={{ margin: "4px 0 0 0", fontSize: 12, color: "#475569", lineHeight: 1.5 }}>
                                 当前全览汇聚了 {geoPoints.length} 个经高精地理编码规范化的微观地点。点击地图上的标记可查看经纬度、镇街从属及关联诉求。
                               </p>
                             </div>
@@ -1124,8 +1227,8 @@ export default function DictionaryManagementPage() {
                     <>
                       {/* 单点定位即时预览抽屉/面板 */}
                       {previewLocation && (() => {
-                        let meta: any = {};
-                        try { meta = JSON.parse(previewLocation.metaJson || "{}"); } catch { }
+                        const meta = parseLocationMeta(previewLocation.metaJson);
+                        const previewTown = resolveLocationTownship(previewLocation, meta, townships);
                         return (
                           <div className="mx-4 sm:mx-5 my-3 p-4 bg-slate-50 border border-blue-200 rounded-xl relative shadow-xs">
                             <div className="flex items-center justify-between gap-2 flex-wrap mb-2.5">
@@ -1134,27 +1237,27 @@ export default function DictionaryManagementPage() {
                                   📍 正在预览空间位置：{previewLocation.name}
                                 </span>
                                 {isValidCoordinate(meta.lng, meta.lat) && (
-                                  <span className="text-[11px] font-mono text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 tabular-nums">
-                                    {meta.lng.toFixed(6)}, {meta.lat.toFixed(6)}
+                                  <span className="text-xs font-mono text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 tabular-nums">
+                                    {(meta.lng as number).toFixed(6)}, {(meta.lat as number).toFixed(6)}
                                   </span>
                                 )}
                               </div>
                               <div className="flex items-center gap-2 flex-wrap">
                                 <button
                                   type="button"
-                                  className="min-h-[44px] sm:min-h-[24px] text-xs text-blue-600 hover:text-blue-800 px-2 py-1 rounded hover:bg-blue-100/60 transition-colors font-medium flex items-center gap-1 cursor-pointer"
+                                  className="min-h-[44px] sm:min-h-[36px] text-xs text-blue-600 hover:text-blue-800 px-2.5 py-1 rounded hover:bg-blue-100/60 transition-colors font-medium flex items-center gap-1 cursor-pointer"
                                   onClick={() => {
                                     setActiveMapLocId(previewLocation.id);
                                     setLocViewMode("map");
                                   }}
                                 >
-                                  <MapIcon className="w-3 h-3" aria-hidden="true" />
+                                  <MapIcon className="w-3.5 h-3.5" aria-hidden="true" />
                                   <span>进入地图全览</span>
                                 </button>
                                 <button
                                   type="button"
                                   aria-label="收起地图预览"
-                                  className="min-h-[44px] sm:min-h-[24px] text-xs text-slate-500 hover:text-slate-700 px-2 py-1 rounded hover:bg-slate-200/60 transition-colors cursor-pointer"
+                                  className="min-h-[44px] sm:min-h-[36px] text-xs text-slate-500 hover:text-slate-700 px-2.5 py-1 rounded hover:bg-slate-200/60 transition-colors cursor-pointer"
                                   onClick={() => setPreviewLocation(null)}
                                 >
                                   收起 ✕
@@ -1167,12 +1270,12 @@ export default function DictionaryManagementPage() {
                                 height={250}
                                 point={{
                                   id: previewLocation.id,
-                                  lng: meta.lng,
-                                  lat: meta.lat,
+                                  lng: meta.lng as number,
+                                  lat: meta.lat as number,
                                   title: previewLocation.name,
-                                  township: previewLocation.parentName || meta.township,
+                                  township: previewTown,
                                   address: meta.formattedAddress || previewLocation.fullName,
-                                  color: TOWNSHIP_COLORS[previewLocation.parentName || meta.township || ""] || "#1E5AFF",
+                                  color: TOWNSHIP_COLORS[previewTown] || "#1E5AFF",
                                 }}
                               />
                             ) : (
@@ -1203,19 +1306,16 @@ export default function DictionaryManagementPage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {filteredLocs.length === 0 ? (
+                            {filteredLocEntries.length === 0 ? (
                               <tr>
                                 <td colSpan={6} style={{ textAlign: "center", padding: "40px 0", color: "var(--c-ink-3)" }}>
                                   暂无符合条件的空间坐标。可点击上方按钮录入或重置筛选。
                                 </td>
                               </tr>
                             ) : (
-                              filteredLocs.map((loc) => {
-                                let meta: any = {};
-                                try { meta = JSON.parse(loc.metaJson || "{}"); } catch { }
+                              filteredLocEntries.map(({ loc, meta, resolvedTownship }) => {
                                 const hasCoords = isValidCoordinate(meta.lng, meta.lat);
-                                const town = loc.parentName || meta.township || "";
-                                const townColor = TOWNSHIP_COLORS[town] || "#64748B";
+                                const townColor = TOWNSHIP_COLORS[resolvedTownship] || "#64748B";
                                 const isPreviewing = previewLocation?.id === loc.id;
 
                                 return (
@@ -1225,28 +1325,27 @@ export default function DictionaryManagementPage() {
                                         {loc.name}
                                       </div>
                                       {loc.fullName && loc.fullName !== loc.name && (
-                                        <div className="text-[11px] text-slate-500 font-normal mt-0.5">
+                                        <div className="text-xs text-slate-500 font-normal mt-0.5">
                                           {loc.fullName}
                                         </div>
                                       )}
                                     </td>
                                     <td>
-                                      <span
-                                        className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium"
-                                        style={{
-                                          background: `${townColor}15`,
-                                          color: "#1E293B",
-                                          border: `1px solid ${townColor}40`,
-                                        }}
-                                      >
-                                        <span style={{ width: 5, height: 5, borderRadius: "50%", background: townColor }} />
-                                        <span>{town || "—"}</span>
-                                      </span>
+                                      {resolvedTownship ? (
+                                        <span
+                                          className="inline-flex items-center text-xs font-medium text-slate-800 pl-2 border-l-2"
+                                          style={{ borderColor: townColor }}
+                                        >
+                                          {resolvedTownship}
+                                        </span>
+                                      ) : (
+                                        <span className="text-xs text-slate-500">待归属镇街</span>
+                                      )}
                                     </td>
                                     <td>
                                       {hasCoords ? (
-                                        <span className="font-mono tabular-nums text-[11px] text-slate-700 bg-slate-100/80 px-2 py-0.5 rounded border border-slate-200">
-                                          {meta.lng.toFixed(5)}, {meta.lat.toFixed(5)}
+                                        <span className="font-mono tabular-nums text-xs text-slate-700">
+                                          {(meta.lng as number).toFixed(5)}, {(meta.lat as number).toFixed(5)}
                                         </span>
                                       ) : (
                                         <span className="text-slate-500 text-xs">未获取</span>
@@ -1259,9 +1358,9 @@ export default function DictionaryManagementPage() {
                                     </td>
                                     <td>
                                       <span
-                                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium border ${meta.source === "TIANDITU_GEOCODE"
-                                          ? "bg-blue-50 text-blue-700 border-blue-200/80"
-                                          : "bg-emerald-50 text-emerald-700 border-emerald-200/80"
+                                        className={`text-xs font-medium ${meta.source === "TIANDITU_GEOCODE"
+                                          ? "text-blue-700"
+                                          : "text-emerald-700"
                                           }`}
                                       >
                                         {meta.source === "TIANDITU_GEOCODE" ? "天地图自动解析" : "人工录入"}
@@ -1273,7 +1372,7 @@ export default function DictionaryManagementPage() {
                                           type="button"
                                           onClick={() => setPreviewLocation(isPreviewing ? null : loc)}
                                           aria-label={isPreviewing ? `收起 ${loc.name} 地图定位` : `在地图中查看 ${loc.name} 打点`}
-                                          className={`min-h-[44px] min-w-[44px] sm:min-h-[32px] sm:min-w-[32px] p-1.5 rounded-md transition-colors inline-flex items-center justify-center cursor-pointer ${isPreviewing
+                                          className={`min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] p-1.5 rounded-md transition-colors inline-flex items-center justify-center cursor-pointer ${isPreviewing
                                             ? "bg-blue-100 text-blue-600"
                                             : "text-slate-500 hover:text-blue-600 hover:bg-blue-50"
                                             }`}
@@ -1285,7 +1384,7 @@ export default function DictionaryManagementPage() {
                                           type="button"
                                           onClick={() => setPendingDeleteLoc(loc)}
                                           aria-label={`删除空间坐标 ${loc.name}`}
-                                          className="min-h-[44px] min-w-[44px] sm:min-h-[32px] sm:min-w-[32px] p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors inline-flex items-center justify-center cursor-pointer"
+                                          className="min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors inline-flex items-center justify-center cursor-pointer"
                                           title="删除空间坐标"
                                         >
                                           <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
@@ -1312,27 +1411,26 @@ export default function DictionaryManagementPage() {
                   {townships.map((t) => (
                     <div
                       key={t.name}
-                      className="bg-white rounded-xl border border-slate-200/90 p-4 hover:border-slate-300 transition-all shadow-2xs"
+                      className="bg-white rounded-xl border border-slate-200/90 p-4 hover:border-slate-300 transition-colors shadow-2xs"
                     >
                       <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
                         <div className="flex items-center gap-2 flex-wrap min-w-0">
-                          <span className="h-2 w-2 rounded-full bg-blue-600 shrink-0"></span>
                           <h3 className="text-sm font-bold text-slate-900">{t.fullName}</h3>
-                          <span className="text-xs text-slate-500 font-mono">（简称：{t.name}）</span>
+                          <span className="text-xs text-slate-500 font-mono">简称：{t.name}</span>
                         </div>
-                        <span className="text-[10px] font-medium rounded-full bg-emerald-50 text-emerald-700 px-2 py-0.5 border border-emerald-200/80 whitespace-nowrap">
+                        <span className="text-xs font-medium text-emerald-700 whitespace-nowrap">
                           法定辖区
                         </span>
                       </div>
 
                       {/* 别名 Tags */}
                       <div className="mb-2.5">
-                        <span className="text-[11px] text-slate-500 mr-1.5">俗称/别名:</span>
+                        <span className="text-xs text-slate-500 mr-1.5">俗称/别名:</span>
                         <div className="inline-flex flex-wrap gap-1 mt-0.5">
                           {t.aliases.map((alias) => (
                             <span
                               key={alias}
-                              className="rounded bg-amber-50/80 border border-amber-200/60 px-1.5 py-0.5 text-[10px] text-amber-800 font-mono"
+                              className="rounded bg-amber-50/80 px-1.5 py-0.5 text-[11px] text-amber-800 font-mono"
                             >
                               {alias}
                             </span>
@@ -1342,12 +1440,12 @@ export default function DictionaryManagementPage() {
 
                       {/* 代表村居社区 */}
                       <div className="mb-2.5">
-                        <span className="text-[11px] text-slate-500 block mb-1">主要村居社区 ({t.communities.length}个):</span>
+                        <span className="text-xs text-slate-500 block mb-1">主要村居社区 ({t.communities.length}个):</span>
                         <div className="flex flex-wrap gap-1">
                           {t.communities.map((c) => (
                             <span
                               key={c}
-                              className="rounded bg-blue-50/80 border border-blue-200/60 px-1.5 py-0.5 text-[10px] text-blue-700"
+                              className="rounded bg-blue-50/80 px-1.5 py-0.5 text-[11px] text-blue-700"
                             >
                               {c}
                             </span>
@@ -1358,12 +1456,12 @@ export default function DictionaryManagementPage() {
                       {/* 知名地标与园区 */}
                       {t.landmarks && t.landmarks.length > 0 && (
                         <div>
-                          <span className="text-[11px] text-slate-500 block mb-1">重点地标与园区:</span>
+                          <span className="text-xs text-slate-500 block mb-1">重点地标与园区:</span>
                           <div className="flex flex-wrap gap-1">
                             {t.landmarks.map((lm) => (
                               <span
                                 key={lm}
-                                className="rounded bg-slate-100 border border-slate-200 px-1.5 py-0.5 text-[10px] text-slate-600"
+                                className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600"
                               >
                                 📍 {lm}
                               </span>
@@ -1386,52 +1484,41 @@ export default function DictionaryManagementPage() {
                     return (
                       <div
                         key={c.category}
-                        className="bg-white rounded-xl border border-slate-200/90 p-4 hover:border-slate-300 transition-all shadow-2xs relative overflow-hidden"
+                        className="bg-white rounded-xl border border-slate-200/90 p-4 hover:border-slate-300 transition-colors shadow-2xs relative overflow-hidden"
                       >
                         <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            <span
-                              className="h-2.5 w-2.5 rounded-full shrink-0"
-                              style={{ backgroundColor: visual.color }}
-                            />
-                            <h3 className="text-sm font-bold text-slate-900">{c.category}</h3>
-                          </div>
+                          <h3 className="text-sm font-bold text-slate-900">{c.category}</h3>
                           <span
-                            className="text-[10px] font-medium rounded-full px-2 py-0.5 border"
-                            style={{
-                              color: visual.color,
-                              backgroundColor: visual.bg,
-                              borderColor: visual.border,
-                            }}
+                            className="text-xs font-medium"
+                            style={{ color: visual.color }}
                           >
-                            7大标准分类
+                            标准分类
                           </span>
                         </div>
 
                         <div className="mb-2.5">
-                          <span className="text-[11px] text-slate-500 block mb-1">牵头负责科室:</span>
+                          <span className="text-xs text-slate-500 block mb-1">牵头负责科室:</span>
                           <p
-                            className="text-xs font-semibold p-2 rounded-lg border flex items-center gap-1.5"
+                            className="text-xs font-semibold p-2 rounded-lg flex items-center gap-1.5"
                             style={{
                               backgroundColor: visual.bg,
-                              borderColor: visual.border,
                               color: visual.color,
                             }}
                           >
-                            <span>🏢</span>
+                            <span aria-hidden="true">🏢</span>
                             <span>{c.leadDepartment}</span>
                           </p>
                         </div>
 
                         <div>
-                          <span className="text-[11px] text-slate-500 block mb-1">包含细分诉求事项:</span>
+                          <span className="text-xs text-slate-500 block mb-1">包含细分诉求事项:</span>
                           <div className="flex flex-wrap gap-1">
                             {c.subItems.map((sub) => (
                               <span
                                 key={sub}
-                                className="rounded bg-slate-100 hover:bg-slate-200/70 transition-colors border border-slate-200 px-2 py-0.5 text-[10px] text-slate-700"
+                                className="rounded bg-slate-100 hover:bg-slate-200/70 transition-colors px-2 py-0.5 text-[11px] text-slate-700"
                               >
-                                • {sub}
+                                {sub}
                               </span>
                             ))}
                           </div>
@@ -1492,7 +1579,7 @@ export default function DictionaryManagementPage() {
 
           <form onSubmit={handleAddAlias} className="space-y-3.5">
             <div>
-              <label htmlFor="dict-new-alias" className="text-xs font-medium text-slate-700 mb-1 block">
+              <label htmlFor="dict-new-alias" className="text-[13px] font-medium text-slate-700 mb-1 block">
                 俗称 / 别名 (Alias) <span className="text-rose-500">*</span>
               </label>
               <input
@@ -1502,13 +1589,13 @@ export default function DictionaryManagementPage() {
                 value={newAlias}
                 onChange={(e) => setNewAlias(e.target.value)}
                 placeholder="例如：容奇、碧桂园总部、小黄圃工业区"
-                className="w-full min-h-[44px] sm:min-h-0 rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none"
+                className="w-full min-h-[44px] sm:min-h-[36px] rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-[13px] text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none"
                 required
               />
             </div>
 
             <div>
-              <label htmlFor="dict-new-canonical" className="text-xs font-medium text-slate-700 mb-1 block">
+              <label htmlFor="dict-new-canonical" className="text-[13px] font-medium text-slate-700 mb-1 block">
                 对应标准规范全称 (Canonical) <span className="text-rose-500">*</span>
               </label>
               <input
@@ -1518,36 +1605,37 @@ export default function DictionaryManagementPage() {
                 value={newCanonical}
                 onChange={(e) => setNewCanonical(e.target.value)}
                 placeholder="例如：容桂街道、北滘镇、容桂街道小黄圃社区"
-                className="w-full min-h-[44px] sm:min-h-0 rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none"
+                className="w-full min-h-[44px] sm:min-h-[36px] rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-[13px] text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none"
                 required
               />
             </div>
 
             <div>
-              <label htmlFor="dict-new-type" className="text-xs font-medium text-slate-700 mb-1 block">实体分类</label>
-              <Select value={newType} onValueChange={setNewType}>
-                <SelectTrigger id="dict-new-type" className="w-full min-h-[44px] sm:min-h-0 sm:h-9 bg-slate-50/50 border-slate-200 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="z-[2010]">
-                  <SelectItem value="TOWNSHIP">镇街区划 (Township)</SelectItem>
-                  <SelectItem value="LOCATION">微观点位/社区 (Location)</SelectItem>
-                  <SelectItem value="DEPARTMENT">责任部门 (Department)</SelectItem>
-                  <SelectItem value="ENTITY">涉事主体/商户 (Entity)</SelectItem>
-                </SelectContent>
-              </Select>
+              <label htmlFor="dict-new-type" className="text-[13px] font-medium text-slate-700 mb-1 block">实体分类</label>
+              <select
+                id="dict-new-type"
+                name="type"
+                value={newType}
+                onChange={(e) => setNewType(e.target.value)}
+                className="w-full min-h-[44px] sm:min-h-[36px] rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-[13px] text-slate-800 focus:border-blue-500 focus:bg-white focus:outline-none"
+              >
+                <option value="TOWNSHIP">镇街区划 (Township)</option>
+                <option value="LOCATION">微观点位/社区 (Location)</option>
+                <option value="DEPARTMENT">责任部门 (Department)</option>
+                <option value="ENTITY">涉事主体/商户 (Entity)</option>
+              </select>
             </div>
 
             <DialogFooter className="flex-row justify-end gap-2.5 pt-4 border-t border-slate-100">
               <button
                 type="button"
-                className="btn btn--default min-h-[44px] sm:min-h-0"
+                className="btn btn--default min-h-[44px] sm:min-h-[36px]"
                 onClick={() => setShowAddModal(false)}
                 disabled={addingAlias}
               >
                 取消
               </button>
-              <button type="submit" className="btn btn--primary min-h-[44px] sm:min-h-0" disabled={addingAlias}>
+              <button type="submit" className="btn btn--primary min-h-[44px] sm:min-h-[36px]" disabled={addingAlias}>
                 {addingAlias ? "保存中..." : "保存并沉淀"}
               </button>
             </DialogFooter>
@@ -1601,7 +1689,7 @@ export default function DictionaryManagementPage() {
 
           <form onSubmit={handleAddLocation} className="space-y-3.5">
             <div>
-              <label htmlFor="dict-new-location-address" className="text-xs font-medium text-slate-700 mb-1 block">
+              <label htmlFor="dict-new-location-address" className="text-[13px] font-medium text-slate-700 mb-1 block">
                 微观地点全称或道路门牌 <span className="text-rose-500">*</span>
               </label>
               <input
@@ -1611,20 +1699,20 @@ export default function DictionaryManagementPage() {
                 value={newLocationAddress}
                 onChange={(e) => setNewLocationAddress(e.target.value)}
                 placeholder="如：大良街道清晖园南门、容奇大道中12号"
-                className="w-full min-h-[44px] sm:min-h-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:outline-none"
+                className="w-full min-h-[44px] sm:min-h-[36px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:outline-none"
               />
             </div>
 
             <DialogFooter className="flex-row justify-end gap-2.5 pt-4 border-t border-slate-100">
               <button
                 type="button"
-                className="btn btn--default min-h-[44px] sm:min-h-0"
+                className="btn btn--default min-h-[44px] sm:min-h-[36px]"
                 onClick={() => setShowAddLocationModal(false)}
                 disabled={locSubmitting}
               >
                 取消
               </button>
-              <button type="submit" className="btn btn--primary min-h-[44px] sm:min-h-0" disabled={locSubmitting}>
+              <button type="submit" className="btn btn--primary min-h-[44px] sm:min-h-[36px]" disabled={locSubmitting}>
                 {locSubmitting ? "天地图解析中..." : "解析并存入字典"}
               </button>
             </DialogFooter>

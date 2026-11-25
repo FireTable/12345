@@ -7,13 +7,8 @@ import {
   AlertCircle,
   Lock,
   User,
-  Sparkles,
-  Building2,
   Eye,
   EyeOff,
-  Zap,
-  Layers,
-  Activity,
   Mail,
   UserPlus,
   LogIn,
@@ -169,7 +164,6 @@ function LoginForm() {
               ? "账号或密码错误，请检查后重试"
               : res.error.message || "登录失败，请稍后重试";
           setErrorMessage(msg);
-          toast.error(msg);
           return;
         }
 
@@ -189,7 +183,6 @@ function LoginForm() {
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "网络异常，登录失败";
         setErrorMessage(msg);
-        toast.error(msg);
       }
     });
   };
@@ -233,7 +226,6 @@ function LoginForm() {
         if (res.error) {
           const msg = res.error.message || "注册失败，请检查用户名或邮箱是否已被占用";
           setErrorMessage(msg);
-          toast.error(msg);
           return;
         }
 
@@ -244,7 +236,6 @@ function LoginForm() {
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "网络异常，注册失败";
         setErrorMessage(msg);
-        toast.error(msg);
       }
     });
   };
@@ -276,79 +267,39 @@ function LoginForm() {
       <div className="login-bg-glow login-bg-glow-1" />
       <div className="login-bg-glow login-bg-glow-2" />
 
-      <div className="login-card">
-        <div className="login-header">
-          <div className="login-brand-badge">
-            <Building2 className="login-brand-icon" size={15} aria-hidden="true" />
-            <span className="login-brand-text">
-              <span>
-                {isEcommerce ? "全渠道电商客诉智能研判平台" : "12345 政务热线智能研判平台"}
-              </span>
-              <span>V2 双角色协同</span>
-            </span>
-          </div>
+      <div className="login-card !py-5 !px-4 sm:!py-6 sm:!px-8">
+        <div className="login-header !mb-3">
           <h1 className="login-title">
             {isEcommerce ? "民声智理 · 电商客诉中枢" : "民声智理 · 智能研判系统"}
           </h1>
-          <p className="login-subtitle">
-            <span>快慢双引擎协同</span>
-            <span>{isEcommerce ? "SKU / 仓网实体对齐" : "微观时空实体对齐"}</span>
-            <span>{isEcommerce ? "买家客诉与督办闭环" : "市民诉求受理与治理闭环"}</span>
+          <p className="login-subtitle !text-[13px]">
+            {isEcommerce
+              ? "快慢双引擎协同 · SKU / 仓网实体对齐与客诉闭环"
+              : "快慢双引擎协同 · 微观时空对齐与治理闭环"}
           </p>
-          <div className="login-features-row">
-            <span className="login-feature-pill">
-              <Zap size={11} style={{ color: "#d97706" }} aria-hidden="true" />
-              快慢双引擎协同
-            </span>
-            <span className="login-feature-pill">
-              <Layers size={11} style={{ color: "#2563eb" }} aria-hidden="true" />
-              {isEcommerce ? "渠道仓网矩阵" : "微观时空基底"}
-            </span>
-            <span className="login-feature-pill">
-              <Activity size={11} style={{ color: "#16a34a" }} aria-hidden="true" />
-              {isEcommerce ? "售后假闭环督办" : "主动巡检闭环"}
-            </span>
-          </div>
         </div>
 
-        {/* 并排双角色一键体验区 */}
-        <div className="mb-4 rounded-xl border border-dashed border-blue-300 bg-blue-50/70 p-3">
-          <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-blue-700">
-            <Sparkles size={14} aria-hidden="true" />
-            <span>演示快捷通道 · 选择身份一键填入</span>
-          </div>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <button
-              type="button"
-              onClick={handleQuickFillAdmin}
-              className="flex min-h-12 flex-col items-start justify-center rounded-lg border border-blue-200 bg-white px-3 py-2.5 text-left transition hover:border-blue-400 hover:bg-blue-50 cursor-pointer"
-            >
-              <span className="text-xs font-semibold text-slate-900">
-                管理员工作台
-              </span>
-              <span className="mt-0.5 text-[11px] font-mono text-blue-700">
-                admin / admin
-              </span>
-              <span className="mt-1 text-[11px] leading-snug text-slate-500">
-                研判大盘 · 智能治理中心
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={handleQuickFillCitizen}
-              className="flex min-h-12 flex-col items-start justify-center rounded-lg border border-emerald-200 bg-white px-3 py-2.5 text-left transition hover:border-emerald-400 hover:bg-emerald-50 cursor-pointer"
-            >
-              <span className="text-xs font-semibold text-slate-900">
-                {isEcommerce ? "普通买家投诉端" : "普通市民投诉端"}
-              </span>
-              <span className="mt-0.5 text-[11px] font-mono text-emerald-700">
-                citizen / citizen123
-              </span>
-              <span className="mt-1 text-[11px] leading-snug text-slate-500">
-                极简表单 · 语音投诉受理台
-              </span>
-            </button>
-          </div>
+        {/* 紧凑单行演示凭证快捷填入条（无嵌套卡框） */}
+        <div className="mb-3 grid grid-cols-2 sm:flex sm:items-center gap-1.5 rounded-lg bg-slate-100/80 p-1.5">
+          <span className="hidden sm:inline px-1 text-[13px] font-medium text-slate-600 shrink-0">
+            演示
+          </span>
+          <button
+            type="button"
+            onClick={handleQuickFillAdmin}
+            aria-label="填入管理员演示账号 admin / admin"
+            className="inline-flex min-h-11 sm:min-h-9 sm:flex-1 items-center justify-center rounded-md bg-white px-2 text-[13px] font-medium text-blue-700 hover:bg-blue-50 transition-colors cursor-pointer tabular-nums whitespace-nowrap min-w-0"
+          >
+            管理员 admin/admin
+          </button>
+          <button
+            type="button"
+            onClick={handleQuickFillCitizen}
+            aria-label={`填入${isEcommerce ? "买家" : "市民"}演示账号 citizen / citizen123`}
+            className="inline-flex min-h-11 sm:min-h-9 sm:flex-1 items-center justify-center rounded-md bg-white px-2 text-[13px] font-medium text-emerald-700 hover:bg-emerald-50 transition-colors cursor-pointer tabular-nums whitespace-nowrap min-w-0"
+          >
+            {isEcommerce ? "买家" : "市民"} citizen/citizen123
+          </button>
         </div>
 
         {/* 无障碍 Tab 切换：登录 / 体验注册 */}
@@ -356,7 +307,7 @@ function LoginForm() {
           role="tablist"
           aria-label="账号认证方式"
           onKeyDown={handleTabListKeyDown}
-          className="mb-4 flex border-b border-slate-200"
+          className="mb-3 flex border-b border-slate-200"
         >
           <button
             ref={loginTabRef}
@@ -421,7 +372,7 @@ function LoginForm() {
 
         {/* Panel 1: 账号登录 */}
         <div role="tabpanel" aria-labelledby="auth-tab-login" hidden={authTab !== "login"}>
-          <form onSubmit={handleLogin} noValidate className="login-form">
+          <form onSubmit={handleLogin} noValidate className="login-form !gap-3">
             <div className="form-group">
               <label className="form-label" htmlFor="account">
                 登录账号 / 邮箱 <span aria-hidden="true" className="text-red-600">*</span>
@@ -469,7 +420,7 @@ function LoginForm() {
                 />
               </div>
               {loginInteracted.account && loginErrors.account ? (
-                <p id="login-account-error" className="text-xs text-red-600">
+                <p id="login-account-error" className="text-[13px] text-red-600">
                   {loginErrors.account}
                 </p>
               ) : null}
@@ -532,7 +483,7 @@ function LoginForm() {
                 注意：开启后将在屏幕上明文显示您输入的密码。
               </span>
               {loginInteracted.password && loginErrors.password ? (
-                <p id="login-password-error" className="text-xs text-red-600">
+                <p id="login-password-error" className="text-[13px] text-red-600">
                   {loginErrors.password}
                 </p>
               ) : null}
@@ -540,7 +491,7 @@ function LoginForm() {
 
             <button
               type="submit"
-              className="login-submit-btn min-h-12"
+              className="login-submit-btn min-h-12 !mt-1"
               disabled={isPending}
             >
               {isPending ? (
@@ -556,8 +507,8 @@ function LoginForm() {
 
         {/* Panel 2: 普通市民/买家体验注册 */}
         <div role="tabpanel" aria-labelledby="auth-tab-register" hidden={authTab !== "register"}>
-          <form onSubmit={handleRegister} noValidate className="login-form">
-            <div className="form-group">
+          <form onSubmit={handleRegister} noValidate className="login-form !gap-2.5">
+            <div className="form-group !gap-1">
               <label className="form-label" htmlFor="reg-name">
                 昵称 / 姓名 <span aria-hidden="true" className="text-red-600">*</span>
               </label>
@@ -568,7 +519,7 @@ function LoginForm() {
                   id="reg-name"
                   name="name"
                   type="text"
-                  className={`form-input min-h-12 !text-base ${
+                  className={`form-input !min-h-11 !text-base ${
                     regInteracted.name && regErrors.name ? "!border-red-500 bg-red-50/40" : ""
                   }`}
                   placeholder="例如：张先生 / 王女士"
@@ -597,19 +548,21 @@ function LoginForm() {
                 />
               </div>
               {regInteracted.name && regErrors.name ? (
-                <p id="reg-name-error" className="text-xs text-red-600">
+                <p id="reg-name-error" className="text-[13px] text-red-600">
                   {regErrors.name}
                 </p>
               ) : null}
             </div>
 
-            <div className="form-group">
-              <label className="form-label" htmlFor="reg-username">
-                登录用户名 <span aria-hidden="true" className="text-red-600">*</span>
-              </label>
-              <span id="reg-username-hint" className="text-xs text-slate-500">
-                3~32 位字母、数字、下划线或点号
-              </span>
+            <div className="form-group !gap-1">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+                <label className="form-label" htmlFor="reg-username">
+                  登录用户名 <span aria-hidden="true" className="text-red-600">*</span>
+                </label>
+                <span id="reg-username-hint" className="text-[13px] text-slate-500">
+                  3~32 位字母/数字/._
+                </span>
+              </div>
               <div className="input-wrapper">
                 <User className="input-icon" size={18} aria-hidden="true" />
                 <input
@@ -617,7 +570,7 @@ function LoginForm() {
                   id="reg-username"
                   name="username"
                   type="text"
-                  className={`form-input min-h-12 !text-base ${
+                  className={`form-input !min-h-11 !text-base ${
                     regInteracted.username && regErrors.username
                       ? "!border-red-500 bg-red-50/40"
                       : ""
@@ -656,19 +609,21 @@ function LoginForm() {
                 />
               </div>
               {regInteracted.username && regErrors.username ? (
-                <p id="reg-username-error" className="text-xs text-red-600">
+                <p id="reg-username-error" className="text-[13px] text-red-600">
                   {regErrors.username}
                 </p>
               ) : null}
             </div>
 
-            <div className="form-group">
-              <label className="form-label" htmlFor="reg-email">
-                电子邮箱 <span aria-hidden="true" className="text-red-600">*</span>
-              </label>
-              <span id="reg-email-hint" className="text-xs text-slate-500">
-                格式示例：user@example.com
-              </span>
+            <div className="form-group !gap-1">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+                <label className="form-label" htmlFor="reg-email">
+                  电子邮箱 <span aria-hidden="true" className="text-red-600">*</span>
+                </label>
+                <span id="reg-email-hint" className="text-[13px] text-slate-500">
+                  如 user@example.com
+                </span>
+              </div>
               <div className="input-wrapper">
                 <Mail className="input-icon" size={18} aria-hidden="true" />
                 <input
@@ -676,7 +631,7 @@ function LoginForm() {
                   id="reg-email"
                   name="email"
                   type="email"
-                  className={`form-input min-h-12 !text-base ${
+                  className={`form-input !min-h-11 !text-base ${
                     regInteracted.email && regErrors.email ? "!border-red-500 bg-red-50/40" : ""
                   }`}
                   placeholder="请输入您的邮箱"
@@ -710,19 +665,21 @@ function LoginForm() {
                 />
               </div>
               {regInteracted.email && regErrors.email ? (
-                <p id="reg-email-error" className="text-xs text-red-600">
+                <p id="reg-email-error" className="text-[13px] text-red-600">
                   {regErrors.email}
                 </p>
               ) : null}
             </div>
 
-            <div className="form-group">
-              <label className="form-label" htmlFor="reg-password">
-                设置密码 <span aria-hidden="true" className="text-red-600">*</span>
-              </label>
-              <span id="reg-password-hint" className="text-xs text-slate-500">
-                至少 4 位字符，注册后将以普通用户身份直达投诉受理台
-              </span>
+            <div className="form-group !gap-1">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+                <label className="form-label" htmlFor="reg-password">
+                  设置密码 <span aria-hidden="true" className="text-red-600">*</span>
+                </label>
+                <span id="reg-password-hint" className="text-[13px] text-slate-500">
+                  至少 4 位字符
+                </span>
+              </div>
               <div className="input-wrapper">
                 <Lock className="input-icon" size={18} aria-hidden="true" />
                 <input
@@ -730,7 +687,7 @@ function LoginForm() {
                   id="reg-password"
                   name="password"
                   type={showRegPassword ? "text" : "password"}
-                  className={`form-input form-input-password min-h-12 !text-base ${
+                  className={`form-input form-input-password !min-h-11 !text-base ${
                     regInteracted.password && regErrors.password
                       ? "!border-red-500 bg-red-50/40"
                       : ""
@@ -781,7 +738,7 @@ function LoginForm() {
                 注意：开启后将在屏幕上明文显示您设置的密码。
               </span>
               {regInteracted.password && regErrors.password ? (
-                <p id="reg-password-error" className="text-xs text-red-600">
+                <p id="reg-password-error" className="text-[13px] text-red-600">
                   {regErrors.password}
                 </p>
               ) : null}
@@ -789,7 +746,7 @@ function LoginForm() {
 
             <button
               type="submit"
-              className="login-submit-btn min-h-12"
+              className="login-submit-btn min-h-12 !mt-1"
               disabled={isPending}
             >
               {isPending ? (
@@ -797,22 +754,20 @@ function LoginForm() {
                   <span className="login-spinner" aria-hidden="true" /> 正在创建账号并登录...
                 </span>
               ) : (
-                <span className="submit-btn-content">
-                  完成注册并开始{isEcommerce ? "客诉提交" : "诉求提交"}
-                </span>
+                <span className="submit-btn-content">注册并登录</span>
               )}
             </button>
           </form>
         </div>
 
-        <div className="login-footer">
-          <div className="security-tag">
-            <ShieldCheck size={14} aria-hidden="true" />
+        <div className="login-footer !mt-4 !pt-3">
+          <div className="security-tag !text-[13px]">
+            <ShieldCheck size={14} aria-hidden="true" className="shrink-0 mt-0.5" />
             <span className="security-tag__text">
               <span>{isEcommerce ? "企业级合规适配" : "政务信创适配"}</span>
               <span>双角色权限隔离</span>
               <span>隐私气隙脱敏</span>
-              <span>多租户 Schema 物理隔离</span>
+              <span>多租户物理隔离</span>
             </span>
           </div>
         </div>

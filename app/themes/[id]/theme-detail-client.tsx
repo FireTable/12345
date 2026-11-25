@@ -928,12 +928,12 @@ function ThemeDetailInner() {
                 >
                   {copiedAdvice ? (
                     <>
-                      <Check className="w-3.5 h-3.5 text-emerald-300" />
+                      <Check className="w-3.5 h-3.5 text-emerald-600" aria-hidden="true" />
                       <span>已复制</span>
                     </>
                   ) : (
                     <>
-                      <Copy className="w-3.5 h-3.5 text-white/90" />
+                      <Copy className="w-3.5 h-3.5 text-slate-600" aria-hidden="true" />
                       <span>复制建议</span>
                     </>
                   )}
@@ -1114,53 +1114,45 @@ function ThemeDetailInner() {
                   key={m.ticketId || m.id}
                   id={`ticket-${m.id}`}
                   data-ticket-id={m.id}
-                  className={`member-item transition-colors relative rounded-xl p-4 mb-3.5 cursor-pointer ${
+                  className={`member-item transition-colors relative rounded-xl p-4 mb-3 cursor-pointer ${
                     isTarget
-                      ? "is-target-ticket border border-blue-600 bg-blue-50/30 shadow-xs"
-                      : "border border-slate-200/90 bg-white hover:border-slate-300"
+                      ? "is-target-ticket border-l-4 border-l-blue-600 bg-blue-50/60"
+                      : "bg-slate-50/85 hover:bg-slate-100/80"
                   }`}
-                  style={
-                    isTarget
-                      ? {
-                          borderColor: "#2563eb",
-                          backgroundColor: "rgba(239, 246, 255, 0.4)",
-                        }
-                      : {}
-                  }
                   onClick={() => void toggleExpand(m)}
                 >
-                  {/* 目标工单浮动徽标 */}
+                  {/* 目标工单定位标识 */}
                   {isTarget && (
-                    <div className="absolute -top-3 right-4 z-20 flex items-center gap-1.5 bg-blue-600 text-white text-[11px] font-medium px-3 py-0.5 rounded-full shadow-xs border border-white">
-                      <Target className="h-3 w-3" />
-                      <span>🎯 当前定位工单</span>
+                    <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 mb-2">
+                      <Target className="h-3.5 w-3.5" aria-hidden="true" />
+                      <span>当前定位工单</span>
                     </div>
                   )}
 
-                  <div className="member-item__head flex items-center gap-2 mb-2">
-                    <span className="member-item__id font-mono font-bold text-xs text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200/80">
+                  <div className="member-item__head flex items-center gap-x-2.5 gap-y-1 mb-2">
+                    <span className="member-item__id font-mono font-semibold text-xs text-slate-800">
                       #{m.id}
                     </span>
-                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-md">
-                      <Sparkles className="h-3 w-3" />
+                    <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
+                      <Sparkles className="h-3 w-3 shrink-0" aria-hidden="true" />
                       {m.confidence == null ? "已校准" : `置信度 ${m.confidence}%`}
                     </span>
                     {m.category && (
                       <span
-                        className="badge-pill text-[11px] font-medium"
+                        className="badge-pill text-xs font-medium"
                         style={categoryBadgeStyle(m.category)}
                       >
                         {m.category}
                       </span>
                     )}
                     {m.region && (
-                      <span className="text-[11px] font-medium text-slate-700 bg-slate-100 px-2.5 py-0.5 rounded-md">
-                        📍 {m.region}
+                      <span className="text-xs font-medium text-slate-600">
+                        {m.region}
                       </span>
                     )}
                     {m.isFakeClosure && (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md">
-                        <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-rose-700">
+                        <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden="true" />
                         疑似假闭环
                       </span>
                     )}
@@ -1173,8 +1165,8 @@ function ThemeDetailInner() {
                     {m.title}
                   </div>
 
-                  {/* 工单正文容器（外层提供内边距，内层提供 line-clamp，绝无半截文字露出的问题） */}
-                  <div className="bg-slate-50/90 p-3 rounded-lg border border-slate-200/70 mb-2.5">
+                  {/* 工单正文容器（浅底无内框线，杜绝框套框） */}
+                  <div className="bg-white/80 px-3 py-2.5 rounded-lg mb-2.5">
                     <div
                       className={`text-xs text-slate-700 leading-relaxed ${
                         isExpanded
@@ -1188,16 +1180,16 @@ function ThemeDetailInner() {
 
                   {/* 展开展示诉求人与具体门牌 */}
                   {isExpanded && (m.caller_name || m.address) && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] text-slate-600 bg-white p-2.5 rounded-md border border-slate-200/80 mb-2.5">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-slate-600 pt-2 border-t border-slate-200/70 mb-2.5">
                       {m.caller_name && (
                         <div className="flex items-center gap-1.5">
-                          <User className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
+                          <User className="h-3.5 w-3.5 text-slate-500 shrink-0" aria-hidden="true" />
                           <span>诉求人：<b className="text-slate-800 font-medium">{m.caller_name}</b></span>
                         </div>
                       )}
                       {m.address && (
                         <div className="flex items-center gap-1.5">
-                          <MapPin className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
+                          <MapPin className="h-3.5 w-3.5 text-slate-500 shrink-0" aria-hidden="true" />
                           <span>事发地址：<b className="text-slate-800 font-medium">{m.address}</b></span>
                         </div>
                       )}
@@ -1344,12 +1336,17 @@ function ThemeDetailInner() {
                       const style = dimStyles[idx % dimStyles.length];
                       return (
                         <div key={f.name} className="feature-list__item">
-                          <div className="feature-list__head">
-                            <span className="flex items-center gap-1.5 font-medium text-slate-700">
+                          <div className="feature-list__head gap-2 min-w-0">
+                            <span className="flex items-center gap-1.5 font-medium text-slate-700 min-w-0">
                               <span style={{ width: 6, height: 6, borderRadius: "50%", background: style.dot, display: "inline-block", flexShrink: 0 }} />
-                              {f.name} <span style={{ color: "var(--c-ink-3)", fontSize: 11 }}>{f.desc || ""}</span>
+                              <span className="whitespace-nowrap shrink-0">{f.name}</span>
+                              {f.desc ? (
+                                <span className="text-xs text-slate-500 font-normal truncate min-w-0">
+                                  {f.desc}
+                                </span>
+                              ) : null}
                             </span>
-                            <span style={{ fontWeight: 700, color: style.text }}>{f.pct}%</span>
+                            <span className="whitespace-nowrap shrink-0 tabular-nums" style={{ fontWeight: 700, color: style.text }}>{f.pct}%</span>
                           </div>
                           <div className="feature-list__bar" style={{ background: "#F1F5F9" }}>
                             <div
@@ -1478,76 +1475,81 @@ function ThemeDetailInner() {
               </span>
             </div>
           )}
-          <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 mb-3.5 mt-3.5">
-            {!cluster.ungrouped && (
-              <>
-                <button
-                  type="button"
-                  disabled={!isAdmin || actionPending}
-                  title={!isAdmin ? "需管理员权限可执行处置" : undefined}
-                  className={`btn ${row.status?.code === "PENDING" || !row.status?.owner ? "btn--primary" : "btn--default"} flex items-center justify-center gap-1.5 min-w-0 sm:flex-1 min-h-[38px] sm:min-h-[34px] px-2.5 text-xs whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed`}
-                  onClick={openDispatchDialog}
-                >
-                  <Send className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">{row.status?.owner || row.status?.code !== "PENDING" ? "重新指派 / 编辑派单" : "采纳建议并派单"}</span>
-                </button>
-                <button
-                  type="button"
-                  disabled={!isAdmin || actionPending}
-                  title={!isAdmin ? "需管理员权限可执行处置" : undefined}
-                  className="btn btn--default flex items-center justify-center gap-1.5 text-rose-700 border-rose-200 hover:border-rose-400 min-w-0 sm:flex-1 min-h-[38px] sm:min-h-[34px] px-2.5 text-xs whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
-                  onClick={() => {
-                    setEscalateNote("");
-                    setEscalateOpen(true);
-                  }}
-                >
-                  <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
-                  <span>升级督办</span>
-                </button>
-                {row.status?.code === "RESOLVED" ? (
-                  <button
-                    type="button"
-                    disabled={!isAdmin || actionPending}
-                    title={!isAdmin ? "需管理员权限可执行处置" : undefined}
-                    className="btn btn--default flex items-center justify-center gap-1.5 text-amber-700 border-amber-200 hover:border-amber-400 min-w-0 sm:flex-1 min-h-[38px] sm:min-h-[34px] px-2.5 text-xs whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
-                    onClick={() =>
-                      void patchCluster(
-                        { action: "REOPEN", note: "管理员发起重开督办" },
-                        "已重开群组督办"
-                      )
-                    }
-                  >
-                    <RotateCcw className="h-3.5 w-3.5 shrink-0" />
-                    <span>重开督办</span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    disabled={!isAdmin || actionPending}
-                    title={!isAdmin ? "需管理员权限可执行处置" : undefined}
-                    className="btn btn--default flex items-center justify-center gap-1.5 text-emerald-700 border-emerald-200 hover:border-emerald-400 min-w-0 sm:flex-1 min-h-[38px] sm:min-h-[34px] px-2.5 text-xs whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
-                    onClick={() =>
-                      void patchCluster(
-                        { action: "RESOLVE", note: "管理员确认办结归档" },
-                        "群组已办结归档"
-                      )
-                    }
-                  >
-                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                    <span>办结归档</span>
-                  </button>
+          {(() => {
+            const primaryIsDispatch = !cluster.ungrouped && (row.status?.code === "PENDING" || !row.status?.owner);
+            return (
+              <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 mb-3.5 mt-3.5">
+                {!cluster.ungrouped && (
+                  <>
+                    <button
+                      type="button"
+                      disabled={!isAdmin || actionPending}
+                      title={!isAdmin ? "需管理员权限可执行处置" : undefined}
+                      className={`btn ${primaryIsDispatch ? "btn--primary" : "btn--default"} flex items-center justify-center gap-1.5 min-w-0 sm:flex-1 min-h-[44px] sm:min-h-[36px] px-2.5 text-xs whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed`}
+                      onClick={openDispatchDialog}
+                    >
+                      <Send className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">{row.status?.owner || row.status?.code !== "PENDING" ? "重新指派 / 编辑派单" : "采纳建议并派单"}</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!isAdmin || actionPending}
+                      title={!isAdmin ? "需管理员权限可执行处置" : undefined}
+                      className="btn btn--default flex items-center justify-center gap-1.5 text-rose-700 border-rose-200 hover:border-rose-400 min-w-0 sm:flex-1 min-h-[44px] sm:min-h-[36px] px-2.5 text-xs whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                      onClick={() => {
+                        setEscalateNote("");
+                        setEscalateOpen(true);
+                      }}
+                    >
+                      <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
+                      <span>升级督办</span>
+                    </button>
+                    {row.status?.code === "RESOLVED" ? (
+                      <button
+                        type="button"
+                        disabled={!isAdmin || actionPending}
+                        title={!isAdmin ? "需管理员权限可执行处置" : undefined}
+                        className="btn btn--default flex items-center justify-center gap-1.5 text-amber-700 border-amber-200 hover:border-amber-400 min-w-0 sm:flex-1 min-h-[44px] sm:min-h-[36px] px-2.5 text-xs whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                        onClick={() =>
+                          void patchCluster(
+                            { action: "REOPEN", note: "管理员发起重开督办" },
+                            "已重开群组督办"
+                          )
+                        }
+                      >
+                        <RotateCcw className="h-3.5 w-3.5 shrink-0" />
+                        <span>重开督办</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={!isAdmin || actionPending}
+                        title={!isAdmin ? "需管理员权限可执行处置" : undefined}
+                        className="btn btn--default flex items-center justify-center gap-1.5 text-emerald-700 border-emerald-200 hover:border-emerald-400 min-w-0 sm:flex-1 min-h-[44px] sm:min-h-[36px] px-2.5 text-xs whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                        onClick={() =>
+                          void patchCluster(
+                            { action: "RESOLVE", note: "管理员确认办结归档" },
+                            "群组已办结归档"
+                          )
+                        }
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                        <span>办结归档</span>
+                      </button>
+                    )}
+                  </>
                 )}
-              </>
-            )}
-            <button
-              type="button"
-              className="btn btn--primary flex items-center justify-center gap-1.5 min-w-0 sm:flex-1 min-h-[38px] sm:min-h-[34px] px-2.5 text-xs whitespace-nowrap"
-              onClick={exportReport}
-            >
-              <Download className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate">{row.riskLevel === "HIGH" ? "生成重点督办单" : "生成群组报告"}</span>
-            </button>
-          </div>
+                <button
+                  type="button"
+                  className={`btn ${primaryIsDispatch ? "btn--default" : "btn--primary"} flex items-center justify-center gap-1.5 min-w-0 sm:flex-1 min-h-[44px] sm:min-h-[36px] px-2.5 text-xs whitespace-nowrap`}
+                  onClick={exportReport}
+                >
+                  <Download className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{row.riskLevel === "HIGH" ? "生成重点督办单" : "生成群组报告"}</span>
+                </button>
+              </div>
+            );
+          })()}
 
           <DisposalTimeline logs={row.disposalLogs || []} />
         </div>
