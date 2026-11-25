@@ -37,6 +37,7 @@
   align-items: center;
   flex: 1;
   min-width: 0;
+  order: 1;
 }
 .brand-logo {
   width: auto; min-width: 56px; height: 28px;
@@ -233,7 +234,10 @@
     outline-offset: -2px;
   }
   .nav-more__menu,
-  .navbar__panel {
+  .navbar__panel,
+  .navbar-search-btn,
+  .chat-fab,
+  dialog.quick-cmd-dialog {
     border: 1px solid CanvasText;
   }
 }
@@ -262,11 +266,22 @@
   position: fixed;
   right: calc(20px + env(safe-area-inset-right, 0px));
   bottom: calc(20px + env(safe-area-inset-bottom, 0px));
-  width: 48px; height: 48px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
+  height: 44px;
+  min-block-size: 44px;
+  padding: 0 16px;
+  border-radius: 999px;
+  gap: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.01em;
   background: linear-gradient(180deg, #1668E3 0%, #0958D9 100%);
   color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.24);
   cursor: pointer;
   box-shadow: 0 8px 22px rgba(15, 23, 42, 0.18), 0 4px 12px rgba(22, 119, 255, 0.32);
   transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
@@ -274,6 +289,72 @@
 }
 .chat-fab:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(30, 90, 255, 0.45); }
 .chat-fab:active { transform: translateY(0); }
+
+/* 顶栏快捷功能搜索触发按钮（与 .navbar-icon-btn 等高 34px，在桌面端位于右侧动作区、<=768px 位于折叠按钮左侧保持常显） */
+.navbar-search-btn {
+  position: relative;
+  order: 2;
+  margin-left: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  min-block-size: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  color: var(--c-ink-2);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+}
+.navbar-search-btn:hover {
+  background: var(--c-brand-tint);
+  border-color: #91caff;
+  color: var(--c-brand-dark);
+}
+.navbar-search-btn__kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--c-surface-2);
+  border: 1px solid var(--c-border);
+  color: var(--c-ink-3);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1;
+}
+@media (max-width: 768px) {
+  .navbar-search-btn {
+    order: 0;
+    margin-left: 8px;
+  }
+}
+@media (max-width: 480px) {
+  .navbar-search-btn {
+    padding: 0 8px;
+    gap: 5px;
+  }
+  .navbar-search-btn__kbd {
+    display: none;
+  }
+}
+@media (max-width: 640px), (pointer: coarse) {
+  .navbar-search-btn::after {
+    content: "";
+    position: absolute;
+    inset: -5px 0;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .nav-more__trigger svg,
   .nav-item,
@@ -325,6 +406,12 @@
   }
   .navbar {
     padding-inline: max(var(--s-4), env(safe-area-inset-left, 0px)) max(var(--s-4), env(safe-area-inset-right, 0px));
+  }
+  .navbar__menu {
+    margin-left: var(--s-4);
+  }
+  .navbar__user {
+    gap: 6px;
   }
   .brand-text-full { display: none; }
 }
@@ -1247,4 +1334,32 @@ dialog.pipeline-drawer::backdrop {
   dialog.pipeline-drawer {
     padding-top: env(safe-area-inset-top, 0px);
   }
+}
+
+/* Native top-layer QuickCommandDialog (<dialog>) */
+dialog.quick-cmd-dialog:not([open]) {
+  display: none;
+}
+
+dialog.quick-cmd-dialog[open] {
+  display: flex;
+}
+
+dialog.quick-cmd-dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog.quick-cmd-dialog::backdrop {
+  background: rgba(15, 23, 42, 0.48);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+.quick-cmd-dialog__list {
+  --scrollbar-thumb: #64748B;
+  --scrollbar-track: #F1F5F9;
+  scrollbar-width: auto;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }

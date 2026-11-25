@@ -79,6 +79,7 @@ export async function POST(req: Request) {
 
     const result = await processIntakeChat({
       regionId,
+      userId: guard.session.user.id,
       messages,
       draft,
     });

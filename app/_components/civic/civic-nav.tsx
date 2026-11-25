@@ -4,7 +4,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ChevronDown, MessageCircle, User, LogOut, Film, Workflow, MessageSquarePlus } from "lucide-react";
+import { ChevronDown, MessageCircle, User, LogOut, Film, Workflow, MessageSquarePlus, Search } from "lucide-react";
 import { useCivicWorkflow } from "./civic-workflow";
 import { NAV_ITEMS } from "./nav-items";
 import { authClient } from "@/lib/auth/client";
@@ -15,6 +15,11 @@ import { useRegion } from "./region-context";
 
 const VideoModal = dynamic(
   () => import("./video-modal").then((m) => m.VideoModal),
+  { ssr: false }
+);
+
+const QuickCommandDialog = dynamic(
+  () => import("./quick-command-dialog").then((m) => m.QuickCommandDialog),
   { ssr: false }
 );
 
@@ -113,6 +118,8 @@ export function CivicNav() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [videoModalOpen, setVideoModalOpen] = useState(false);
   const [videoModalMounted, setVideoModalMounted] = useState(false);
+  const [quickCmdOpen, setQuickCmdOpen] = useState(false);
+  const [quickCmdMounted, setQuickCmdMounted] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const toggleBtnRef = useRef<HTMLButtonElement>(null);
@@ -188,7 +195,26 @@ export function CivicNav() {
     setMoreOpen(false);
     setUserMenuOpen(false);
     setVideoModalOpen(false);
+    setQuickCmdOpen(false);
   }, [pathname]);
+
+  // 管理员全局 Cmd+K / Ctrl+K 快捷功能跳转面板
+  useEffect(() => {
+    if (!isAdmin || pathname === "/login") return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "k") {
+        if (e.isComposing || e.keyCode === 229) return;
+        e.preventDefault();
+        setMenuOpen(false);
+        setMoreOpen(false);
+        setUserMenuOpen(false);
+        setQuickCmdMounted(true);
+        setQuickCmdOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isAdmin, pathname]);
 
   // 动态同步页面 HTML document.title（带当前辖区站点前缀）
   useEffect(() => {
@@ -356,6 +382,29 @@ export function CivicNav() {
           </div>
         ) : (
           <>
+            {isAdmin ? (
+              <button
+                type="button"
+                className="navbar-search-btn"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setMoreOpen(false);
+                  setUserMenuOpen(false);
+                  setQuickCmdMounted(true);
+                  setQuickCmdOpen(true);
+                }}
+                title="快速搜索与功能跳转 (⌘K / Ctrl+K)"
+                aria-label="搜功能：快速搜索与跳转 (⌘K)"
+                aria-keyshortcuts="Meta+k Control+k"
+              >
+                <Search size={14} aria-hidden="true" />
+                <span>搜功能</span>
+                <kbd className="navbar-search-btn__kbd" aria-hidden="true">
+                  ⌘K
+                </kbd>
+              </button>
+            ) : null}
+
             <button
               ref={toggleBtnRef}
               type="button"
@@ -679,15 +728,26 @@ export function CivicNav() {
         <VideoModal isOpen={videoModalOpen} onClose={closeVideoModal} />
       ) : null}
 
+      {isAdmin && !isLoginPage && (quickCmdOpen || quickCmdMounted) ? (
+        <QuickCommandDialog
+          isOpen={quickCmdOpen}
+          onClose={() => setQuickCmdOpen(false)}
+          onOpenCopilot={openCopilot}
+          onTogglePipeline={togglePipelineDrawer}
+          isEcommerce={isEcommerce}
+        />
+      ) : null}
+
       {isAdmin && !copilotOpen && !isLoginPage ? (
         <button
           type="button"
           className="chat-fab"
-          aria-label="打开研判助手"
-          title="研判助手"
+          aria-label={isEcommerce ? "AI 客诉：打开智能客诉助手" : "AI 研判：打开智能研判助手"}
+          title={isEcommerce ? "AI 客诉助手" : "AI 研判助手"}
           onClick={openCopilot}
         >
-          <MessageCircle size={22} strokeWidth={2} aria-hidden="true" />
+          <MessageCircle size={18} strokeWidth={2.1} aria-hidden="true" />
+          <span>{isEcommerce ? "AI 客诉" : "AI 研判"}</span>
         </button>
       ) : null}
     </>

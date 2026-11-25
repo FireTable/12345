@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { guardAgentRequest } from "@/lib/security/agent-guard";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
-import { submitCitizenTicket } from "@/lib/agent-governance";
+import { DuplicateTicketError, submitCitizenTicket } from "@/lib/agent-governance";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +26,7 @@ export async function POST(req: Request) {
       contactEmail?: unknown;
       source?: unknown;
       skipAutoCluster?: unknown;
+      allowDuplicate?: unknown;
       regionId?: unknown;
     } | null;
 
@@ -138,6 +139,7 @@ export async function POST(req: Request) {
       contactEmail: contactEmail || undefined,
       source: body.source === "AGENT_VOICE" ? "AGENT_VOICE" : "FORM",
       skipAutoCluster: body.skipAutoCluster === true,
+      allowDuplicate: body.allowDuplicate === true,
     });
 
     return NextResponse.json({
@@ -145,6 +147,18 @@ export async function POST(req: Request) {
       ...result,
     });
   } catch (err: unknown) {
+    if (err instanceof DuplicateTicketError) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: err.code,
+          error: err.message,
+          existingTicketNo: err.existingTicketNo,
+          existingTicketId: err.existingTicketId,
+        },
+        { status: 409 }
+      );
+    }
     const message = err instanceof Error ? err.message : "Failed to submit ticket";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }

@@ -50,6 +50,7 @@ import { TablePager } from "@/app/_components/civic/table-pager";
 import { useRegion } from "@/app/_components/civic/region-context";
 import { useCivicSse } from "@/app/_hooks/use-civic-sse";
 import { useAuthRole } from "@/lib/auth/use-role";
+import { isGenericSubject } from "@/lib/civic-missing";
 
 type Row = {
   id: string;
@@ -1055,12 +1056,30 @@ function TicketsClientInner() {
                             </div>
                             <div className="col-title__desc flex items-center gap-2 min-w-0" style={{ marginTop: 2 }}>
                               {r.address ? <span className="truncate" title={r.address}>{r.address}</span> : null}
-                              {r.canonicalSubject ? (
+                              {r.canonicalSubject && !isGenericSubject(r.canonicalSubject) ? (
                                 <span
                                   className="text-[11px] text-gray-500 font-normal truncate"
                                   title={`研判${subjectLabel}: ${r.canonicalSubject}`}
                                 >
                                   · {subjectLabel}: {r.canonicalSubject}
+                                </span>
+                              ) : (r.canonicalSubject && isGenericSubject(r.canonicalSubject)) ||
+                                r.missingSlots?.some(
+                                  (slot) =>
+                                    slot.includes("主体") ||
+                                    slot.includes("商铺") ||
+                                    slot.includes("SKU") ||
+                                    slot.includes("商品")
+                                ) ? (
+                                <span
+                                  className="text-[11px] text-gray-400 font-normal truncate"
+                                  title={
+                                    r.canonicalSubject
+                                      ? `原提取为泛化词「${r.canonicalSubject}」，待补充具体${subjectLabel}`
+                                      : `待补充具体${subjectLabel}`
+                                  }
+                                >
+                                  · 待补充{subjectLabel}
                                 </span>
                               ) : null}
                             </div>

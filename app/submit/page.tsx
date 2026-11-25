@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useId, useRef, useState } from "react";
+import Link from "next/link";
 import {
   CheckCircle2,
   AlertCircle,
@@ -18,6 +19,7 @@ import {
   XiaochunStage,
   type XiaochunStageHandle,
 } from "@/app/_components/agent/xiaochun-stage";
+import { useAuthRole } from "@/lib/auth/use-role";
 import "./submit.css";
 
 type SubmitMode = "form" | "voice";
@@ -296,6 +298,7 @@ async function scrollIntoViewAsync(
 
 export default function SubmitPage() {
   const { activeRegion, appDomain, isLoading: regionLoading } = useRegion();
+  const { isAdmin } = useAuthRole();
   const datalistId = useId();
 
   const [mode, setMode] = useState<SubmitMode>("voice");
@@ -502,6 +505,7 @@ export default function SubmitPage() {
   const stageRef = useRef<XiaochunStageHandle>(null);
   const lastSpokenWelcomeIdRef = useRef<string | null>(null);
   const voiceDirtyRef = useRef<boolean>(false);
+  const voiceSessionStartIdxRef = useRef(0);
   const formDirtyRef = useRef<boolean>(false);
   const [voiceMessages, setVoiceMessages] = useState<ChatMessage[]>([]);
   const [voiceDraft, setVoiceDraft] = useState<IntakeDraft>(EMPTY_DRAFT);
@@ -649,7 +653,35 @@ export default function SubmitPage() {
           source,
         }),
       });
-      const data = (await res.json()) as SubmitReceipt & { success?: boolean; error?: string };
+      const data = (await res.json()) as SubmitReceipt & {
+        success?: boolean;
+        error?: string;
+        code?: string;
+        existingTicketNo?: string;
+        existingTicketId?: string;
+      };
+      if (res.status === 409 && data.code === "DUPLICATE_TICKET") {
+        const msg =
+          data.error ||
+          (data.existingTicketNo
+            ? `检测到相同诉求正在处理中（工单号：${data.existingTicketNo}），请勿重复提交。`
+            : "检测到相同诉求正在处理中，请勿重复提交。");
+        toast.warning(msg);
+        scheduleAnnouncement(msg);
+        setHistoryOpen(true);
+        if (historyDetailsRef.current) {
+          historyDetailsRef.current.open = true;
+        }
+        void fetchMyTickets();
+        if (source === "AGENT_VOICE") {
+          setVoiceMessages((prev) => [
+            ...prev,
+            { id: `dup-${Date.now()}`, role: "assistant", content: msg },
+          ]);
+          void stageRef.current?.say(msg)?.catch(() => {});
+        }
+        return false;
+      }
       if (!res.ok || !data.success) {
         const msg = data.error || "提交失败，请检查填写内容后重试";
         toast.error(msg);
@@ -678,10 +710,14 @@ export default function SubmitPage() {
         setMissingFields([]);
         setReadyToSubmit(false);
         const ackText = `已为您正式受理并生成工单，回执单号为 ${data.ticketNo}，您可在下方我的投诉进度中实时跟踪。`;
-        setVoiceMessages((prev) => [
-          ...prev,
-          { id: `ack-${Date.now()}`, role: "assistant", content: ackText },
-        ]);
+        setVoiceMessages((prev) => {
+          const next: ChatMessage[] = [
+            ...prev,
+            { id: `ack-${Date.now()}`, role: "assistant", content: ackText },
+          ];
+          voiceSessionStartIdxRef.current = next.length;
+          return next;
+        });
         void stageRef.current?.say(ackText)?.catch(() => {});
       }
       return true;
@@ -764,17 +800,19 @@ export default function SubmitPage() {
       chatAbortRef.current = controller;
 
       try {
+        const sessionMessages = nextHistory.slice(voiceSessionStartIdxRef.current);
         const res = await fetch(`/api/intake/chat${regionQuery}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           signal: controller.signal,
           body: JSON.stringify({
-            messages: nextHistory.map((m) => ({ role: m.role, content: m.content })),
+            messages: sessionMessages.map((m) => ({ role: m.role, content: m.content })),
             draft: voiceDraft,
           }),
         });
         const data = (await res.json()) as {
           success?: boolean;
+          intent?: "INTAKE" | "PROGRESS_QUERY";
           reply?: string;
           draft?: Partial<IntakeDraft>;
           missingFields?: string[];
@@ -786,6 +824,22 @@ export default function SubmitPage() {
         if (!res.ok || !data.success) {
           const msg = data.error || "智能受理暂时繁忙，请稍后重试或切换表单提交";
           toast.error(msg);
+          return;
+        }
+
+        if (data.intent === "PROGRESS_QUERY") {
+          setHistoryOpen(true);
+          if (historyDetailsRef.current) {
+            historyDetailsRef.current.open = true;
+          }
+          void fetchMyTickets();
+          const replyText =
+            data.reply || "已为您展开下方「我的投诉进度」，请查看当前工单的最新办理状态。";
+          setVoiceMessages((prev) => [
+            ...prev,
+            { id: `a-${Date.now()}`, role: "assistant", content: replyText },
+          ]);
+          void stageRef.current?.say(replyText)?.catch(() => {});
           return;
         }
 
@@ -822,7 +876,7 @@ export default function SubmitPage() {
         }
       }
     },
-    [chatPending, regionQuery, voiceDraft, voiceMessages]
+    [chatPending, fetchMyTickets, regionQuery, voiceDraft, voiceMessages]
   );
 
   const asr = useStreamAsr({
@@ -851,6 +905,7 @@ export default function SubmitPage() {
       asrStopRef.current();
       stageRef.current?.stop();
       voiceDirtyRef.current = false;
+      voiceSessionStartIdxRef.current = 0;
       formDirtyRef.current = false;
       setVoiceDraft(EMPTY_DRAFT);
       setMissingFields([]);
@@ -1154,6 +1209,7 @@ export default function SubmitPage() {
     asr.stop();
     stageRef.current?.stop();
     voiceDirtyRef.current = false;
+    voiceSessionStartIdxRef.current = 0;
     setVoiceDraft(EMPTY_DRAFT);
     setMissingFields([]);
     setReadyToSubmit(false);
@@ -1167,6 +1223,26 @@ export default function SubmitPage() {
       <div className="visually-hidden" aria-live="polite">
         {liveAnnouncement}
       </div>
+
+      {isAdmin ? (
+        <div
+          role="region"
+          aria-label="管理员预览模式提示"
+          className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-sm text-white shadow-sm"
+        >
+          <span className="font-medium">
+            {isEcommerce
+              ? "当前为管理员预览模式（买家客诉提交端）"
+              : "当前为管理员预览模式（市民投诉提交端）"}
+          </span>
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 min-h-[36px] text-xs font-semibold text-slate-900 hover:bg-slate-100 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+          >
+            返回管理后台
+          </Link>
+        </div>
+      ) : null}
 
       {/* 极简页头 */}
       <header className="submit-header">

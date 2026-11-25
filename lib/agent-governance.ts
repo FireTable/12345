@@ -1464,13 +1464,74 @@ const IntakeLlmSchema = z.object({
   contactEmail: z.string().optional().default(""),
 });
 
+const PROGRESS_QUERY_RE =
+  /(?:处理(?:得|的)?怎么样了?|处理进度|进度(?:怎么样|如何)|查(?:一下|看)?进度|办(?:得|的)?怎么样了?|办好(?:了)?吗|办结了吗|派单了(?:吗|没)|有没有(?:人)?(?:处理|跟进|管|受理|回复)|现在怎么样了?|进展如何|跟进情况|到哪一步了?|工单进度|诉求进度|客诉进度)/;
+
+const CONCRETE_INCIDENT_RE =
+  /(?:噪音|噪声|油烟|废气|恶臭|异味|排污|黑臭|漏水|爆管|停水|停电|积水|下水道|路灯|井盖|占道|违停|违建|垃圾|欠薪|工资|社保|退款|退货|假货|假冒|破损|损坏|变质|未发货|没发货|不发货|发错货|没退款|不退款|烧烤|大排档|工地|施工|打桩|消防|飞线|跳楼|食物中毒|态度(?:很|太|非常)?差|欺诈|太吵|很吵|吵死|投诉(?:一下|一家|某|楼下|旁边|对面|这家))/;
+
+/**
+ * 识别纯进度查询话术（未夹带新的具体诉求、地址、主体或联系方式），避免被当作新诉求建单草稿。
+ */
+export function isProgressQueryUtterance(raw: string): boolean {
+  const text = (raw || "").trim();
+  if (!text || !PROGRESS_QUERY_RE.test(text)) {
+    return false;
+  }
+  if (extractPhoneFromText(text) || extractEmailFromText(text)) {
+    return false;
+  }
+  if (
+    extractAddressSlot(text, "GOV_12345") ||
+    extractAddressSlot(text, "ECOMMERCE_CS") ||
+    extractSubjectSlot(text, "GOV_12345") ||
+    extractSubjectSlot(text, "ECOMMERCE_CS")
+  ) {
+    return false;
+  }
+  if (CONCRETE_INCIDENT_RE.test(text)) {
+    return false;
+  }
+
+  const remainder = text
+    .replace(new RegExp(PROGRESS_QUERY_RE.source, "g"), "")
+    .replace(
+      /(?:请问|一下|我想|我要|帮我|查一下|看看|查询|麻烦|您|你|我(?:之前|上次|刚才|最近)?(?:提交|反映|报|发)?的?(?:那个|那条|那笔|这个)?(?:工单|单子|诉求|客诉|事情|问题|情况)?|现在|到底|究竟|已经|还是|了|呢|啊|呀|吗|嘛|？|\?|。|！|!|，|,|；|;|\s)/g,
+      ""
+    )
+    .trim();
+
+  return remainder.length < 10;
+}
+
+function citizenProgressStatusLabel(status?: string | null): string {
+  const trimmed = (status || "").trim();
+  const upper = trimmed.toUpperCase();
+  if (upper === "REOPENED" || trimmed === "已重开") return "已重开";
+  if (isTicketResolvedStatus(trimmed)) return "已办结";
+  if (
+    upper === "IN_PROGRESS" ||
+    upper === "DISPATCHED" ||
+    upper === "PROCESSING" ||
+    upper === "VERIFIED" ||
+    trimmed === "处理中" ||
+    trimmed === "处置中" ||
+    trimmed === "已派单"
+  ) {
+    return "处理中";
+  }
+  return "待派单";
+}
+
 export async function processIntakeChat(input: {
   regionId: string;
+  userId?: string;
   messages: IntakeChatMessage[];
   draft?: Partial<IntakeDraft>;
   signal?: AbortSignal;
 }): Promise<{
   domainType: DomainType;
+  intent?: "INTAKE" | "PROGRESS_QUERY";
   reply: string;
   draft: IntakeDraft;
   missingFields: string[];
@@ -1487,6 +1548,52 @@ export async function processIntakeChat(input: {
     .filter((m) => m.role === "user" && m.content.trim().length > 0)
     .map((m) => m.content.trim());
   const latestUserText = userTexts[userTexts.length - 1] || "";
+  const existingDraftContent = clampStr(input.draft?.content, 2000);
+
+  if (isProgressQueryUtterance(latestUserText) && existingDraftContent.length < 6) {
+    const unchangedDraft: IntakeDraft = {
+      title: clampStr(input.draft?.title, 48),
+      content: existingDraftContent,
+      subdistrict: clampStr(input.draft?.subdistrict, 64),
+      category: clampStr(input.draft?.category, 64),
+      subject: clampStr(input.draft?.subject, 120),
+      address: clampStr(input.draft?.address, 120),
+      contactPhone: clampStr(input.draft?.contactPhone, 32),
+      contactEmail: clampStr(input.draft?.contactEmail, 120),
+    };
+
+    let reply: string;
+    if (input.userId) {
+      const tickets = await listCitizenTickets(input.userId, input.regionId);
+      if (tickets.length > 0) {
+        const latest = tickets[0];
+        const statusLabel = citizenProgressStatusLabel(latest.status);
+        const areaLabel = domainType === "ECOMMERCE_CS" ? "渠道/仓网" : "所属镇街";
+        const logNote = latest.latestLog?.note ? ` 最新处置记录：${latest.latestLog.note}` : "";
+        const extraHint =
+          tickets.length > 1
+            ? ` 您在本站点共有 ${tickets.length} 条工单，可在下方进度区查看全部明细。`
+            : "";
+        reply = `您最近提交的工单「${latest.title}」（单号：${latest.ticketNo}）当前状态为「${statusLabel}」，${areaLabel}为「${latest.subdistrict || "待确认"}」，分类为「${latest.category || "待确认"}」。${logNote}${extraHint}`.trim();
+      } else {
+        reply =
+          "您目前在该站点还没有已提交的工单记录。如果您有需要反映的问题，可以直接告诉我具体情况和发生地点，我来帮您整理登记。";
+      }
+    } else {
+      reply =
+        "暂未获取到您的已提交工单记录，请在下方工单进度区确认登录后查看；如需反映新问题，可以直接描述具体情况。";
+    }
+
+    return {
+      domainType,
+      intent: "PROGRESS_QUERY",
+      reply,
+      draft: unchangedDraft,
+      missingFields: [],
+      readyToSubmit: false,
+      usedLlm: false,
+    };
+  }
   const allUserText = userTexts.join("；");
   // 已留有效联系方式时，不再把疑似错位号码当作“联系方式尝试”（可能是订单号/编号等正文要素）
   const draftHasContact = Boolean(
@@ -1802,12 +1909,95 @@ export async function processIntakeChat(input: {
 
   return {
     domainType,
+    intent: "INTAKE",
     reply,
     draft: mergedDraft,
     missingFields,
     readyToSubmit,
     usedLlm,
   };
+}
+
+export class DuplicateTicketError extends Error {
+  readonly code = "DUPLICATE_TICKET" as const;
+  readonly existingTicketNo: string;
+  readonly existingTicketId: string;
+
+  constructor(existingTicketId: string, existingTicketNo: string) {
+    super(
+      `您近期已提交过相同的在办工单（单号：${existingTicketNo}），无需重复建单，可在下方进度中查看处理状态。`
+    );
+    this.name = "DuplicateTicketError";
+    this.existingTicketId = existingTicketId;
+    this.existingTicketNo = existingTicketNo;
+  }
+}
+
+function normalizeForDuplicateCompare(raw: string): string {
+  return (raw || "")
+    .toLowerCase()
+    .replace(/[\s，,。！？!?；;：:、“”"'‘’（）()【】\[\]《》<>·—\-_~]+/g, "");
+}
+
+function buildDuplicateCompareText(title: string, content: string): string {
+  const normTitle = normalizeForDuplicateCompare(title);
+  const normContent = normalizeForDuplicateCompare(content);
+  if (!normTitle || normContent.includes(normTitle)) {
+    return normContent;
+  }
+  return `${normTitle}${normContent}`;
+}
+
+function extractCharBigrams(text: string): Set<string> {
+  const bigrams = new Set<string>();
+  for (let i = 0; i < text.length - 1; i += 1) {
+    bigrams.add(text.slice(i, i + 2));
+  }
+  return bigrams;
+}
+
+function isDuplicateNormalizedText(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  if (a === b) return true;
+
+  const minLen = Math.min(a.length, b.length);
+  const maxLen = Math.max(a.length, b.length);
+  if ((a.includes(b) || b.includes(a)) && minLen / maxLen >= 0.75) {
+    return true;
+  }
+
+  const bigramsA = extractCharBigrams(a);
+  const bigramsB = extractCharBigrams(b);
+  if (bigramsA.size === 0 || bigramsB.size === 0) return false;
+
+  let intersection = 0;
+  for (const bg of bigramsA) {
+    if (bigramsB.has(bg)) intersection += 1;
+  }
+  const union = bigramsA.size + bigramsB.size - intersection;
+  const jaccard = union > 0 ? intersection / union : 0;
+  if (jaccard >= 0.65) return true;
+
+  const minBigrams = Math.min(bigramsA.size, bigramsB.size);
+  if (minBigrams >= 5 && intersection / minBigrams >= 0.75) {
+    return true;
+  }
+  return false;
+}
+
+function areSubmissionsDuplicate(
+  aTitle: string,
+  aContent: string,
+  bTitle: string,
+  bContent: string
+): boolean {
+  const fullA = buildDuplicateCompareText(aTitle, aContent);
+  const fullB = buildDuplicateCompareText(bTitle, bContent);
+  if (isDuplicateNormalizedText(fullA, fullB)) return true;
+
+  const bodyA = normalizeForDuplicateCompare(aContent);
+  const bodyB = normalizeForDuplicateCompare(bContent);
+  return bodyA.length >= 6 && bodyB.length >= 6 && isDuplicateNormalizedText(bodyA, bodyB);
 }
 
 export async function submitCitizenTicket(input: {
@@ -1824,13 +2014,15 @@ export async function submitCitizenTicket(input: {
   contactEmail?: string;
   source?: "FORM" | "AGENT_VOICE";
   skipAutoCluster?: boolean;
+  allowDuplicate?: boolean;
 }) {
   const content = input.content.trim();
   const subdistrict = input.subdistrict.trim();
   const category = input.category.trim();
   const domainProfile = await getRegionDomainProfile(input.regionId);
   const isEcommerce = domainProfile.domainType === "ECOMMERCE_CS";
-  const { region } = await getRegionDb(input.regionId);
+  const { region, schemaName } = await getRegionDb(input.regionId);
+  assertSafeSchemaName(schemaName);
   const vocab = await getRegionVocabulary(input.regionId);
 
   const anonContent = anonymize(content);
@@ -1838,6 +2030,54 @@ export async function submitCitizenTicket(input: {
     clampStr(input.title, 120) ||
     content.split(/[。！？；;\n]/)[0]?.trim().slice(0, 48) ||
     (isEcommerce ? "买家售后客诉" : "市民诉求");
+
+  await ensureCitizenSubmissionsTable();
+  if (input.allowDuplicate !== true) {
+    const cutoffIso = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const recentRows = await sql.unsafe<
+      Array<{
+        ticket_id: string;
+        ticket_no: string;
+        ticket_title: string | null;
+        ticket_content: string | null;
+        ticket_status: string | null;
+      }>
+    >(
+      `
+      SELECT
+        cs.ticket_id,
+        COALESCE(t.ticket_no, cs.ticket_no) AS ticket_no,
+        COALESCE(t.title, cs.title, '') AS ticket_title,
+        COALESCE(t.content, '') AS ticket_content,
+        COALESCE(t.status, 'PENDING') AS ticket_status
+      FROM public.citizen_submissions cs
+      INNER JOIN "${schemaName}".tickets t ON t.id = cs.ticket_id
+      WHERE cs.user_id = $1
+        AND cs.region_id = $2
+        AND cs.created_at >= $3::timestamptz
+        AND COALESCE(t.subdistrict, cs.subdistrict, '') = $4
+        AND COALESCE(t.source_category, cs.category, '') = $5
+        AND upper(COALESCE(t.status, 'PENDING')) NOT IN ('RESOLVED', 'FINISHED', 'CLOSED')
+      ORDER BY cs.created_at DESC
+      LIMIT 20
+      `,
+      [input.userId, input.regionId, cutoffIso, subdistrict, category]
+    );
+
+    for (const row of recentRows) {
+      if (isTicketResolvedStatus(row.ticket_status)) continue;
+      if (
+        areSubmissionsDuplicate(
+          cleanTitle,
+          content,
+          row.ticket_title || "",
+          row.ticket_content || ""
+        )
+      ) {
+        throw new DuplicateTicketError(row.ticket_id, row.ticket_no);
+      }
+    }
+  }
 
   let urgency: "NORMAL" | "MEDIUM" | "URGENT" = "NORMAL";
   let slaHours = 120;
@@ -1924,7 +2164,8 @@ export async function submitCitizenTicket(input: {
   record.subdistrict = clampStr(subdistrict, 64);
   record.sourceCategory = clampStr(category, 64);
   record.address = clampNullable(input.address, 255);
-  record.canonicalSubject = clampNullable(input.subject, 255);
+  const rawSubject = clampNullable(input.subject, 255);
+  record.canonicalSubject = rawSubject && !isGenericSubject(rawSubject) ? rawSubject : null;
   record.urgency = urgency;
   record.slaHours = slaHours;
   record.stabilityRisk = stabilityRisk;
@@ -1938,7 +2179,6 @@ export async function submitCitizenTicket(input: {
     throw new Error("工单写入租户数据库失败");
   }
 
-  await ensureCitizenSubmissionsTable();
   const submissionId = `sub-${Date.now()}-${randomUUID().slice(0, 8)}`;
   await sql`
     INSERT INTO public.citizen_submissions (

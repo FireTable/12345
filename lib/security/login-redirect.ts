@@ -83,6 +83,12 @@ export function resolvePostLoginTarget(
   if (parsed.pathname === "/login" || parsed.pathname.startsWith("/login/")) {
     return defaultTarget;
   }
+  if (
+    normalizedRole === "admin" &&
+    (parsed.pathname === "/submit" || parsed.pathname.startsWith("/submit/"))
+  ) {
+    return "/";
+  }
   if (normalizedRole === "user" && isAdminRoutePath(parsed.pathname)) {
     return "/submit";
   }
