@@ -12,13 +12,27 @@
  */
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
-  // 本地看演示时设 CIVIC_SKIP_BOOTSTRAP=1，避免一启动就把未处理工单送进研判。
-  if (process.env.CIVIC_SKIP_BOOTSTRAP === "1") return;
 
-  // 延迟 2s 等 next-server 完全监听，再 fire-and-forget 触发 bootstrap。
+  // 延迟 2s 等 next-server 完全监听，再 fire-and-forget 触发内部初始化任务。
   // 失败也不阻塞 server 启动 —— user 可手动重试或下次 trigger 自然覆盖。
   setTimeout(() => {
     const port = process.env.PORT || "3000";
+
+    if (process.env.CIVIC_DISABLE_DAILY_REPORT_SCHEDULER !== "1") {
+      fetch(`http://127.0.0.1:${port}/api/internal/daily-report-scheduler`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: "instrumentation" }),
+      }).catch((err: any) => {
+        console.warn(
+          `[instrumentation] daily report scheduler trigger failed: ${err?.message || err}`
+        );
+      });
+    }
+
+    // 本地看演示或生产容器禁用开机重聚类时设 CIVIC_SKIP_BOOTSTRAP=1。
+    if (process.env.CIVIC_SKIP_BOOTSTRAP === "1") return;
+
     fetch(`http://127.0.0.1:${port}/api/internal/cluster-bootstrap`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

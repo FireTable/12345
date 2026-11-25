@@ -151,7 +151,7 @@ export async function runScheduledDailyReportsForDomain(now = new Date()): Promi
   return { triggered, skipped, failed };
 }
 
-function scheduleNextDailyReportTick(): void {
+function scheduleNextDailyReportTick(): number {
   const delayMs = computeNextShanghaiTriggerMs(
     new Date(),
     DAILY_REPORT_TARGET_HOUR_SHANGHAI,
@@ -176,6 +176,7 @@ function scheduleNextDailyReportTick(): void {
 
   timer.unref?.();
   globalThis.__civic_daily_report_scheduler_timer = timer;
+  return delayMs;
 }
 
 /**
@@ -202,5 +203,8 @@ export function startDailyReportScheduler(): void {
     });
   }
 
-  scheduleNextDailyReportTick();
+  const nextDelayMs = scheduleNextDailyReportTick();
+  console.log(
+    `[daily-report-scheduler] started (daily ${pad2(DAILY_REPORT_TARGET_HOUR_SHANGHAI)}:${pad2(DAILY_REPORT_TARGET_MINUTE_SHANGHAI)} Asia/Shanghai, next tick in ${Math.round(nextDelayMs / 60000)}m)`
+  );
 }
