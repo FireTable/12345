@@ -31,8 +31,50 @@ import { getLlmPool } from "../llm-pool";
 import { anonymize, deanonymize } from "@civic/anonymizer";
 import { SystemOneEngine } from "@civic/system-one";
 import { LLM_TOKENS } from "@/lib/tokens";
+import { LOW_CONFIDENCE_THRESHOLD } from "@/lib/confidence";
+import { RULES, isGenericOrPlaceholderSubject } from "../rules";
+import { familyLabel, profileTicket } from "../ticket-profile";
 
-export const LOW_CONFIDENCE_THRESHOLD = 60;
+export { LOW_CONFIDENCE_THRESHOLD };
+
+export function sanitizeExtraction(item: ExtractedTicketItem): ExtractedTicketItem {
+  const summarizeTitle = String(item.summarizeTitle || "").trim();
+  const rawSubject = String(item.subject || "").trim();
+  const subject = rawSubject && isGenericOrPlaceholderSubject(rawSubject) ? "" : rawSubject;
+  const location = String(item.location || "").trim();
+  const eventType = String(item.eventType || "").trim();
+  let confidence = Number.isFinite(Number(item.confidence)) ? Number(item.confidence) : 85;
+
+  if (!subject) {
+    const hasMicroLocation = Boolean(
+      location &&
+        !RULES.adminOnlyLocation.test(location) &&
+        RULES.microLocationHint.test(location)
+    );
+    const hasSpecificEventType = Boolean(
+      eventType &&
+        eventType !== "民生诉求跟进" &&
+        eventType !== "其他" &&
+        eventType !== "综合民生"
+    );
+    if (!hasMicroLocation) {
+      confidence = Math.min(confidence, 55);
+    } else if (hasSpecificEventType) {
+      confidence = Math.min(confidence, 76);
+    } else {
+      confidence = Math.min(confidence, 68);
+    }
+  }
+
+  return {
+    ...item,
+    summarizeTitle,
+    subject,
+    location,
+    eventType,
+    confidence,
+  };
+}
 
 function clipField(value: string | null | undefined, max: number): string | null {
   const text = (value ?? "").trim();
@@ -185,7 +227,7 @@ async function extractBatchWithLLM(
         ? String(rawTown).trim()
         : null;
 
-    return {
+    return sanitizeExtraction({
       index: idx,
       summarizeTitle: String(item.summarizeTitle || "").trim(),
       subject: String(item.subject || "").trim(),
@@ -194,7 +236,7 @@ async function extractBatchWithLLM(
       eventType: String(item.eventType || "").trim(),
       category: item.category || "城市管理",
       confidence: Number(item.confidence || 85),
-    };
+    });
   };
 
   const prompt = buildBatchExtractionPrompt(maskedTickets, vocab);
@@ -250,9 +292,6 @@ async function extractBatchWithLLM(
           // 标题和事件至少要有一个，否则这行没有可用要素。主体或地点为空是合法的：
           // 政策咨询常常没有可核验的对象和门牌，后面合并时再用工单镇街兜底，不要整批重试。
           if (!sanitized.summarizeTitle && !sanitized.eventType) continue;
-          if (!sanitized.subject) {
-            sanitized.confidence = Math.min(sanitized.confidence, 55);
-          }
           const key = startIndex + item.index - 1;
           result.set(key, sanitized);
           fromLlm.add(key);
@@ -282,33 +321,43 @@ async function extractBatchWithLLM(
 /**
  * 通用正则兜底提取器（当网络离线时备用，通用中文模式，零特定地名硬编码）
  */
-function fallbackDynamicExtraction(ticket: RawTicket, defaultCategory = "综合民生"): ExtractedTicketItem {
+export function fallbackDynamicExtraction(ticket: RawTicket, defaultCategory = "综合民生"): ExtractedTicketItem {
   const content = typeof ticket?.content === "string" ? ticket.content : "";
+  const title = typeof ticket?.title === "string" ? ticket.title : "";
   const subdistrict = explicitAdmin(ticket?.subdistrict) || "";
   const district = explicitAdmin(ticket?.district) || "";
+  const profiled = profileTicket({ title, content, subdistrict: ticket?.subdistrict });
 
   // 1. 车牌号基础识别
   const matchPlate = content.match(/(?:车牌[号为：:\s]*|小车|车辆|车牌[：:\s]*)([粤京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵青藏川宁琼][A-Z][·•・\- ]?(?:[A-Z0-9]{4,5}[挂学警港澳]|[A-Z0-9]{5,6}))(?![A-Z0-9挂学警港澳])/);
   const plateSubject = matchPlate && matchPlate[1] ? `${matchPlate[1].replace(/[·•・\-\s]+/g, "").toUpperCase()}车辆` : "";
 
-  // 2. 涉事主体（优先车牌或直接实体）
-  const subject = plateSubject || "涉事方";
+  // 2. 涉事主体（优先车牌或规则抽取到的真实主体；抽不到时留空，绝不填「涉事方」）
+  const rawSubject = plateSubject || profiled.subject || "";
+  const subject = rawSubject && !isGenericOrPlaceholderSubject(rawSubject) ? rawSubject : "";
 
-  // 3. 地点兜底（优先工单已有镇街/区县信息）
-  const location = subdistrict ? `${subdistrict}` : (district || "辖区");
+  // 3. 地点兜底（优先规则抽取到的微观地点，再回退工单已有镇街/区县信息）
+  const location = profiled.place || (subdistrict ? `${subdistrict}` : (district || "辖区"));
 
-  // 4. 分类与诉求类型：直接继承工单自带分类或站点默认分类，绝不在代码中通过关键字死逻辑硬编码
-  const category = (ticket?.sourceCategory as any) || defaultCategory;
-  const eventType = ticket?.title || ticket?.sourceCategory || "民生诉求跟进";
+  // 4. 分类与诉求类型：优先工单自带分类或规则分类
+  const category = (ticket?.sourceCategory as any) || profiled.category || defaultCategory;
+  const eventType = familyLabel(profiled.family) || title || ticket?.sourceCategory || "民生诉求跟进";
+
+  const hasConcretePlace = Boolean(
+    profiled.place &&
+      !RULES.adminOnlyLocation.test(profiled.place) &&
+      (RULES.microLocationHint.test(profiled.place) || profiled.place.length >= 3)
+  );
+  const confidence = hasConcretePlace && profiled.family ? 62 : 50;
 
   return {
     index: 0,
-    summarizeTitle: ticket?.title || content.slice(0, 30),
+    summarizeTitle: title || content.slice(0, 30),
     subject,
     location,
     eventType,
     category,
-    confidence: 50,
+    confidence,
   };
 }
 
@@ -687,7 +736,9 @@ export async function extractNode(
     const aiExtracted = extractionMap.get(index);
     const summarizeTitle = aiExtracted?.summarizeTitle || ticket.summarizeTitle || fallback.summarizeTitle;
     const rawSubject = (aiExtracted?.subject || "").trim() || fallback.subject;
-    const canonicalSubject = resolveEntityAlias(rawSubject, aliasMap);
+    const aliasedSubject = resolveEntityAlias(rawSubject, aliasMap);
+    const canonicalSubject =
+      aliasedSubject && isGenericOrPlaceholderSubject(aliasedSubject) ? "" : aliasedSubject;
     const rawLocation = (aiExtracted?.location || "").trim() || fallback.location;
     const eventType = (aiExtracted?.eventType || "").trim() || fallback.eventType;
     const category =

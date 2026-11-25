@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { getRegionDb, type DB } from "@/db/client";
-import { themesTable, ticketsTable, ticketThemesTable } from "@/db/schema";
+import { reviewQueueTable, themesTable, ticketsTable, ticketThemesTable } from "@/db/schema";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { normalizeStatusCode, regionLabel, toClusterDto } from "@/lib/civic-dto";
 import { clusterRegionLabel } from "@/lib/civic-queries";
 import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 import { listDisposalLogs, recordDisposalLog, resolveOperatorName } from "@/lib/disposal";
+import {
+  ensureTicketThemesVerificationColumns,
+  loadThemeMemberStats,
+} from "@/lib/ticket-themes-schema";
 import { invalidateCivicAggregates } from "@/lib/civic-cache";
 import { broadcastDataRefresh } from "@/lib/sse-broadcaster";
 import { requireAdmin } from "@/lib/auth/rbac";
@@ -17,6 +21,8 @@ type ClusterPatchBody = {
   eta?: string;
   note?: string;
   ticketId?: string;
+  ticketIds?: unknown;
+  operator?: string;
   syncMembers?: boolean;
 };
 
@@ -56,11 +62,12 @@ async function getThemeMemberTicketIds(db: DB, themeId: string): Promise<string[
 
 async function loadClusterDetailPayload(regionId: string, id: string) {
   const { db } = await getRegionDb(regionId);
+  await ensureTicketThemesVerificationColumns(db, regionId);
   const themes = await db.select().from(themesTable).where(eq(themesTable.id, id)).limit(1);
   const theme = themes[0];
   if (!theme) return null;
 
-  const [townRows, fakeCountRows, disposalLogs] = await Promise.all([
+  const [townRows, fakeCountRows, disposalLogs, memberStats] = await Promise.all([
     db
       .select({ subdistrict: ticketsTable.subdistrict })
       .from(ticketThemesTable)
@@ -80,6 +87,7 @@ async function loadClusterDetailPayload(regionId: string, id: string) {
         )
       ),
     listDisposalLogs(regionId, "THEME", id),
+    loadThemeMemberStats(db, id),
   ]);
 
   const towns = new Set<string>();
@@ -98,6 +106,7 @@ async function loadClusterDetailPayload(regionId: string, id: string) {
     riskReason: theme.riskReason || "",
     fakeClosureCount: Number(fakeCountRows[0]?.count || 0),
     disposalLogs,
+    memberStats,
   };
 }
 
@@ -127,6 +136,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const { id } = await params;
     const regionId = await resolveRequestRegionId(req);
     const { db } = await getRegionDb(regionId);
+    await ensureTicketThemesVerificationColumns(db, regionId);
 
     const themes = await db.select().from(themesTable).where(eq(themesTable.id, id)).limit(1);
     const theme = themes[0];
@@ -147,16 +157,22 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       "RESOLVE",
       "REOPEN",
       "DETACH_TICKET",
+      "VERIFY_TICKET",
+      "UNVERIFY_TICKET",
+      "BATCH_VERIFY_TICKETS",
     ]);
     if (!validActions.has(action)) {
       return NextResponse.json({ success: false, error: `Unsupported action: ${action}` }, { status: 400 });
     }
 
-    const operator = await resolveOperatorName(req);
+    const bodyOperator =
+      typeof body.operator === "string" ? body.operator.trim().slice(0, 64) : "";
+    const operator = bodyOperator || (await resolveOperatorName(req));
     const fromStatus = normalizeStatusCode(theme.handlingStatus);
     const note = typeof body.note === "string" ? body.note.trim() : "";
     const ownerInput = typeof body.owner === "string" ? body.owner.trim().slice(0, 64) : "";
     const now = new Date();
+    let verificationSummary: Record<string, unknown> | null = null;
 
     const applyResolve = async (viaMeta?: Record<string, unknown>) => {
       const nextEta = body.eta ? parseEtaDate(body.eta, 0) : (theme.handlingEta ?? now);
@@ -420,13 +436,199 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
           meta: { themeId: id },
         });
       }
+    } else if (action === "VERIFY_TICKET" || action === "UNVERIFY_TICKET") {
+      const rawTicketId = typeof body.ticketId === "string" ? body.ticketId.trim() : "";
+      if (!rawTicketId) {
+        return NextResponse.json({ success: false, error: "ticketId is required" }, { status: 400 });
+      }
+
+      const ticketRows = await db
+        .select({ id: ticketsTable.id, ticketNo: ticketsTable.ticketNo })
+        .from(ticketsTable)
+        .where(or(eq(ticketsTable.id, rawTicketId), eq(ticketsTable.ticketNo, rawTicketId)))
+        .limit(1);
+      const targetTicket = ticketRows[0];
+      const realTicketId = targetTicket?.id || rawTicketId;
+      const isVerify = action === "VERIFY_TICKET";
+
+      const updatedLinks = await db
+        .update(ticketThemesTable)
+        .set({
+          humanVerified: isVerify,
+          verifiedBy: isVerify ? operator : null,
+          verifiedAt: isVerify ? now : null,
+        })
+        .where(and(eq(ticketThemesTable.themeId, id), eq(ticketThemesTable.ticketId, realTicketId)))
+        .returning({ ticketId: ticketThemesTable.ticketId });
+
+      if (updatedLinks.length === 0) {
+        return NextResponse.json(
+          { success: false, error: "该工单不在当前专题群组中" },
+          { status: 404 }
+        );
+      }
+
+      if (isVerify) {
+        await db
+          .update(reviewQueueTable)
+          .set({
+            status: "REVIEWED",
+            operator,
+            reviewedAt: now,
+          })
+          .where(
+            and(
+              eq(reviewQueueTable.ticketId, realTicketId),
+              eq(reviewQueueTable.status, "PENDING")
+            )
+          );
+      }
+
+      await recordDisposalLog({
+        regionId,
+        targetType: "THEME",
+        targetId: id,
+        action,
+        fromStatus,
+        toStatus: fromStatus,
+        owner: theme.handlingOwner || null,
+        operator,
+        note:
+          note ||
+          (isVerify
+            ? `人工确认工单 ${targetTicket?.ticketNo || realTicketId} 归属当前群组`
+            : `撤销工单 ${targetTicket?.ticketNo || realTicketId} 的人工确认`),
+        meta: {
+          ticketId: realTicketId,
+          ticketNo: targetTicket?.ticketNo || null,
+          humanVerified: isVerify,
+        },
+      });
+
+      if (targetTicket) {
+        await recordDisposalLog({
+          regionId,
+          targetType: "TICKET",
+          targetId: realTicketId,
+          action,
+          fromStatus: null,
+          toStatus: null,
+          owner: theme.handlingOwner || null,
+          operator,
+          note:
+            note ||
+            (isVerify
+              ? `人工确认归属专题群组 ${theme.title} (${id})`
+              : `撤销归属专题群组 ${theme.title} (${id}) 人工确认`),
+          meta: { themeId: id, humanVerified: isVerify },
+        });
+      }
+
+      verificationSummary = {
+        action,
+        ticketId: realTicketId,
+        ticketNo: targetTicket?.ticketNo || null,
+        humanVerified: isVerify,
+        verifiedBy: isVerify ? operator : null,
+        verifiedAt: isVerify ? now.toISOString() : null,
+        updatedCount: updatedLinks.length,
+      };
+    } else if (action === "BATCH_VERIFY_TICKETS") {
+      if (!Array.isArray(body.ticketIds)) {
+        return NextResponse.json({ success: false, error: "ticketIds array is required" }, { status: 400 });
+      }
+      const rawIds = Array.from(
+        new Set(
+          body.ticketIds
+            .map((item) => (typeof item === "string" ? item.trim() : ""))
+            .filter(Boolean)
+        )
+      ).slice(0, 100);
+      if (rawIds.length === 0) {
+        return NextResponse.json({ success: false, error: "ticketIds must not be empty" }, { status: 400 });
+      }
+
+      const matchedTickets = await db
+        .select({ id: ticketsTable.id, ticketNo: ticketsTable.ticketNo })
+        .from(ticketsTable)
+        .where(or(inArray(ticketsTable.id, rawIds), inArray(ticketsTable.ticketNo, rawIds)));
+      const idByAny = new Map<string, string>();
+      for (const t of matchedTickets) {
+        idByAny.set(t.id, t.id);
+        if (t.ticketNo) idByAny.set(t.ticketNo, t.id);
+      }
+      const resolvedTicketIds = Array.from(new Set(rawIds.map((raw) => idByAny.get(raw) || raw)));
+
+      const updatedLinks = await db
+        .update(ticketThemesTable)
+        .set({
+          humanVerified: true,
+          verifiedBy: operator,
+          verifiedAt: now,
+        })
+        .where(
+          and(
+            eq(ticketThemesTable.themeId, id),
+            inArray(ticketThemesTable.ticketId, resolvedTicketIds)
+          )
+        )
+        .returning({ ticketId: ticketThemesTable.ticketId });
+      const verifiedIds = updatedLinks.map((row) => row.ticketId);
+
+      if (verifiedIds.length > 0) {
+        await db
+          .update(reviewQueueTable)
+          .set({
+            status: "REVIEWED",
+            operator,
+            reviewedAt: now,
+          })
+          .where(
+            and(
+              inArray(reviewQueueTable.ticketId, verifiedIds),
+              eq(reviewQueueTable.status, "PENDING")
+            )
+          );
+      }
+
+      await recordDisposalLog({
+        regionId,
+        targetType: "THEME",
+        targetId: id,
+        action: "BATCH_VERIFY_TICKETS",
+        fromStatus,
+        toStatus: fromStatus,
+        owner: theme.handlingOwner || null,
+        operator,
+        note: note || `批量确认 ${verifiedIds.length} 条工单归属当前群组`,
+        meta: {
+          requestedCount: rawIds.length,
+          verifiedCount: verifiedIds.length,
+          ticketIds: verifiedIds,
+        },
+      });
+
+      verificationSummary = {
+        action: "BATCH_VERIFY_TICKETS",
+        ticketIds: verifiedIds,
+        humanVerified: true,
+        verifiedBy: operator,
+        verifiedAt: now.toISOString(),
+        updatedCount: verifiedIds.length,
+      };
     }
 
     invalidateCivicAggregates(regionId);
     broadcastDataRefresh(regionId);
 
     const updatedPayload = await loadClusterDetailPayload(regionId, id);
-    return NextResponse.json(updatedPayload);
+    if (!updatedPayload) {
+      return NextResponse.json({ success: false, error: "not found" }, { status: 404 });
+    }
+    return NextResponse.json({
+      ...updatedPayload,
+      ...(verificationSummary ? { verification: verificationSummary } : {}),
+    });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Failed to update cluster";
     return NextResponse.json({ success: false, error: msg }, { status: 500 });

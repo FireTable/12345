@@ -200,6 +200,9 @@ export const ticketThemesTable = pgTable(
     themeId: varchar("theme_id", { length: 64 })
       .notNull()
       .references(() => themesTable.id, { onDelete: "cascade" }),
+    humanVerified: boolean("human_verified").notNull().default(false),
+    verifiedBy: varchar("verified_by", { length: 64 }),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

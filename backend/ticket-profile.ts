@@ -1,4 +1,5 @@
 import { extractSpatialCore, isSameSpatialEntity } from "./node/canonical-node";
+import { RULES, isGenericOrPlaceholderSubject } from "./rules";
 import { CATEGORY, matchTownshipName, type StandardCategoryName, type TownshipInfo } from "@/lib/vocabulary";
 import { assessCivicUrgency, hasCivicRedlineSignal } from "@civic/system-one";
 
@@ -82,13 +83,13 @@ const SUBJECT_PATTERNS = [
   /单位名称[:：]\s*([^，,。；;\n]{2,40})/,
   /(?:店名|招牌|名称)[:：]\s*([^，,。；;\n（(]{2,30})/,
   /招牌叫[“"「]([^”"」]{1,24})/,
-  /([\u4e00-\u9fffA-Za-z0-9·]{2,28}(?:有限公司|公司))/,
+  /([\u4e00-\u9fffA-Za-z0-9·]{2,28}(?:有限公司|公司|项目部))/,
   /项目名称[:：]\s*([^，,。；;\n]{2,40})/,
   /([\u4e00-\u9fff0-9·]{2,24}(?:酒馆|民宿|烧烤|清吧))/,
 ];
 
 const PLACE_PATTERN =
-  /([\u4e00-\u9fff]{2,12}(?:大道|路|巷|街(?!道)|小区|花园|苑|轩|村(?!委)|社区|工业区|美食城|市场))(\d+(?:、\d+)*号)?/;
+  /([\u4e00-\u9fff]{2,12}(?:(?:大道|路|街(?!道))[东西南北中]?(?![门侧边面段行])|巷|小区|花园|苑|轩|村(?!委)|社区|工业区|美食城|市场))(\d+(?:、\d+)*号)?/;
 
 export interface IncidentProfile {
   family: IssueFamily | null;
@@ -135,20 +136,53 @@ export function profileTicket(
     category: issue?.category ?? null,
     township,
     subject: extractSubject(text),
-    place: extractPlace(text),
+    place: extractPlace(text, township),
     fingerprint: fingerprintOf(content),
     urgency,
     urgent: urgency === "URGENT",
   };
 }
 
+function hasConcretePlace(place?: string | null): boolean {
+  const value = (place || "").trim();
+  if (!value || RULES.adminOnlyLocation.test(value)) return false;
+  return RULES.microLocationHint.test(value) || COMPOUND_SITE.test(value) || PLACE_PATTERN.test(value);
+}
+
+function hasConflictingConcretePlace(placeA?: string | null, placeB?: string | null): boolean {
+  if (!hasConcretePlace(placeA) || !hasConcretePlace(placeB)) return false;
+  const cleanA = placeA!.trim();
+  const cleanB = placeB!.trim();
+  if (!isSameSpatialEntity(cleanA, cleanB)) return true;
+  const doorA = cleanA.match(DOOR_NUMBER)?.[0];
+  const doorB = cleanB.match(DOOR_NUMBER)?.[0];
+  return Boolean(doorA && doorB && doorA !== doorB);
+}
+
 export function incidentsMatch(a: IncidentProfile, b: IncidentProfile): boolean {
-  if (a.fingerprint && a.fingerprint === b.fingerprint && (!a.family || !b.family || a.family === b.family)) {
+  if (a.family && b.family && a.family !== b.family) return false;
+  if (a.fingerprint && a.fingerprint === b.fingerprint) {
+    if (hasConflictingConcretePlace(a.place, b.place)) return false;
     return true;
   }
   if (!a.family || a.family !== b.family) return false;
   if (a.township && b.township && a.township !== b.township) return false;
-  if (a.subject && b.subject && sameSubject(a.subject, b.subject)) return true;
+
+  const subjA = a.subject && !isGenericOrPlaceholderSubject(a.subject) ? a.subject : null;
+  const subjB = b.subject && !isGenericOrPlaceholderSubject(b.subject) ? b.subject : null;
+  const sharedSubject = Boolean(subjA && subjB && sameSubject(subjA, subjB));
+
+  if (a.family === ISSUE_FAMILY.WAGE_ARREARS) {
+    if (hasConflictingConcretePlace(a.place, b.place)) return false;
+    if (sharedSubject) return true;
+    return placesMatch(a, b);
+  }
+
+  if (hasConcretePlace(a.place) && hasConcretePlace(b.place) && !isSameSpatialEntity(a.place!, b.place!)) {
+    return sharedSubject;
+  }
+
+  if (sharedSubject) return true;
   if (placesMatch(a, b)) return true;
   return false;
 }
@@ -263,27 +297,39 @@ function extractSubject(text: string): string | null {
 }
 
 function acceptSubject(raw: string): string | null {
-  const flattened = raw.replace(/\s+/g, "").replace(/[（(].*$/, "").replace(/[“”"「」]/g, "");
-  const tail = flattened.split(/为|在|于|：|:/).pop() || flattened;
-  const company = tail.match(/[\u4e00-\u9fffA-Za-z0-9·]{2,24}(?:有限公司|公司)/);
+  const flattened = raw
+    .replace(/\s+/g, "")
+    .replace(/[（(].*$/, "")
+    .replace(/[“”"「」]/g, "");
+  const tail = (flattened.split(/为|在|于|：|:/).pop() || flattened)
+    .replace(/^(?:市民|诉求人|反映人)?(?:反映|投诉|举报|致电称|称|关于)/, "")
+    .replace(/^[\u4e00-\u9fff]{1,6}(?:街道|镇)/, "");
+  const company = tail.match(/[\u4e00-\u9fffA-Za-z0-9·]{2,24}(?:有限公司|公司|项目部)/);
   const name = (company ? company[0] : tail).split("、")[0].replace(/[）)]+$/, "");
   if (name.length < 3 || name.length > 40) return null;
-  if (GENERIC_SUBJECT.test(name)) return null;
+  if (GENERIC_SUBJECT.test(name) || isGenericOrPlaceholderSubject(name)) return null;
   if (/无法|不清楚|不详|某某|不知名|无名|\d{4}年/.test(name)) return null;
   return name;
 }
 
-function extractPlace(text: string): string | null {
+function extractPlace(text: string, township?: string | null): string | null {
   const source = text
     .replace(/广东省|佛山市|广州市|顺德区|天河区/g, "")
     .replace(/[\u4e00-\u9fff]{1,8}(?:街道|镇)/g, "");
+  const townShort = township ? township.replace(/(?:街道|镇|乡)$/, "") : "";
   const global = new RegExp(PLACE_PATTERN.source, "g");
   let best: string | null = null;
   let bestScore = -1;
   let match: RegExpExecArray | null;
   while ((match = global.exec(source))) {
-    const place = tightenPlace(`${match[1]}${match[2] || ""}`);
+    let place = tightenPlace(`${match[1]}${match[2] || ""}`);
     if (!place) continue;
+    if (townShort && townShort.length >= 2 && place.startsWith(townShort)) {
+      const remainder = place.slice(townShort.length);
+      if (remainder.length >= 3 && PLACE_PATTERN.test(remainder)) {
+        place = remainder;
+      }
+    }
     const score = placeScore(place);
     if (score > bestScore) {
       best = place;
@@ -293,10 +339,18 @@ function extractPlace(text: string): string | null {
   return best;
 }
 
-/** 地点正则会吞进「市民来电反映」「日在」这类叙述，只留下后缀上的路名或小区。 */
+/** 地点正则会吞进「市民来电反映」「日在」这类叙述，只留下后缀上的路名或小区；同时剥离「某建设工程工地」「某号…」等占位后缀。 */
 function tightenPlace(raw: string): string | null {
   const tail = raw.split(/反映|位于|地址|来电|致电|投诉|表示|在|于|对|的|把|被/).pop() || raw;
-  const place = tail.replace(/^\d{1,2}日/, "").replace(/^(?:表示|的|了|是|为|到)+/, "");
+  const stripped = tail
+    .replace(/^\d{1,2}日/, "")
+    .replace(/^(?:表示|的|了|是|为|到)+/, "")
+    .replace(
+      /(?:某建设工程工地|某在建[\u4e00-\u9fffA-Za-z0-9]*工地|某号.*|某[\u4e00-\u9fffA-Za-z0-9]{0,16}(?:工地|项目|餐饮|湘菜馆|餐厅|商铺|店铺|公司|单位).*)$/,
+      ""
+    )
+    .trim();
+  const place = stripped;
   if (place.length < 3 || place.length > 24) return null;
   if (/(街道|镇)$/.test(place)) return null;
   if (/市民|反映|来电|致电|投诉|问题/.test(place)) return null;
@@ -323,6 +377,7 @@ function fingerprintOf(content: string): string {
 }
 
 function sameSubject(a: string, b: string): boolean {
+  if (isGenericOrPlaceholderSubject(a) || isGenericOrPlaceholderSubject(b)) return false;
   if (a === b) return true;
   const short = a.length <= b.length ? a : b;
   const long = a.length <= b.length ? b : a;

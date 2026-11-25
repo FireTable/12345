@@ -4,12 +4,37 @@
  */
 
 import type { MultiFrequencyTheme, EnrichedTicket } from "../state";
-import { RULES } from "../rules";
-import { isValidTownship, type RegionVocabulary } from "@/lib/vocabulary";
+import { RULES, isGenericOrPlaceholderSubject } from "../rules";
+import { extractSpatialCore } from "./canonical-node";
+import { profileTicket } from "../ticket-profile";
+import { canonicalizeCategory, isValidTownship, type RegionVocabulary } from "@/lib/vocabulary";
 
 export interface ValidationReport {
   passed: boolean;
   rejectedReason?: string;
+  issues?: string[];
+}
+
+const WILDCARD_CATEGORY_SET = new Set(["", "综合民生", "其他", "未分类"]);
+const SITE_SPECIFIC_HINT =
+  /欠薪|拖欠工资|克扣工资|工资未发|劳资|工地|施工|噪音|噪声|油烟|违停|占道|路灯|下水道|井盖|供水|停水|消防|垃圾|电梯|物业/;
+
+function normalizePlaceBucket(ticket: EnrichedTicket, vocab?: RegionVocabulary): string | null {
+  const profiled = profileTicket(
+    { title: ticket.title, content: ticket.content, subdistrict: ticket.subdistrict },
+    vocab?.townships || []
+  );
+  const raw = (profiled.place || ticket.canonicalLocation || ticket.address || "").trim();
+  if (!raw || RULES.adminOnlyLocation.test(raw)) return null;
+  const cleaned = raw
+    .replace(/^[\u4e00-\u9fff]{1,8}(?:省|市|区|县|街道|镇)/g, "")
+    .replace(/(?:某建设工程工地|某在建[\u4e00-\u9fffA-Za-z0-9]*工地|某号.*|某[\u4e00-\u9fffA-Za-z0-9]{0,16}(?:工地|项目|餐饮|湘菜馆|餐厅|商铺|店铺|公司|单位).*)$/, "")
+    .trim();
+  if (!cleaned || RULES.adminOnlyLocation.test(cleaned)) return null;
+  if (!RULES.microLocationHint.test(cleaned)) return null;
+  const core = extractSpatialCore(cleaned) || cleaned;
+  if (!core || RULES.adminOnlyLocation.test(core)) return null;
+  return core;
 }
 
 /**
@@ -23,12 +48,15 @@ export function validateSingleTheme(
   const subject = (theme.canonicalSubject || "").trim();
   const location = (theme.canonicalLocation || "").trim();
 
-  // 1. 涉事主体物理真实性校验：严禁空泛虚词作为独立聚类主体
+  // 1. 涉事主体物理真实性校验：严禁空泛虚词/占位词作为独立聚类主体
   if (!subject || subject.length < 2) {
     return { passed: false, rejectedReason: "主体名称过短或为空" };
   }
-  if ((RULES.genericSubjects as readonly string[]).includes(subject)) {
-    return { passed: false, rejectedReason: `涉事主体为通用虚词 [${subject}]，严禁单独成群` };
+  if (
+    (RULES.genericSubjects as readonly string[]).includes(subject) ||
+    isGenericOrPlaceholderSubject(subject)
+  ) {
+    return { passed: false, rejectedReason: `涉事主体为通用虚词或占位词 [${subject}]，严禁单独成群` };
   }
   if (RULES.genericSubjectSuffix.test(subject)) {
     return { passed: false, rejectedReason: `涉事主体包含非法泛化后缀 [${subject}]` };
@@ -72,6 +100,56 @@ export function validateSingleTheme(
     clusterTickets.reduce((acc, t) => acc + ((t as any).confidence || 80), 0) / clusterTickets.length;
   if (avgConfidence < 45) {
     return { passed: false, rejectedReason: `聚类工单平均抽取置信度过低 (${avgConfidence.toFixed(1)}分)` };
+  }
+
+  const issues: string[] = [];
+
+  // 6. 业务分类纯度校验：存在多种非泛化具体分类且主分类占比 < 75% 时拒绝
+  const categoryCounts = new Map<string, number>();
+  let categorizedTotal = 0;
+  for (const t of clusterTickets) {
+    const rawCat = (t.sourceCategory || "").trim();
+    if (!rawCat || WILDCARD_CATEGORY_SET.has(rawCat)) continue;
+    const normCat = canonicalizeCategory(rawCat) || rawCat;
+    if (WILDCARD_CATEGORY_SET.has(normCat)) continue;
+    categoryCounts.set(normCat, (categoryCounts.get(normCat) || 0) + 1);
+    categorizedTotal += 1;
+  }
+  if (categoryCounts.size > 1 && categorizedTotal > 0) {
+    const maxCatCount = Math.max(...categoryCounts.values());
+    if (maxCatCount / categorizedTotal < 0.75) {
+      issues.push(
+        `跨业务类型混杂（主分类占比 ${Math.round((maxCatCount / categorizedTotal) * 100)}% < 75%，包含 ${Array.from(categoryCounts.keys()).join("、")}）`
+      );
+    }
+  }
+
+  // 7. 场地/欠薪类主题空间纯度校验：>= 5 条具备微观地点的工单若主点位占比 < 50%，涉嫌多工地/多主体混杂
+  const themeContextText = `${theme.eventType || ""} ${theme.title || ""} ${theme.category || ""} ${subject} ${location}`;
+  const isSiteOrWageTheme =
+    SITE_SPECIFIC_HINT.test(themeContextText) ||
+    clusterTickets.some((t) => SITE_SPECIFIC_HINT.test(`${t.title || ""} ${t.eventType || ""}`));
+  if (isSiteOrWageTheme) {
+    const placeCounts = new Map<string, number>();
+    let concretePlaceTotal = 0;
+    for (const t of clusterTickets) {
+      const bucket = normalizePlaceBucket(t, vocab);
+      if (!bucket) continue;
+      placeCounts.set(bucket, (placeCounts.get(bucket) || 0) + 1);
+      concretePlaceTotal += 1;
+    }
+    if (concretePlaceTotal >= 5 && placeCounts.size > 1) {
+      const maxPlaceCount = Math.max(...placeCounts.values());
+      if (maxPlaceCount / concretePlaceTotal < 0.5) {
+        issues.push(
+          `多主体/多工地混杂（主点位占比 ${Math.round((maxPlaceCount / concretePlaceTotal) * 100)}% < 50%，涉及 ${placeCounts.size} 个不同点位）`
+        );
+      }
+    }
+  }
+
+  if (issues.length > 0) {
+    return { passed: false, rejectedReason: issues.join("；"), issues };
   }
 
   return { passed: true };

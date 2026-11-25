@@ -5,6 +5,7 @@
 import { incidentsMatch, type IncidentProfile } from "./ticket-profile";
 import {
   cosineSimilarity,
+  createGuardedIncidentUnion,
   shouldLinkIncidents,
   type IncidentLinkCandidate,
 } from "./same-incident-cluster";
@@ -65,32 +66,6 @@ export function rankNeighborIndexes(
     }
   }
   return pairs;
-}
-
-function createUnion(count: number): {
-  parent: number[];
-  unite: (left: number, right: number) => void;
-} {
-  const parent = Array.from({ length: count }, (_, index) => index);
-  const find = (index: number): number => {
-    let root = index;
-    while (parent[root] !== root) root = parent[root];
-    let cursor = index;
-    while (parent[cursor] !== root) {
-      const next = parent[cursor];
-      parent[cursor] = root;
-      cursor = next;
-    }
-    return root;
-  };
-  return {
-    parent,
-    unite(left: number, right: number) {
-      const a = find(left);
-      const b = find(right);
-      if (a !== b) parent[b] = a;
-    },
-  };
 }
 
 function linkPair(
@@ -157,7 +132,7 @@ export function clusterFromStoredNeighbors<T>(
   const candidates = items.map((item, index) => read(item, index));
   const pairs = neighborPairs ?? rankNeighborIndexes(candidates);
   const neighborKeys = new Set(pairs.map(([left, right]) => `${Math.min(left, right)}:${Math.max(left, right)}`));
-  const union = createUnion(items.length);
+  const union = createGuardedIncidentUnion(candidates);
   for (let i = 0; i < items.length; i++) {
     for (let j = i + 1; j < items.length; j++) {
       linkPair(candidates, neighborKeys, i, j, union.unite);
@@ -212,7 +187,7 @@ export async function clusterFromStoredNeighborsYielding<T>(
   const candidates = items.map((item, index) => read(item, index));
   const pairs = neighborPairs ?? (await rankNeighborIndexesYielding(candidates));
   const neighborKeys = new Set(pairs.map(([left, right]) => `${Math.min(left, right)}:${Math.max(left, right)}`));
-  const union = createUnion(items.length);
+  const union = createGuardedIncidentUnion(candidates);
   const every = Math.max(1, yieldEvery);
   let steps = 0;
   const visit = (left: number, right: number) => {

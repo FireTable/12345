@@ -617,6 +617,35 @@ function TicketsClientInner() {
     toast.success(`已导出本页 ${fmtNum(data.data.length)} 条`);
   }
 
+  function applyQuickCard(kind: "all" | "today" | "pending" | "urgent") {
+    const hasFacetFilters = Boolean(region || category || cluster || keyword || debouncedKeyword);
+    setRegion("");
+    setCategory("");
+    setCluster("");
+    setKeyword("");
+    setDebouncedKeyword("");
+    setPage(1);
+    setReviewPage(1);
+
+    if (kind === "all") {
+      setTab("all");
+      setTime("");
+    } else if (kind === "today") {
+      if (tab === "all" && time === "今天" && !hasFacetFilters) {
+        setTime("");
+      } else {
+        setTab("all");
+        setTime("今天");
+      }
+    } else if (kind === "pending") {
+      setTab("pending");
+      setTime("");
+    } else if (kind === "urgent") {
+      setTab("urgent");
+      setTime("");
+    }
+  }
+
   return (
     <>
       <div className="page-hero">
@@ -648,31 +677,21 @@ function TicketsClientInner() {
               label="工单总数"
               value={s.total}
               sub="当前库累计"
-              onClick={() => {
-                setTab("all");
-                setTime("");
-                setPage(1);
-                setReviewPage(1);
-              }}
-              className={tab === "all" && !time ? "ring-2 ring-blue-500/30" : ""}
+              onClick={() => applyQuickCard("all")}
+              className={
+                tab === "all" && !time && !region && !category && !cluster && !debouncedKeyword
+                  ? "ring-2 ring-blue-500/30"
+                  : ""
+              }
             />
             <StatCard
               icon={TrendingUp}
               tone="orange"
               label="今日新增"
               value={s.today}
-              sub={time === "今天" ? "正在查看今日工单" : "数据最新一日"}
-              onClick={() => {
-                if (time === "今天") {
-                  setTime("");
-                } else {
-                  setTime("今天");
-                  setTab("all");
-                }
-                setPage(1);
-                setReviewPage(1);
-              }}
-              className={time === "今天" ? "ring-2 ring-amber-500/30" : ""}
+              sub={tab === "all" && time === "今天" ? "正在查看今日工单" : "数据最新一日"}
+              onClick={() => applyQuickCard("today")}
+              className={tab === "all" && time === "今天" ? "ring-2 ring-amber-500/30" : ""}
             />
             <StatCard
               icon={Clock}
@@ -680,12 +699,8 @@ function TicketsClientInner() {
               label="待派单"
               value={s.pending}
               sub={`占总数 ${pendingShare}%`}
-              onClick={() => {
-                setTab("pending");
-                setPage(1);
-                setReviewPage(1);
-              }}
-              className={tab === "pending" ? "ring-2 ring-blue-500/30" : ""}
+              onClick={() => applyQuickCard("pending")}
+              className={tab === "pending" && !time ? "ring-2 ring-blue-500/30" : ""}
             />
             <StatCard
               icon={Flame}
@@ -693,12 +708,8 @@ function TicketsClientInner() {
               label="紧急工单"
               value={s.urgent}
               sub="需优先关注处置"
-              onClick={() => {
-                setTab("urgent");
-                setPage(1);
-                setReviewPage(1);
-              }}
-              className={tab === "urgent" ? "ring-2 ring-rose-500/30" : ""}
+              onClick={() => applyQuickCard("urgent")}
+              className={tab === "urgent" && !time ? "ring-2 ring-rose-500/30" : ""}
             />
           </StatCardGrid>
 

@@ -7,6 +7,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { classifyDetailPayload, type DetailLoadStatus } from "@/lib/detail-load";
 import { fmtNum } from "@/lib/format-number";
+import { LOW_CONFIDENCE_THRESHOLD, classifyConfidence } from "@/lib/confidence";
 import { MODE_META } from "@/backend/theme-metrics";
 import type { CivicMode, GraphData, GraphNode } from "@/backend/state";
 import { spanDays, categoryBadgeStyle } from "@/lib/civic-cluster";
@@ -118,11 +119,23 @@ type Member = {
   confidence: number | null;
   caller_name?: string;
   caller_phone?: string;
-  address?: string;
+  address?: string | null;
+  canonicalSubject?: string | null;
+  humanVerified?: boolean;
+  verifiedBy?: string | null;
+  verifiedAt?: string | null;
   urgency?: string;
   status?: string;
   isFakeClosure?: boolean;
   detailLoaded?: boolean;
+};
+
+type MemberStats = {
+  totalCount: number;
+  lowConfidenceUnverifiedCount: number;
+  lowConfidenceTotalCount: number;
+  verifiedCount: number;
+  lowConfidenceThreshold: number;
 };
 
 type ClusterDetail = {
@@ -152,6 +165,7 @@ type ClusterDetail = {
   fakeClosureCount?: number;
   disposalLogs?: DisposalLogItem[];
   members?: Member[];
+  memberStats?: MemberStats;
   ungrouped?: boolean;
 };
 
@@ -230,6 +244,10 @@ function ThemeDetailInner() {
   const [escalateNote, setEscalateNote] = useState("");
   const [detachTarget, setDetachTarget] = useState<Member | null>(null);
   const [leftTab, setLeftTab] = useState<"members" | "graph">("members");
+  const [memberFilter, setMemberFilter] = useState<"all" | "low_confidence" | "verified">("all");
+  const [memberSort, setMemberSort] = useState<"time_desc" | "confidence_asc" | "confidence_desc">("time_desc");
+  const [memberStats, setMemberStats] = useState<MemberStats | null>(null);
+  const [verifyingTicketId, setVerifyingTicketId] = useState<string | null>(null);
   const membersTabRef = useRef<HTMLButtonElement>(null);
   const graphTabRef = useRef<HTMLButtonElement>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -238,6 +256,8 @@ function ThemeDetailInner() {
   const [graphLoading, setGraphLoading] = useState(false);
   const [graphError, setGraphError] = useState<string | null>(null);
   const memberCursor = useRef<{ time: string | null; id: string } | null>(null);
+  const memberOffsetRef = useRef(0);
+  const useOffsetPaginationRef = useRef(false);
   const membersLoadingRef = useRef(false);
   const membersDoneRef = useRef(false);
   const membersPaused = useRef(false);
@@ -282,9 +302,14 @@ function ThemeDetailInner() {
     membersLoadingRef.current = true;
     setMembersLoading(true);
     try {
-      const q = new URLSearchParams({ limit: "30" });
+      const q = new URLSearchParams({
+        limit: "30",
+        sort: memberSort,
+        filter: memberFilter,
+        offset: String(memberOffsetRef.current),
+      });
       const cursor = memberCursor.current;
-      if (cursor?.id) {
+      if (!useOffsetPaginationRef.current && memberSort === "time_desc" && memberFilter === "all" && cursor?.id) {
         q.set("beforeId", cursor.id);
         if (cursor.time) q.set("beforeTime", cursor.time);
       }
@@ -297,13 +322,31 @@ function ThemeDetailInner() {
       if (!data.success) throw new Error(data.error || "工单加载失败");
       const incoming = (data.members || []) as Member[];
       setMemberRows((prev) => {
-        const seen = new Set(prev.map((item) => item.ticketId));
-        const next = incoming.filter((item) => item.ticketId && !seen.has(item.ticketId));
+        const seen = new Set(prev.map((item) => item.ticketId || item.id));
+        const next = incoming.filter((item) => {
+          const k = item.ticketId || item.id;
+          return k && !seen.has(k);
+        });
         return next.length ? [...prev, ...next] : prev;
       });
+      if (typeof data.nextOffset === "number") {
+        useOffsetPaginationRef.current = true;
+        memberOffsetRef.current = data.nextOffset;
+      } else {
+        memberOffsetRef.current += incoming.length;
+      }
+      if (data.stats) {
+        setMemberStats(data.stats as MemberStats);
+      }
+      const hasMore =
+        typeof data.hasMore === "boolean"
+          ? data.hasMore
+          : typeof data.nextOffset === "number"
+            ? data.nextOffset < (data.total ?? 0)
+            : Boolean(data.next);
       memberCursor.current = data.next || null;
-      membersDoneRef.current = !data.next;
-      setMembersDone(!data.next);
+      membersDoneRef.current = !hasMore;
+      setMembersDone(!hasMore);
     } catch (err: any) {
       if (controller.signal.aborted || err?.name === "AbortError" || memberGen.current !== gen) return;
       membersPaused.current = true;
@@ -314,24 +357,16 @@ function ThemeDetailInner() {
         setMembersLoading(false);
       }
     }
-  }, [params.id, isRolePending, isAdmin, regionHeaders]);
+  }, [params.id, memberFilter, memberSort, isRolePending, isAdmin, regionHeaders]);
 
   useEffect(() => {
     if (isRolePending || !isAdmin) return;
-    membersAbortRef.current?.abort();
     setLoad("pending");
     setLoadError(null);
     setRow(null);
+    setMemberStats(null);
     setExtraMember(null);
-    setMemberRows([]);
     setExpandedMap({});
-    memberGen.current += 1;
-    memberCursor.current = null;
-    membersPaused.current = false;
-    membersLoadingRef.current = false;
-    membersDoneRef.current = isUnknownGroup(params.id);
-    setMembersDone(isUnknownGroup(params.id));
-    setMembersLoading(false);
     scrolledTarget.current = false;
     extraTargetFetchedRef.current = "";
 
@@ -355,6 +390,9 @@ function ThemeDetailInner() {
       .then((j) => {
         if (controller.signal.aborted) return;
         setRow(j);
+        if (j?.memberStats) {
+          setMemberStats(j.memberStats as MemberStats);
+        }
         setLoad("done");
       })
       .catch((err) => {
@@ -363,12 +401,32 @@ function ThemeDetailInner() {
         setLoadError(err instanceof Error ? err.message : "群组详情加载失败");
         setLoad("error");
       });
-    if (!isUnknown) void loadMembers();
     return () => {
       controller.abort();
+    };
+  }, [params.id, targetTicketId, isRolePending, isAdmin, regionHeaders, reloadNonce]);
+
+  useEffect(() => {
+    if (isRolePending || !isAdmin) return;
+    membersAbortRef.current?.abort();
+    memberGen.current += 1;
+    memberCursor.current = null;
+    memberOffsetRef.current = 0;
+    useOffsetPaginationRef.current = false;
+    membersPaused.current = false;
+    membersLoadingRef.current = false;
+    const isUnknown = isUnknownGroup(params.id);
+    membersDoneRef.current = isUnknown;
+    setMembersDone(isUnknown);
+    setMembersLoading(false);
+    setMemberRows([]);
+    if (!isUnknown) {
+      void loadMembers();
+    }
+    return () => {
       membersAbortRef.current?.abort();
     };
-  }, [params.id, targetTicketId, loadMembers, isRolePending, isAdmin, regionHeaders, reloadNonce]);
+  }, [params.id, memberFilter, memberSort, loadMembers, isRolePending, isAdmin, reloadNonce]);
 
   useEffect(() => {
     if (isRolePending || !isAdmin) return;
@@ -488,6 +546,8 @@ function ThemeDetailInner() {
 
   useEffect(() => {
     setLeftTab("members");
+    setMemberFilter("all");
+    setMemberSort("time_desc");
     setGraphData(null);
     setGraphError(null);
   }, [params.id]);
@@ -501,11 +561,15 @@ function ThemeDetailInner() {
 
   const members = useMemo(() => {
     const list = [...memberRows];
-    if (extraMember && !list.some((m) => checkIsTarget(m, extraMember.id) || m.ticketId === extraMember.ticketId)) {
+    if (
+      memberFilter === "all" &&
+      extraMember &&
+      !list.some((m) => checkIsTarget(m, extraMember.id) || m.ticketId === extraMember.ticketId)
+    ) {
       list.unshift(extraMember);
     }
     return list;
-  }, [memberRows, extraMember]);
+  }, [memberRows, extraMember, memberFilter]);
 
   const [copiedAdvice, setCopiedAdvice] = useState(false);
   const copyAdviceTimerRef = useRef<number | null>(null);
@@ -610,7 +674,8 @@ function ThemeDetailInner() {
       note?: string;
       ticketId?: string;
     },
-    successMessage?: string
+    successMessage?: string,
+    onSuccess?: (json: ClusterDetail) => void
   ): Promise<boolean> {
     if (!isAdmin) {
       toast.error("需管理员权限可执行群组处置");
@@ -631,6 +696,10 @@ function ThemeDetailInner() {
         throw new Error(json.error || `操作失败 (${res.status})`);
       }
       setRow((prev) => (prev ? { ...prev, ...json } : json));
+      if (json?.memberStats) {
+        setMemberStats(json.memberStats as MemberStats);
+      }
+      onSuccess?.(json as ClusterDetail);
       if (successMessage) toast.success(successMessage);
       if (typeof window !== "undefined") {
         window.dispatchEvent(new Event("civic-data-refresh"));
@@ -641,6 +710,104 @@ function ThemeDetailInner() {
       return false;
     } finally {
       setActionPending(false);
+    }
+  }
+
+  async function handleVerifyTicket(member: Member, verify: boolean) {
+    if (!isAdmin) {
+      toast.error("需管理员权限可执行归属核验");
+      return;
+    }
+    if (!row || row.ungrouped || verifyingTicketId || actionPending) return;
+    const ticketKey = member.ticketId || member.id;
+    setVerifyingTicketId(ticketKey);
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (activeRegion?.id) headers["x-region-id"] = activeRegion.id;
+      const res = await fetch(`/api/clusters/${encodeURIComponent(row.id)}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({
+          action: verify ? "VERIFY_TICKET" : "UNVERIFY_TICKET",
+          ticketId: ticketKey,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || `操作失败 (${res.status})`);
+      }
+
+      setRow((prev) => (prev ? { ...prev, ...json } : json));
+      if (json.memberStats) {
+        setMemberStats(json.memberStats as MemberStats);
+      } else {
+        setMemberStats((prev) => {
+          if (!prev) return prev;
+          const threshold = prev.lowConfidenceThreshold ?? LOW_CONFIDENCE_THRESHOLD;
+          const isLow = member.confidence != null && member.confidence < threshold;
+          if (verify && !member.humanVerified) {
+            return {
+              ...prev,
+              verifiedCount: prev.verifiedCount + 1,
+              lowConfidenceUnverifiedCount: isLow
+                ? Math.max(0, prev.lowConfidenceUnverifiedCount - 1)
+                : prev.lowConfidenceUnverifiedCount,
+            };
+          }
+          if (!verify && member.humanVerified) {
+            return {
+              ...prev,
+              verifiedCount: Math.max(0, prev.verifiedCount - 1),
+              lowConfidenceUnverifiedCount: isLow
+                ? prev.lowConfidenceUnverifiedCount + 1
+                : prev.lowConfidenceUnverifiedCount,
+            };
+          }
+          return prev;
+        });
+      }
+
+      const patchFields: Partial<Member> = {
+        humanVerified: verify,
+        verifiedBy: verify
+          ? (json.verification?.verifiedBy ?? json.verifiedBy ?? json.member?.verifiedBy ?? "管理员")
+          : null,
+        verifiedAt: verify
+          ? (json.verification?.verifiedAt ?? json.verifiedAt ?? json.member?.verifiedAt ?? new Date().toISOString())
+          : null,
+      };
+
+      const shouldRemoveFromView =
+        (verify && memberFilter === "low_confidence") || (!verify && memberFilter === "verified");
+
+      if (shouldRemoveFromView) {
+        setMemberRows((prev) =>
+          prev.filter((item) => item.ticketId !== ticketKey && item.id !== member.id)
+        );
+        memberOffsetRef.current = Math.max(0, memberOffsetRef.current - 1);
+      } else {
+        setMemberRows((prev) =>
+          prev.map((item) =>
+            item.ticketId === ticketKey || item.id === member.id
+              ? { ...item, ...patchFields }
+              : item
+          )
+        );
+      }
+      setExtraMember((prev) =>
+        prev && (prev.ticketId === ticketKey || prev.id === member.id)
+          ? { ...prev, ...patchFields }
+          : prev
+      );
+
+      toast.success(verify ? "已人工确认该工单归属" : "已撤销归属确认");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("civic-data-refresh"));
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "归属核验操作失败");
+    } finally {
+      setVerifyingTicketId(null);
     }
   }
 
@@ -684,20 +851,45 @@ function ThemeDetailInner() {
 
   async function handleConfirmDetach() {
     if (!detachTarget) return;
-    const targetTicketId = detachTarget.ticketId || detachTarget.id;
+    const detached = detachTarget;
+    const targetTicketKey = detached.ticketId || detached.id;
     const ok = await patchCluster(
       {
         action: "DETACH_TICKET",
-        ticketId: targetTicketId,
+        ticketId: targetTicketKey,
       },
-      "已将该工单移出群组"
+      "已将该工单移出群组",
+      (json) => {
+        if (!json.memberStats) {
+          setMemberStats((prev) => {
+            if (!prev) return prev;
+            const threshold = prev.lowConfidenceThreshold ?? LOW_CONFIDENCE_THRESHOLD;
+            const isLow = detached.confidence != null && detached.confidence < threshold;
+            return {
+              ...prev,
+              totalCount: Math.max(0, prev.totalCount - 1),
+              verifiedCount: detached.humanVerified
+                ? Math.max(0, prev.verifiedCount - 1)
+                : prev.verifiedCount,
+              lowConfidenceTotalCount: isLow
+                ? Math.max(0, prev.lowConfidenceTotalCount - 1)
+                : prev.lowConfidenceTotalCount,
+              lowConfidenceUnverifiedCount:
+                isLow && !detached.humanVerified
+                  ? Math.max(0, prev.lowConfidenceUnverifiedCount - 1)
+                  : prev.lowConfidenceUnverifiedCount,
+            };
+          });
+        }
+      }
     );
     if (ok) {
       setMemberRows((prev) =>
-        prev.filter((item) => item.ticketId !== targetTicketId && item.id !== detachTarget.id)
+        prev.filter((item) => item.ticketId !== targetTicketKey && item.id !== detached.id)
       );
+      memberOffsetRef.current = Math.max(0, memberOffsetRef.current - 1);
       setExtraMember((prev) =>
-        prev && (prev.ticketId === targetTicketId || prev.id === detachTarget.id) ? null : prev
+        prev && (prev.ticketId === targetTicketKey || prev.id === detached.id) ? null : prev
       );
       setGraphData(null);
       setDetachTarget(null);
@@ -1081,12 +1273,122 @@ function ThemeDetailInner() {
               )
             ) : (
               <>
+                {!cluster.ungrouped && (memberStats?.lowConfidenceUnverifiedCount ?? 0) > 0 && (
+                  <div className="border border-amber-200 bg-amber-50/75 rounded-xl px-3.5 py-2.5 mb-3 flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-start gap-2 text-xs text-amber-900 min-w-0 flex-1">
+                      <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" aria-hidden="true" />
+                      <span>
+                        有 <b>{fmtNum(memberStats!.lowConfidenceUnverifiedCount)}</b> 条成员工单 AI 归属置信度低于{" "}
+                        {memberStats!.lowConfidenceThreshold}%（待人工核验），建议先核验归属或移出误聚工单后再统一派单。
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (memberFilter === "low_confidence") {
+                          setMemberFilter("all");
+                          setMemberSort("time_desc");
+                        } else {
+                          setMemberFilter("low_confidence");
+                          setMemberSort("confidence_asc");
+                        }
+                      }}
+                      className="btn btn--default text-xs bg-white border-amber-300 text-amber-900 hover:bg-amber-100/60 shrink-0 whitespace-nowrap"
+                    >
+                      {memberFilter === "low_confidence"
+                        ? "返回全部工单"
+                        : `集中核验低置信度工单 (${fmtNum(memberStats!.lowConfidenceUnverifiedCount)})`}
+                    </button>
+                  </div>
+                )}
+
+                {!cluster.ungrouped && (
+                  <div className="flex items-center justify-between gap-2 flex-wrap mb-3 pb-2.5 border-b border-slate-100">
+                    <div className="flex items-center gap-1.5 flex-wrap" role="group" aria-label="成员工单筛选">
+                      {(
+                        [
+                          {
+                            key: "all" as const,
+                            label: `全部 (${fmtNum(memberStats?.totalCount ?? row.count)})`,
+                          },
+                          {
+                            key: "low_confidence" as const,
+                            label: `低置信度待核验 <${memberStats?.lowConfidenceThreshold ?? LOW_CONFIDENCE_THRESHOLD}% (${fmtNum(memberStats?.lowConfidenceUnverifiedCount ?? 0)})`,
+                          },
+                          {
+                            key: "verified" as const,
+                            label: `已人工确认 (${fmtNum(memberStats?.verifiedCount ?? 0)})`,
+                          },
+                        ] as const
+                      ).map((opt) => {
+                        const active = memberFilter === opt.key;
+                        return (
+                          <button
+                            key={opt.key}
+                            type="button"
+                            aria-pressed={active}
+                            onClick={() => setMemberFilter(opt.key)}
+                            className={`px-2.5 py-1.5 sm:py-1 rounded-lg text-xs font-medium border transition-colors cursor-pointer whitespace-nowrap tabular-nums ${
+                              active
+                                ? opt.key === "low_confidence"
+                                  ? "bg-amber-50 text-amber-800 border-amber-300"
+                                  : opt.key === "verified"
+                                    ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+                                    : "bg-blue-50 text-blue-700 border-blue-200"
+                                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <select
+                      aria-label="成员工单排序"
+                      value={memberSort}
+                      onChange={(e) =>
+                        setMemberSort(e.target.value as "time_desc" | "confidence_asc" | "confidence_desc")
+                      }
+                      className="h-9 sm:h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-700 font-medium focus:outline-none focus:border-blue-500"
+                    >
+                      <option value="time_desc">按时间倒序</option>
+                      <option value="confidence_asc">置信度从低到高</option>
+                      <option value="confidence_desc">置信度从高到低</option>
+                    </select>
+                  </div>
+                )}
+
                 {members.length === 0 && (
               <div className="empty-hint">
                 {membersLoading ? (
                   "正在加载工单…"
                 ) : cluster.ungrouped ? (
                   "请从工单中心选择要查看的工单。"
+                ) : memberFilter === "low_confidence" ? (
+                  <div className="space-y-2">
+                    <div>当前群组暂无待人工核验的低置信度工单</div>
+                    <button
+                      type="button"
+                      className="btn btn--default text-xs"
+                      onClick={() => {
+                        setMemberFilter("all");
+                        setMemberSort("time_desc");
+                      }}
+                    >
+                      查看全部工单
+                    </button>
+                  </div>
+                ) : memberFilter === "verified" ? (
+                  <div className="space-y-2">
+                    <div>暂无已人工确认归属的工单</div>
+                    <button
+                      type="button"
+                      className="btn btn--default text-xs"
+                      onClick={() => setMemberFilter("all")}
+                    >
+                      查看全部工单
+                    </button>
+                  </div>
                 ) : (row.count || 0) > 0 ? (
                   <button
                     type="button"
@@ -1109,10 +1411,15 @@ function ThemeDetailInner() {
             {members.map((m) => {
               const isTarget = checkIsTarget(m, targetTicketId);
               const isExpanded = isTarget || Boolean(expandedMap[m.ticketId || m.id] || expandedMap[m.id]);
+              const confInfo = classifyConfidence(m.confidence);
+              const isLowUnverified =
+                !m.humanVerified && m.confidence != null && m.confidence < LOW_CONFIDENCE_THRESHOLD;
+              const ticketKey = m.ticketId || m.id;
+              const isVerifying = verifyingTicketId === ticketKey;
 
               return (
                 <div
-                  key={m.ticketId || m.id}
+                  key={ticketKey}
                   id={`ticket-${m.id}`}
                   data-ticket-id={m.id}
                   className={`member-item transition-colors relative rounded-xl p-4 mb-3 cursor-pointer ${
@@ -1130,14 +1437,39 @@ function ThemeDetailInner() {
                     </div>
                   )}
 
-                  <div className="member-item__head flex items-center gap-x-2.5 gap-y-1 mb-2">
+                  <div className="member-item__head flex items-center flex-wrap gap-x-2.5 gap-y-1 mb-2">
                     <span className="member-item__id font-mono font-semibold text-xs text-slate-800">
                       #{m.id}
                     </span>
-                    <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
-                      <Sparkles className="h-3 w-3 shrink-0" aria-hidden="true" />
-                      {m.confidence == null ? "已校准" : `置信度 ${m.confidence}%`}
-                    </span>
+                    {m.humanVerified ? (
+                      <>
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 tabular-nums">
+                          {m.confidence == null ? "已校准" : `置信度 ${m.confidence}%`}
+                        </span>
+                        <span
+                          className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full text-[11px] font-medium"
+                          title={`确认人: ${m.verifiedBy || "管理员"} · ${formatMemberTime(m.verifiedAt)}`}
+                        >
+                          <CheckCircle2 className="h-3 w-3 shrink-0" aria-hidden="true" />
+                          <span>已人工确认归属</span>
+                        </span>
+                      </>
+                    ) : isLowUnverified ? (
+                      <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full text-[11px] font-medium tabular-nums">
+                        <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden="true" />
+                        <span>低置信度 {m.confidence}% · 建议核验</span>
+                      </span>
+                    ) : confInfo.level === "high" && m.confidence != null ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 tabular-nums">
+                        <Sparkles className="h-3 w-3 shrink-0" aria-hidden="true" />
+                        <span>高置信度 {m.confidence}%</span>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 tabular-nums">
+                        <Sparkles className="h-3 w-3 shrink-0" aria-hidden="true" />
+                        <span>{m.confidence == null ? confInfo.label || "已校准" : `置信度 ${m.confidence}%`}</span>
+                      </span>
+                    )}
                     {m.category && (
                       <span
                         className="badge-pill text-xs font-medium"
@@ -1162,9 +1494,26 @@ function ThemeDetailInner() {
                     </span>
                   </div>
 
-                  <div className="member-item__title text-sm font-bold text-slate-900 mb-2">
+                  <div className="member-item__title text-sm font-bold text-slate-900 mb-1.5">
                     {m.title}
                   </div>
+
+                  {(m.canonicalSubject || m.address) && (
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 mb-2">
+                      {m.canonicalSubject && (
+                        <span className="inline-flex items-center gap-1 truncate max-w-full">
+                          <Building2 className="h-3 w-3 shrink-0 text-slate-400" aria-hidden="true" />
+                          <span className="truncate">涉事主体：{m.canonicalSubject}</span>
+                        </span>
+                      )}
+                      {m.address && (
+                        <span className="inline-flex items-center gap-1 truncate max-w-full">
+                          <MapPin className="h-3 w-3 shrink-0 text-slate-400" aria-hidden="true" />
+                          <span className="truncate">事发地点：{m.address}</span>
+                        </span>
+                      )}
+                    </div>
+                  )}
 
                   {/* 工单正文容器（浅底无内框线，杜绝框套框） */}
                   <div className="bg-white/80 px-3 py-2.5 rounded-lg mb-2.5">
@@ -1206,17 +1555,47 @@ function ThemeDetailInner() {
                     </div>
                     <div className="flex flex-wrap items-center gap-3 min-w-0">
                       <Link
-                        href={`/tickets/${encodeURIComponent(m.ticketId || m.id)}`}
+                        href={`/tickets/${encodeURIComponent(ticketKey)}`}
                         onClick={(e) => e.stopPropagation()}
                         className="relative inline-flex items-center gap-1 min-h-[28px] py-1 text-[11px] font-medium text-slate-600 hover:text-blue-600 whitespace-nowrap transition-colors after:content-[''] after:absolute after:-inset-y-[8px] after:-inset-x-[4px]"
                       >
                         <ExternalLink className="h-3 w-3 shrink-0" aria-hidden="true" />
                         <span>查看工单详情</span>
                       </Link>
+                      {!cluster.ungrouped && !m.humanVerified && (
+                        <button
+                          type="button"
+                          disabled={!isAdmin || actionPending || Boolean(verifyingTicketId)}
+                          title={!isAdmin ? "需管理员权限可执行处置" : "确认该工单归属于当前群组"}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleVerifyTicket(m, true);
+                          }}
+                          className="relative inline-flex items-center gap-1 min-h-[28px] min-w-0 py-1 text-[11px] font-medium text-emerald-700 hover:text-emerald-800 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer after:content-[''] after:absolute after:-inset-y-[8px] after:-inset-x-[4px]"
+                        >
+                          <CheckCircle2 className="h-3 w-3 shrink-0" aria-hidden="true" />
+                          <span>{isVerifying ? "确认中…" : "确认归属"}</span>
+                        </button>
+                      )}
+                      {!cluster.ungrouped && m.humanVerified && (
+                        <button
+                          type="button"
+                          disabled={!isAdmin || actionPending || Boolean(verifyingTicketId)}
+                          title={!isAdmin ? "需管理员权限可执行处置" : "撤销人工归属确认"}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleVerifyTicket(m, false);
+                          }}
+                          className="relative inline-flex items-center gap-1 min-h-[28px] min-w-0 py-1 text-[11px] font-medium text-slate-600 hover:text-slate-800 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer after:content-[''] after:absolute after:-inset-y-[8px] after:-inset-x-[4px]"
+                        >
+                          <RotateCcw className="h-3 w-3 shrink-0" aria-hidden="true" />
+                          <span>{isVerifying ? "处理中…" : "撤销确认"}</span>
+                        </button>
+                      )}
                       {!cluster.ungrouped && (
                         <button
                           type="button"
-                          disabled={!isAdmin || actionPending}
+                          disabled={!isAdmin || actionPending || Boolean(verifyingTicketId)}
                           title={!isAdmin ? "需管理员权限可执行处置" : undefined}
                           onClick={(e) => {
                             e.stopPropagation();
@@ -1582,6 +1961,34 @@ function ThemeDetailInner() {
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleDispatchSubmit} className="space-y-3 px-5">
+            {(memberStats?.lowConfidenceUnverifiedCount ?? 0) > 0 && (
+              <div
+                role="alert"
+                className="rounded-lg border border-amber-200 bg-amber-50/85 px-3 py-2.5 text-xs text-amber-900 space-y-2"
+              >
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" aria-hidden="true" />
+                  <span>
+                    提示：当前群组尚有 <b>{fmtNum(memberStats!.lowConfidenceUnverifiedCount)}</b> 条置信度低于{" "}
+                    {memberStats!.lowConfidenceThreshold}% 的工单未经人工确认，建议先核验归属后再批量派单。
+                  </span>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    className="btn btn--default text-xs bg-white border-amber-300 text-amber-900 hover:bg-amber-100/60"
+                    onClick={() => {
+                      setDispatchOpen(false);
+                      setLeftTab("members");
+                      setMemberFilter("low_confidence");
+                      setMemberSort("confidence_asc");
+                    }}
+                  >
+                    去集中核验
+                  </button>
+                </div>
+              </div>
+            )}
             <div>
               <label htmlFor="dispatch-owner-input" className="block text-xs font-medium text-slate-700 mb-1">
                 牵头承办部门

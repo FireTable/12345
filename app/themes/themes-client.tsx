@@ -306,6 +306,34 @@ export default function ThemesPage() {
     }
   }
 
+  function applyQuickCard(kind: "all" | "today" | "pending" | "urgent") {
+    const hasFacetFilters = Boolean(region || mode || urgency || kw || debouncedKw);
+    setRegion("");
+    setMode("");
+    setUrgency("");
+    setKw("");
+    setDebouncedKw("");
+    setPage(1);
+
+    if (kind === "all") {
+      setTab("all");
+      setTodayOnly(false);
+    } else if (kind === "today") {
+      if (tab === "all" && todayOnly && !hasFacetFilters) {
+        setTodayOnly(false);
+      } else {
+        setTab("all");
+        setTodayOnly(true);
+      }
+    } else if (kind === "pending") {
+      setTab("pending");
+      setTodayOnly(false);
+    } else if (kind === "urgent") {
+      setTab("urgent");
+      setTodayOnly(false);
+    }
+  }
+
   return (
     <>
       <section className="page-hero">
@@ -334,25 +362,27 @@ export default function ThemesPage() {
               label={isEcommerce ? "总案卷数" : "总群组数"}
               value={counts.all}
               sub={isEcommerce ? `已识别${themeNoun}` : "已识别多频主题"}
-              onClick={() => {
-                setTab("all");
-                setTodayOnly(false);
-                setPage(1);
-              }}
-              className={tab === "all" && !todayOnly ? "ring-2 ring-blue-500/30" : ""}
+              onClick={() => applyQuickCard("all")}
+              className={
+                tab === "all" && !todayOnly && !region && !mode && !urgency && !debouncedKw
+                  ? "ring-2 ring-blue-500/30"
+                  : ""
+              }
             />
             <StatCard
               icon={TrendingUp}
               tone="orange"
               label="今日新增"
               value={counts.today}
-              sub={todayOnly ? (isEcommerce ? "正在查看今日案卷" : "正在查看今日群组") : "数据最新一日"}
-              onClick={() => {
-                setTodayOnly(!todayOnly);
-                setTab("all");
-                setPage(1);
-              }}
-              className={todayOnly ? "ring-2 ring-amber-500/30" : ""}
+              sub={
+                tab === "all" && todayOnly
+                  ? isEcommerce
+                    ? "正在查看今日案卷"
+                    : "正在查看今日群组"
+                  : "数据最新一日"
+              }
+              onClick={() => applyQuickCard("today")}
+              className={tab === "all" && todayOnly ? "ring-2 ring-amber-500/30" : ""}
             />
             <StatCard
               icon={Clock}
@@ -360,11 +390,7 @@ export default function ThemesPage() {
               label="待派单"
               value={counts.pending}
               sub={isEcommerce ? "待处置案卷" : "待处置群组"}
-              onClick={() => {
-                setTab("pending");
-                setTodayOnly(false);
-                setPage(1);
-              }}
+              onClick={() => applyQuickCard("pending")}
               className={tab === "pending" && !todayOnly ? "ring-2 ring-blue-500/30" : ""}
             />
             <StatCard
@@ -373,11 +399,7 @@ export default function ThemesPage() {
               label={isEcommerce ? "紧急案卷" : "紧急群组"}
               value={counts.urgent}
               sub={isEcommerce ? "高关注度共性客诉" : "高关注度共性诉求"}
-              onClick={() => {
-                setTab("urgent");
-                setTodayOnly(false);
-                setPage(1);
-              }}
+              onClick={() => applyQuickCard("urgent")}
               className={tab === "urgent" && !todayOnly ? "ring-2 ring-rose-500/30" : ""}
             />
           </StatCardGrid>

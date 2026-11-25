@@ -3,8 +3,10 @@
  * 向量由调用方算好传进来，这里不再请求模型。
  */
 import type { IncidentProfile } from "./ticket-profile";
-import { incidentsMatch } from "./ticket-profile";
-import { RULES } from "./rules";
+import { incidentsMatch, ISSUE_FAMILY } from "./ticket-profile";
+import { isSameSpatialEntity } from "./node/canonical-node";
+import { RULES, isGenericOrPlaceholderSubject } from "./rules";
+import { canonicalizeCategory } from "@/lib/vocabulary";
 
 function envFloat(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -42,6 +44,21 @@ export function cosineSimilarity(left: number[], right: number[]): number {
   return dot / Math.sqrt(leftNorm * rightNorm);
 }
 
+const WILDCARD_CATEGORIES = new Set(["", "综合民生", "其他", "未分类"]);
+
+function normalizeCategoryValue(category?: string | null): string {
+  const trimmed = (category || "").trim();
+  if (WILDCARD_CATEGORIES.has(trimmed)) return trimmed;
+  return canonicalizeCategory(trimmed) || trimmed;
+}
+
+export function categoriesCompatible(leftCategory?: string | null, rightCategory?: string | null): boolean {
+  const left = normalizeCategoryValue(leftCategory);
+  const right = normalizeCategoryValue(rightCategory);
+  if (WILDCARD_CATEGORIES.has(left) || WILDCARD_CATEGORIES.has(right)) return true;
+  return left === right;
+}
+
 /** 小区、学府、美食城这类地名。路名本身不算，避免整条路被并成一件事。 */
 export function compoundCores(text: string): string[] {
   const cores: string[] = [];
@@ -54,7 +71,7 @@ export function compoundCores(text: string): string[] {
     const last = splits[splits.length - 1];
     const tail = last ? before.slice(last.index + last[0].length) : before;
     const name = `${tail.slice(-8)}${match[0]}`.replace(/^[^\u4e00-\u9fa5]+/, "");
-    if (name.length < 4 || seen.has(name)) continue;
+    if (name.length < 4 || /某/.test(name) || seen.has(name)) continue;
     seen.add(name);
     cores.push(name);
   }
@@ -83,31 +100,153 @@ export function sameNamedSubject(leftText: string, rightText: string): boolean {
   const left = leftText.trim();
   const right = rightText.trim();
   if (left.length < 4 || right.length < 4) return false;
+  if (isGenericOrPlaceholderSubject(left) || isGenericOrPlaceholderSubject(right)) return false;
   if (isGenericSubject(left) || isGenericSubject(right)) return false;
   return left === right || left.includes(right) || right.includes(left);
 }
 
+function sameMicroLocation(leftPlace?: string | null, rightPlace?: string | null): boolean {
+  const left = (leftPlace || "").trim();
+  const right = (rightPlace || "").trim();
+  if (!left || !right || !isConcretePlace(left) || !isConcretePlace(right)) return false;
+  if (!isSameSpatialEntity(left, right)) return false;
+  const doorLeft = left.match(DOOR_NUMBER)?.[0];
+  const doorRight = right.match(DOOR_NUMBER)?.[0];
+  if (doorLeft && doorRight) return doorLeft === doorRight;
+  if (doorLeft || doorRight) return false;
+  return coresOverlap(compoundCores(left), compoundCores(right));
+}
+
+function hasDoorConflict(leftText: string, rightText: string): boolean {
+  const doorLeft = leftText.match(DOOR_NUMBER)?.[0];
+  const doorRight = rightText.match(DOOR_NUMBER)?.[0];
+  return Boolean(doorLeft && doorRight && doorLeft !== doorRight);
+}
+
 export function shouldLinkIncidents(left: IncidentLinkCandidate, right: IncidentLinkCandidate): boolean {
+  if (!categoriesCompatible(left.category, right.category)) return false;
   if (incidentsMatch(left.profile, right.profile)) return true;
   if (cosineSimilarity(left.vector, right.vector) < PRODUCT_COSINE_MIN) return false;
+  if (left.profile.family && right.profile.family && left.profile.family !== right.profile.family) return false;
+
   const categoryLeft = left.category.trim();
   const categoryRight = right.category.trim();
   if (!categoryLeft || categoryLeft !== categoryRight) return false;
   const townLeft = left.township.trim();
   const townRight = right.township.trim();
   if (!townLeft || townLeft !== townRight) return false;
+
+  if (
+    left.profile.place &&
+    right.profile.place &&
+    isConcretePlace(left.profile.place) &&
+    isConcretePlace(right.profile.place) &&
+    !isSameSpatialEntity(left.profile.place, right.profile.place)
+  ) {
+    return false;
+  }
+
   if (!isConcretePlace(left.placeEvidence) || !isConcretePlace(right.placeEvidence)) return false;
+
+  const isWageArrears =
+    left.profile.family === ISSUE_FAMILY.WAGE_ARREARS ||
+    right.profile.family === ISSUE_FAMILY.WAGE_ARREARS;
+  if (isWageArrears) {
+    if (hasDoorConflict(left.placeEvidence, right.placeEvidence)) return false;
+    const sharedSubject =
+      sameNamedSubject(left.subject, right.subject) ||
+      Boolean(
+        left.profile.subject &&
+          right.profile.subject &&
+          sameNamedSubject(left.profile.subject, right.profile.subject)
+      );
+    const sameMicro =
+      sameConcretePlace(left.placeEvidence, right.placeEvidence) ||
+      sameMicroLocation(left.profile.place, right.profile.place);
+    return sharedSubject || sameMicro;
+  }
+
   if (sameConcretePlace(left.placeEvidence, right.placeEvidence)) return true;
   if (sameNamedSubject(left.subject, right.subject)) return true;
   return false;
 }
 
-export function clusterLinked<T>(
-  items: T[],
-  read: (item: T, index: number) => IncidentLinkCandidate
-): T[][] {
-  const candidates = items.map((item, index) => read(item, index));
-  const parent = items.map((_, index) => index);
+interface ComponentMeta {
+  categories: Map<string, number>;
+  hasWageArrears: boolean;
+  wagePlaces: string[];
+  wageSubjects: string[];
+}
+
+function buildSingletonMeta(candidate: IncidentLinkCandidate): ComponentMeta {
+  const categories = new Map<string, number>();
+  const normCat = normalizeCategoryValue(candidate.category);
+  if (normCat && !WILDCARD_CATEGORIES.has(normCat)) {
+    categories.set(normCat, 1);
+  }
+  const hasWageArrears = candidate.profile.family === ISSUE_FAMILY.WAGE_ARREARS;
+  const wagePlaces: string[] = [];
+  const wageSubjects: string[] = [];
+  if (hasWageArrears) {
+    const place = (candidate.profile.place || "").trim();
+    if (place && isConcretePlace(place)) wagePlaces.push(place);
+    for (const rawSubj of [candidate.profile.subject, candidate.subject]) {
+      const s = (rawSubj || "").trim();
+      if (s.length >= 4 && !isGenericOrPlaceholderSubject(s) && !isGenericSubject(s) && !wageSubjects.includes(s)) {
+        wageSubjects.push(s);
+      }
+    }
+  }
+  return { categories, hasWageArrears, wagePlaces, wageSubjects };
+}
+
+function dominantConcreteCategory(meta: ComponentMeta): string | null {
+  let best: string | null = null;
+  let bestCount = 0;
+  for (const [cat, count] of meta.categories) {
+    if (count > bestCount) {
+      best = cat;
+      bestCount = count;
+    }
+  }
+  return best;
+}
+
+function canMergeMeta(left: ComponentMeta, right: ComponentMeta): boolean {
+  const domLeft = dominantConcreteCategory(left);
+  const domRight = dominantConcreteCategory(right);
+  if (domLeft && domRight && !categoriesCompatible(domLeft, domRight)) return false;
+  for (const catLeft of left.categories.keys()) {
+    for (const catRight of right.categories.keys()) {
+      if (!categoriesCompatible(catLeft, catRight)) return false;
+    }
+  }
+  if (left.hasWageArrears || right.hasWageArrears) {
+    for (const pLeft of left.wagePlaces) {
+      for (const pRight of right.wagePlaces) {
+        if (!isSameSpatialEntity(pLeft, pRight) || hasDoorConflict(pLeft, pRight)) {
+          return false;
+        }
+      }
+    }
+    if (left.wageSubjects.length > 0 && right.wageSubjects.length > 0) {
+      const sharesSubject = left.wageSubjects.some((sLeft) =>
+        right.wageSubjects.some((sRight) => sameNamedSubject(sLeft, sRight))
+      );
+      if (!sharesSubject) return false;
+    }
+  }
+  return true;
+}
+
+export function createGuardedIncidentUnion(candidates: IncidentLinkCandidate[]): {
+  parent: number[];
+  find: (index: number) => number;
+  unite: (left: number, right: number) => boolean;
+} {
+  const parent = candidates.map((_, index) => index);
+  const mergedMeta = new Map<number, ComponentMeta>();
+
   const find = (index: number): number => {
     let root = index;
     while (parent[root] !== root) root = parent[root];
@@ -119,17 +258,55 @@ export function clusterLinked<T>(
     }
     return root;
   };
+
+  const getMeta = (root: number): ComponentMeta => {
+    const existing = mergedMeta.get(root);
+    if (existing) return existing;
+    return buildSingletonMeta(candidates[root]);
+  };
+
+  const unite = (left: number, right: number): boolean => {
+    const a = find(left);
+    const b = find(right);
+    if (a === b) return true;
+    const metaA = getMeta(a);
+    const metaB = getMeta(b);
+    if (!canMergeMeta(metaA, metaB)) return false;
+
+    parent[b] = a;
+    for (const [cat, count] of metaB.categories) {
+      metaA.categories.set(cat, (metaA.categories.get(cat) || 0) + count);
+    }
+    if (metaB.hasWageArrears) metaA.hasWageArrears = true;
+    for (const p of metaB.wagePlaces) {
+      if (!metaA.wagePlaces.includes(p)) metaA.wagePlaces.push(p);
+    }
+    for (const s of metaB.wageSubjects) {
+      if (!metaA.wageSubjects.includes(s)) metaA.wageSubjects.push(s);
+    }
+    mergedMeta.set(a, metaA);
+    mergedMeta.delete(b);
+    return true;
+  };
+
+  return { parent, find, unite };
+}
+
+export function clusterLinked<T>(
+  items: T[],
+  read: (item: T, index: number) => IncidentLinkCandidate
+): T[][] {
+  const candidates = items.map((item, index) => read(item, index));
+  const union = createGuardedIncidentUnion(candidates);
   for (let i = 0; i < items.length; i++) {
     for (let j = i + 1; j < items.length; j++) {
       if (!shouldLinkIncidents(candidates[i], candidates[j])) continue;
-      const left = find(i);
-      const right = find(j);
-      if (left !== right) parent[right] = left;
+      union.unite(i, j);
     }
   }
   const buckets = new Map<number, T[]>();
   for (let i = 0; i < items.length; i++) {
-    const root = find(i);
+    const root = union.find(i);
     const list = buckets.get(root);
     if (list) list.push(items[i]);
     else buckets.set(root, [items[i]]);
@@ -185,7 +362,11 @@ function coresOverlap(left: string[], right: string[]): boolean {
 }
 
 function isGenericSubject(value: string): boolean {
-  return (RULES.genericSubjects as readonly string[]).includes(value) || RULES.genericSubjectSuffix.test(value);
+  return (
+    isGenericOrPlaceholderSubject(value) ||
+    (RULES.genericSubjects as readonly string[]).includes(value) ||
+    RULES.genericSubjectSuffix.test(value)
+  );
 }
 
 function majorityText(values: string[]): string | null {
