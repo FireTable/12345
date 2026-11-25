@@ -214,8 +214,19 @@ function formatTaskTime(iso: string | undefined | null): string {
   if (Number.isNaN(d.getTime())) {
     return String(iso).slice(0, 16).replace("T", " ");
   }
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(d);
+  const pick = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? "00";
+  const hour = String((Number.parseInt(pick("hour"), 10) || 0) % 24).padStart(2, "0");
+  return `${pick("year")}-${pick("month")}-${pick("day")} ${hour}:${pick("minute")}`;
 }
 
 export default function AgentCenterPage() {
@@ -1203,7 +1214,7 @@ export default function AgentCenterPage() {
                 尚未生成每日研判专报
               </div>
               <p className="text-xs text-slate-500">
-                点击下方按钮，Agent 将聚合本工作区最新多频专题、超期工单与假闭环明细生成规范 Markdown 研判专报。
+                系统将于每日 18:00 自动生成当日研判专报；也可点击下方按钮立即聚合本工作区最新多频专题、超期工单与假闭环明细生成 Markdown 专报。
               </p>
               <button
                 type="button"
@@ -1226,7 +1237,7 @@ export default function AgentCenterPage() {
                   </h2>
                   <div className="text-xs text-slate-500 font-mono tabular-nums">
                     专报日期：{selectedReport.reportDate} · 生成于{" "}
-                    {formatTaskTime(selectedReport.createdAt)}
+                    {formatTaskTime(selectedReport.createdAt)} · 每日 18:00 自动生成
                   </div>
                 </div>
 

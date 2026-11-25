@@ -495,8 +495,10 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
           requestAnimationFrame(() => {
             const active = document.activeElement;
             if (!active || active === document.body) {
-              document
-                .querySelector<HTMLElement>('[data-copilot-trigger="true"]')
+              Array.from(
+                document.querySelectorAll<HTMLElement>('[data-copilot-trigger="true"]')
+              )
+                .find((el) => el.offsetParent !== null)
                 ?.focus({ preventScroll: true });
             }
           });

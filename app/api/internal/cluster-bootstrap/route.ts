@@ -10,6 +10,7 @@ import { getAllRegions } from "@/db/client";
 import { cacheGetOrLoad } from "@/lib/civic-cache";
 import { loadClusterBundle, loadOverview, loadTrends, loadWorkorderStats } from "@/lib/civic-queries";
 import { bootstrapClusterWorkers } from "@/lib/cluster-bootstrap";
+import { startDailyReportScheduler } from "@/lib/daily-report-scheduler";
 import { filterRegionsByAppDomain, getAppDomainMode } from "@/lib/domain-profile";
 import { apiSuccess, apiError, ApiCode } from "@/lib/api-codes";
 
@@ -48,6 +49,7 @@ export async function POST(_req: NextRequest) {
   try {
     const result = await bootstrapClusterWorkers();
     scheduleAggregateCacheWarmup();
+    startDailyReportScheduler();
     return apiSuccess(result);
   } catch (err: any) {
     console.warn("[api/_internal/cluster-bootstrap] failed:", err?.message || err);

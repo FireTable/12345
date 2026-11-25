@@ -38,7 +38,6 @@ interface CommandItem {
   hint: string;
   aliases: string[];
   icon: React.ReactNode;
-  accentClass: string;
   href?: string;
   onSelect?: () => void;
 }
@@ -91,7 +90,6 @@ export function QuickCommandDialog({
         hint: "直接打开",
         aliases: ["ai", "研判", "客诉", "聊天框", "对话", "助手", "副驾驶", "copilot", "问答"],
         icon: <MessageCircle size={16} aria-hidden="true" />,
-        accentClass: "bg-blue-50 text-blue-600 border-blue-200/80",
         onSelect: onOpenCopilot,
       },
       {
@@ -102,7 +100,6 @@ export function QuickCommandDialog({
         hint: "切换控制台",
         aliases: ["流水线", "聚类", "任务", "进度", "pipeline", "算力", "控制台"],
         icon: <Cpu size={16} aria-hidden="true" />,
-        accentClass: "bg-indigo-50 text-indigo-600 border-indigo-200/80",
         onSelect: onTogglePipeline,
       },
       {
@@ -115,7 +112,6 @@ export function QuickCommandDialog({
         hint: "/",
         aliases: ["/", "总览", "首页", "驾驶舱", "统计", "dashboard", "看板"],
         icon: <LayoutDashboard size={16} aria-hidden="true" />,
-        accentClass: "bg-sky-50 text-sky-600 border-sky-200/80",
         href: "/",
       },
       {
@@ -128,7 +124,6 @@ export function QuickCommandDialog({
         hint: "/multifreq",
         aliases: ["/multifreq", "多频", "聚类", "重复", "高频", "透势", "四象限", "假闭环", "multifreq"],
         icon: <Activity size={16} aria-hidden="true" />,
-        accentClass: "bg-amber-50 text-amber-600 border-amber-200/80",
         href: "/multifreq",
       },
       {
@@ -141,7 +136,6 @@ export function QuickCommandDialog({
         hint: "/themes",
         aliases: ["/themes", "专题", "事件", "热点", "多频", "主题", "群组", "themes"],
         icon: <Layers size={16} aria-hidden="true" />,
-        accentClass: "bg-rose-50 text-rose-600 border-rose-200/80",
         href: "/themes",
       },
       {
@@ -154,7 +148,6 @@ export function QuickCommandDialog({
         hint: "/screen",
         aliases: ["/screen", "大屏", "地图", "透势", "态势", "热力图", "指挥", "screen"],
         icon: <Monitor size={16} aria-hidden="true" />,
-        accentClass: "bg-cyan-50 text-cyan-700 border-cyan-200/80",
         href: "/screen",
       },
       {
@@ -167,7 +160,6 @@ export function QuickCommandDialog({
         hint: "/tickets",
         aliases: ["/tickets", "工单", "列表", "缺资料", "假闭环", "搜索", "核查", "tickets"],
         icon: <ListChecks size={16} aria-hidden="true" />,
-        accentClass: "bg-emerald-50 text-emerald-700 border-emerald-200/80",
         href: "/tickets",
       },
       {
@@ -178,7 +170,6 @@ export function QuickCommandDialog({
         hint: "/agent",
         aliases: ["/agent", "治理", "外呼", "电话", "巡检", "待办", "回访", "红线", "专报", "agent"],
         icon: <Bot size={16} aria-hidden="true" />,
-        accentClass: "bg-violet-50 text-violet-600 border-violet-200/80",
         href: "/agent",
       },
       {
@@ -189,7 +180,6 @@ export function QuickCommandDialog({
         hint: "/dict",
         aliases: ["/dict", "词典", "词库", "同义词", "别名", "标准字典", "白名单", "dict"],
         icon: <BookOpen size={16} aria-hidden="true" />,
-        accentClass: "bg-slate-100 text-slate-700 border-slate-200",
         href: "/dict",
       },
       {
@@ -200,7 +190,6 @@ export function QuickCommandDialog({
         hint: "/sandbox",
         aliases: ["/sandbox", "沙盒", "测试", "脱敏", "onnx", "xray", "演练", "sandbox"],
         icon: <FlaskConical size={16} aria-hidden="true" />,
-        accentClass: "bg-teal-50 text-teal-700 border-teal-200/80",
         href: "/sandbox",
       },
       {
@@ -213,7 +202,6 @@ export function QuickCommandDialog({
         hint: "/admin/regions",
         aliases: ["/admin/regions", "站点", "区域", "租户", "算力节点", "地图", "品牌", "regions"],
         icon: <Globe2 size={16} aria-hidden="true" />,
-        accentClass: "bg-blue-50 text-blue-700 border-blue-200/80",
         href: "/admin/regions",
       },
       {
@@ -226,7 +214,6 @@ export function QuickCommandDialog({
         hint: "/submit",
         aliases: ["/submit", "市民", "买家", "投诉", "客诉", "填报", "提交", "预览", "submit"],
         icon: <Send size={16} aria-hidden="true" />,
-        accentClass: "bg-orange-50 text-orange-600 border-orange-200/80",
         href: "/submit",
       },
     ],
@@ -405,7 +392,7 @@ export function QuickCommandDialog({
         快速搜索与功能跳转
       </h1>
 
-      <div className="flex items-center gap-2.5 px-4 py-3 border-b border-slate-200 bg-slate-50/70 transition-colors focus-within:bg-white focus-within:ring-2 focus-within:ring-blue-600 focus-within:ring-inset forced-colors:focus-within:outline forced-colors:focus-within:outline-2 forced-colors:focus-within:outline-[Highlight]">
+      <div className="flex items-center gap-2.5 px-4 py-3.5 border-b border-slate-200/80 bg-white forced-colors:focus-within:outline forced-colors:focus-within:outline-2 forced-colors:focus-within:outline-[Highlight]">
         <Search size={17} className="text-slate-400 shrink-0" aria-hidden="true" />
         <label htmlFor={inputId} className="sr-only">
           搜索页面或工具关键词
@@ -428,7 +415,7 @@ export function QuickCommandDialog({
           aria-controls={listboxId}
           aria-activedescendant={activeItem ? `quick-cmd-opt-${activeItem.id}` : undefined}
           aria-autocomplete="list"
-          className="flex-1 min-w-0 bg-transparent text-[14px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:outline-none [&::-webkit-search-cancel-button]:hidden"
+          className="flex-1 min-w-0 bg-transparent text-[14px] text-slate-900 caret-blue-600 placeholder:text-slate-400 focus:outline-none focus-visible:outline-none [&::-webkit-search-cancel-button]:hidden"
         />
         {query ? (
           <button
@@ -510,19 +497,23 @@ export function QuickCommandDialog({
                         aria-selected={isSelected}
                         onMouseEnter={() => setActiveIndex(flatIndex)}
                         onClick={() => handleSelectItem(item)}
-                        className={`w-full flex items-center gap-3 px-2.5 py-2 rounded-xl text-left transition-colors cursor-pointer border ${
+                        className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors cursor-pointer ${
                           isSelected
-                            ? "bg-blue-50/90 border-blue-200 text-slate-900"
-                            : "bg-transparent border-transparent text-slate-800 hover:bg-slate-50"
+                            ? "bg-slate-100/90 text-slate-900"
+                            : "bg-transparent text-slate-700 hover:bg-slate-100/60"
                         }`}
                       >
                         <span
-                          className={`w-8 h-8 rounded-lg border flex items-center justify-center shrink-0 ${item.accentClass}`}
+                          className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 transition-colors ${
+                            isSelected
+                              ? "bg-white text-blue-600 shadow-2xs"
+                              : "bg-slate-100/80 text-slate-500"
+                          }`}
                         >
                           {item.icon}
                         </span>
                         <span className="flex-1 min-w-0">
-                          <span className="block text-[13.5px] font-semibold leading-snug truncate">
+                          <span className="block text-[13.5px] font-medium leading-snug truncate">
                             {item.title}
                           </span>
                           <span className="block text-[12px] text-slate-500 leading-snug truncate mt-0.5">
@@ -531,10 +522,8 @@ export function QuickCommandDialog({
                         </span>
                         <span className="flex items-center gap-1.5 shrink-0">
                           <span
-                            className={`text-[11px] font-mono px-1.5 py-0.5 rounded ${
-                              isSelected
-                                ? "bg-blue-100/80 text-blue-700"
-                                : "bg-slate-100 text-slate-500"
+                            className={`text-[11px] font-mono ${
+                              isSelected ? "text-slate-600" : "text-slate-400"
                             }`}
                           >
                             {item.hint}
@@ -542,7 +531,7 @@ export function QuickCommandDialog({
                           {isSelected ? (
                             <CornerDownLeft
                               size={13}
-                              className="text-blue-600 shrink-0"
+                              className="text-slate-400 shrink-0"
                               aria-hidden="true"
                             />
                           ) : null}

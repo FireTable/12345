@@ -324,6 +324,47 @@ export function CivicNav() {
   const isLoginPage = pathname === "/login";
   const brandHref = !isAuthenticated || isLoginPage ? "/login" : isCitizen ? "/submit" : "/";
 
+  const handleOpenQuickCmd = () => {
+    setMenuOpen(false);
+    setMoreOpen(false);
+    setUserMenuOpen(false);
+    setQuickCmdMounted(true);
+    setQuickCmdOpen(true);
+  };
+
+  const handleOpenCopilot = () => {
+    setMenuOpen(false);
+    setMoreOpen(false);
+    setUserMenuOpen(false);
+    openCopilot();
+  };
+
+  const renderQuickActionIcons = () => (
+    <>
+      <button
+        type="button"
+        className="navbar-icon-btn navbar-icon-btn--search"
+        onClick={handleOpenQuickCmd}
+        title="搜功能 (⌘K / Ctrl+K)"
+        aria-label="搜功能 (⌘K)"
+        aria-keyshortcuts="Meta+k Control+k"
+      >
+        <Search size={16} aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        className={`navbar-icon-btn navbar-icon-btn--copilot${copilotOpen ? " is-active" : ""}`}
+        data-copilot-trigger="true"
+        onClick={handleOpenCopilot}
+        title={isEcommerce ? "AI 客诉副驾驶" : "AI 研判副驾驶"}
+        aria-label={isEcommerce ? "打开 AI 客诉副驾驶" : "打开 AI 研判副驾驶"}
+        aria-expanded={copilotOpen}
+      >
+        <MessageCircle size={16} strokeWidth={2.1} aria-hidden="true" />
+      </button>
+    </>
+  );
+
   return (
     <>
       <nav className="navbar" aria-label="主导航">
@@ -375,48 +416,7 @@ export function CivicNav() {
         ) : (
           <>
             {isAdmin ? (
-              <>
-                <button
-                  type="button"
-                  className={`navbar-copilot-btn${copilotOpen ? " is-active" : ""}`}
-                  data-copilot-trigger="true"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setMoreOpen(false);
-                    setUserMenuOpen(false);
-                    openCopilot();
-                  }}
-                  title={isEcommerce ? "打开 AI 客诉副驾驶" : "打开 AI 研判副驾驶"}
-                  aria-label={isEcommerce ? "打开 AI 客诉副驾驶" : "打开 AI 研判副驾驶"}
-                  aria-expanded={copilotOpen}
-                >
-                  <MessageCircle size={14} strokeWidth={2.2} aria-hidden="true" />
-                  <span className="navbar-copilot-btn__short">AI</span>
-                  <span className="navbar-copilot-btn__full">
-                    {isEcommerce ? "AI 客诉" : "AI 研判"}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="navbar-search-btn"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setMoreOpen(false);
-                    setUserMenuOpen(false);
-                    setQuickCmdMounted(true);
-                    setQuickCmdOpen(true);
-                  }}
-                  title="快速搜索与功能跳转 (⌘K / Ctrl+K)"
-                  aria-label="搜功能：快速搜索与跳转 (⌘K)"
-                  aria-keyshortcuts="Meta+k Control+k"
-                >
-                  <Search size={14} aria-hidden="true" />
-                  <span className="navbar-search-btn__label">搜功能</span>
-                  <kbd className="navbar-search-btn__kbd" aria-hidden="true">
-                    ⌘K
-                  </kbd>
-                </button>
-              </>
+              <div className="navbar__mobile-quick">{renderQuickActionIcons()}</div>
             ) : null}
 
             <button
@@ -540,6 +540,7 @@ export function CivicNav() {
               <div className="navbar__user">
                 {isAdmin ? (
                   <>
+                    {renderQuickActionIcons()}
                     <button
                       type="button"
                       className={`pipeline-console-icon-btn ${pipelineDrawerOpen ? " is-active" : ""} ${

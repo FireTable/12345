@@ -389,53 +389,52 @@
 .donut-legend { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 12px; color: var(--c-ink-2); margin-top: 8px; }
 .filter-bar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
 
-@layer components {
-  .filter-bar input,
-  .filter-bar select {
-    min-block-size: 32px;
-    border: 1px solid var(--c-border);
-    border-radius: 8px;
-    padding: 4px 10px;
-    font-size: 13px;
-  }
-
-  @media (max-width: 768px) {
-    .filter-bar input,
-    .filter-bar select {
-      min-block-size: 44px;
-    }
-  }
-
-  .filter-select {
-    min-block-size: 32px;
-    padding: 4px 26px 4px 10px;
-    background: var(--c-surface) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="6" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4" stroke="%2386909C" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>') no-repeat right 8px center;
-    border: 1px solid var(--c-border);
-    border-radius: 8px;
-    font-size: 13px;
-    color: var(--c-ink-2);
-    cursor: pointer;
-    appearance: none;
-  }
-  .filter-select:focus-visible { border-color: var(--c-brand); outline: 2px solid var(--c-brand); outline-offset: 2px; box-shadow: 0 0 0 2px var(--c-brand-soft); }
-
-  .search-input {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-block-size: 32px;
-    padding: 4px 10px;
-    background: var(--c-bg);
-    border: 1px solid var(--c-border);
-    border-radius: 8px;
-    flex: 1;
-    min-width: 200px;
-    max-width: 320px;
-  }
-  .search-input:focus-within { border-color: var(--c-brand); box-shadow: 0 0 0 2px var(--c-brand-soft); }
-  .search-input input { border: none; outline: none; background: transparent; font-size: 13px; color: var(--c-ink); flex: 1; min-width: 0; padding: 0; }
-  .search-input input:focus-visible { outline: none; }
+.filter-bar input,
+.filter-bar select {
+  min-block-size: 32px;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 13px;
 }
+
+.filter-select {
+  min-block-size: 32px;
+  padding: 4px 26px 4px 10px;
+  background: var(--c-surface) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="6" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4" stroke="%2386909C" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>') no-repeat right 8px center;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--c-ink-2);
+  cursor: pointer;
+  appearance: none;
+}
+.filter-select:focus-visible { border-color: var(--c-brand); outline: 2px solid var(--c-brand); outline-offset: 2px; box-shadow: 0 0 0 2px var(--c-brand-soft); }
+
+.search-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-block-size: 32px;
+  padding: 4px 10px;
+  background: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  flex: 1;
+  min-width: 200px;
+  max-width: 320px;
+}
+@media (max-width: 768px) {
+  .filter-bar input,
+  .filter-bar select,
+  .filter-select,
+  .search-input {
+    min-block-size: 44px;
+  }
+}
+.search-input:focus-within { border-color: var(--c-brand); box-shadow: 0 0 0 2px var(--c-brand-soft); }
+.search-input input { border: none; outline: none; background: transparent; font-size: 13px; color: var(--c-ink); flex: 1; min-width: 0; padding: 0; }
+.search-input input:focus-visible { outline: none; }
 
 .page-hero__title { display: flex; align-items: center; gap: 8px; }
 .page-hero__actions { display: flex; gap: 8px; align-items: center; }
@@ -1910,6 +1909,31 @@
 
 @keyframes conic-rotate {
   to { --angle: 360deg; }
+}
+
+.navbar .navbar-icon-btn--search {
+  color: var(--c-ink-2) !important;
+  background: var(--c-surface);
+  border-color: var(--c-border);
+}
+
+.navbar .navbar-icon-btn--search:hover {
+  background: var(--c-brand-tint) !important;
+  color: var(--c-brand-dark) !important;
+  border-color: #91caff !important;
+}
+
+.navbar .navbar-icon-btn--copilot {
+  color: #1668e3 !important;
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.navbar .navbar-icon-btn--copilot:hover,
+.navbar .navbar-icon-btn--copilot.is-active {
+  background: #1677ff !important;
+  color: #ffffff !important;
+  border-color: #1677ff !important;
 }
 
 .navbar .navbar-icon-btn--video {
