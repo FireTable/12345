@@ -70,7 +70,7 @@ export function CockpitAlertPanel({
             return (
               <div
                 key={alert.id}
-                className="p-2.5 rounded-xl border border-white/[0.07] border-l-2 border-l-rose-400/80 bg-white/[0.03] hover:bg-white/[0.05] transition-colors min-w-0"
+                className="p-2.5 rounded-xl border border-rose-400/30 bg-white/[0.03] hover:bg-white/[0.05] transition-colors min-w-0"
               >
                 <div className="flex items-center justify-between gap-2 text-xs mb-1 min-w-0">
                   <div className="flex items-center gap-1.5 min-w-0 flex-1">

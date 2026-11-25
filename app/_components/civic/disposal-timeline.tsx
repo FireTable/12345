@@ -2,6 +2,7 @@
 
 import React from "react";
 import { History, ArrowRight, User, Building2 } from "lucide-react";
+import { fmtNum } from "@/lib/format-number";
 
 export type DisposalLogItem = {
   id: string;
@@ -154,7 +155,7 @@ export function DisposalTimeline({
           <span>{title}</span>
           {logs.length > 0 && (
             <span className="text-xs font-normal text-slate-500 tabular-nums">
-              ({logs.length})
+              ({fmtNum(logs.length)})
             </span>
           )}
         </HeadingTag>

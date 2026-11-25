@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 
 import Link from "next/link";
 import { useRegion } from "./region-context";
 import { MapPin, ChevronDown, Check, Settings } from "lucide-react";
+import { fmtNum } from "@/lib/format-number";
 
 export function RegionSelector() {
   const { activeRegion, regions, switchRegion, isLoading } = useRegion();
@@ -287,7 +288,7 @@ export function RegionSelector() {
                 >
                   <span>政务 12345 热线</span>
                   <span className="font-mono tabular-nums text-[10px] text-slate-400">
-                    {govRegions.length}
+                    {fmtNum(govRegions.length)}
                   </span>
                 </div>
                 {govRegions.map((r, i) => renderRegionOption(r, i))}
@@ -306,7 +307,7 @@ export function RegionSelector() {
                 >
                   <span>{govRegions.length > 0 ? "跨行业示范 · 电商客诉" : "电商客诉站点"}</span>
                   <span className="font-mono tabular-nums text-[10px] text-amber-600">
-                    {ecomRegions.length}
+                    {fmtNum(ecomRegions.length)}
                   </span>
                 </div>
                 {ecomRegions.map((r, i) => renderRegionOption(r, govRegions.length + i))}

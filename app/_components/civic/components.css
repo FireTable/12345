@@ -196,7 +196,8 @@
   .navbar-icon-btn,
   .pipeline-console-icon-btn,
   dialog.quick-cmd-dialog,
-  dialog.copilot-dialog {
+  .copilot-popover,
+  .copilot-fab {
     border: 1px solid CanvasText;
   }
 }
@@ -233,8 +234,7 @@
     flex-shrink: 0;
     order: 2;
   }
-  .navbar__user .navbar-icon-btn--search,
-  .navbar__user .navbar-icon-btn--copilot {
+  .navbar__user .navbar-icon-btn--search {
     display: none;
   }
 }
@@ -780,7 +780,6 @@ a.btn--primary:hover,
 .toast {
   background: var(--c-surface);
   border: 1px solid var(--c-border);
-  border-left: 3px solid var(--c-brand);
   border-radius: var(--r-md);
   padding: var(--s-3) var(--s-4);
   box-shadow: var(--sh-3);
@@ -795,8 +794,8 @@ a.btn--primary:hover,
   }
   .toast.is-leaving { animation: toast-out 0.3s var(--ease) both; }
 }
-.toast--success { border-left-color: var(--c-success); }
-.toast--warning { border-left-color: var(--c-warning); }
+.toast--success { border-color: rgba(22, 163, 74, 0.3); }
+.toast--warning { border-color: rgba(245, 158, 11, 0.35); }
 .toast__icon { font-size: 16px; }
 .toast--success .toast__icon { color: var(--c-success); }
 @keyframes toast-in {
@@ -1026,17 +1025,6 @@ a.btn--primary:hover,
   position: relative;
   overflow: hidden;
 }
-.insight-card::before {
-  content: '';
-  position: absolute;
-  left: 0; top: 0; bottom: 0;
-  width: 3px;
-  background: var(--c-ink-3);
-}
-.insight-card--danger::before { background: #F53F3F; }
-.insight-card--warning::before { background: #FF7D00; }
-.insight-card--info::before { background: #1677FF; }
-.insight-card--success::before { background: #16A34A; }
 .insight-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(30,90,255,0.08);
@@ -1274,85 +1262,82 @@ dialog.quick-cmd-dialog::backdrop {
   scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
 
-/* Native top-layer LightCopilot (<dialog>) */
-dialog.copilot-dialog {
-  display: none;
-  flex-direction: row;
-  inset: 0 0 0 auto;
-  margin: 0 0 0 auto;
-  padding: 0;
-  border-top: 0;
-  border-right: 0;
-  border-bottom: 0;
-  max-width: none;
-  max-height: none;
-  height: 100dvh;
+/* Admin bottom-right floating ChatBubble & non-fullscreen popover */
+.copilot-fab {
+  position: fixed;
+  right: max(20px, env(safe-area-inset-right, 0px));
+  bottom: max(20px, env(safe-area-inset-bottom, 0px));
+  z-index: 955;
+  width: 48px;
+  height: 48px;
+  min-inline-size: 48px;
+  min-block-size: 48px;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #1668E3 0%, #0958D9 100%);
+  border: 1px solid #0958D9;
+  color: #ffffff;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(22, 119, 255, 0.28), 0 2px 6px rgba(15, 23, 42, 0.12);
+  transition: transform 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease;
+}
+
+.copilot-fab:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(22, 119, 255, 0.34), 0 4px 10px rgba(15, 23, 42, 0.14);
+}
+
+.copilot-fab.is-open {
+  background: #0f172a;
+  border-color: #1e293b;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.24);
+}
+
+.copilot-fab:focus-visible,
+.copilot-popover:focus-visible {
+  outline: 2px solid var(--c-brand);
+  outline-offset: 2px;
+}
+
+@keyframes copilot-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.copilot-popover {
   overscroll-behavior: contain;
-  opacity: 0;
-  transition-property: opacity, transform, display, overlay;
-  transition-duration: 0.26s;
-  transition-timing-function: cubic-bezier(0.32, 0.72, 0.18, 1);
-  transition-behavior: allow-discrete;
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  dialog.copilot-dialog {
-    transform: translateX(100%);
+  .copilot-popover {
+    animation: copilot-pop-in 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 }
 
-dialog.copilot-dialog[open] {
-  display: flex;
-  opacity: 1;
-
-  @starting-style {
-    opacity: 0;
+@media (max-width: 639px) {
+  .copilot-fab {
+    right: max(14px, env(safe-area-inset-right, 0px));
+    bottom: max(14px, env(safe-area-inset-bottom, 0px));
+    width: 46px;
+    height: 46px;
+    min-inline-size: 46px;
+    min-block-size: 46px;
   }
-
-  @media (prefers-reduced-motion: no-preference) {
-    transform: translateX(0);
-
-    @starting-style {
-      transform: translateX(100%);
-    }
-  }
-}
-
-dialog.copilot-dialog:modal {
-  overscroll-behavior: contain;
-}
-
-dialog.copilot-dialog::backdrop {
-  background-color: rgba(15, 23, 42, 0);
-  backdrop-filter: blur(0px);
-  -webkit-backdrop-filter: blur(0px);
-  overflow: hidden;
-  overscroll-behavior: contain;
-  transition-property: background-color, backdrop-filter, display, overlay;
-  transition-duration: 0.26s;
-  transition-timing-function: cubic-bezier(0.32, 0.72, 0.18, 1);
-  transition-behavior: allow-discrete;
-}
-
-dialog.copilot-dialog[open]::backdrop {
-  background-color: rgba(15, 23, 42, 0.5);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-
-  @starting-style {
-    background-color: rgba(15, 23, 42, 0);
-    backdrop-filter: blur(0px);
-  }
-}
-
-dialog.copilot-dialog:focus-visible {
-  outline: 2px solid var(--c-brand);
-  outline-offset: -2px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  dialog.copilot-dialog,
-  dialog.copilot-dialog::backdrop {
-    transition-duration: 0.1s;
+  .copilot-fab {
+    transition-property: background-color, box-shadow, border-color;
+  }
+  .copilot-fab:hover {
+    transform: none;
   }
 }

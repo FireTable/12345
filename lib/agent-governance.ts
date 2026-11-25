@@ -31,6 +31,7 @@ import { evaluateEcommerceTicket } from "@/lib/ecommerce-triage";
 import { broadcastDataRefresh } from "@/lib/sse-broadcaster";
 import { buildRecordsFromRows, insertRecordsBatch } from "@/lib/ticket-ingest";
 import { triggerClusterJobAuto } from "@/lib/cluster-runner";
+import { fmtNum } from "@/lib/format-number";
 
 export interface IntakeDraft {
   title: string;
@@ -2843,11 +2844,11 @@ export async function runAgentPatrol(regionId: string): Promise<{
       missingSlots: [],
       draftMessage: maskFreeText(
         isEcommerce
-          ? `【客诉积压催办单】专题「${safeTitle}」已汇聚 ${count} 起待办客诉（风险等级 ${th.risk_level}），请责任团队「${owner}」在 2 小时内响应整改并同步赔付方案。`
-          : `【12345超期督办催办单】专题「${safeTitle}」已聚集 ${count} 件待处置工单（风险等级 ${th.risk_level}），请牵头部门「${owner}」立即核实处置并回传进展。`
+          ? `【客诉积压催办单】专题「${safeTitle}」已汇聚 ${fmtNum(count)} 起待办客诉（风险等级 ${th.risk_level}），请责任团队「${owner}」在 2 小时内响应整改并同步赔付方案。`
+          : `【12345超期督办催办单】专题「${safeTitle}」已聚集 ${fmtNum(count)} 件待处置工单（风险等级 ${th.risk_level}），请牵头部门「${owner}」立即核实处置并回传进展。`
       ),
       suggestedOwner: owner,
-      reason: `多频专题（${count} 件诉求，风险 ${th.risk_level}）长期处于 PENDING 待处置状态`,
+      reason: `多频专题（${fmtNum(count)} 件诉求，风险 ${th.risk_level}）长期处于 PENDING 待处置状态`,
     });
   }
 
@@ -3872,7 +3873,7 @@ export async function generateAgentReport(regionId: string): Promise<{
       ? topThemes
           .map(
             (th, idx) =>
-              `| ${idx + 1} | ${escapeMd(maskFreeText(String(th.title || th.id)))} | ${escapeMd(String(th.category || "-"))} | ${th.risk_level || "LOW"} | ${th.ticket_count || 0} | ${th.handling_status || "PENDING"} |`
+              `| ${idx + 1} | ${escapeMd(maskFreeText(String(th.title || th.id)))} | ${escapeMd(String(th.category || "-"))} | ${th.risk_level || "LOW"} | ${fmtNum(th.ticket_count || 0)} | ${th.handling_status || "PENDING"} |`
           )
           .join("\n")
       : "| - | 暂无多频聚集专题 | - | - | 0 | - |";
@@ -3886,7 +3887,7 @@ export async function generateAgentReport(regionId: string): Promise<{
               th.handling_owner as string | null
             );
             const cleanTitle = escapeMd(maskFreeText(String(th.title || th.id)));
-            return `- 「${cleanTitle}」（${th.ticket_count} 件 / 风险 ${th.risk_level} / 牵头：${escapeMd(owner)}）`;
+            return `- 「${cleanTitle}」（${fmtNum(Number(th.ticket_count || 0))} 件 / 风险 ${th.risk_level} / 牵头：${escapeMd(owner)}）`;
           })
           .join("\n")
       : "- 当前无积压 >= 5 件的 PENDING 超期专题。";
@@ -3910,10 +3911,10 @@ export async function generateAgentReport(regionId: string): Promise<{
 
 | 核心指标 | 数值 | 说明 |
 | --- | ---: | --- |
-| 累计客诉工单总量 | ${stats.totalTickets.toLocaleString("zh-CN")} | 待派单 ${stats.pendingTickets} / 处理中 ${stats.inProgressTickets} / 已办结 ${stats.resolvedTickets} |
-| 客诉多频案卷总数 | ${stats.totalThemes.toLocaleString("zh-CN")} | 高风险案卷 ${stats.highRiskThemes} 个 |
-| 合规/食安/12315 红线单 | ${stats.stabilityRiskTickets.toLocaleString("zh-CN")} | 强制 L3 人工接管，禁止自动外联 |
-| 疑似假闭环与重开单 | ${stats.fakeClosureTickets.toLocaleString("zh-CN")} | 含重开案卷 ${stats.reopenedThemes} 个 |
+| 累计客诉工单总量 | ${fmtNum(stats.totalTickets)} | 待派单 ${fmtNum(stats.pendingTickets)} / 处理中 ${fmtNum(stats.inProgressTickets)} / 已办结 ${fmtNum(stats.resolvedTickets)} |
+| 客诉多频案卷总数 | ${fmtNum(stats.totalThemes)} | 高风险案卷 ${fmtNum(stats.highRiskThemes)} 个 |
+| 合规/食安/12315 红线单 | ${fmtNum(stats.stabilityRiskTickets)} | 强制 L3 人工接管，禁止自动外联 |
+| 疑似假闭环与重开单 | ${fmtNum(stats.fakeClosureTickets)} | 含重开案卷 ${fmtNum(stats.reopenedThemes)} 个 |
 
 ## 二、Top 5 高危/多频客诉案卷排行
 
@@ -3931,7 +3932,7 @@ ${fakeMd}
 
 ## 五、次日质检与挽回行动建议
 
-1. **红线零容忍**：对 ${stats.stabilityRiskTickets} 条涉食安/假冒/12315 风险工单由法务与品质团队优先人工兜底挽回。
+1. **红线零容忍**：对 ${fmtNum(stats.stabilityRiskTickets)} 条涉食安/假冒/12315 风险工单由法务与品质团队优先人工兜底挽回。
 2. **SKU 与仓网溯源**：聚焦 Top 5 案卷对应店铺与冷链/分拨仓，推动批量赔付与批次下架核验。
 3. **48h 回访防反弹**：持续对已办结案卷开展 AI 语音回访，拦截机械安抚式假闭环。`
     : `# ${title}
@@ -3942,10 +3943,10 @@ ${fakeMd}
 
 | 核心指标 | 数值 | 态势说明 |
 | --- | ---: | --- |
-| 累计民生工单总量 | ${stats.totalTickets.toLocaleString("zh-CN")} | 待派单 ${stats.pendingTickets} / 处理中 ${stats.inProgressTickets} / 已办结 ${stats.resolvedTickets} |
-| 多频研判专题总数 | ${stats.totalThemes.toLocaleString("zh-CN")} | 高风险专题 ${stats.highRiskThemes} 个 |
-| 涉稳红线预警工单 | ${stats.stabilityRiskTickets.toLocaleString("zh-CN")} | 触发 L3 熔断拦截，专班人工核查 |
-| 疑似假闭环重开记录 | ${stats.fakeClosureTickets.toLocaleString("zh-CN")} | 含重开专题 ${stats.reopenedThemes} 个 |
+| 累计民生工单总量 | ${fmtNum(stats.totalTickets)} | 待派单 ${fmtNum(stats.pendingTickets)} / 处理中 ${fmtNum(stats.inProgressTickets)} / 已办结 ${fmtNum(stats.resolvedTickets)} |
+| 多频研判专题总数 | ${fmtNum(stats.totalThemes)} | 高风险专题 ${fmtNum(stats.highRiskThemes)} 个 |
+| 涉稳红线预警工单 | ${fmtNum(stats.stabilityRiskTickets)} | 触发 L3 熔断拦截，专班人工核查 |
+| 疑似假闭环重开记录 | ${fmtNum(stats.fakeClosureTickets)} | 含重开专题 ${fmtNum(stats.reopenedThemes)} 个 |
 
 ## 二、Top 5 高风险/多频专题研判
 

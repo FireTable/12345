@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
+import { fmtNum } from "@/lib/format-number";
 import {
   Sparkles,
   Shield,
@@ -891,7 +892,7 @@ export default function SandboxXrayPage() {
 
                 <div>
                   <div className="text-xs text-slate-500 mb-1">
-                    检索到的相似历史工单 ({s5?.similarTickets?.length ?? 0})
+                    检索到的相似历史工单 ({fmtNum(s5?.similarTickets?.length ?? 0)})
                   </div>
                   {s5 && s5.similarTickets.length > 0 ? (
                     <div className="space-y-1.5 max-h-36 overflow-y-auto">

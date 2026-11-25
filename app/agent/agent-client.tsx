@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { toast } from "sonner";
+import { fmtNum } from "@/lib/format-number";
 import {
   AlertTriangle,
   Bot,
@@ -757,7 +758,7 @@ export default function AgentCenterPage() {
                   ) : null}
                 </div>
                 <div className={`text-xl font-bold tabular-nums mt-0.5 ${card.valueClass}`}>
-                  {card.count}
+                  {fmtNum(card.count)}
                 </div>
                 <div className="text-[11px] text-slate-500 leading-snug mt-1 break-words">
                   {card.guidance}
@@ -794,7 +795,7 @@ export default function AgentCenterPage() {
           <Bot className="w-4 h-4 shrink-0" aria-hidden="true" />
           <span>主动待办队列</span>
           <span className="text-[11px] font-mono tabular-nums px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
-            {summary.pending}/{summary.total}
+            {fmtNum(summary.pending)}/{fmtNum(summary.total)}
           </span>
         </button>
 
@@ -812,7 +813,7 @@ export default function AgentCenterPage() {
           <span>每日研判专报</span>
           {reports.length > 0 && (
             <span className="text-[11px] font-mono tabular-nums px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
-              {reports.length}
+              {fmtNum(reports.length)}
             </span>
           )}
         </button>
@@ -868,7 +869,7 @@ export default function AgentCenterPage() {
               )}
             </div>
             <span className="text-xs text-slate-500 tabular-nums shrink-0">
-              当前显示 {filteredTasks.length} 条任务
+              当前显示 {fmtNum(filteredTasks.length)} 条任务
             </span>
           </div>
 

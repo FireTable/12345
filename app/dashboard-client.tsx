@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { CivicHeatmap, donutOption, trendOption } from "@/app/_components/civic/civic-charts";
 import { buildSafeCsv } from "@/lib/export-csv";
+import { fmtNum } from "@/lib/format-number";
 import { getTownshipColor, isUnknownTownship } from "@/lib/civic-cluster";
 import { FileText, Activity, Sparkles, FolderKanban, MonitorPlay, TrendingUp } from "lucide-react";
 import { StatCard, StatCardGrid } from "@/app/_components/civic/stat-card";
@@ -201,7 +202,7 @@ export default function DashboardPage() {
       a.download = "ticket_radar_clusters.csv";
       a.click();
       URL.revokeObjectURL(url);
-      toast.success(`已导出 ${list.length} 个群组`);
+      toast.success(`已导出 ${fmtNum(list.length)} 个群组`);
     } catch (err: any) {
       if (controller.signal.aborted || err?.name === "AbortError") return;
       toast.error(err instanceof Error ? err.message : "导出失败");
@@ -316,7 +317,7 @@ export default function DashboardPage() {
               tone="blue"
               label="总工单"
               value={ov?.totalWorkorders}
-              sub={ov?.totalDays ? `${ov.totalDays} 天累计` : "--"}
+              sub={ov?.totalDays ? `${fmtNum(ov.totalDays)} 天累计` : "--"}
               href="/tickets"
             />
             <StatCard
@@ -481,7 +482,7 @@ export default function DashboardPage() {
               <div className="card__header">
                 <h2 className="card__title">工单类型分布</h2>
                 <div style={{ fontSize: 13, color: "var(--c-ink-3)" }}>
-                  已研判 <b>{ov?.analyzedCount || 0}</b> / {ov?.totalWorkorders || 0} 件
+                  已研判 <b>{fmtNum(ov?.analyzedCount || 0)}</b> / {fmtNum(ov?.totalWorkorders || 0)} 件
                 </div>
               </div>
               <div
@@ -527,7 +528,7 @@ export default function DashboardPage() {
               {regions.length > 0 && cats.length > 0 ? (
                 <div className="px-4 py-2 border-t border-[var(--c-border-soft)] text-[13px] text-[var(--c-ink-3)] flex items-center justify-between gap-2 flex-wrap">
                   <span className="tabular-nums">
-                    共 {regions.length} 个{hasGeoMap ? "镇街" : regionUnit} · {cats.slice(0, 7).length} 类诉求
+                    共 {fmtNum(regions.length)} 个{hasGeoMap ? "镇街" : regionUnit} · {fmtNum(cats.slice(0, 7).length)} 类诉求
                   </span>
                   <span>支持横纵滚动查看完整矩阵</span>
                 </div>

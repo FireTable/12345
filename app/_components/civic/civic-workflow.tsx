@@ -4,7 +4,9 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { MessageCircle, X } from "lucide-react";
 import type { TaskProgress } from "@/lib/task-progress";
+import { fmtNum } from "@/lib/format-number";
 import { useCivicSse } from "@/app/_hooks/use-civic-sse";
 import { useRegion } from "./region-context";
 import { useAuthRole } from "@/lib/auth/use-role";
@@ -29,6 +31,7 @@ type CivicWorkflow = {
   taskProgress: TaskProgress | null;
   openUpload: () => void;
   openCopilot: () => void;
+  toggleCopilot: () => void;
   runCluster: () => void;
   isAllAnalyzed: boolean;
   disabledReason: string;
@@ -164,6 +167,12 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
     }
   });
 
+  const showCopilotBubble =
+    isAdmin &&
+    pathname !== "/login" &&
+    pathname !== "/submit" &&
+    pathname !== "/screen";
+
   React.useEffect(() => {
     if (!isAdmin) {
       setUploadOpen(false);
@@ -173,6 +182,12 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
       setPipelineDrawerOpenState(false);
     }
   }, [isAdmin]);
+
+  React.useEffect(() => {
+    if (!showCopilotBubble) {
+      setCopilotOpen(false);
+    }
+  }, [showCopilotBubble]);
 
   React.useEffect(() => {
     if (pathname === "/login" || regionLoading) return;
@@ -196,7 +211,7 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
     ticketStatus.loaded && ticketStatus.total === 0
       ? "暂无工单数据，请先上传工单表格"
       : isAllAnalyzed
-      ? `当前 ${ticketStatus.total} 条工单已全部研判完毕，无需重复执行`
+      ? `当前 ${fmtNum(ticketStatus.total)} 条工单已全部研判完毕，无需重复执行`
       : "";
 
   const refreshPages = useCallback(() => {
@@ -216,17 +231,23 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
   const runCluster = useCallback(() => {
     if (!isAdmin) return;
     if (isAllAnalyzed) {
-      toast.info(`当前 ${ticketStatus.total} 条工单已全部研判完毕，无需重复执行`);
+      toast.info(`当前 ${fmtNum(ticketStatus.total)} 条工单已全部研判完毕，无需重复执行`);
       return;
     }
     setPipelineDrawerOpenState(true);
   }, [isAdmin, isAllAnalyzed, ticketStatus.total]);
 
   const openCopilot = useCallback(() => {
-    if (!isAdmin) return;
+    if (!showCopilotBubble) return;
     setCopilotMounted(true);
     setCopilotOpen(true);
-  }, [isAdmin]);
+  }, [showCopilotBubble]);
+
+  const toggleCopilot = useCallback(() => {
+    if (!showCopilotBubble) return;
+    setCopilotMounted(true);
+    setCopilotOpen((prev) => !prev);
+  }, [showCopilotBubble]);
 
   return (
     <CivicWorkflowContext.Provider
@@ -235,10 +256,11 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
         taskProgress,
         openUpload,
         openCopilot,
+        toggleCopilot,
         runCluster,
         isAllAnalyzed,
         disabledReason,
-        copilotOpen: isAdmin ? copilotOpen : false,
+        copilotOpen: showCopilotBubble ? copilotOpen : false,
         pipelineDrawerOpen: isAdmin ? pipelineDrawerOpen : false,
         setPipelineDrawerOpen,
         togglePipelineDrawer,
@@ -252,7 +274,24 @@ export function CivicWorkflowProvider({ children }: { children: React.ReactNode 
           onDatabaseUpdated={refreshPages}
         />
       ) : null}
-      {isAdmin && (copilotOpen || copilotMounted) ? (
+      {showCopilotBubble ? (
+        <button
+          type="button"
+          className={`copilot-fab${copilotOpen ? " is-open" : ""}`}
+          data-copilot-trigger="true"
+          aria-expanded={copilotOpen}
+          aria-label={copilotOpen ? "收起 AI 研判助手" : "打开 AI 研判助手"}
+          title={copilotOpen ? "收起 AI 研判助手" : "AI 研判助手"}
+          onClick={toggleCopilot}
+        >
+          {copilotOpen ? (
+            <X size={20} aria-hidden="true" />
+          ) : (
+            <MessageCircle size={22} strokeWidth={2.1} aria-hidden="true" />
+          )}
+        </button>
+      ) : null}
+      {showCopilotBubble && (copilotOpen || copilotMounted) ? (
         <LightCopilot
           isOpen={copilotOpen}
           onClose={() => setCopilotOpen(false)}

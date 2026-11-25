@@ -12,6 +12,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
+import { fmtNum } from "@/lib/format-number";
 import { useRegion } from "@/app/_components/civic/region-context";
 import { VoiceChatComposer } from "@/app/_components/civic/voice-chat-composer";
 import { appendRecognizedText, useStreamAsr } from "@/app/_hooks/use-stream-asr";
@@ -2084,7 +2085,7 @@ export default function SubmitPage() {
           <span className="inline-flex items-center gap-2">
             <span>我的投诉进度</span>
             <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700 tabular-nums">
-              {myTickets.length}
+              {fmtNum(myTickets.length)}
             </span>
           </span>
           <ChevronDown

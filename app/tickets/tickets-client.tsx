@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { buildSafeCsv } from "@/lib/export-csv";
+import { fmtNum } from "@/lib/format-number";
 import {
   FileText,
   Clock,
@@ -613,7 +614,7 @@ function TicketsClientInner() {
     a.download = "workorders.csv";
     a.click();
     URL.revokeObjectURL(url);
-    toast.success(`已导出本页 ${data.data.length} 条`);
+    toast.success(`已导出本页 ${fmtNum(data.data.length)} 条`);
   }
 
   return (
@@ -738,7 +739,7 @@ function TicketsClientInner() {
                   >
                     {tabLabel}
                     <span className="filter-tab__count tabular-nums">
-                      {tabCount(t.key, s, reviewTotal)}
+                      {fmtNum(tabCount(t.key, s, reviewTotal))}
                     </span>
                   </button>
                 );
@@ -751,7 +752,7 @@ function TicketsClientInner() {
                     当前站点待人工复核工单（低置信度 / 异常要素抽检）
                   </span>
                   <span className="filter-bar__summary tabular-nums">
-                    共 {reviewTotal ?? reviewRows.length} 条待复核
+                    共 {fmtNum(reviewTotal ?? reviewRows.length)} 条待复核
                   </span>
                 </div>
                 <div
@@ -992,7 +993,7 @@ function TicketsClientInner() {
                       <SelectItem value="上月">时间：上月</SelectItem>
                     </SelectContent>
                   </Select>
-                  <span className="filter-bar__summary tabular-nums">共 {data.total} 条结果</span>
+                  <span className="filter-bar__summary tabular-nums">共 {fmtNum(data.total)} 条结果</span>
                 </div>
                 {loadError && (
                   <div

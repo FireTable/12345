@@ -117,7 +117,7 @@ export function CockpitStream({
                 onClick={() => setSelectedTicket(ticket)}
                 className={`w-full text-left p-2.5 rounded-xl border transition-colors cursor-pointer min-w-0 ${
                   ticket.isUrgent
-                    ? "bg-rose-500/[0.06] border-white/[0.08] border-l-2 border-l-rose-400/85 hover:bg-rose-500/[0.1]"
+                    ? "bg-rose-500/[0.06] border-rose-400/35 hover:bg-rose-500/[0.1]"
                     : "cockpit-glass-subcard"
                 }`}
               >

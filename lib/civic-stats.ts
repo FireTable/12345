@@ -1,5 +1,6 @@
 import { explicitAdmin, isTownLabel } from "./admin-area";
 import { regionLabel, UNKNOWN_TOWN } from "./civic-dto";
+import { fmtNum } from "./format-number";
 import { shanghaiCalendarDate } from "./work-order-date";
 
 export type TicketStatRow = {
@@ -313,7 +314,7 @@ export function buildInsights(
     if (summary && summary.length <= 72 && !summary.includes("【") && !summary.includes("身份证")) return summary;
     const fromTitle = (theme.title || "").split("·")[0]?.trim() || "";
     const place = fromTitle && fromTitle.length <= 12 ? fromTitle : "辖区";
-    return `${place}汇聚 ${theme.ticketCount || 0} 件${theme.category || "民生"}诉求`;
+    return `${place}汇聚 ${fmtNum(theme.ticketCount || 0)} 件${theme.category || "民生"}诉求`;
   };
 
   const sortedPool = [...pool].sort((a, b) => (b.ticketCount || 0) - (a.ticketCount || 0));

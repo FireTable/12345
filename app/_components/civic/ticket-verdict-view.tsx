@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { fmtNum } from "@/lib/format-number";
 import {
   Sparkles,
   Building2,
@@ -278,7 +279,7 @@ export function CitizenVoiceCard({
         </HeadingTag>
         <div className="flex items-center gap-3 flex-wrap text-slate-500">
           <span className="tabular-nums">
-            共 {(data.content || "").length} 字 ·{" "}
+            共 {fmtNum((data.content || "").length)} 字 ·{" "}
             {data.channel || (isEcommerce ? "线上售后渠道" : "市民服务热线")}
           </span>
           <button
@@ -292,7 +293,7 @@ export function CitizenVoiceCard({
           </button>
         </div>
       </div>
-      <div className="p-3 bg-slate-50 border-l-3 border-blue-600 rounded-r-lg text-slate-800 text-xs leading-relaxed whitespace-pre-wrap break-words max-h-[220px] overflow-y-auto">
+      <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-lg text-slate-800 text-xs leading-relaxed whitespace-pre-wrap break-words max-h-[220px] overflow-y-auto">
         {data.content || <span className="text-slate-500">暂无正文内容</span>}
       </div>
     </div>
@@ -501,8 +502,8 @@ export function TicketGeoMapCard({
             天地图高精底图
           </span>
           {relatedPoints.length > 0 && (
-            <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded font-medium border border-amber-200">
-              同群组 {relatedPoints.length} 处关联诉求
+            <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded font-medium border border-amber-200 tabular-nums">
+              同群组 {fmtNum(relatedPoints.length)} 处关联诉求
             </span>
           )}
         </div>

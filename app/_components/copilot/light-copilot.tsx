@@ -19,6 +19,8 @@ import {
   Download,
   Volume2,
   RotateCcw,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/app/_components/ui/tooltip";
 import { useRegion } from "@/app/_components/civic/region-context";
@@ -122,14 +124,6 @@ interface Message {
   status?: string;
 }
 
-function isPointerOutsideDialog(
-  e: React.PointerEvent<HTMLDialogElement>,
-  dialog: HTMLDialogElement
-) {
-  const r = dialog.getBoundingClientRect();
-  return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
-}
-
 export const LightCopilot: React.FC<LightCopilotProps> = ({
   isOpen,
   onClose,
@@ -137,15 +131,14 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
   const titleId = useId();
   const inputId = useId();
   const prefersReducedMotion = useReducedMotion();
-  const dialogRef = useRef<HTMLDialogElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const pressedOutsideRef = useRef(false);
   const copilotAbortRef = useRef<AbortController | null>(null);
   const { activeRegion } = useRegion();
   const { isAdmin } = useAuthRole();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [showStage, setShowStage] = useState(false);
   const [stageCaption, setStageCaption] = useState("");
   const stageRef = useRef<XiaochunStageHandle>(null);
@@ -248,24 +241,35 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
     if (el) el.scrollTop = el.scrollHeight;
   }
 
-  // Native <dialog>.showModal() provides inert background, top layer, focus containment, Esc/back dismissal & focus restoration
+  const handleCloseAndRestoreFocus = () => {
+    asr.stop();
+    stageRef.current?.stop();
+    onClose();
+    requestAnimationFrame(() => {
+      Array.from(
+        document.querySelectorAll<HTMLElement>('[data-copilot-trigger="true"]')
+      )
+        .find((el) => el.offsetParent !== null)
+        ?.focus({ preventScroll: true });
+    });
+  };
+
   useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
     if (isOpen) {
-      if (!dialog.open) {
-        dialog.showModal();
-      }
       requestAnimationFrame(() => {
         inputRef.current?.focus({ preventScroll: true });
       });
-      return;
+      const onKeyDown = (e: KeyboardEvent) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          handleCloseAndRestoreFocus();
+        }
+      };
+      window.addEventListener("keydown", onKeyDown);
+      return () => window.removeEventListener("keydown", onKeyDown);
     }
     asr.stop();
     stageRef.current?.stop();
-    if (dialog.open) {
-      dialog.close();
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
@@ -474,62 +478,24 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
     }
   };
 
+  if (!isOpen) return null;
+
   return (
     <TooltipProvider delayDuration={150} skipDelayDuration={300}>
-      <dialog
-        ref={dialogRef}
+      <section
+        role="dialog"
+        aria-modal="false"
         aria-labelledby={titleId}
-        {...({ closedby: "any" } as Record<string, string>)}
-        className={`copilot-dialog w-full ${
-          showStage && stageOnBackdrop ? "sm:max-w-xl lg:max-w-[960px]" : "sm:max-w-xl lg:max-w-2xl"
-        } shrink-0 h-full bg-white sm:border-l border-slate-200 shadow-2xl overflow-hidden text-slate-900`}
-        onClose={() => {
-          if (dialogRef.current) {
-            dialogRef.current.returnValue = "";
-          }
-          asr.stop();
-          stageRef.current?.stop();
-          if (isOpen) {
-            onClose();
-          }
-          requestAnimationFrame(() => {
-            const active = document.activeElement;
-            if (!active || active === document.body) {
-              Array.from(
-                document.querySelectorAll<HTMLElement>('[data-copilot-trigger="true"]')
-              )
-                .find((el) => el.offsetParent !== null)
-                ?.focus({ preventScroll: true });
-            }
-          });
-        }}
-        onPointerDown={(e) => {
-          const dialog = dialogRef.current;
-          if (!dialog || "closedBy" in HTMLDialogElement.prototype) return;
-          if (e.pointerType === "mouse" && e.button !== 0) {
-            pressedOutsideRef.current = false;
-            return;
-          }
-          pressedOutsideRef.current = isPointerOutsideDialog(e, dialog);
-        }}
-        onPointerUp={(e) => {
-          const dialog = dialogRef.current;
-          if (!dialog || "closedBy" in HTMLDialogElement.prototype) return;
-          const shouldClose =
-            pressedOutsideRef.current &&
-            !(e.pointerType === "mouse" && e.button !== 0) &&
-            isPointerOutsideDialog(e, dialog);
-          pressedOutsideRef.current = false;
-          if (shouldClose) {
-            dialog.close();
-          }
-        }}
-        onPointerCancel={() => {
-          pressedOutsideRef.current = false;
-        }}
+        className={`copilot-popover fixed right-3 left-3 sm:left-auto sm:right-5 bottom-[76px] sm:bottom-[84px] z-[950] flex flex-row rounded-2xl border border-slate-200/90 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.16),0_4px_12px_rgba(15,23,42,0.06)] overflow-hidden text-slate-900 h-[min(560px,72dvh)] sm:h-[min(620px,calc(100dvh-108px))] ${
+          showStage && stageOnBackdrop
+            ? "sm:w-[min(780px,calc(100vw-32px))]"
+            : expanded
+              ? "sm:w-[min(620px,calc(100vw-32px))]"
+              : "sm:w-[min(480px,calc(100vw-32px))]"
+        }`}
       >
         {showStage && stageOnBackdrop && (
-          <div className="hidden lg:block w-[320px] shrink-0 h-full bg-slate-900 border-r border-slate-800 relative">
+          <div className="hidden lg:block w-[290px] shrink-0 h-full bg-slate-900 border-r border-slate-800 relative">
             <XiaochunStage
               variant="stage"
               backdropTone="dark"
@@ -545,31 +511,24 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
         )}
         <div className="flex-1 min-w-0 h-full flex flex-col overflow-hidden overscroll-contain bg-white">
         {/* Header */}
-        <div className="p-3 sm:p-4 border-b border-slate-200 flex items-center justify-between gap-2 bg-slate-50">
-          <div className="flex items-center gap-2 min-w-0 flex-1">
+        <div className="p-3 sm:px-4 sm:py-3 border-b border-slate-100 flex items-center justify-between gap-2 bg-white">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
             <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs shrink-0">
               <BotMessageSquare className="w-4 h-4" aria-hidden="true" />
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 min-w-0">
-                <h1 id={titleId} className="text-sm font-bold text-slate-900 leading-tight">
-                  {isEcommerce ? "AI 客诉研判副驾驶" : "AI 智能研判副驾驶"}
+                <h1 id={titleId} className="text-sm font-bold text-slate-900 leading-tight whitespace-nowrap truncate">
+                  {isEcommerce ? "AI 客诉助手" : "AI 研判助手"}
                 </h1>
-                <span className="hidden sm:inline-flex text-[10px] font-mono px-1.5 py-0.2 rounded bg-blue-50 text-blue-700 border border-blue-200 font-medium shrink-0">
-                  {isEcommerce ? "本站检索" : "本区检索"}
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-600 truncate whitespace-nowrap">
-                {activeRegion ? (
-                  <>
-                    <span className="hidden sm:inline">
-                      {isEcommerce ? "当前电商站点 · " : "当前辖区 · "}
-                    </span>
-                    {activeRegion.city} · {activeRegion.name}
-                  </>
-                ) : (
-                  "正在确认当前工作站点"
+                {expanded && (
+                  <span className="hidden sm:inline-flex text-[10px] font-mono px-1.5 py-0.2 rounded bg-blue-50 text-blue-700 border border-blue-200 font-medium shrink-0">
+                    {isEcommerce ? "本站检索" : "本区检索"}
+                  </span>
                 )}
+              </div>
+              <p className="text-[11px] text-slate-500 truncate whitespace-nowrap">
+                {activeRegion ? `${activeRegion.city} · ${activeRegion.name}` : "正在确认当前工作站点"}
               </p>
             </div>
           </div>
@@ -581,10 +540,10 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
               onClick={handleClearChat}
               aria-label="清空对话"
               title="清空当前对话并重新提问"
-              className="inline-flex items-center justify-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-45 disabled:cursor-not-allowed transition-colors cursor-pointer whitespace-nowrap min-h-[44px] min-w-[44px] sm:min-w-0 sm:min-h-8 sm:px-2.5"
+              className="inline-flex items-center justify-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-45 disabled:cursor-not-allowed transition-colors cursor-pointer whitespace-nowrap min-h-[44px] min-w-[44px] sm:min-w-8 sm:min-h-8"
             >
-              <RotateCcw className="w-3.5 h-3.5 sm:w-3 sm:h-3 shrink-0" aria-hidden="true" />
-              <span className="hidden sm:inline">清空对话</span>
+              <RotateCcw className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+              {expanded && <span className="hidden sm:inline">清空对话</span>}
             </button>
             <button
               type="button"
@@ -611,8 +570,21 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
             </button>
             <button
               type="button"
+              onClick={() => setExpanded((prev) => !prev)}
+              aria-label={expanded ? "还原标准浮窗宽度" : "加宽浮窗宽度"}
+              title={expanded ? "还原标准浮窗" : "加宽浮窗"}
+              className="hidden sm:inline-flex items-center justify-center p-1.5 rounded-md text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer min-h-8 min-w-8"
+            >
+              {expanded ? (
+                <Minimize2 className="w-4 h-4" aria-hidden="true" />
+              ) : (
+                <Maximize2 className="w-4 h-4" aria-hidden="true" />
+              )}
+            </button>
+            <button
+              type="button"
               aria-label="关闭 AI 研判副驾驶"
-              onClick={() => dialogRef.current?.close()}
+              onClick={handleCloseAndRestoreFocus}
               className="p-1.5 rounded-md text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer min-h-[44px] min-w-[44px] sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center"
             >
               <X className="w-5 h-5" aria-hidden="true" />
@@ -978,7 +950,7 @@ export const LightCopilot: React.FC<LightCopilotProps> = ({
           compact
         />
         </div>
-      </dialog>
+      </section>
     </TooltipProvider>
   );
 };

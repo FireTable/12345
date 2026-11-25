@@ -3,6 +3,7 @@
 import React, { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import type { ClusterUrgency } from "@/lib/civic-cluster";
+import { fmtNum } from "@/lib/format-number";
 
 export type QuadCluster = {
   id: string;
@@ -93,7 +94,7 @@ export function QuadrantBoard({
       key={d.c.id}
       type="button"
       className={`quad-dot ${d.cls}`}
-      aria-label={`${d.c.region} · ${d.c.type}，${d.c.count} 件工单`}
+      aria-label={`${d.c.region} · ${d.c.type}，${fmtNum(d.c.count)} 件工单`}
       title={`${d.c.region}·${d.c.type}`}
       style={{ left: `${d.left}%`, top: `${d.top}%`, width: d.size, height: d.size, fontSize: d.size > 24 ? 10 : 9 }}
       onClick={() => router.push(`/themes/${d.c.id}`)}
@@ -109,7 +110,7 @@ export function QuadrantBoard({
           <div className="quad__head">
             <div className="quad__head-main">
               <span className="quad__label">🟠 重要不紧急</span>
-              <span className="quad__count">{grouped.tl}</span>
+              <span className="quad__count">{fmtNum(grouped.tl)}</span>
             </div>
             <div className="quad__hint">计划安排处理</div>
           </div>
@@ -121,7 +122,7 @@ export function QuadrantBoard({
           <div className="quad__head quad__head--right">
             <div className="quad__head-main">
               <span className="quad__label">🔴 紧急且重要</span>
-              <span className="quad__count">{grouped.tr}</span>
+              <span className="quad__count">{fmtNum(grouped.tr)}</span>
             </div>
             <div className="quad__hint">立即处置</div>
           </div>
@@ -133,7 +134,7 @@ export function QuadrantBoard({
           <div className="quad__head">
             <div className="quad__head-main">
               <span className="quad__label">🟢 观察等待</span>
-              <span className="quad__count">{grouped.bl}</span>
+              <span className="quad__count">{fmtNum(grouped.bl)}</span>
             </div>
             <div className="quad__hint">暂不紧急</div>
           </div>
@@ -145,7 +146,7 @@ export function QuadrantBoard({
           <div className="quad__head quad__head--right">
             <div className="quad__head-main">
               <span className="quad__label">🟡 快速处置</span>
-              <span className="quad__count">{grouped.br}</span>
+              <span className="quad__count">{fmtNum(grouped.br)}</span>
             </div>
             <div className="quad__hint">快速分流</div>
           </div>

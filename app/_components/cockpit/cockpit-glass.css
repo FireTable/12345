@@ -99,19 +99,6 @@
   overflow: hidden;
 }
 
-/* 克制顶部细光丝 */
-.cockpit-glass-card::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 10%;
-  right: 10%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.08) 50%, transparent 100%);
-  pointer-events: none;
-  z-index: 1;
-}
-
 .cockpit-glass-card:hover {
   border-color: var(--cockpit-glass-border-hover);
   box-shadow:
@@ -127,9 +114,6 @@
     inset 0 1px 0 0 rgba(251, 113, 133, 0.10),
     var(--cockpit-glass-shadow);
 }
-.cockpit-glass-card--danger::before {
-  background: linear-gradient(90deg, transparent 0%, rgba(244, 63, 94, 0.26) 50%, transparent 100%);
-}
 .cockpit-glass-card--danger:hover {
   border-color: rgba(244, 63, 94, 0.36);
 }
@@ -140,9 +124,6 @@
     inset 0 1px 0 0 rgba(196, 181, 253, 0.10),
     var(--cockpit-glass-shadow);
 }
-.cockpit-glass-card--purple::before {
-  background: linear-gradient(90deg, transparent 0%, rgba(167, 139, 250, 0.24) 50%, transparent 100%);
-}
 .cockpit-glass-card--purple:hover {
   border-color: rgba(167, 139, 250, 0.34);
 }
@@ -152,9 +133,6 @@
   box-shadow:
     inset 0 1px 0 0 rgba(110, 231, 183, 0.10),
     var(--cockpit-glass-shadow);
-}
-.cockpit-glass-card--emerald::before {
-  background: linear-gradient(90deg, transparent 0%, rgba(52, 211, 153, 0.24) 50%, transparent 100%);
 }
 .cockpit-glass-card--emerald:hover {
   border-color: rgba(52, 211, 153, 0.34);

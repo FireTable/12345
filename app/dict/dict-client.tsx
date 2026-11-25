@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { fmtNum } from "@/lib/format-number";
 import {
   Building2,
   MapPin,
@@ -584,7 +585,7 @@ export default function DictionaryManagementPage() {
             标准字典与知识库
           </h1>
           <div className="page-hero__desc">
-            {stats.townshipCount} 大法定镇街区划、{stats.categoryCount} 大民生诉求分类标准及 AI 自学习别名沉淀知识库统一管理平台
+            {fmtNum(stats.townshipCount)} 大法定镇街区划、{fmtNum(stats.categoryCount)} 大民生诉求分类标准及 AI 自学习别名沉淀知识库统一管理平台
           </div>
         </div>
         <PageHeaderActions
@@ -604,7 +605,7 @@ export default function DictionaryManagementPage() {
               tone="blue"
               label="法定镇街总数"
               value={stats.townshipCount}
-              sub={`${townships.slice(0, 4).map((t) => t.name).join("/") || "辖区镇街"} 等 ${stats.townshipCount} 个辖区`}
+              sub={`${townships.slice(0, 4).map((t) => t.name).join("/") || "辖区镇街"} 等 ${fmtNum(stats.townshipCount)} 个辖区`}
             />
             <StatCard
               icon={MapPin}
@@ -618,7 +619,7 @@ export default function DictionaryManagementPage() {
               tone="purple"
               label="民生分类体系"
               value={stats.categoryCount}
-              sub={`${stats.categoryCount} 大法定标准业务大类`}
+              sub={`${fmtNum(stats.categoryCount)} 大法定标准业务大类`}
             />
             <StatCard
               icon={Sparkles}
@@ -717,13 +718,15 @@ export default function DictionaryManagementPage() {
                 >
                   {t.label}
                   <span className="filter-tab__count">
-                    {t.key === "aliases"
-                      ? aliases.length
-                      : t.key === "locations"
-                        ? regionLocations.length
-                        : t.key === "townships"
-                          ? townships.length
-                          : categories.length}
+                    {fmtNum(
+                      t.key === "aliases"
+                        ? aliases.length
+                        : t.key === "locations"
+                          ? regionLocations.length
+                          : t.key === "townships"
+                            ? townships.length
+                            : categories.length
+                    )}
                   </span>
                 </button>
               ))}
@@ -779,7 +782,7 @@ export default function DictionaryManagementPage() {
                   </Select>
                   <div className="flex items-center justify-between sm:justify-end gap-3 flex-wrap w-full sm:w-auto sm:ml-auto">
                     <span className="filter-bar__summary" style={{ marginLeft: 0 }}>
-                      共 {filteredAliases.length} 条别名映射
+                      共 {fmtNum(filteredAliases.length)} 条别名映射
                     </span>
                     <button
                       type="button"
@@ -992,7 +995,7 @@ export default function DictionaryManagementPage() {
                         <MapIcon className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                         <span>地图全览</span>
                         <span className="text-[11px] font-mono tabular-nums text-slate-500">
-                          ({geoPoints.length})
+                          ({fmtNum(geoPoints.length)})
                         </span>
                       </button>
                     </div>
@@ -1036,7 +1039,7 @@ export default function DictionaryManagementPage() {
                           fontWeight: townshipFilter === "ALL" ? 600 : 400,
                         }}
                       >
-                        全部 ({regionLocations.length})
+                        全部 ({fmtNum(regionLocations.length)})
                       </button>
                       {availableTownships.map((town) => {
                         const count = regionLocations.filter(
@@ -1067,7 +1070,7 @@ export default function DictionaryManagementPage() {
                             }}
                           >
                             <span>{town}</span>
-                            <span className="tabular-nums" style={{ color: "#475569", fontSize: 11 }}>({count})</span>
+                            <span className="tabular-nums" style={{ color: "#475569", fontSize: 11 }}>({fmtNum(count)})</span>
                           </button>
                         );
                       })}
@@ -1099,7 +1102,7 @@ export default function DictionaryManagementPage() {
                           </span>
                           <span className="text-slate-500">·</span>
                           <span className="text-[#1E5AFF] font-bold tabular-nums">
-                            {geoPoints.length}
+                            {fmtNum(geoPoints.length)}
                           </span>
                           <span className="text-slate-600">个已上图高精点位</span>
                         </div>
@@ -1213,7 +1216,7 @@ export default function DictionaryManagementPage() {
                                 </h3>
                               </div>
                               <p style={{ margin: "4px 0 0 0", fontSize: 12, color: "#475569", lineHeight: 1.5 }}>
-                                当前全览汇聚了 {geoPoints.length} 个经高精地理编码规范化的微观地点。点击地图上的标记可查看经纬度、镇街从属及关联诉求。
+                                当前全览汇聚了 {fmtNum(geoPoints.length)} 个经高精地理编码规范化的微观地点。点击地图上的标记可查看经纬度、镇街从属及关联诉求。
                               </p>
                             </div>
                           )}
@@ -1332,10 +1335,7 @@ export default function DictionaryManagementPage() {
                                     </td>
                                     <td>
                                       {resolvedTownship ? (
-                                        <span
-                                          className="inline-flex items-center text-xs font-medium text-slate-800 pl-2 border-l-2"
-                                          style={{ borderColor: townColor }}
-                                        >
+                                        <span className="inline-flex items-center text-xs font-medium text-slate-800">
                                           {resolvedTownship}
                                         </span>
                                       ) : (

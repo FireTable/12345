@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
 import { classifyDetailPayload, type DetailLoadStatus } from "@/lib/detail-load";
+import { fmtNum } from "@/lib/format-number";
 import {
   Layers,
   ExternalLink,
@@ -714,7 +715,7 @@ export default function TicketDetailPage() {
                 </h2>
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-[11px] text-slate-500 tabular-nums">
-                    {piiAuditLoading ? "正在读取审计记录…" : `本单审计记录 ${piiAuditTotal} 条`}
+                    {piiAuditLoading ? "正在读取审计记录…" : `本单审计记录 ${fmtNum(piiAuditTotal)} 条`}
                   </span>
                   {revealedPii ? (
                     <button
@@ -839,7 +840,7 @@ export default function TicketDetailPage() {
                     onClick={() => setPiiAuditListOpen((prev) => !prev)}
                     className="w-full flex items-center justify-between text-xs font-medium text-slate-600 hover:text-slate-900 py-1 min-h-[44px] sm:min-h-[30px] cursor-pointer"
                   >
-                    <span>本单明文查验留痕记录（{piiAuditTotal} 条）</span>
+                    <span>本单明文查验留痕记录（{fmtNum(piiAuditTotal)} 条）</span>
                     {piiAuditListOpen ? (
                       <ChevronUp className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />
                     ) : (

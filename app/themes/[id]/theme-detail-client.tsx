@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { classifyDetailPayload, type DetailLoadStatus } from "@/lib/detail-load";
+import { fmtNum } from "@/lib/format-number";
 import { MODE_META } from "@/backend/theme-metrics";
 import type { CivicMode, GraphData, GraphNode } from "@/backend/state";
 import { spanDays, categoryBadgeStyle } from "@/lib/civic-cluster";
@@ -721,8 +722,8 @@ function ThemeDetailInner() {
       `归属辖区: ${row.region} · 诉求领域: ${row.type}`,
       `研判模式: ${meta.name}（${meta.tagline}）`,
       `风险等级: ${row.riskLevel || "MEDIUM"}${row.riskReason ? `（${row.riskReason}）` : ""}`,
-      `整合工单: ${row.count} 件${(row.fakeClosureCount ?? 0) > 0 ? `（含疑似假闭环 ${row.fakeClosureCount} 件）` : ""}`,
-      `时空脉络: ${row.first_date || "—"} 至 ${row.last_date || "—"}（跨度 ${days} 天）`,
+      `整合工单: ${fmtNum(row.count)} 件${(row.fakeClosureCount ?? 0) > 0 ? `（含疑似假闭环 ${fmtNum(row.fakeClosureCount)} 件）` : ""}`,
+      `时空脉络: ${row.first_date || "—"} 至 ${row.last_date || "—"}（跨度 ${fmtNum(days)} 天）`,
       `AI 聚类置信度: ${row.ai_confidence ?? "—"}%`,
       `当前处置状态: ${row.status?.label || "待派单"} (进度 ${row.status?.progress ?? 0}%)`,
       `牵头承办部门: ${row.status?.owner || `${regionName}热线督办组`}`,
@@ -731,7 +732,7 @@ function ThemeDetailInner() {
       ...(logs.length > 0
         ? [
             "",
-            `==================== 处置流转记录（${logs.length} 条） ====================`,
+            `==================== 处置流转记录（${fmtNum(logs.length)} 条） ====================`,
             ...logs.map(
               (l) =>
                 `- ${l.createdAt} | ${l.action} | 操作人: ${l.operator || "—"} | 部门: ${l.owner || "—"}${l.note ? ` | 备注: ${l.note}` : ""}`
@@ -739,7 +740,7 @@ function ThemeDetailInner() {
           ]
         : []),
       "",
-      `==================== 已加载工单（${members.length} / ${row.count}） ====================`,
+      `==================== 已加载工单（${fmtNum(members.length)} / ${fmtNum(row.count)}） ====================`,
       ...members.map((m, idx) => `[${idx + 1}] #${m.id} | ${m.createdAt} | 诉求人: ${m.caller_name || "市民"} | 涉事地址: ${m.address || m.region || "—"}${m.isFakeClosure ? " | [疑似假闭环]" : ""}\n    标题: ${m.title}\n    正文: ${m.content || "—"}\n`),
     ];
     const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/plain;charset=utf-8" });
@@ -871,7 +872,7 @@ function ThemeDetailInner() {
                       }}
                     >
                       <AlertTriangle className="h-3.5 w-3.5" />
-                      疑似假闭环 {row.fakeClosureCount} 件
+                      疑似假闭环 {fmtNum(row.fakeClosureCount)} 件
                     </span>
                   )}
                 </h1>
@@ -884,11 +885,11 @@ function ThemeDetailInner() {
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-5 mt-1">
               <div className="cluster-hero__stat min-w-0">
-                <div className="cluster-hero__stat-val tabular-nums">{(row.count || 0).toLocaleString("zh-CN")}</div>
+                <div className="cluster-hero__stat-val tabular-nums">{fmtNum(row.count || 0)}</div>
                 <div className="cluster-hero__stat-label">整合工单数（件）</div>
               </div>
               <div className="cluster-hero__stat min-w-0">
-                <div className="cluster-hero__stat-val tabular-nums">{days}</div>
+                <div className="cluster-hero__stat-val tabular-nums">{fmtNum(days)}</div>
                 <div className="cluster-hero__stat-label">持续天数（天）</div>
               </div>
               <div className="cluster-hero__stat min-w-0">
@@ -966,9 +967,9 @@ function ThemeDetailInner() {
                 <span className="text-xs text-slate-500 font-normal tabular-nums whitespace-nowrap">
                   {leftTab === "graph"
                     ? graphData
-                      ? `(${graphData.nodes.length} 节点 · ${graphData.links.length} 关系)`
+                      ? `(${fmtNum(graphData.nodes.length)} 节点 · ${fmtNum(graphData.links.length)} 关系)`
                       : ""
-                    : `(共 ${row.count} 件 · 已加载 ${members.length} 件)`}
+                    : `(共 ${fmtNum(row.count)} 件 · 已加载 ${fmtNum(members.length)} 件)`}
                 </span>
               </h2>
               <div className="text-[11px] text-slate-500 mt-0.5">
@@ -1116,7 +1117,7 @@ function ThemeDetailInner() {
                   data-ticket-id={m.id}
                   className={`member-item transition-colors relative rounded-xl p-4 mb-3 cursor-pointer ${
                     isTarget
-                      ? "is-target-ticket border-l-4 border-l-blue-600 bg-blue-50/60"
+                      ? "is-target-ticket border border-blue-300 bg-blue-50/60"
                       : "bg-slate-50/85 hover:bg-slate-100/80"
                   }`}
                   onClick={() => void toggleExpand(m)}
@@ -1267,11 +1268,11 @@ function ThemeDetailInner() {
                   void loadMembers();
                 }}
               >
-                {membersLoading ? "正在加载更多…" : `继续加载（已显示 ${members.length} / ${row.count}）`}
+                {membersLoading ? "正在加载更多…" : `继续加载（已显示 ${fmtNum(members.length)} / ${fmtNum(row.count)}）`}
               </button>
             )}
             {membersDone && members.length > 0 && members.length >= (row.count || 0) && (
-              <div className="empty-hint">已加载全部 {members.length} 件</div>
+              <div className="empty-hint">已加载全部 {fmtNum(members.length)} 件</div>
             )}
               </>
             )}
@@ -1471,7 +1472,7 @@ function ThemeDetailInner() {
             <div className="mt-3.5 rounded-lg border border-amber-200 bg-amber-50/90 px-3 py-2 text-xs text-amber-900 flex items-center gap-1.5">
               <AlertTriangle className="w-3.5 h-3.5 text-amber-700 shrink-0" aria-hidden="true" />
               <span>
-                本专题关联 {row.fakeClosureCount} 件疑似假闭环工单，建议点击「重开督办」恢复跟进。
+                本专题关联 {fmtNum(row.fakeClosureCount)} 件疑似假闭环工单，建议点击「重开督办」恢复跟进。
               </span>
             </div>
           )}

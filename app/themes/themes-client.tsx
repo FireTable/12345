@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { buildSafeCsv } from "@/lib/export-csv";
+import { fmtNum } from "@/lib/format-number";
 import { URGENCY_META, type ClusterUrgency } from "@/lib/civic-cluster";
 import { isTownLabel } from "@/lib/admin-area";
 import { FolderKanban, Clock, Flame, TrendingUp } from "lucide-react";
@@ -298,7 +299,7 @@ export default function ThemesPage() {
       a.download = "multi-frequency-themes.csv";
       a.click();
       URL.revokeObjectURL(url);
-      toast.success(`已导出 ${list.length} 个${isEcommerce ? "案卷" : "群组"}`);
+      toast.success(`已导出 ${fmtNum(list.length)} 个${isEcommerce ? "案卷" : "群组"}`);
     } catch (err: any) {
       if (controller.signal.aborted || err?.name === "AbortError") return;
       toast.error(err instanceof Error ? err.message : "导出失败");
@@ -413,7 +414,7 @@ export default function ThemesPage() {
                   onClick={() => activateTab(t.key)}
                 >
                   {t.label}
-                  <span className="filter-tab__count">{counts[t.key]}</span>
+                  <span className="filter-tab__count">{fmtNum(counts[t.key])}</span>
                 </button>
               ))}
             </div>
@@ -495,7 +496,7 @@ export default function ThemesPage() {
                   <SelectItem value="low">普通</SelectItem>
                 </SelectContent>
               </Select>
-              <span className="filter-bar__summary">共 {filteredTotal} 条结果</span>
+              <span className="filter-bar__summary">共 {fmtNum(filteredTotal)} 条结果</span>
             </div>
 
             {loadError && (
@@ -581,11 +582,11 @@ export default function ThemesPage() {
                         <td data-label="待派单 / 总数" className="col-counts" style={{ textAlign: "center", fontFeatureSettings: "'tnum'" }}>
                           <span>
                             <span style={{ fontWeight: 700, color: g.unprocessed > 0 ? "#F53F3F" : "var(--c-ink-3)", fontSize: 13 }}>
-                              {g.unprocessed}
+                              {fmtNum(g.unprocessed)}
                             </span>
                             <span style={{ color: "#94A3B8", margin: "0 3px", fontSize: 12 }}>/</span>
                             <span style={{ fontWeight: 600, color: "#1E293B", fontSize: 13 }}>
-                              {g.count}
+                              {fmtNum(g.count)}
                             </span>
                           </span>
                         </td>
@@ -593,7 +594,7 @@ export default function ThemesPage() {
                           <span className={`urgency-tag ${u.cls}`}>{u.label}</span>
                         </td>
                         <td data-label="持续天数" className="col-days" style={{ textAlign: "right", fontFeatureSettings: "'tnum'", color: "var(--c-ink-2)" }}>
-                          {g.days} 天
+                          {fmtNum(g.days)} 天
                         </td>
                         <td data-label="处置状态" className="col-status">
                           <span className={`status-tag ${sCls}`}>{g.status.label}</span>

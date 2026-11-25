@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import { fmtNum } from "@/lib/format-number";
 import {
   Building2,
   Database,
@@ -275,7 +276,7 @@ export default function AdminRegionsPage() {
       setScoutResult(data.data);
       setScoutStep(2);
       toast.success(
-        `AI 成功梳理出 ${data.data.townships.length} 个法定镇街与 ${data.data.departments?.length || 0} 个协同职能部门！`
+        `AI 成功梳理出 ${fmtNum(data.data.townships.length)} 个法定镇街与 ${fmtNum(data.data.departments?.length || 0)} 个协同职能部门！`
       );
     } catch (err: any) {
       toast.error(err.message || "AI 提取失败，请检查网络或重试");
@@ -735,7 +736,7 @@ export default function AdminRegionsPage() {
               ? "全渠道电商客诉租户纳管 · PostgreSQL Schema 物理隔离 · 渠道仓网词典与 Colab GPU 算力热插拔"
               : "支持全国省市县区 12345 站点动态纳管 · PostgreSQL Schema 物理隔离 · SuperAgent AI 智能梳理镇街字典 · Colab GPU 算力热插拔"}
             {computeSummary
-              ? `（算力池：${computeSummary.envCount + computeSummary.dynamicCount} 节点 / ${computeSummary.onlineCount} 在线）`
+              ? `（算力池：${fmtNum(computeSummary.envCount + computeSummary.dynamicCount)} 节点 / ${fmtNum(computeSummary.onlineCount)} 在线）`
               : ""}
           </div>
         </div>
@@ -771,7 +772,7 @@ export default function AdminRegionsPage() {
             isEcommerceOnly
               ? "支持多品牌与全渠道租户隔离"
               : ecomRegions.length > 0
-                ? `另含 ${ecomRegions.length} 个跨行业示范站`
+                ? `另含 ${fmtNum(ecomRegions.length)} 个跨行业示范站`
                 : "支持跨省市区县无上限扩展"
           }
         />
@@ -784,7 +785,7 @@ export default function AdminRegionsPage() {
             isEcommerceOnly
               ? "PostgreSQL 原生电商租户隔离"
               : ecomRegions.length > 0
-                ? `政务 ${govRegions.length} + 跨行业示范 ${ecomRegions.length}`
+                ? `政务 ${fmtNum(govRegions.length)} + 跨行业示范 ${fmtNum(ecomRegions.length)}`
                 : "PostgreSQL 原生租户隔离"
           }
         />
@@ -803,10 +804,10 @@ export default function AdminRegionsPage() {
           value={isEcommerceOnly ? ecomTickets : govTickets}
           sub={
             isEcommerceOnly
-              ? `${ecomThemes} 个客诉案卷 / ${ecomVocab} 条行业词典`
+              ? `${fmtNum(ecomThemes)} 个客诉案卷 / ${fmtNum(ecomVocab)} 条行业词典`
               : ecomTickets > 0
-                ? `${govThemes} 主题 · 示范站 ${ecomTickets.toLocaleString()} 单`
-                : `${govThemes} 个治理主题 / ${govVocab} 条词典`
+                ? `${fmtNum(govThemes)} 主题 · 示范站 ${fmtNum(ecomTickets)} 单`
+                : `${fmtNum(govThemes)} 个治理主题 / ${fmtNum(govVocab)} 条词典`
           }
         />
       </StatCardGrid>
@@ -819,7 +820,7 @@ export default function AdminRegionsPage() {
           <div className="flex items-center gap-2">
             <KeyRound className="h-4 w-4 text-slate-500 shrink-0" />
             <h2 className="text-sm font-bold text-slate-900">已接入的 Agent</h2>
-            <span className="text-xs text-slate-500 font-mono tabular-nums">({mcpClients.length})</span>
+            <span className="text-xs text-slate-500 font-mono tabular-nums">({fmtNum(mcpClients.length)})</span>
           </div>
           <span className="text-xs text-slate-500">
             MCP 地址 /api/mcp · 已登录后打开 /mcp/authorize 签发 access key
@@ -859,7 +860,7 @@ export default function AdminRegionsPage() {
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-sm font-bold text-slate-900">政务 12345 辖区站点</h2>
               <span className="text-xs text-slate-500 font-mono tabular-nums">
-                ({govRegions.length} 个独立 PostgreSQL Schema)
+                ({fmtNum(govRegions.length)} 个独立 PostgreSQL Schema)
               </span>
             </div>
             <span className="text-xs text-slate-500">
@@ -882,7 +883,7 @@ export default function AdminRegionsPage() {
                 {govRegions.length > 0 ? "跨行业能力验证 · 电商客诉示范" : "电商客诉租户站点"}
               </h2>
               <span className="text-xs text-slate-500 font-mono tabular-nums">
-                ({ecomRegions.length} 个独立行业 Schema · DomainProfile 行业包)
+                ({fmtNum(ecomRegions.length)} 个独立行业 Schema · DomainProfile 行业包)
               </span>
             </div>
             <span className="text-xs text-slate-500">
@@ -1100,8 +1101,8 @@ export default function AdminRegionsPage() {
                   <div className="flex items-center gap-2 min-w-0">
                     <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" aria-hidden="true" />
                     <span className="text-xs font-semibold text-emerald-900">
-                      AI 智能梳理完成：包含 {scoutResult.townships.length} 个法定镇街、
-                      {scoutResult.departments.length} 个协同部门及 {scoutResult.categories.length} 大民生分类
+                      AI 智能梳理完成：包含 {fmtNum(scoutResult.townships.length)} 个法定镇街、
+                      {fmtNum(scoutResult.departments.length)} 个协同部门及 {fmtNum(scoutResult.categories.length)} 大民生分类
                     </span>
                   </div>
                   <button
@@ -1148,7 +1149,7 @@ export default function AdminRegionsPage() {
                       : "text-slate-600 hover:bg-slate-100 border-transparent"
                       }`}
                   >
-                    法定镇街区划 ({scoutResult.townships.length})
+                    法定镇街区划 ({fmtNum(scoutResult.townships.length)})
                   </button>
                   <button
                     type="button"
@@ -1163,7 +1164,7 @@ export default function AdminRegionsPage() {
                       : "text-slate-600 hover:bg-slate-100 border-transparent"
                       }`}
                   >
-                    协同承办部门 ({scoutResult.departments.length})
+                    协同承办部门 ({fmtNum(scoutResult.departments.length)})
                   </button>
                   <button
                     type="button"
@@ -1178,7 +1179,7 @@ export default function AdminRegionsPage() {
                       : "text-slate-600 hover:bg-slate-100 border-transparent"
                       }`}
                   >
-                    民生分类与科室 ({scoutResult.categories.length})
+                    民生分类与科室 ({fmtNum(scoutResult.categories.length)})
                   </button>
                 </div>
 
@@ -1202,7 +1203,7 @@ export default function AdminRegionsPage() {
                             <span className="text-slate-500 font-mono text-[11px]">简称: {t.name}</span>
                           </div>
                           <span className="text-xs text-blue-700 font-medium tabular-nums">
-                            {t.communities?.length || 0} 个重点社区
+                            {fmtNum(t.communities?.length || 0)} 个重点社区
                           </span>
                         </div>
                         {t.aliases && t.aliases.length > 0 && (

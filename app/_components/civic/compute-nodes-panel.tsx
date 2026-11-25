@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { fmtNum } from "@/lib/format-number";
 import {
   Cpu,
   Plus,
@@ -350,7 +351,7 @@ export function ComputeNodesPanel({
               算力集群与 Colab GPU 热插拔管理
             </h2>
             <span className="text-xs text-slate-500 font-mono tabular-nums">
-              ({envNodes.length} 基础 + {nodes.length} 动态挂载)
+              ({fmtNum(envNodes.length)} 基础 + {fmtNum(nodes.length)} 动态挂载)
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">

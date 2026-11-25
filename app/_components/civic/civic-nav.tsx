@@ -4,7 +4,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ChevronDown, MessageCircle, User, LogOut, Film, Workflow, MessageSquarePlus, Search } from "lucide-react";
+import { ChevronDown, User, LogOut, Film, Workflow, MessageSquarePlus, Search } from "lucide-react";
 import { useCivicWorkflow } from "./civic-workflow";
 import { NAV_ITEMS } from "./nav-items";
 import { authClient } from "@/lib/auth/client";
@@ -106,7 +106,7 @@ function useFittingNavCount(itemCount: number, enabled: boolean) {
 export function CivicNav() {
   const pathname = usePathname();
   const router = useRouter();
-  const { openCopilot, copilotOpen, pipelineDrawerOpen, togglePipelineDrawer, analyzing, taskProgress } =
+  const { openCopilot, pipelineDrawerOpen, togglePipelineDrawer, analyzing, taskProgress } =
     useCivicWorkflow();
   const { activeRegion, appDomain } = useRegion();
   const isEcommerce =
@@ -332,37 +332,17 @@ export function CivicNav() {
     setQuickCmdOpen(true);
   };
 
-  const handleOpenCopilot = () => {
-    setMenuOpen(false);
-    setMoreOpen(false);
-    setUserMenuOpen(false);
-    openCopilot();
-  };
-
   const renderQuickActionIcons = () => (
-    <>
-      <button
-        type="button"
-        className="navbar-icon-btn navbar-icon-btn--search"
-        onClick={handleOpenQuickCmd}
-        title="搜功能 (⌘K / Ctrl+K)"
-        aria-label="搜功能 (⌘K)"
-        aria-keyshortcuts="Meta+k Control+k"
-      >
-        <Search size={16} aria-hidden="true" />
-      </button>
-      <button
-        type="button"
-        className={`navbar-icon-btn navbar-icon-btn--copilot${copilotOpen ? " is-active" : ""}`}
-        data-copilot-trigger="true"
-        onClick={handleOpenCopilot}
-        title={isEcommerce ? "AI 客诉副驾驶" : "AI 研判副驾驶"}
-        aria-label={isEcommerce ? "打开 AI 客诉副驾驶" : "打开 AI 研判副驾驶"}
-        aria-expanded={copilotOpen}
-      >
-        <MessageCircle size={16} strokeWidth={2.1} aria-hidden="true" />
-      </button>
-    </>
+    <button
+      type="button"
+      className="navbar-icon-btn navbar-icon-btn--search"
+      onClick={handleOpenQuickCmd}
+      title="搜功能 (⌘K / Ctrl+K)"
+      aria-label="搜功能 (⌘K)"
+      aria-keyshortcuts="Meta+k Control+k"
+    >
+      <Search size={16} aria-hidden="true" />
+    </button>
   );
 
   return (

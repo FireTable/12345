@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { QuadrantBoard } from "@/app/_components/civic/quadrant";
+import { fmtNum } from "@/lib/format-number";
 import {
   Dialog,
   DialogContent,
@@ -530,7 +531,7 @@ function MultifreqInner() {
                 className="top5-header__more inline-flex items-center min-h-[44px] sm:min-h-[24px] py-0.5"
                 onClick={() => router.push("/themes")}
               >
-                查看全部 {summary.filteredTotal} 个聚类
+                查看全部 {fmtNum(summary.filteredTotal)} 个聚类
               </button>
             </div>
             <div
@@ -600,11 +601,11 @@ function MultifreqInner() {
                         <td data-label="待派单 / 总数" className="col-counts" style={{ textAlign: "center", fontFeatureSettings: "'tnum'" }}>
                           <span>
                             <span style={{ fontWeight: 700, color: c.unprocessed > 0 ? "#F53F3F" : "var(--c-ink-3)", fontSize: 13 }}>
-                              {c.unprocessed}
+                              {fmtNum(c.unprocessed)}
                             </span>
                             <span style={{ color: "#94A3B8", margin: "0 3px", fontSize: 12 }}>/</span>
                             <span style={{ fontWeight: 600, color: "#1E293B", fontSize: 13 }}>
-                              {c.count}
+                              {fmtNum(c.count)}
                             </span>
                           </span>
                         </td>
@@ -612,7 +613,7 @@ function MultifreqInner() {
                           <span className={`urgency-tag ${u.cls}`}>{u.label}</span>
                         </td>
                         <td data-label="持续天数" className="col-days" style={{ textAlign: "right", fontFeatureSettings: "'tnum'", color: "var(--c-ink-2)" }}>
-                          {c.days ?? 1} 天
+                          {fmtNum(c.days ?? 1)} 天
                         </td>
                         <td data-label="处置状态" className="col-status">
                           <span className={`status-tag ${sCls}`}>{c.status.label}</span>

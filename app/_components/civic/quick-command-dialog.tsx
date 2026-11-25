@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { fmtNum } from "@/lib/format-number";
 import {
   Activity,
   BookOpen,
@@ -575,8 +576,8 @@ export function QuickCommandDialog({
           {filteredItems.length === 0
             ? "无匹配结果"
             : query.trim()
-            ? `匹配 ${filteredItems.length} 项`
-            : `共 ${filteredItems.length} 项`}
+            ? `匹配 ${fmtNum(filteredItems.length)} 项`
+            : `共 ${fmtNum(filteredItems.length)} 项`}
         </span>
       </div>
     </dialog>

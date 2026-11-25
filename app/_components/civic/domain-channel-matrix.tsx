@@ -2,6 +2,7 @@
 
 import React, { useMemo } from "react";
 import { AlertTriangle, Layers, Radio, Store, Warehouse } from "lucide-react";
+import { fmtNum } from "@/lib/format-number";
 import type { DomainProfile } from "./region-context";
 
 export interface DomainChannelMatrixProps {
@@ -176,7 +177,7 @@ export function DomainChannelMatrix({
                 : "text-sm font-semibold text-[var(--c-ink)] tabular-nums mt-0.5 whitespace-nowrap"
             }
           >
-            {rows.list.length} 节点
+            {fmtNum(rows.list.length)} 节点
           </div>
         </div>
 
@@ -197,7 +198,7 @@ export function DomainChannelMatrix({
                 : "text-sm font-semibold text-amber-700 tabular-nums mt-0.5 whitespace-nowrap"
             }
           >
-            {highRiskCount} 个预警
+            {fmtNum(highRiskCount)} 个预警
           </div>
         </div>
 
