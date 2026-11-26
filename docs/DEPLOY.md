@@ -170,9 +170,15 @@ ssh root@<VPS_HOST> 'cd /opt/12345-stack && \
   docker exec langgraph-app-caddy-1 caddy reload --config /etc/caddy/Caddyfile'
 ```
 
-### 3. VPS + 本地 Mac / Colab 混合算力接入模式
-除通过 `.env.vps` 挂载静态端点外，系统支持在 `/admin/regions` 的「动态算力节点池」在线纳管与探活 `LOCAL`（Tailscale 内网 Mac `0.0.0.0:8132` / `8133`）、`COLAB`（GPU 隧道节点）与 `CLOUD` 端点：
-- 本机便捷控制台：`pnpm civic`（`./scripts/civic-ctl.sh`）或前台拉起双模型 `pnpm dev:models`；
+### 3. VPS + 本地 Mac / Windows `ninfer` / Colab 混合算力接入模式
+除通过 `.env.vps` 挂载静态端点外，系统支持在 `/admin/regions` 的「动态算力节点池」在线纳管与探活多种异构节点（全栈默认模型统一对齐 **Ternary Bonsai 2.5 27B**，对外统一 `--model-id bonsai-2-27b`）：
+- **Apple Silicon Mac (`LOCAL`)**：通过 Tailscale 内网直连（`8132` / `8133`），运行 `Ternary-Bonsai-2.5-27B-PQ2_0-mtp.gguf`（MTP 投机解码，`~27–29 tok/s`）；本机提供便捷控制台 `pnpm civic`（`./scripts/civic-ctl.sh`）或前台双模型命令 `pnpm dev:models`；
+- **Windows RTX 3080 / Linux GPU (`LOCAL`)**：通过 `ninfer-serve` 运行 `Ternary-Bonsai-2.5-27B-PQ2_0-ninfer-v3.ninfer`（MTP 投机解码，32K+ 上下文），RTX 3080 建议开启 `--max-concurrency 2`；
+- **Google Colab GPU (`COLAB`)**：支持命令行一键编排按需开通与销毁：
+  - `pnpm colab:up`（一键拉起 L4 GPU + `bonsai-2-27b` + `BAAI/bge-m3` + Cloudflare 隧道，支持 `-- --gpu T4|L4|A100`、`-- --tunnel tailscale`、`-- --show-token`、`-- --session <name>`）
+  - `pnpm colab:status` / `pnpm colab:test`（在线巡检显存与 E2E 校验）
+  - `pnpm colab:stop` / `pnpm colab:verify`（停服销毁 VM 停止 CU 计费，或一键启动→E2E 校验→自动关停）
+- **并发度调度 (`SYSTEM_TWO_CONCURRENCY`)**：当挂载支持并发的 `ninfer-serve` 后端时，可在 `.env.local` / `.env.vps` 中显式设置 `SYSTEM_TWO_CONCURRENCY`（例如 Windows RTX 3080 `--max-concurrency 2` 时设 `2`，Colab L4 / A100 节点设 `4`）；未设置时 `backend/model.ts` 自动按健康活跃节点数动态调度。
 - 本地/Colab 节点在线时优先使用零 Token 成本算力；探活超时或繁忙时在毫秒~2 秒级自动平滑降级至云端 API。
 
 ---
@@ -271,12 +277,12 @@ ssh root@<VPS_HOST> 'docker exec 12345-postgres psql -U postgres -d ticket_radar
 
 本系统原生支持**纯离线、零外部请求**的信创政务内网部署：
 
-1. **大模型本地化 (Ollama / vLLM / llama-server)**：
-   - 部署 Qwen / MiniCPM / Bonsai 2 等开源量化模型，均走标准 OpenAI 兼容协议；
-   - `packages/civic-system-two` 内置本地节点健康探测、并发控制与思维链剥离。
-2. **Apple Silicon Metal 慢思考硬件加速 (System-2)**：
-   - 推荐权重：`Ternary-Bonsai-2-27B-PTQ1_0.gguf`（三值化 ~5.5 GB）；
-   - 启动服务（端口 `8132`）：`pnpm dev:llm`（底层参数 `-np 1 -fa on -ctk q8_0 -ctv q8_0 --port 8132`），M 系列芯片稳定输出 **20 ~ 24 tokens/s**。
+1. **大模型本地化 (llama-server / ninfer-serve / Ollama / vLLM)**：
+   - 默认部署 **Ternary Bonsai 2.5 27B**（或 Qwen / MiniCPM 等开源量化模型），均走标准 OpenAI 兼容协议（模型 ID 统一映射为 `bonsai-2-27b`）；
+   - `packages/civic-system-two` 内置本地节点健康探测、并发控制（`SYSTEM_TWO_CONCURRENCY`）与思维链剥离。
+2. **Apple Silicon Metal 与 Windows / Linux CUDA 硬件加速 (System-2)**：
+   - **Apple Silicon Metal (`llama-server`)**：推荐权重 `Ternary-Bonsai-2.5-27B-PQ2_0-mtp.gguf`（MTP 投机解码，32K+ 上下文支持）；通过 `pnpm dev:llm` 启动（`8132` 端口，自动开启 `-fa on -ctk q8_0 -ctv q8_0 -np 1 --spec-type draft-mtp`），M 系列芯片稳定输出 **~27–29 tokens/s**；
+   - **Windows RTX 3080 / Linux CUDA (`ninfer-serve`)**：推荐权重 `Ternary-Bonsai-2.5-27B-PQ2_0-ninfer-v3.ninfer`（`--model-id bonsai-2-27b`，MTP 投机解码，32K+ 上下文）；RTX 3080 可配置 `--max-concurrency 2` 并配合 `SYSTEM_TWO_CONCURRENCY=2`，高端 Linux GPU（L4 / A100）可配 `--max-concurrency 4` 与 `SYSTEM_TWO_CONCURRENCY=4`。
 3. **数据不出域**：快思考 ONNX 分类（`@civic/system-one`）、3 层 PII 可逆脱敏防火墙（`@civic/anonymizer`）、向量检索（`pgvector`）与慢思考推理全部可在内网闭环运行。
 
 ---

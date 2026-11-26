@@ -3,12 +3,12 @@
 民声智理 · Colab / Linux GPU 双引擎一键推理启动器 (CivicRadar Colab Worker)
 
 功能说明:
-1. 自动探测 NVIDIA GPU 型号与显存 (nvidia-smi)，智能匹配默认 LLM 模型与显存量化参数:
-   - A100 80GB+ : Qwen/Qwen2.5-32B-Instruct (bfloat16, ctx=8192)
-   - A100 40GB  : Qwen/Qwen2.5-14B-Instruct (bfloat16, ctx=8192)
-   - L4 24GB    : Qwen/Qwen2.5-14B-Instruct-AWQ (float16 + awq, ctx=8192)
-   - T4 16GB    : Qwen/Qwen2.5-7B-Instruct-AWQ (float16 + awq, ctx=4096)
-   - <14GB/CPU  : Qwen/Qwen2.5-3B-Instruct (或 llama-cpp GGUF)
+1. 默认已对齐 27B Ternary Bonsai 2.5 (ninfer 预编译引擎 + MTP 投机解码, --model-id bonsai-2-27b):
+   - A100 80GB+ : Bonsai 2.5 27B PQ2_0 (ctx=65536, kv=131072 rk8v4, conc=4)
+   - A100 40GB  : Bonsai 2.5 27B PQ2_0 (ctx=65536, kv=65536 rk8v4, conc=4)
+   - L4 24GB    : Bonsai 2.5 27B PQ2_0 (ctx=32768, kv=65536 rk4v4, conc=4)
+   - T4 16GB    : Bonsai 2.5 27B PQ2_0 (ctx=32768, kv=32768 rk4v4, conc=2)
+   - 可选回退   : --llm-backend vllm / llama-cpp (Qwen2.5 系列或自定义 GGUF)
 2. 分别拉起两个 100% OpenAI 兼容且强制 Bearer Token 鉴权的推理服务:
    - System-2 认知大模型服务 (默认端口 8132): /v1/models, /v1/chat/completions
    - BAAI/bge-m3 向量嵌入服务 (默认端口 8133): /v1/models, /v1/embeddings (1024 维)
@@ -20,13 +20,13 @@
 5. 优雅处理 SIGINT / SIGTERM，退出时自动清理全部子进程组，不留孤儿占用显存。
 """
 
-from __future__ import annotations
-
 import argparse
 import asyncio
+import hashlib
 import hmac
 import json
 import os
+import queue as std_queue
 import re
 import secrets
 import shutil
@@ -45,6 +45,10 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 DEFAULT_LLM_PORT = 8132
 DEFAULT_EMBED_PORT = 8133
 DEFAULT_EMBED_MODEL = "BAAI/bge-m3"
+DEFAULT_NINFER_REPO = "WaveCut/Ternary-Bonsai-2.5-27B-PQ2_0-NInfer-v3"
+DEFAULT_NINFER_FILE = "Ternary-Bonsai-2.5-27B-PQ2_0-ninfer-v3.ninfer"
+DEFAULT_NINFER_ALIAS = "bonsai-2-27b"
+NINFER_RELEASE_API = "https://api.github.com/repos/iamwavecut/ninfer-all/releases"
 TRYCLOUDFLARE_RE = re.compile(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com")
 
 
@@ -70,6 +74,14 @@ class ModelRecommendation:
     gpu_memory_utilization: float
     embed_device: str
     enforce_eager: bool = False
+    ninfer_supported: bool = True
+    ninfer_model: str = f"{DEFAULT_NINFER_REPO}:{DEFAULT_NINFER_FILE}"
+    ninfer_alias: str = DEFAULT_NINFER_ALIAS
+    ninfer_max_context: int = 32768
+    ninfer_kv_capacity: int = 32768
+    ninfer_kv_dtype: str = "rk4v4"
+    ninfer_max_concurrency: int = 2
+    ninfer_host_cache_mib: int = 1024
 
 
 def detect_gpus() -> List[GpuInfo]:
@@ -108,6 +120,20 @@ def detect_gpus() -> List[GpuInfo]:
     return gpus
 
 
+def detect_cuda_driver_version() -> Optional[Tuple[int, int]]:
+    """从 nvidia-smi 顶部输出解析驱动支持的最高 CUDA 版本，如 (13, 0)。"""
+    if not shutil.which("nvidia-smi"):
+        return None
+    try:
+        out = subprocess.check_output(["nvidia-smi"], stderr=subprocess.DEVNULL, text=True, timeout=5)
+    except (subprocess.SubprocessError, OSError):
+        return None
+    match = re.search(r"CUDA Version:\s*(\d+)\.(\d+)", out)
+    if not match:
+        return None
+    return (int(match.group(1)), int(match.group(2)))
+
+
 def gpu_supports_bfloat16(gpu_name: str) -> bool:
     """T4 (Turing sm_75) / V100 / P100 等架构不支持原生 bfloat16。"""
     upper = gpu_name.upper()
@@ -127,6 +153,7 @@ def recommend_for_gpu(gpus: Sequence[GpuInfo]) -> ModelRecommendation:
             max_model_len=4096,
             gpu_memory_utilization=0.65,
             embed_device="cpu",
+            ninfer_supported=False,
         )
 
     primary = gpus[0]
@@ -143,6 +170,12 @@ def recommend_for_gpu(gpus: Sequence[GpuInfo]) -> ModelRecommendation:
             max_model_len=8192,
             gpu_memory_utilization=0.85,
             embed_device="cuda",
+            ninfer_supported=True,
+            ninfer_max_context=65536,
+            ninfer_kv_capacity=131072,
+            ninfer_kv_dtype="rk8v4",
+            ninfer_max_concurrency=4,
+            ninfer_host_cache_mib=4096,
         )
     if vram_gb >= 36.0:
         return ModelRecommendation(
@@ -154,6 +187,12 @@ def recommend_for_gpu(gpus: Sequence[GpuInfo]) -> ModelRecommendation:
             max_model_len=8192,
             gpu_memory_utilization=0.80,
             embed_device="cuda",
+            ninfer_supported=True,
+            ninfer_max_context=65536,
+            ninfer_kv_capacity=65536,
+            ninfer_kv_dtype="rk8v4",
+            ninfer_max_concurrency=4,
+            ninfer_host_cache_mib=2048,
         )
     if vram_gb >= 20.0:
         return ModelRecommendation(
@@ -165,6 +204,12 @@ def recommend_for_gpu(gpus: Sequence[GpuInfo]) -> ModelRecommendation:
             max_model_len=8192,
             gpu_memory_utilization=0.76,
             embed_device="cuda",
+            ninfer_supported=True,
+            ninfer_max_context=32768,
+            ninfer_kv_capacity=65536,
+            ninfer_kv_dtype="rk4v4",
+            ninfer_max_concurrency=4,
+            ninfer_host_cache_mib=2048,
         )
     if vram_gb >= 14.0:
         return ModelRecommendation(
@@ -177,6 +222,30 @@ def recommend_for_gpu(gpus: Sequence[GpuInfo]) -> ModelRecommendation:
             gpu_memory_utilization=0.68,
             embed_device="cuda",
             enforce_eager=True,
+            ninfer_supported=True,
+            ninfer_max_context=32768,
+            ninfer_kv_capacity=32768,
+            ninfer_kv_dtype="rk4v4",
+            ninfer_max_concurrency=2,
+            ninfer_host_cache_mib=1024,
+        )
+    if vram_gb >= 10.0:
+        return ModelRecommendation(
+            tier_label=f"12GB 显存档 ({primary.name}, {vram_gb:.1f} GB)",
+            vllm_model="Qwen/Qwen2.5-3B-Instruct",
+            llama_cpp_model="Qwen/Qwen2.5-3B-Instruct-GGUF",
+            dtype="float16",
+            quantization=None,
+            max_model_len=4096,
+            gpu_memory_utilization=0.65,
+            embed_device="cuda",
+            enforce_eager=True,
+            ninfer_supported=True,
+            ninfer_max_context=32768,
+            ninfer_kv_capacity=32768,
+            ninfer_kv_dtype="rk4v4",
+            ninfer_max_concurrency=2,
+            ninfer_host_cache_mib=1024,
         )
     return ModelRecommendation(
         tier_label=f"轻量显存档 ({primary.name}, {vram_gb:.1f} GB)",
@@ -188,6 +257,7 @@ def recommend_for_gpu(gpus: Sequence[GpuInfo]) -> ModelRecommendation:
         gpu_memory_utilization=0.65,
         embed_device="cpu",
         enforce_eager=True,
+        ninfer_supported=False,
     )
 
 
@@ -517,24 +587,38 @@ def run_llama_cpp_server(
 
         if req.stream:
             async def event_stream():
+                loop = asyncio.get_running_loop()
+                chunk_queue: asyncio.Queue[Optional[Tuple[str, Any]]] = asyncio.Queue()
+                stop_sentinel = False
+
+                def _produce() -> None:
+                    try:
+                        stream_iter = llm.create_chat_completion(**{**kwargs, "stream": True})
+                        for raw_chunk in stream_iter:
+                            loop.call_soon_threadsafe(chunk_queue.put_nowait, ("chunk", raw_chunk))
+                    except Exception as exc:
+                        loop.call_soon_threadsafe(chunk_queue.put_nowait, ("err", str(exc)))
+                    finally:
+                        loop.call_soon_threadsafe(chunk_queue.put_nowait, None)
+
                 async with infer_lock:
-                    result = await asyncio.to_thread(llm.create_chat_completion, **kwargs)
-                choices = result.get("choices", [])
-                content = choices[0].get("message", {}).get("content", "") if choices else ""
-                chunk = {
-                    "id": result.get("id", f"chatcmpl-{int(time.time())}"),
-                    "object": "chat.completion.chunk",
-                    "created": int(time.time()),
-                    "model": req.model or model_alias,
-                    "choices": [
-                        {
-                            "index": 0,
-                            "delta": {"role": "assistant", "content": content},
-                            "finish_reason": "stop",
-                        }
-                    ],
-                }
-                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+                    producer = threading.Thread(target=_produce, daemon=True)
+                    producer.start()
+                    while not stop_sentinel:
+                        item = await chunk_queue.get()
+                        if item is None:
+                            stop_sentinel = True
+                            break
+                        kind, payload = item
+                        if kind == "err":
+                            err_chunk = {
+                                "error": {"message": payload, "type": "server_error"},
+                            }
+                            yield f"data: {json.dumps(err_chunk, ensure_ascii=False)}\n\n"
+                            break
+                        if isinstance(payload, dict) and "model" not in payload:
+                            payload["model"] = req.model or model_alias
+                        yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
                 yield "data: [DONE]\n\n"
 
             return StreamingResponse(event_stream(), media_type="text/event-stream")
@@ -575,6 +659,251 @@ def run_llama_cpp_server(
     )
     uvicorn.run(app, host=host, port=port, log_level="warning")
     return 0
+
+
+# ==============================================================================
+# NInfer 预编译二进制与 Ternary Bonsai 2.5 27B 权重自动准备
+# ==============================================================================
+def default_ninfer_cache_dir() -> Path:
+    if Path("/content").is_dir():
+        return Path("/content/civic-ninfer")
+    return Path.home() / ".cache" / "civic-ninfer"
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(8 * 1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _parse_sha256sums(text: str) -> Dict[str, str]:
+    sums: Dict[str, str] = {}
+    for raw_line in text.splitlines():
+        parts = raw_line.strip().split()
+        if len(parts) >= 2:
+            filename = parts[1].lstrip("*")
+            sums[filename] = parts[0].lower()
+            sums[Path(filename).name] = parts[0].lower()
+    return sums
+
+
+def _download_file(url: str, dest: Path, label: str) -> None:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_name(f".{dest.name}.part")
+    if shutil.which("curl"):
+        print(f"[NInfer] 正在下载 {label} ...", flush=True)
+        cmd = ["curl", "-fsSL", "--retry", "3", "-o", str(tmp), url]
+        if tmp.exists():
+            cmd = ["curl", "-fsSL", "-C", "-", "--retry", "3", "-o", str(tmp), url]
+        subprocess.check_call(cmd)
+        tmp.replace(dest)
+        return
+
+    print(f"[NInfer] 正在下载 {label} (urllib)...", flush=True)
+    req = urllib.request.Request(url, headers={"User-Agent": "civic-colab-worker"})
+    with urllib.request.urlopen(req, timeout=120) as resp, open(tmp, "wb") as out:
+        shutil.copyfileobj(resp, out, length=4 * 1024 * 1024)
+    tmp.replace(dest)
+
+
+def ensure_ninfer_binary(
+    cache_dir: Path,
+    release_tag: str,
+    cuda_ver: Optional[Tuple[int, int]],
+    explicit_bin: Optional[str] = None,
+) -> Path:
+    """定位或自动下载 SHA256 校验通过的 Linux ninfer-serve 二进制。"""
+    if explicit_bin:
+        cand = Path(explicit_bin).expanduser()
+        if not cand.is_file():
+            raise FileNotFoundError(f"指定的 --ninfer-bin 不存在: {cand}")
+        return cand.resolve()
+
+    if sys.platform != "linux":
+        raise RuntimeError(f"自动下载仅支持 Linux x64，当前平台为 {sys.platform}，请通过 --ninfer-bin 指定本地可执行文件。")
+
+    pkg_prefix = (
+        "ninfer-linux-x64-cuda13.4-sm75-80-86-89-120a-"
+        if cuda_ver is not None and cuda_ver >= (13, 4)
+        else "ninfer-linux-x64-cuda12.9-sm70-75-80-86-89-"
+    )
+    tag_key = release_tag.strip() or "latest"
+    api_url = (
+        f"{NINFER_RELEASE_API}/latest"
+        if tag_key == "latest"
+        else f"{NINFER_RELEASE_API}/tags/{tag_key}"
+    )
+
+    engine_root = cache_dir / "engine"
+    if tag_key != "latest":
+        cached_dir = engine_root / tag_key
+        if cached_dir.is_dir():
+            for p in cached_dir.rglob("ninfer-serve"):
+                if p.is_file() and pkg_prefix.rstrip("-") in str(p):
+                    return p.resolve()
+
+    req = urllib.request.Request(api_url, headers={"Accept": "application/vnd.github+json", "User-Agent": "civic-colab-worker"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        release = json.loads(resp.read().decode("utf-8"))
+
+    resolved_tag = str(release.get("tag_name") or tag_key)
+    target_dir = engine_root / resolved_tag
+    if target_dir.is_dir():
+        for p in target_dir.rglob("ninfer-serve"):
+            if p.is_file() and pkg_prefix.rstrip("-") in str(p):
+                os.chmod(p, 0o755)
+                print(f"[NInfer] 复用已缓存引擎 ({resolved_tag}): {p}", flush=True)
+                return p.resolve()
+
+    assets = {a["name"]: a["browser_download_url"] for a in release.get("assets", [])}
+    part_names = sorted(
+        n for n in assets if n.startswith(pkg_prefix) and re.search(r"\.tar\.gz\.\d{3}$", n)
+    )
+    sum_names = sorted(
+        n for n in assets if n.startswith(f"SHA256SUMS-{pkg_prefix}")
+    )
+    if not part_names or not sum_names:
+        raise RuntimeError(f"Release {resolved_tag} 中未找到匹配的 {pkg_prefix}* 发布包。")
+
+    dl_dir = cache_dir / "downloads" / resolved_tag
+    dl_dir.mkdir(parents=True, exist_ok=True)
+    sum_path = dl_dir / sum_names[0]
+    _download_file(assets[sum_names[0]], sum_path, sum_names[0])
+    expected_sums = _parse_sha256sums(sum_path.read_text(encoding="utf-8"))
+
+    part_paths: List[Path] = []
+    for pname in part_names:
+        pdest = dl_dir / pname
+        expected = expected_sums.get(pname)
+        if pdest.is_file() and expected and _sha256_file(pdest) == expected:
+            print(f"[NInfer] 复用已校验压缩分片: {pname}", flush=True)
+        else:
+            _download_file(assets[pname], pdest, pname)
+            if expected:
+                actual = _sha256_file(pdest)
+                if actual != expected:
+                    pdest.unlink(missing_ok=True)
+                    raise RuntimeError(f"{pname} SHA256 校验失败: {actual} != {expected}")
+        part_paths.append(pdest)
+
+    staging_dir = engine_root / f".staging-{resolved_tag}-{os.getpid()}"
+    if staging_dir.exists():
+        shutil.rmtree(staging_dir, ignore_errors=True)
+    staging_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"[NInfer] 正在解压 {resolved_tag} ({pkg_prefix.rstrip('-')})...", flush=True)
+    try:
+        proc = subprocess.Popen(
+            ["tar", "-xzf", "-", "-C", str(staging_dir)],
+            stdin=subprocess.PIPE,
+        )
+        assert proc.stdin is not None
+        for ppath in part_paths:
+            with open(ppath, "rb") as pf:
+                while True:
+                    buf = pf.read(4 * 1024 * 1024)
+                    if not buf:
+                        break
+                    proc.stdin.write(buf)
+        proc.stdin.close()
+        rc = proc.wait()
+        if rc != 0:
+            raise RuntimeError(f"tar 解压失败 (exit code={rc})")
+
+        target_dir.parent.mkdir(parents=True, exist_ok=True)
+        if target_dir.exists():
+            shutil.rmtree(target_dir, ignore_errors=True)
+        staging_dir.rename(target_dir)
+    except Exception:
+        shutil.rmtree(staging_dir, ignore_errors=True)
+        raise
+
+    for p in target_dir.rglob("ninfer-serve"):
+        if p.is_file():
+            os.chmod(p, 0o755)
+            print(f"[NInfer] ✅ 引擎已就绪: {p}", flush=True)
+            return p.resolve()
+
+    raise RuntimeError(f"解压 {resolved_tag} 后未找到 ninfer-serve 可执行文件。")
+
+
+def ensure_ninfer_model(model_spec: str, cache_dir: Path) -> Path:
+    """定位或从 HuggingFace 自动下载并校验 .ninfer 模型文件。"""
+    cand = Path(model_spec).expanduser()
+    if cand.is_file():
+        return cand.resolve()
+
+    os.environ["HF_HUB_DISABLE_XET"] = "1"
+    if ":" in model_spec:
+        repo_id, target_file = model_spec.split(":", 1)
+    elif model_spec == DEFAULT_NINFER_REPO:
+        repo_id, target_file = model_spec, DEFAULT_NINFER_FILE
+    else:
+        repo_id, target_file = model_spec, ""
+
+    try:
+        from huggingface_hub import hf_hub_download, list_repo_files
+    except ImportError:
+        hf_hub_download = None
+        list_repo_files = None
+
+    if not target_file:
+        if list_repo_files is None:
+            raise RuntimeError("解析默认 .ninfer 文件需要 huggingface_hub，或直接传入 repo_id:filename。")
+        files = sorted(f for f in list_repo_files(repo_id) if f.lower().endswith(".ninfer"))
+        if not files:
+            raise RuntimeError(f"仓库 {repo_id} 中未找到 .ninfer 权重文件。")
+        target_file = files[0]
+
+    expected_sha: Optional[str] = None
+    try:
+        if hf_hub_download is not None:
+            sum_file = Path(hf_hub_download(repo_id=repo_id, filename="SHA256SUMS"))
+            expected_sha = _parse_sha256sums(sum_file.read_text(encoding="utf-8")).get(Path(target_file).name)
+        else:
+            sum_url = f"https://huggingface.co/{repo_id}/resolve/main/SHA256SUMS"
+            with urllib.request.urlopen(sum_url, timeout=15) as resp:
+                expected_sha = _parse_sha256sums(resp.read().decode("utf-8")).get(Path(target_file).name)
+    except Exception:
+        expected_sha = None
+
+    print(f"[NInfer] 正在准备 Bonsai 2.5 权重 {repo_id}/{target_file} ...", flush=True)
+    local_dest = cache_dir / "models" / Path(target_file).name
+    if hf_hub_download is not None:
+        downloaded = Path(hf_hub_download(repo_id=repo_id, filename=target_file))
+        resolved_blob = downloaded.resolve()
+        if resolved_blob.suffix.lower() == ".ninfer":
+            model_path = resolved_blob
+        else:
+            # huggingface_hub snapshots 指向无后缀 blob，ninfer-serve 要求路径扩展名为 .ninfer，
+            # 优先同分区零拷贝硬链接为真实 .ninfer 文件（跨分区回退符号链接）。
+            local_dest.parent.mkdir(parents=True, exist_ok=True)
+            if local_dest.exists() or local_dest.is_symlink():
+                if local_dest.is_symlink() or local_dest.stat().st_ino != resolved_blob.stat().st_ino:
+                    local_dest.unlink()
+            if not local_dest.exists():
+                try:
+                    os.link(resolved_blob, local_dest)
+                except OSError:
+                    os.symlink(resolved_blob, local_dest)
+            model_path = local_dest
+    else:
+        if not (local_dest.is_file() and expected_sha and _sha256_file(local_dest) == expected_sha):
+            _download_file(
+                f"https://huggingface.co/{repo_id}/resolve/main/{target_file}",
+                local_dest,
+                Path(target_file).name,
+            )
+        model_path = local_dest.resolve()
+
+    if expected_sha:
+        actual_sha = _sha256_file(model_path)
+        if actual_sha != expected_sha:
+            raise RuntimeError(f"{model_path.name} SHA256 校验失败: {actual_sha} != {expected_sha}")
+        print(f"[NInfer] ✅ 权重校验通过: {model_path.name} ({actual_sha[:12]}...)", flush=True)
+    return model_path
 
 
 # ==============================================================================
@@ -635,16 +964,18 @@ def wait_for_http_health(
     proc: subprocess.Popen[Any],
     label: str,
     timeout_sec: int,
+    api_key: Optional[str] = None,
 ) -> bool:
     deadline = time.monotonic() + timeout_sec
     last_log = 0.0
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     while time.monotonic() < deadline:
         rc = proc.poll()
         if rc is not None:
             print(f"❌ [{label}] 进程提前退出 (exit code={rc})。", file=sys.stderr, flush=True)
             return False
         try:
-            req = urllib.request.Request(url, method="GET")
+            req = urllib.request.Request(url, headers=headers, method="GET")
             with urllib.request.urlopen(req, timeout=2.0) as resp:
                 if 200 <= resp.status < 300:
                     return True
@@ -701,7 +1032,23 @@ def start_cloudflared_tunnel(
     return found_url[0] if found_url else None
 
 
-def verify_public_endpoint(url_v1: str, api_key: str, timeout_sec: int = 15) -> bool:
+def _write_status_file(status_path: Path, payload: Dict[str, Any]) -> None:
+    """以 0600 权限原子写入运行时状态 JSON 文件。"""
+    status_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = status_path.with_name(f".{status_path.name}.{os.getpid()}.tmp")
+    fd = os.open(str(tmp_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, ensure_ascii=False, indent=2)
+            fh.write("\n")
+        os.chmod(tmp_path, 0o600)
+        tmp_path.replace(status_path)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
+
+
+def verify_public_endpoint(url_v1: str, api_key: str, timeout_sec: int = 20) -> bool:
     """best-effort 验证公网隧道 /v1/models DNS 与鉴权已可用。"""
     target = f"{url_v1.rstrip('/')}/models"
     deadline = time.monotonic() + timeout_sec
@@ -781,10 +1128,10 @@ def print_connection_banner(
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="民声智理 Colab / Linux GPU 一键启动器 (System-2 LLM + BAAI/bge-m3)"
+        description="民声智理 Colab / Linux GPU 一键启动器 (默认 Bonsai 2.5 27B + BAAI/bge-m3)"
     )
-    parser.add_argument("--llm-model", default=None, help="覆盖自动推荐的 System-2 模型名或 GGUF 路径")
-    parser.add_argument("--llm-alias", default=None, help="对外暴露的 served-model-name 别名")
+    parser.add_argument("--llm-model", default=None, help="覆盖 System-2 模型名、HF repo:file 或本地 .ninfer/.gguf 路径")
+    parser.add_argument("--llm-alias", default=None, help="对外暴露的模型 ID（ninfer 默认 bonsai-2-27b）")
     parser.add_argument("--embed-model", default=DEFAULT_EMBED_MODEL, help="向量嵌入模型 (默认 BAAI/bge-m3)")
     parser.add_argument("--llm-port", type=int, default=DEFAULT_LLM_PORT, help="System-2 服务端口 (默认 8132)")
     parser.add_argument("--embed-port", type=int, default=DEFAULT_EMBED_PORT, help="Embedding 服务端口 (默认 8133)")
@@ -802,10 +1149,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--llm-backend",
-        choices=["vllm", "llama-cpp"],
-        default="vllm",
-        help="LLM 推理后端 (vllm | llama-cpp)",
+        choices=["ninfer", "vllm", "llama-cpp"],
+        default="ninfer",
+        help="LLM 推理后端 (默认 ninfer 运行 Bonsai 2.5 27B; 可选 vllm | llama-cpp)",
     )
+    parser.add_argument("--ninfer-bin", default=None, help="指定已安装的 ninfer-serve 可执行文件路径")
+    parser.add_argument("--ninfer-cache-dir", default=None, help="ninfer 引擎与模型缓存目录")
+    parser.add_argument("--ninfer-release", default="latest", help="iamwavecut/ninfer-all 发布 tag (默认 latest)")
+    parser.add_argument("--max-concurrency", type=int, default=None, help="ninfer 最大连续批处理并发度 (1..8)")
+    parser.add_argument("--kv-capacity", type=int, default=None, help="ninfer 共享 KV 容量 (tokens)")
+    parser.add_argument("--kv-dtype", default=None, help="ninfer KV 量化格式 (如 rk4v4 / rk8v4)")
+    parser.add_argument("--host-cache-mib", type=int, default=None, help="ninfer Host 内存缓存预算 (MiB)")
+    parser.add_argument("--no-mtp", action="store_true", help="ninfer 关闭 MTP 投机解码")
     parser.add_argument("--dtype", choices=["auto", "float16", "bfloat16", "float32"], default=None)
     parser.add_argument("--quantization", default=None, help="vLLM 量化参数 (如 awq / gptq / none)")
     parser.add_argument("--max-model-len", type=int, default=None, help="上下文窗口长度")
@@ -816,7 +1171,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--skip-llm", action="store_true", help="跳过启动 System-2 LLM 服务")
     parser.add_argument("--skip-embed", action="store_true", help="跳过启动 bge-m3 Embedding 服务")
     parser.add_argument("--startup-timeout", type=int, default=600, help="服务就绪超时秒数 (默认 600)")
-    parser.add_argument("--dry-run", action="store_true", help="仅打印硬件检测与推荐配置，不实际拉起服务")
+    parser.add_argument("--status-file", default=None, help="服务就绪后写入 JSON 状态文件路径 (0600 权限)")
+    parser.add_argument("--dry-run", action="store_true", help="仅打印硬件检测与推荐配置，不实际下载与拉起服务")
 
     # 内部子进程模式 (保持单脚本自包含)
     parser.add_argument("--internal-embed-server", action="store_true", help=argparse.SUPPRESS)
@@ -860,6 +1216,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     # 1. 探测硬件并计算推荐配置
     gpus = detect_gpus()
+    cuda_ver = detect_cuda_driver_version()
     rec = recommend_for_gpu(gpus)
 
     api_key = (
@@ -870,14 +1227,24 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
 
     using_default_model = args.llm_model is None
-    if args.llm_backend == "vllm":
+    if args.llm_backend == "ninfer":
+        llm_model = args.llm_model or rec.ninfer_model
+        llm_alias = args.llm_alias or rec.ninfer_alias
+        max_model_len = args.max_model_len or rec.ninfer_max_context
+    elif args.llm_backend == "vllm":
         llm_model = args.llm_model or rec.vllm_model
+        llm_alias = args.llm_alias or llm_model
+        max_model_len = args.max_model_len or rec.max_model_len
     else:
         llm_model = args.llm_model or rec.llama_cpp_model
+        llm_alias = args.llm_alias or llm_model
+        max_model_len = args.max_model_len or rec.max_model_len
 
-    llm_alias = args.llm_alias or llm_model
+    kv_capacity = max(args.kv_capacity or rec.ninfer_kv_capacity, max_model_len)
+    kv_dtype = args.kv_dtype or rec.ninfer_kv_dtype
+    max_concurrency = args.max_concurrency or rec.ninfer_max_concurrency
+    host_cache_mib = args.host_cache_mib if args.host_cache_mib is not None else rec.ninfer_host_cache_mib
     dtype = args.dtype or rec.dtype
-    max_model_len = args.max_model_len or rec.max_model_len
     gpu_mem_util = args.gpu_memory_utilization or rec.gpu_memory_utilization
     embed_device = rec.embed_device if args.embed_device == "auto" else args.embed_device
 
@@ -895,22 +1262,40 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     print("==================================================================", flush=True)
     if gpus:
         for g in gpus:
-            print(f"  • GPU[{g.index}]: {g.name} | {g.vram_gb:.1f} GB ({g.vram_mb} MB)", flush=True)
+            cuda_str = f" | CUDA Driver {cuda_ver[0]}.{cuda_ver[1]}" if cuda_ver else ""
+            print(f"  • GPU[{g.index}]: {g.name} | {g.vram_gb:.1f} GB ({g.vram_mb} MB){cuda_str}", flush=True)
     else:
         print("  • 未检测到 NVIDIA GPU (nvidia-smi 不可用)，将按 CPU 回退配置运行", flush=True)
     print(f"  • 推荐档位 : {rec.tier_label}", flush=True)
     if not args.skip_llm:
-        print(
-            f"  • System-2 : backend={args.llm_backend}, model={llm_model}, "
-            f"port={args.llm_port}, dtype={dtype}, quant={quantization or 'none'}, ctx={max_model_len}",
-            flush=True,
-        )
+        if args.llm_backend == "ninfer":
+            mtp_str = "off" if args.no_mtp else "mtp(draft=3,lm-head)"
+            print(
+                f"  • System-2 : backend=ninfer, model={llm_model}, alias={llm_alias}, "
+                f"port={args.llm_port}, ctx={max_model_len}, kv={kv_capacity}({kv_dtype}), "
+                f"conc={max_concurrency}, spec={mtp_str}",
+                flush=True,
+            )
+        else:
+            print(
+                f"  • System-2 : backend={args.llm_backend}, model={llm_model}, alias={llm_alias}, "
+                f"port={args.llm_port}, dtype={dtype}, quant={quantization or 'none'}, ctx={max_model_len}",
+                flush=True,
+            )
     if not args.skip_embed:
         print(
             f"  • Embedding: model={args.embed_model}, port={args.embed_port}, device={embed_device}",
             flush=True,
         )
     print(f"  • 隧道模式 : {args.tunnel}", flush=True)
+
+    if args.llm_backend == "ninfer" and not args.skip_llm and not args.dry_run and not rec.ninfer_supported:
+        print(
+            "\n❌ `ninfer` 后端需要 >= 10GB 显存的 NVIDIA CUDA GPU（如 T4 16GB / L4 24GB / A100）。\n"
+            "请在 Colab 菜单开启 GPU 运行时，或使用 `--llm-backend llama-cpp` 回退模式。",
+            file=sys.stderr,
+        )
+        return 1
 
     # 隧道前置检查
     if args.tunnel == "cloudflared" and not args.dry_run and not shutil.which("cloudflared"):
@@ -953,7 +1338,64 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         embed_device,
     ]
 
-    if args.llm_backend == "vllm":
+    cache_dir = Path(args.ninfer_cache_dir).expanduser() if args.ninfer_cache_dir else default_ninfer_cache_dir()
+
+    def _build_ninfer_cmd(bin_path: str, model_path: str) -> List[str]:
+        cmd = [
+            bin_path,
+            model_path,
+            "--host",
+            args.host,
+            "--port",
+            str(args.llm_port),
+            "--model-id",
+            llm_alias,
+            "--api-key",
+            api_key,
+            "--structured-output",
+            "--max-context",
+            str(max_model_len),
+            "--kv-capacity",
+            str(kv_capacity),
+            "--kv-dtype",
+            kv_dtype,
+            "--host-cache-mib",
+            str(host_cache_mib),
+            "--gdn-state-fp16",
+            "--max-concurrency",
+            str(max_concurrency),
+            "--default-reasoning-effort",
+            "none",
+            "--min-p",
+            "0",
+            "--presence-penalty",
+            "0",
+            "--temperature",
+            "0.1",
+            "--top-p",
+            "0.9",
+            "--top-k",
+            "20",
+        ]
+        if not args.no_mtp:
+            cmd.extend(["--spec", "mtp", "--draft-tokens", "3", "--lm-head-draft"])
+        return cmd
+
+    if args.llm_backend == "ninfer":
+        if args.dry_run or args.skip_llm:
+            preview_bin = args.ninfer_bin or "<auto-download:ninfer-serve>"
+            preview_model = llm_model if Path(llm_model).is_file() else f"<auto-download:{DEFAULT_NINFER_FILE}>"
+            llm_cmd = _build_ninfer_cmd(preview_bin, preview_model)
+        else:
+            ninfer_bin = ensure_ninfer_binary(
+                cache_dir=cache_dir,
+                release_tag=args.ninfer_release,
+                cuda_ver=cuda_ver,
+                explicit_bin=args.ninfer_bin,
+            )
+            ninfer_model_path = ensure_ninfer_model(llm_model, cache_dir=cache_dir)
+            llm_cmd = _build_ninfer_cmd(str(ninfer_bin), str(ninfer_model_path))
+    elif args.llm_backend == "vllm":
         llm_cmd = [
             sys.executable,
             "-m",
@@ -1021,7 +1463,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         embed_proc: Optional[subprocess.Popen[Any]] = None
         llm_proc: Optional[subprocess.Popen[Any]] = None
 
-        # 先拉起 Embedding 服务再拉起 vLLM，避免 vLLM 预占显存后导致 bge-m3 空间不足
+        # 先拉起 Embedding 服务再拉起 System-2 LLM，避免大显存预占后导致 bge-m3 空间不足
         if not args.skip_embed:
             print(f"\n🚀 正在启动向量嵌入服务 (:{args.embed_port})...", flush=True)
             embed_proc = pm.spawn("CivicEmbed", embed_cmd)
@@ -1030,6 +1472,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 embed_proc,
                 "CivicEmbed",
                 timeout_sec=min(300, args.startup_timeout),
+                api_key=api_key,
             )
             if not ok:
                 return 1
@@ -1037,11 +1480,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if not args.skip_llm:
             print(f"\n🚀 正在启动 System-2 LLM 服务 (:{args.llm_port}, backend={args.llm_backend})...", flush=True)
             llm_proc = pm.spawn("SystemTwo", llm_cmd)
+            health_path = "/v1/models" if args.llm_backend == "ninfer" else "/health"
             ok = wait_for_http_health(
-                f"http://127.0.0.1:{args.llm_port}/health",
+                f"http://127.0.0.1:{args.llm_port}{health_path}",
                 llm_proc,
                 "SystemTwo",
                 timeout_sec=args.startup_timeout,
+                api_key=api_key,
             )
             if not ok:
                 return 1
@@ -1077,6 +1522,25 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             if not args.skip_embed:
                 embed_endpoint_v1 = f"http://{host_addr}:{args.embed_port}/v1"
 
+        if args.status_file:
+            _write_status_file(
+                Path(args.status_file).expanduser(),
+                {
+                    "ready": True,
+                    "llm_url": llm_endpoint_v1,
+                    "embed_url": embed_endpoint_v1,
+                    "llm_model": llm_alias if not args.skip_llm else None,
+                    "embed_model": args.embed_model if not args.skip_embed else None,
+                    "llm_backend": args.llm_backend,
+                    "tunnel": args.tunnel,
+                    "token": api_key,
+                    "pid": os.getpid(),
+                    "pgid": os.getpgrp() if hasattr(os, "getpgrp") else os.getpid(),
+                    "gpus": [{"index": g.index, "name": g.name, "vram_mb": g.vram_mb} for g in gpus],
+                    "updated_at": int(time.time()),
+                },
+            )
+
         print_connection_banner(
             gpus=gpus,
             llm_enabled=not args.skip_llm,
@@ -1110,6 +1574,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
         return 0
     finally:
+        if args.status_file:
+            try:
+                Path(args.status_file).expanduser().unlink(missing_ok=True)
+            except OSError:
+                pass
         pm.terminate_all()
 
 

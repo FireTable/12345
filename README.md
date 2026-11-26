@@ -182,7 +182,7 @@
 > 详阅：[`packages/civic-system-two/README.md`](packages/civic-system-two/README.md)
 
 - **OpenAI 兼容 + 流式与 CoT 分离**：完整支持 `chat.completions.create`、`chat.completions.createStream` 与 Zod 强类型 `createJSON<T>`，默认支持思维链（`reasoning_content`）与纯正文分离，结构化抽取显式关闭思考加速直出。
-- **多节点异构算力池与自愈切回**：支持 Apple Silicon Metal 本地集群（27B 三值模型，20~24 tokens/s）、[`scripts/colab`](scripts/colab/README.md) 远程 Colab/Linux GPU 热挂载节点与云端 OpenAI/DeepSeek 灾备三层降级；支持 `localWaitTimeoutMs`、`preferCloudWhenLocalBusy`、`preferCloudDirect` 路由策略与 30 秒冷却自动探测切回。
+- **多节点异构算力池与自愈切回**：本地及远程默认搭载 **Ternary Bonsai 2.5 27B**（Apple Silicon Metal 运行 `Ternary-Bonsai-2.5-27B-PQ2_0-mtp.gguf` + MTP 投机解码达 **~27–29 tok/s**；Windows RTX 3080 / Linux / Colab CUDA 通过 `ninfer-serve` 运行 `Ternary-Bonsai-2.5-27B-PQ2_0-ninfer-v3.ninfer`，`--model-id bonsai-2-27b`，支持 32K+ 上下文），支持通过 `SYSTEM_TWO_CONCURRENCY` 释放并发（如 RTX 3080 `--max-concurrency 2` 设 `2`，Colab L4/A100 设 `4`），并支持 [`scripts/colab`](scripts/colab/README.md) 一键命令行拉起/测试/关停（`pnpm colab:up` / `colab:verify` / `colab:stop`）与云端 OpenAI/DeepSeek 灾备三层降级、30 秒冷却自动探测切回。
 - **云端末公里 PII 清洗**：`CloudOpenAIAdapter` 内置 `scrubCloudPiiText`，在任何消息发往外部云端端点前自动拦截清洗身份证、银行卡、手机/固话与电子邮箱。
 
 ### 3. `@civic/anonymizer`：全要素可逆脱敏引擎与实体回填状态机
@@ -353,6 +353,11 @@ pnpm dev
 | `pnpm dev:web` | **轻量启动**：仅启动 Next.js 本地开发服务（大模型走云端灾备或已挂载算力池） |
 | `pnpm dev` | **全栈启动**：并行拉起 System-2 本地大模型推理引擎 (8132) + Next.js (3000，含内嵌研判 worker) |
 | `pnpm dev:models` | **算力集群**：并行拉起 System-2 (8132) + Civic-Embed (8133)，支持通过 Tailscale 供 VPS 跨网调度 |
+| `pnpm colab:up` | **一键拉起 Colab GPU**：自动分配 L4 运行 `bonsai-2-27b` + `BAAI/bge-m3` 并建立 Cloudflare 隧道（支持 `-- --gpu T4\|L4\|A100`、`-- --tunnel tailscale`、`-- --show-token`、`-- --session <name>`） |
+| `pnpm colab:status` | **Colab 算力状态**：巡检当前 Colab GPU 显存占用与公网/内网隧道端点连通性 |
+| `pnpm colab:test` | **Colab 端到端校验**：依次验证 401 鉴权拦截、`/v1/models` 200、流式对话及 1024 维向量嵌入 |
+| `pnpm colab:stop` | **关停并销毁 Colab VM**：优雅停服并销毁 Colab 运行时，立即停止计算单元（CU）计费 |
+| `pnpm colab:verify` | **全自动拉起与销毁验收**：一键启动 Colab GPU → 执行完整 E2E 校验 → 无论成败自动销毁 VM |
 | `pnpm db:init` | **全量一键初始化**：表结构迁移、示范租户、高精天地图边界、全量字典与管理员账号 |
 | `pnpm db:migrate` | 执行幂等数据库迁移（含 `0012` 覆盖索引/触发器与 `0013` PII 审计日志表） |
 | `pnpm db:init-admin` | 初始化/重置默认管理员账号 |

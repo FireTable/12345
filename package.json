@@ -31,7 +31,12 @@
     "db:push-vps": "bash scripts/sync-db.sh --push",
     "db:pull-vps": "bash scripts/sync-db.sh --pull",
     "db:sync-vps": "bash scripts/sync-db.sh --push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "colab:up": "python3 scripts/colab/colab_ctl.py up",
+    "colab:status": "python3 scripts/colab/colab_ctl.py status",
+    "colab:test": "python3 scripts/colab/colab_ctl.py test",
+    "colab:stop": "python3 scripts/colab/colab_ctl.py stop",
+    "colab:verify": "python3 scripts/colab/colab_ctl.py up --test-and-stop"
   },
   "dependencies": {
     "@better-auth-ui/core": "^1.7.6",

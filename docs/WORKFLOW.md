@@ -106,7 +106,7 @@ flowchart TD
 - 共享模型不带具体城市的镇街，镇街输出恒为 `UNKNOWN`（不写入数据库）。
 
 ### 3. System 2：每条都抽实体并写摘要
-- 本地 Bonsai 2 27B 或云端回退模型，抽取时统一关闭思考（`enableThinking: false`），输出 `canonical_subject`、`address`、`event_type`、`summarize_title`；
+- 本地 Bonsai 2.5 27B（Apple Silicon Metal / Windows·Linux·Colab `ninfer-serve`）或云端回退模型，抽取时统一关闭思考（`enableThinking: false`），输出 `canonical_subject`、`address`、`event_type`、`summarize_title`；
 - [`backend/prompt.ts`](../backend/prompt.ts) 在 Zod 校验前把 `null`/`无`/`未知` 收成空串，主体抽空时置信度上限压至 `55`；低于 `60` 推入 `review_queue` 待人工复核；
 - 出站前统一经 [`@civic/anonymizer`](../packages/civic-anonymizer/) 掩码姓名、手机、证件号、车牌等 PII，返回后按会话 Keymap 还原。
 
