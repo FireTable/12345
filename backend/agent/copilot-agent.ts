@@ -225,7 +225,10 @@ function routeCopilot(state: typeof MessagesAnnotation.State): "tools" | typeof 
   return END;
 }
 
-const LOCAL_FAST_PROMPT_CHAR_LIMIT = 3_500;
+const LOCAL_FAST_PROMPT_CHAR_LIMIT = (() => {
+  const raw = Number(process.env.COPILOT_LOCAL_PROMPT_CHAR_LIMIT);
+  return Number.isFinite(raw) && raw >= 1_000 ? Math.trunc(raw) : 24_000;
+})();
 
 export function isBriefingPrefetchPrompt(text: string): boolean {
   const clean = (text || "").trim();
@@ -750,7 +753,6 @@ export async function* streamCopilot(input: {
       allowTools: false,
       timeoutMs: 90_000,
       maxTokens: 2560,
-      preferCloudDirect: Boolean(engine.hasCloudFallback?.()),
       sessionKeymap,
       externalSignal: input.signal,
       writer: (chunk) => {
@@ -781,7 +783,6 @@ export async function* streamCopilot(input: {
           allowTools: false,
           timeoutMs: 90_000,
           maxTokens: 2560,
-          preferCloudDirect: Boolean(engine.hasCloudFallback?.()),
           sessionKeymap,
           externalSignal: input.signal,
           writer: (chunk) => {

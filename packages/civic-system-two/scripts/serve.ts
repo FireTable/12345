@@ -74,8 +74,10 @@ function resolveModelPath(): string | null {
     }
   }
 
-  // 3. macOS 开发者默认本地路径
+  // 3. macOS 开发者默认本地路径（优先 Bonsai 2.5 MTP，其次回退 Bonsai 2）
   if (!isWin) {
+    const bonsai25Default = path.join(os.homedir(), 'models/bonsai2.5-gguf/Ternary-Bonsai-2.5-27B-PQ2_0-mtp.gguf');
+    if (fs.existsSync(bonsai25Default)) return bonsai25Default;
     const macDefault = path.join(os.homedir(), 'models/bonsai2-gguf/Ternary-Bonsai-2-27B-PTQ1_0.gguf');
     if (fs.existsSync(macDefault)) return macDefault;
   }
@@ -86,6 +88,7 @@ function resolveModelPath(): string | null {
 const PORT = process.env.PORT || '8132';
 // 默认监听 0.0.0.0，使无论是 Mac 还是 Windows，启动后局域网其它机器均可直接通信
 const HOST = process.env.HOST || '0.0.0.0';
+const ALIAS = process.env.BONSAI_MODEL_ALIAS || 'bonsai-2-27b';
 
 async function main() {
   const serverBin = resolveServerBin();
@@ -106,21 +109,24 @@ async function main() {
   if (!modelPath) {
     console.error(`❌ 未找到 GGUF 模型文件！`);
     console.log(`\n【模型放置指引】:`);
-    console.log(`  请将 Ternary-Bonsai-2-27B 模型文件放入 packages/civic-system-two/models/ 目录`);
+    console.log(`  请将 Ternary-Bonsai 模型文件放入 packages/civic-system-two/models/ 目录`);
     console.log(`  或设置环境变量 BONSAI_MODEL_PATH 指向模型完整路径。\n`);
     process.exit(1);
   }
 
+  const useMtp = /-mtp\.gguf$/i.test(modelPath) && process.env.BONSAI_DISABLE_MTP !== '1';
   const platformName = isWin ? 'Windows (CUDA/DirectX)' : 'Apple Silicon (Metal)';
   console.log(`=== [System Two] 启动 ${platformName} 优化推理服务 ===`);
   console.log(`引擎: ${serverBin}`);
-  console.log(`模型: ${modelPath}`);
+  console.log(`模型: ${modelPath} (alias: ${ALIAS})`);
   console.log(`绑定: ${HOST}:${PORT} (局域网已可达)`);
-  console.log(`优化: -fa on, -ctk q8_0, -ctv q8_0, -np 1 (最佳三值吞吐)\n`);
+  console.log(
+    `优化: -fa on, -ctk q8_0, -ctv q8_0, -np 1, --min-p 0${useMtp ? ', --spec-type draft-mtp' : ''}\n`
+  );
 
   const args = [
     '-m', modelPath,
-    '--alias', 'bonsai-2-27b',
+    '--alias', ALIAS,
     '-ngl', '99',
     '--port', PORT,
     '--host', HOST,
@@ -131,6 +137,15 @@ async function main() {
     '-np', '1',
     '--batch-size', '1024',
     '--ubatch-size', '256',
+    '--min-p', '0',
+    ...(useMtp
+      ? [
+          '--spec-type', 'draft-mtp',
+          '--spec-draft-n-min', '0',
+          '--spec-draft-n-max', '1',
+          '--spec-draft-p-min', '0.6',
+        ]
+      : []),
   ];
 
   const proc = spawn(serverBin, args, {
