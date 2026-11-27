@@ -85,6 +85,16 @@ export function isTicketResolvedStatus(status?: string | null): boolean {
   );
 }
 
+export function isMissingTicketAddress(
+  address?: string | null,
+  subdistrict?: string | null,
+  isEcommerce = false
+): boolean {
+  const addr = (address || "").trim();
+  const sub = (subdistrict || "").trim();
+  return !addr || addr === sub || (isEcommerce && addr.length <= 6);
+}
+
 export function detectMissingTicketSlots(
   ticket: {
     address?: string | null;
@@ -100,7 +110,7 @@ export function detectMissingTicketSlots(
   const sub = (ticket.subdistrict || "").trim();
   const subj = (ticket.canonicalSubject || "").trim();
 
-  if (!addr || addr === sub || (isEcommerce && addr.length <= 6)) {
+  if (isMissingTicketAddress(addr, sub, isEcommerce)) {
     slots.push(isEcommerce ? "订单号/收货仓网明细" : "具体路名门牌/地点");
   }
   if (!subj || isGenericSubject(subj)) {

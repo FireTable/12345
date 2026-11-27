@@ -23,6 +23,7 @@ import {
   buildMissingInfoSqlParts,
   detectMissingTicketSlots,
   isGenericSubject,
+  isMissingTicketAddress,
   isTicketResolvedStatus,
 } from "@/lib/civic-missing";
 import { getRegionDomainProfile, type DomainProfile, type DomainType } from "@/lib/domain-profile";
@@ -3410,9 +3411,11 @@ export async function processAgentVoiceTurn(input: {
     const existingSubj = (existingTicket?.canonicalSubject || "").trim();
     const isEcommerce = domainType === "ECOMMERCE_CS";
 
-    const hasConfirmedAddress =
-      Boolean(existingAddr) &&
-      !(isEcommerce && (existingAddr === existingSubd || existingAddr.length <= 6));
+    const hasConfirmedAddress = !isMissingTicketAddress(
+      existingAddr,
+      existingSubd,
+      isEcommerce
+    );
     const hasConfirmedSubject = Boolean(existingSubj) && !isGenericSubject(existingSubj);
     const hasConfirmedSubdistrict = Boolean(existingSubd);
 
@@ -3490,7 +3493,12 @@ export async function processAgentVoiceTurn(input: {
     const resolvedSubdistrict = llmSubd || ruleSubd;
 
     const patch: Record<string, string> = {};
-    if (!hasConfirmedAddress && resolvedAddress) {
+    const effectiveSubd = resolvedSubdistrict || existingSubd;
+    if (
+      !hasConfirmedAddress &&
+      resolvedAddress &&
+      !isMissingTicketAddress(resolvedAddress, effectiveSubd, isEcommerce)
+    ) {
       patch.address = resolvedAddress.slice(0, 255);
     }
     if (!hasConfirmedSubject && resolvedSubject && !isGenericSubject(resolvedSubject)) {
