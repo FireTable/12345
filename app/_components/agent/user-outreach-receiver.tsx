@@ -447,10 +447,18 @@ export function UserOutreachReceiver() {
           }
           setSession(null);
         }}
-        className="civic-user-outreach-dialog w-[calc(100vw-1rem)] max-w-2xl max-h-[90dvh] m-auto flex-col rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl overflow-hidden"
+        className={`civic-user-outreach-dialog m-auto flex-col rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl overflow-clip ${
+          isRinging
+            ? "w-[min(672px,calc(100dvw-1.5rem))] max-h-[90dvh]"
+            : "w-[min(1080px,calc(100dvw-1.5rem))] sm:w-[min(1080px,calc(100dvw-2.5rem))] max-h-[92dvh] md:h-[min(760px,90dvh)]"
+        }`}
       >
         {session ? (
-          <div className="w-full flex flex-col max-h-[90dvh] min-h-0">
+          <div
+            className={`w-full flex flex-col min-h-0 ${
+              isRinging ? "max-h-[90dvh]" : "max-h-[92dvh] md:h-full"
+            }`}
+          >
             {/* Header */}
             <div className="px-4 sm:px-5 py-3.5 border-b border-slate-200 bg-slate-50 flex items-start justify-between gap-3 shrink-0">
               <div className="min-w-0 flex-1 space-y-1">
@@ -562,17 +570,19 @@ export function UserOutreachReceiver() {
               </div>
             ) : (
               <>
-                <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-5">
-                  <div className="grid grid-cols-1 md:grid-cols-[210px_minmax(0,1fr)] gap-4 items-start">
-                    {/* Left: 3D Xiaochun Stage + Voice Button */}
-                    <div className="flex flex-col items-center gap-3 w-full">
+                <div className="flex-1 min-h-0 overflow-y-auto md:overflow-clip overscroll-contain grid grid-cols-1 md:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.25fr)]">
+                  {/* Left: Transparent 3D Xiaochun Stage + Voice Button */}
+                  <div className="flex flex-col min-h-0 bg-gradient-to-b from-slate-50 via-blue-50/55 to-slate-100/80 border-b md:border-b-0 md:border-r border-slate-200/80">
+                    <div className="relative w-full h-[300px] sm:h-[340px] md:h-auto md:flex-1 md:min-h-0">
                       <XiaochunStage
                         ref={stageRef}
+                        variant="stage"
+                        scene="transparent"
+                        backdropTone="light"
                         outfit="xiaochun_civic"
                         lazy={false}
                         width="100%"
-                        height={220}
-                        scene="light"
+                        height="100%"
                         title={isEcommerce ? "售后回访专员" : "12345 回访专员"}
                         subtitle={
                           session.taskType === "REOPEN_CALLBACK"
@@ -581,7 +591,9 @@ export function UserOutreachReceiver() {
                         }
                         caption={caption}
                       />
+                    </div>
 
+                    <div className="p-3.5 sm:p-4 border-t border-slate-200/70 bg-white/85 backdrop-blur-sm shrink-0 space-y-2">
                       <button
                         ref={micButtonRef}
                         type="button"
@@ -625,177 +637,177 @@ export function UserOutreachReceiver() {
 
                       {asr.error && (
                         <p className="text-[11px] text-amber-700 w-full break-words">
-                          语音提示：{asr.error}（可用下方文字输入或快捷回答）
+                          语音提示：{asr.error}（可用右侧文字输入或快捷回答）
                         </p>
                       )}
                     </div>
+                  </div>
 
-                    {/* Right: Transcript + User Input */}
-                    <div className="min-w-0 flex flex-col gap-3">
-                      <div
-                        role="log"
-                        aria-live="polite"
-                        tabIndex={0}
-                        aria-label="通话对话记录"
-                        className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 max-h-[240px] overflow-y-auto overscroll-contain space-y-2.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
-                      >
-                        {session.turns.map((turn) => (
+                  {/* Right: Transcript + User Input */}
+                  <div className="min-w-0 min-h-0 flex flex-col gap-3.5 p-4 sm:p-5 md:p-6 bg-white">
+                    <div
+                      role="log"
+                      aria-live="polite"
+                      tabIndex={0}
+                      aria-label="通话对话记录"
+                      className="flex-1 min-h-[220px] md:min-h-0 overflow-y-auto overscroll-contain [scrollbar-gutter:stable] rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 sm:p-4 space-y-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                    >
+                      {session.turns.map((turn) => (
+                        <div
+                          key={turn.id}
+                          className={`flex flex-col ${
+                            turn.role === "citizen" ? "items-end" : "items-start"
+                          }`}
+                        >
                           <div
-                            key={turn.id}
-                            className={`flex flex-col ${
-                              turn.role === "citizen" ? "items-end" : "items-start"
+                            className={`max-w-[90%] rounded-xl px-3.5 py-2.5 text-[13px] leading-relaxed break-words ${
+                              turn.role === "citizen"
+                                ? "bg-blue-600 text-white rounded-br-none"
+                                : "bg-white text-slate-800 border border-slate-200 rounded-bl-none shadow-2xs"
                             }`}
                           >
                             <div
-                              className={`max-w-[90%] rounded-xl px-3 py-2 text-xs leading-relaxed break-words ${
-                                turn.role === "citizen"
-                                  ? "bg-blue-600 text-white rounded-br-none"
-                                  : "bg-white text-slate-800 border border-slate-200 rounded-bl-none shadow-2xs"
+                              className={`text-[11px] mb-1 font-medium ${
+                                turn.role === "citizen" ? "text-blue-100" : "text-slate-500"
                               }`}
                             >
-                              <div
-                                className={`text-[10px] mb-0.5 font-medium ${
-                                  turn.role === "citizen" ? "text-blue-100" : "text-slate-500"
+                              {turn.role === "agent" ? "AI 专员" : "我的回答"}
+                            </div>
+                            <div>{turn.text}</div>
+                          </div>
+                        </div>
+                      ))}
+                      {sending && (
+                        <div className="flex items-center gap-2 text-xs text-slate-500 py-1">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" aria-hidden="true" />
+                          <span>AI 专员正在记录并回复…</span>
+                        </div>
+                      )}
+                      <div ref={transcriptEndRef} />
+                    </div>
+
+                    {!isCompleted && (
+                      <>
+                        <div className="shrink-0 space-y-2">
+                          <div className="text-xs font-medium text-slate-600 flex items-center gap-1.5">
+                            <Sparkles className="w-3.5 h-3.5 text-blue-600" aria-hidden="true" />
+                            <span>快捷回答选项</span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            {quickReplies.map((qr) => (
+                              <button
+                                key={qr.label}
+                                type="button"
+                                disabled={sending || isCompleted}
+                                onClick={() => void submitReply(qr.text)}
+                                className={`text-left px-3 py-2.5 rounded-lg border text-xs transition-colors cursor-pointer disabled:opacity-50 min-h-[44px] ${
+                                  qr.tone === "danger"
+                                    ? "bg-rose-50/70 border-rose-200 text-rose-800 hover:bg-rose-100/80"
+                                    : qr.tone === "success"
+                                      ? "bg-emerald-50/70 border-emerald-200 text-emerald-800 hover:bg-emerald-100/80"
+                                      : "bg-white border-slate-200 text-slate-700 hover:border-blue-300 hover:bg-blue-50/50"
                                 }`}
                               >
-                                {turn.role === "agent" ? "AI 专员" : "我的回答"}
-                              </div>
-                              <div>{turn.text}</div>
-                            </div>
-                          </div>
-                        ))}
-                        {sending && (
-                          <div className="flex items-center gap-2 text-xs text-slate-500 py-1">
-                            <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" aria-hidden="true" />
-                            <span>AI 专员正在记录并回复…</span>
-                          </div>
-                        )}
-                        <div ref={transcriptEndRef} />
-                      </div>
-
-                      {!isCompleted && (
-                        <>
-                          <div className="space-y-1.5">
-                            <div className="text-[11px] font-medium text-slate-600 flex items-center gap-1">
-                              <Sparkles className="w-3 h-3 text-blue-600" aria-hidden="true" />
-                              <span>快捷回答选项</span>
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              {quickReplies.map((qr) => (
-                                <button
-                                  key={qr.label}
-                                  type="button"
-                                  disabled={sending || isCompleted}
-                                  onClick={() => void submitReply(qr.text)}
-                                  className={`text-left px-3 py-2 rounded-lg border text-xs transition-colors cursor-pointer disabled:opacity-50 min-h-[44px] ${
-                                    qr.tone === "danger"
-                                      ? "bg-rose-50/70 border-rose-200 text-rose-800 hover:bg-rose-100/80"
-                                      : qr.tone === "success"
-                                        ? "bg-emerald-50/70 border-emerald-200 text-emerald-800 hover:bg-emerald-100/80"
-                                        : "bg-white border-slate-200 text-slate-700 hover:border-blue-300 hover:bg-blue-50/50"
-                                  }`}
-                                >
-                                  <div className="font-semibold text-[11px] mb-0.5">{qr.label}</div>
-                                  <div className="text-[11px] opacity-90 line-clamp-2 break-words">
-                                    “{qr.text}”
-                                  </div>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-
-                          <form
-                            onSubmit={(e) => {
-                              e.preventDefault();
-                              const pendingText =
-                                asr.isRecording && asr.interimText.trim()
-                                  ? appendRecognizedText(textInput, asr.interimText)
-                                  : textInput;
-                              if (sending || isCompleted || !pendingText.trim()) return;
-                              void submitReply(pendingText);
-                            }}
-                            className="space-y-1.5"
-                          >
-                            <label htmlFor={inputId} className="block text-[11px] font-medium text-slate-600">
-                              我的语音 / 文字回答
-                            </label>
-                            <div className="flex items-center gap-2">
-                              <input
-                                ref={textInputRef}
-                                id={inputId}
-                                type="text"
-                                value={textInput}
-                                disabled={sending || isCompleted}
-                                onChange={(e) => setTextInput(e.target.value)}
-                                onCompositionEnd={(e) => {
-                                  lastCompositionEndAtRef.current = e.timeStamp;
-                                }}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter") {
-                                    e.preventDefault();
-                                    const recentCompositionEnd =
-                                      lastCompositionEndAtRef.current !== null &&
-                                      Math.abs(e.timeStamp - lastCompositionEndAtRef.current) < 50;
-                                    if (
-                                      e.nativeEvent.isComposing ||
-                                      e.keyCode === 229 ||
-                                      recentCompositionEnd
-                                    ) {
-                                      return;
-                                    }
-                                    e.currentTarget.form?.requestSubmit();
-                                  }
-                                }}
-                                placeholder={
-                                  asr.isRecording
-                                    ? asr.interimText
-                                      ? `实时转写：${asr.interimText}`
-                                      : "正在聆听，请直接说话…"
-                                    : isEcommerce
-                                      ? "请输入补充的商品/SKU、仓网或反馈…"
-                                      : "请输入具体路名门牌、商铺名称或问题解决情况…"
-                                }
-                                className="flex-1 min-w-0 min-h-[44px] px-3 rounded-lg border border-slate-200 bg-white text-base sm:text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
-                              />
-                              <button
-                                type="submit"
-                                disabled={
-                                  sending ||
-                                  isCompleted ||
-                                  !(textInput.trim() || (asr.isRecording && asr.interimText.trim()))
-                                }
-                                aria-label="发送回答"
-                                className="btn btn--primary min-h-[44px] px-3.5 shrink-0 disabled:opacity-50"
-                              >
-                                <Send className="w-4 h-4 shrink-0" aria-hidden="true" />
-                                <span className="text-xs">发送</span>
+                                <div className="font-semibold text-xs mb-0.5">{qr.label}</div>
+                                <div className="text-xs opacity-90 line-clamp-2 break-words">
+                                  “{qr.text}”
+                                </div>
                               </button>
-                            </div>
-                          </form>
-                        </>
-                      )}
-
-                      {isCompleted && (
-                        <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-3 text-xs text-emerald-900 flex items-start gap-2">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" aria-hidden="true" />
-                          <div className="space-y-0.5">
-                            <div className="font-semibold">本次外呼核实已完成</div>
-                            <p className="text-[11px] text-emerald-800">
-                              感谢配合，您的回答已同步回写至对应工单与处理专班。
-                            </p>
+                            ))}
                           </div>
                         </div>
-                      )}
 
-                      {turnError && (
-                        <div
-                          role="alert"
-                          className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700"
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            const pendingText =
+                              asr.isRecording && asr.interimText.trim()
+                                ? appendRecognizedText(textInput, asr.interimText)
+                                : textInput;
+                            if (sending || isCompleted || !pendingText.trim()) return;
+                            void submitReply(pendingText);
+                          }}
+                          className="shrink-0 space-y-1.5"
                         >
-                          {turnError}
+                          <label htmlFor={inputId} className="block text-xs font-medium text-slate-600">
+                            我的语音 / 文字回答
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              ref={textInputRef}
+                              id={inputId}
+                              type="text"
+                              value={textInput}
+                              disabled={sending || isCompleted}
+                              onChange={(e) => setTextInput(e.target.value)}
+                              onCompositionEnd={(e) => {
+                                lastCompositionEndAtRef.current = e.timeStamp;
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  const recentCompositionEnd =
+                                    lastCompositionEndAtRef.current !== null &&
+                                    Math.abs(e.timeStamp - lastCompositionEndAtRef.current) < 50;
+                                  if (
+                                    e.nativeEvent.isComposing ||
+                                    e.keyCode === 229 ||
+                                    recentCompositionEnd
+                                  ) {
+                                    return;
+                                  }
+                                  e.currentTarget.form?.requestSubmit();
+                                }
+                              }}
+                              placeholder={
+                                asr.isRecording
+                                  ? asr.interimText
+                                    ? `实时转写：${asr.interimText}`
+                                    : "正在聆听，请直接说话…"
+                                  : isEcommerce
+                                    ? "请输入补充的商品/SKU、仓网或反馈…"
+                                    : "请输入具体路名门牌、商铺名称或问题解决情况…"
+                              }
+                              className="flex-1 min-w-0 min-h-[44px] px-3.5 rounded-lg border border-slate-200 bg-white text-base sm:text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                            />
+                            <button
+                              type="submit"
+                              disabled={
+                                sending ||
+                                isCompleted ||
+                                !(textInput.trim() || (asr.isRecording && asr.interimText.trim()))
+                              }
+                              aria-label="发送回答"
+                              className="btn btn--primary min-h-[44px] px-4 shrink-0 disabled:opacity-50"
+                            >
+                              <Send className="w-4 h-4 shrink-0" aria-hidden="true" />
+                              <span className="text-xs">发送</span>
+                            </button>
+                          </div>
+                        </form>
+                      </>
+                    )}
+
+                    {isCompleted && (
+                      <div className="shrink-0 rounded-xl border border-emerald-200 bg-emerald-50/80 p-3.5 text-xs text-emerald-900 flex items-start gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" aria-hidden="true" />
+                        <div className="space-y-0.5">
+                          <div className="font-semibold">本次外呼核实已完成</div>
+                          <p className="text-xs text-emerald-800">
+                            感谢配合，您的回答已同步回写至对应工单与处理专班。
+                          </p>
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    )}
+
+                    {turnError && (
+                      <div
+                        role="alert"
+                        className="shrink-0 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700"
+                      >
+                        {turnError}
+                      </div>
+                    )}
                   </div>
                 </div>
 
