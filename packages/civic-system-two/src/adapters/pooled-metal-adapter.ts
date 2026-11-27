@@ -18,6 +18,7 @@ interface ClusterNode {
   model?: string;
   provider?: string;
   name?: string;
+  maxConcurrency?: number;
   inFlight: number;
   isHealthy: boolean;
   lastChecked: number;
@@ -31,12 +32,19 @@ function normalizeNodeSpec(spec: ClusterNodeSpec): ClusterNodeObjectSpec | null 
   }
   const endpoint = (spec?.endpoint || '').trim().replace(/\/+$/, '');
   if (!endpoint) return null;
+  const maxConcurrency =
+    typeof spec.maxConcurrency === 'number' &&
+    Number.isFinite(spec.maxConcurrency) &&
+    spec.maxConcurrency >= 1
+      ? Math.trunc(spec.maxConcurrency)
+      : undefined;
   return {
     endpoint,
     apiKey: spec.apiKey?.trim() || undefined,
     model: spec.model?.trim() || undefined,
     provider: spec.provider?.trim() || undefined,
     name: spec.name?.trim() || undefined,
+    maxConcurrency,
   };
 }
 
@@ -95,6 +103,7 @@ export class PooledMetalAdapter implements ISystemTwoAdapter {
         }
         existing.provider = spec.provider;
         existing.name = spec.name;
+        existing.maxConcurrency = spec.maxConcurrency;
         nextNodes.push(existing);
       } else {
         nextNodes.push({
@@ -110,6 +119,7 @@ export class PooledMetalAdapter implements ISystemTwoAdapter {
           model: spec.model,
           provider: spec.provider,
           name: spec.name,
+          maxConcurrency: spec.maxConcurrency,
           inFlight: 0,
           isHealthy: true,
           lastChecked: 0,
@@ -128,6 +138,7 @@ export class PooledMetalAdapter implements ISystemTwoAdapter {
     provider?: string;
     model?: string;
     name?: string;
+    maxConcurrency?: number;
     isHealthy: boolean;
     inFlight: number;
   }> {
@@ -136,6 +147,7 @@ export class PooledMetalAdapter implements ISystemTwoAdapter {
       provider: n.provider,
       model: n.model,
       name: n.name,
+      maxConcurrency: n.maxConcurrency,
       isHealthy: n.isHealthy,
       inFlight: n.inFlight,
     }));

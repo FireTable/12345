@@ -58,7 +58,8 @@ export class SystemTwoEngine {
   private lastClusterProbeAt: number;
   private clusterProbePromise: Promise<boolean> | null = null;
   private lastLocalWaitTimeoutAt = 0;
-  private readonly localSlowCooldownMs = 45_000;
+  private readonly maxInFlightPerNode: number;
+  private readonly localSlowCooldownMs: number;
 
   // Per-endpoint 最近处理过的工单预览（in-memory，进程级单例；不落库）
   // 用于 workbench 按节点展示"该 endpoint 最新处理了哪些工单"。
@@ -87,6 +88,24 @@ export class SystemTwoEngine {
         : Number.isFinite(envCooldown) && envCooldown >= 0
           ? envCooldown
           : 30_000;
+    const cfgNodeCap = config.maxInFlightPerNode;
+    const envNodeCap = Number(process.env.SYSTEM_TWO_NODE_CONCURRENCY);
+    this.maxInFlightPerNode =
+      typeof cfgNodeCap === 'number' && Number.isFinite(cfgNodeCap) && cfgNodeCap >= 1
+        ? Math.trunc(cfgNodeCap)
+        : Number.isFinite(envNodeCap) && envNodeCap >= 1
+          ? Math.trunc(envNodeCap)
+          : 2;
+
+    const cfgSlowCooldown = config.localSlowCooldownMs;
+    const envSlowCooldown = Number(process.env.SYSTEM_TWO_LOCAL_SLOW_COOLDOWN_MS);
+    this.localSlowCooldownMs =
+      typeof cfgSlowCooldown === 'number' && Number.isFinite(cfgSlowCooldown) && cfgSlowCooldown >= 0
+        ? Math.trunc(cfgSlowCooldown)
+        : Number.isFinite(envSlowCooldown) && envSlowCooldown >= 0
+          ? Math.trunc(envSlowCooldown)
+          : 15_000;
+
     this.lastClusterProbeAt = activeAdapter === clusterAdapter ? 0 : Date.now();
   }
 
@@ -174,12 +193,23 @@ export class SystemTwoEngine {
   }
 
   /**
-   * 当前所有健康本地算力节点是否均已有在途请求（无空闲槽位）
+   * 当前所有健康本地算力节点是否均已达到各自并发槽位上限
    */
   isLocalClusterBusy(): boolean {
     if (this.activeAdapter !== this.clusterAdapter) return false;
     const healthyMetas = this.clusterAdapter.getNodeMetas().filter((n) => n.isHealthy);
-    return healthyMetas.length > 0 && healthyMetas.every((n) => n.inFlight > 0);
+    return (
+      healthyMetas.length > 0 &&
+      healthyMetas.every((n) => {
+        const cap =
+          typeof n.maxConcurrency === 'number' &&
+          Number.isFinite(n.maxConcurrency) &&
+          n.maxConcurrency >= 1
+            ? Math.trunc(n.maxConcurrency)
+            : this.maxInFlightPerNode;
+        return n.inFlight >= cap;
+      })
+    );
   }
 
   /**

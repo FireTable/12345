@@ -321,6 +321,135 @@ async function main() {
     await fastFallback.close();
   }
 
+  // 6. Slot-aware isLocalClusterBusy(): single node with maxInFlightPerNode=2 serves 2nd concurrent stream locally; 3rd overflows to cloud
+  {
+    let releaseFirst!: () => void;
+    const firstHeld = new Promise<void>((r) => {
+      releaseFirst = r;
+    });
+    let releaseSecond!: () => void;
+    const secondHeld = new Promise<void>((r) => {
+      releaseSecond = r;
+    });
+    let localStarted = 0;
+
+    const busyLocal = await startMockSseServer(async (_req, res, attempt) => {
+      localStarted += 1;
+      res.setHeader("content-type", "text/event-stream");
+      if (attempt === 1) await firstHeld;
+      if (attempt === 2) await secondHeld;
+      res.write(sseData({ choices: [{ delta: { content: `local-${attempt}` }, finish_reason: "stop" }] }));
+      res.write("data: [DONE]\n\n");
+      res.end();
+    });
+    const busyCloud = await startMockSseServer(async (_req, res) => {
+      res.setHeader("content-type", "text/event-stream");
+      res.write(sseData({ choices: [{ delta: { content: "cloud-overflow" }, finish_reason: "stop" }] }));
+      res.write("data: [DONE]\n\n");
+      res.end();
+    });
+
+    try {
+      const engine = await SystemTwoEngine.create({
+        endpoints: [busyLocal.url],
+        cloudFallback: { endpoint: busyCloud.url, apiKey: "k", model: "m" },
+        maxInFlightPerNode: 2,
+        timeoutMs: 5000,
+      });
+
+      const collectStream = async (opts: { preferCloudWhenLocalBusy?: boolean }) => {
+        let out = "";
+        for await (const chunk of engine.chat.completions.createStream({
+          messages: [{ role: "user", content: "slot-test" }],
+          preferCloudWhenLocalBusy: opts.preferCloudWhenLocalBusy ?? true,
+        })) {
+          if (chunk.deltaContent) out += chunk.deltaContent;
+        }
+        return out;
+      };
+
+      const p1 = collectStream({});
+      while (localStarted < 1) await new Promise((r) => setTimeout(r, 5));
+      assert(!engine.isLocalClusterBusy(), "inFlight=1 (< maxInFlightPerNode=2) 时不判定集群繁忙");
+
+      const p2 = collectStream({});
+      while (localStarted < 2) await new Promise((r) => setTimeout(r, 5));
+      assert(engine.isLocalClusterBusy(), "inFlight=2 (== maxInFlightPerNode=2) 时判定集群繁忙");
+      assert(busyCloud.hits === 0, "第 2 个并发请求仍走本地槽位，不触发云端");
+
+      const r3 = await collectStream({});
+      assert(r3 === "cloud-overflow" && busyCloud.hits === 1, "第 3 个并发请求在本地双槽满载时溢出到云端");
+
+      releaseFirst();
+      releaseSecond();
+      const [r1, r2] = await Promise.all([p1, p2]);
+      assert(r1 === "local-1" && r2 === "local-2", "释放后前两路本地流正常完成");
+    } finally {
+      releaseFirst();
+      releaseSecond();
+      await busyLocal.close();
+      await busyCloud.close();
+    }
+  }
+
+  // 7. Configurable localSlowCooldownMs: slow first chunk falls over to cloud inside cooldown, then returns to local after cooldown
+  {
+    let mode: "slow" | "fast" = "slow";
+    const adaptiveLocal = await startMockSseServer(async (_req, res) => {
+      if (mode === "slow") {
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      if (!res.writableEnded) {
+        res.setHeader("content-type", "text/event-stream");
+        res.write(sseData({ choices: [{ delta: { content: "local-recovered" }, finish_reason: "stop" }] }));
+        res.write("data: [DONE]\n\n");
+        res.end();
+      }
+    });
+    const adaptiveCloud = await startMockSseServer(async (_req, res) => {
+      res.setHeader("content-type", "text/event-stream");
+      res.write(sseData({ choices: [{ delta: { content: "cloud-cooldown" }, finish_reason: "stop" }] }));
+      res.write("data: [DONE]\n\n");
+      res.end();
+    });
+
+    try {
+      const engine = await SystemTwoEngine.create({
+        endpoints: [adaptiveLocal.url],
+        cloudFallback: { endpoint: adaptiveCloud.url, apiKey: "k", model: "m" },
+        localSlowCooldownMs: 120,
+        timeoutMs: 5000,
+      });
+
+      const runOnce = async () => {
+        let out = "";
+        for await (const chunk of engine.chat.completions.createStream({
+          messages: [{ role: "user", content: "cooldown-test" }],
+          localWaitTimeoutMs: 80,
+          preferCloudWhenLocalBusy: true,
+        })) {
+          if (chunk.deltaContent) out += chunk.deltaContent;
+        }
+        return out;
+      };
+
+      const first = await runOnce();
+      assert(first === "cloud-cooldown", "首包超过 localWaitTimeoutMs 后切至云端兜底");
+      assert(engine.getHealthyEndpoints().includes(adaptiveLocal.url), "首包等待超时不误标本地节点为不健康");
+
+      mode = "fast";
+      const inCooldown = await runOnce();
+      assert(inCooldown === "cloud-cooldown" && adaptiveCloud.hits === 2, "冷却窗口内后续请求直走云端");
+
+      await new Promise((r) => setTimeout(r, 150));
+      const afterCooldown = await runOnce();
+      assert(afterCooldown === "local-recovered" && adaptiveCloud.hits === 2, "冷却窗口结束后自动回到本地集群执行");
+    } finally {
+      await adaptiveLocal.close();
+      await adaptiveCloud.close();
+    }
+  }
+
   if (failures > 0) {
     process.exit(1);
   }

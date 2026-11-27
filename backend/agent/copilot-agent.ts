@@ -227,7 +227,17 @@ function routeCopilot(state: typeof MessagesAnnotation.State): "tools" | typeof 
 
 const LOCAL_FAST_PROMPT_CHAR_LIMIT = (() => {
   const raw = Number(process.env.COPILOT_LOCAL_PROMPT_CHAR_LIMIT);
-  return Number.isFinite(raw) && raw >= 1_000 ? Math.trunc(raw) : 24_000;
+  return Number.isFinite(raw) && raw >= 1_000 ? Math.trunc(raw) : 36_000;
+})();
+
+const LOCAL_WAIT_TIMEOUT_MS = (() => {
+  const raw = Number(process.env.COPILOT_LOCAL_WAIT_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw >= 1_000 ? Math.trunc(raw) : 12_000;
+})();
+
+const PREFER_CLOUD_WHEN_LOCAL_BUSY = (() => {
+  const raw = (process.env.COPILOT_PREFER_CLOUD_WHEN_LOCAL_BUSY || "").trim().toLowerCase();
+  return raw !== "0" && raw !== "false";
 })();
 
 export function isBriefingPrefetchPrompt(text: string): boolean {
@@ -334,8 +344,8 @@ async function streamModelTurn(input: {
       enable_thinking: false,
       temperature: 0.2,
       max_tokens: input.maxTokens ?? 2048,
-      localWaitTimeoutMs: 6_000,
-      preferCloudWhenLocalBusy: true,
+      localWaitTimeoutMs: LOCAL_WAIT_TIMEOUT_MS,
+      preferCloudWhenLocalBusy: PREFER_CLOUD_WHEN_LOCAL_BUSY,
       ...(preferCloudDirect ? { preferCloudDirect: true } : {}),
       ...(input.allowTools ? { response_format: { type: "json_object" as const } } : {}),
       signal: effectiveSignal,
@@ -383,7 +393,12 @@ async function streamModelTurn(input: {
       poolStats.activeBatch > 0 &&
       poolStats.activeBatch + poolStats.activeInteractive >= poolStats.concurrency;
 
-    if (engineHasCloud && (preferCloudDirect || localBusyInPool || input.engine.isLocalClusterBusy?.())) {
+    if (
+      engineHasCloud &&
+      (preferCloudDirect ||
+        (PREFER_CLOUD_WHEN_LOCAL_BUSY &&
+          (localBusyInPool || input.engine.isLocalClusterBusy?.())))
+    ) {
       return await runStream(controller.signal);
     }
 

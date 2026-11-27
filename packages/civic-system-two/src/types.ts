@@ -112,6 +112,8 @@ export interface ClusterNodeObjectSpec {
   model?: string;
   provider?: string;
   name?: string;
+  /** 单节点允许的并发槽位数（用于 isLocalClusterBusy 判忙，默认读取 engine.maxInFlightPerNode） */
+  maxConcurrency?: number;
 }
 
 export type ClusterNodeSpec = string | ClusterNodeObjectSpec;
@@ -145,6 +147,14 @@ export interface SystemTwoConfig {
    * 超时时间（毫秒），默认为 180,000ms (3分钟)
    */
   timeoutMs?: number;
+  /**
+   * 每个本地节点在途请求判忙阈值（默认 2，或读取环境变量 SYSTEM_TWO_NODE_CONCURRENCY）
+   */
+  maxInFlightPerNode?: number;
+  /**
+   * 本地首包超时后直切云端的冷却毫秒数（默认 15,000ms，或读取 SYSTEM_TWO_LOCAL_SLOW_COOLDOWN_MS）
+   */
+  localSlowCooldownMs?: number;
   /**
    * 默认思考开关，默认为 true
    */
