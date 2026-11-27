@@ -17,7 +17,6 @@ import { useAuthRole } from "@/lib/auth/use-role";
 import { useRegion } from "@/app/_components/civic/region-context";
 import { useCivicSse } from "@/app/_hooks/use-civic-sse";
 import { appendRecognizedText, useStreamAsr } from "@/app/_hooks/use-stream-asr";
-import { XiaochunStage, type XiaochunStageHandle } from "@/app/_components/agent/xiaochun-stage";
 
 interface CitizenOutreachTurn {
   id: string;
@@ -108,12 +107,12 @@ function getQuickReplies(session: CitizenOutreachSession | null): QuickReplyOpti
         ]
       : [
           {
-            label: "补充天河公园广场舞位置与主体",
-            text: "就在天园街道天府路1号天河公园南门西侧下沉广场，是天河公园南门广场舞音响团队，每晚9点到10点半开高音大喇叭",
+            label: "天河公园补充主体与地址",
+            text: "就在天园街道天府路1号天河公园南门西侧下沉广场，涉事主体是天河公园南门广场舞音响队，每晚9点到10点半开高音大喇叭扰民",
           },
           {
             label: "补充受影响小区与扰民时长",
-            text: "就在天园街道天府路9号天河公园南门对面小区，广场舞大喇叭连续半个多月每晚9点后扰民，严重影响休息",
+            text: "就在天园街道天府路9号天河公园南门对面小区，涉事主体是天河公园南门广场舞音响队，连续半个多月每晚9点后高音扰民，严重影响休息",
           },
           {
             label: "补充路名门牌与涉事商铺",
@@ -131,12 +130,10 @@ export function UserOutreachReceiver() {
   const { activeRegion } = useRegion();
 
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const stageRef = useRef<XiaochunStageHandle>(null);
   const answerButtonRef = useRef<HTMLButtonElement>(null);
   const micButtonRef = useRef<HTMLButtonElement>(null);
   const textInputRef = useRef<HTMLInputElement>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
-  const lastSpokenTurnIdRef = useRef<string>("");
   const dismissedIdsRef = useRef<Set<string>>(new Set());
   const submittingRef = useRef(false);
   const lastCompositionEndAtRef = useRef<number | null>(null);
@@ -153,7 +150,6 @@ export function UserOutreachReceiver() {
   const [textInput, setTextInput] = useState("");
   const [sending, setSending] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
-  const [caption, setCaption] = useState("");
   const [turnError, setTurnError] = useState<string | null>(null);
 
   const shouldListen = !authPending && isAuthenticated && isCitizen;
@@ -171,35 +167,16 @@ export function UserOutreachReceiver() {
   asrActiveRef.current =
     asr.isRecording || asr.status === "initializing" || asr.status === "downloading";
 
-  const speakTurnIfNeeded = useCallback((nextSession: CitizenOutreachSession) => {
-    if (nextSession.status !== "IN_CALL" && nextSession.status !== "COMPLETED") return;
-    const lastAgent = [...nextSession.turns].reverse().find((t) => t.role === "agent");
-    if (!lastAgent) return;
-    if (lastSpokenTurnIdRef.current === lastAgent.id) return;
-    lastSpokenTurnIdRef.current = lastAgent.id;
-    const spoken = lastAgent.spokenText || lastAgent.text;
-    setCaption(spoken);
-    window.setTimeout(() => {
-      stageRef.current?.activate();
-      void stageRef.current?.say(spoken).catch(() => {});
-    }, 100);
+  const acceptIncomingSession = useCallback((incoming: CitizenOutreachSession | null) => {
+    if (!incoming) return;
+    if (dismissedIdsRef.current.has(incoming.id)) return;
+    if (currentSessionIdRef.current !== incoming.id) {
+      setTextInput("");
+      setTurnError(null);
+    }
+    currentSessionIdRef.current = incoming.id;
+    setSession(incoming);
   }, []);
-
-  const acceptIncomingSession = useCallback(
-    (incoming: CitizenOutreachSession | null) => {
-      if (!incoming) return;
-      if (dismissedIdsRef.current.has(incoming.id)) return;
-      if (currentSessionIdRef.current !== incoming.id) {
-        lastSpokenTurnIdRef.current = "";
-        setTextInput("");
-        setTurnError(null);
-      }
-      currentSessionIdRef.current = incoming.id;
-      setSession(incoming);
-      speakTurnIfNeeded(incoming);
-    },
-    [speakTurnIfNeeded]
-  );
 
   // 拉取当前挂起的来电（页面刚打开 / 断线重连兜底）
   const pollActiveSession = useCallback(async () => {
@@ -244,7 +221,6 @@ export function UserOutreachReceiver() {
             if (json.success && json.session) {
               const updated = json.session as CitizenOutreachSession;
               setSession(updated);
-              speakTurnIfNeeded(updated);
               if (updated.status === "CANCELLED" || updated.status === "REJECTED") {
                 dismissedIdsRef.current.add(updated.id);
               }
@@ -258,7 +234,7 @@ export function UserOutreachReceiver() {
       }
     }, intervalMs);
     return () => window.clearInterval(timer);
-  }, [shouldListen, session?.id, session?.status, pollActiveSession, speakTurnIfNeeded]);
+  }, [shouldListen, session?.id, session?.status, pollActiveSession]);
 
   // 实时 SSE 接收来电推送与状态更新
   useCivicSse(shouldListen ? activeRegion?.id : undefined, (msg) => {
@@ -273,7 +249,6 @@ export function UserOutreachReceiver() {
         if (!prev || prev.id !== updated.id) return prev;
         return updated;
       });
-      speakTurnIfNeeded(updated);
       if (updated.status === "COMPLETED") {
         window.dispatchEvent(new Event("civic-data-refresh"));
       }
@@ -301,12 +276,11 @@ export function UserOutreachReceiver() {
         if (session.status === "RINGING") {
           answerButtonRef.current?.focus({ preventScroll: true });
         } else {
-          micButtonRef.current?.focus({ preventScroll: true });
+          textInputRef.current?.focus({ preventScroll: true });
         }
       }
     } else if (dialogEl.open) {
       asr.stop();
-      stageRef.current?.stop();
       dialogEl.close();
     }
   }, [session?.id, session?.status]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -344,13 +318,11 @@ export function UserOutreachReceiver() {
         if (action === "REJECT" || action === "HANGUP") {
           dismissedIdsRef.current.add(updated.id);
           asr.stop();
-          stageRef.current?.stop();
           setSession(null);
           return;
         }
         setSession(updated);
-        speakTurnIfNeeded(updated);
-        window.setTimeout(() => micButtonRef.current?.focus({ preventScroll: true }), 80);
+        window.setTimeout(() => textInputRef.current?.focus({ preventScroll: true }), 80);
       } catch (err) {
         const msg = err instanceof Error ? err.message : "操作失败";
         setTurnError(msg);
@@ -359,7 +331,7 @@ export function UserOutreachReceiver() {
         setActionBusy(false);
       }
     },
-    [session, actionBusy, asr, speakTurnIfNeeded]
+    [session, actionBusy, asr]
   );
 
   const submitReply = useCallback(
@@ -390,7 +362,6 @@ export function UserOutreachReceiver() {
         }
         const updated = json.session as CitizenOutreachSession;
         setSession(updated);
-        speakTurnIfNeeded(updated);
         if (updated.completed) {
           window.dispatchEvent(new Event("civic-data-refresh"));
           toast.success("感谢您的配合，补充信息已同步至办理中心");
@@ -406,7 +377,7 @@ export function UserOutreachReceiver() {
         setSending(false);
       }
     },
-    [session, speakTurnIfNeeded]
+    [session]
   );
 
   const quickReplies = useMemo(() => getQuickReplies(session), [session]);
@@ -449,7 +420,6 @@ export function UserOutreachReceiver() {
         }}
         onClose={() => {
           asr.stop();
-          stageRef.current?.stop();
           if (session) {
             dismissedIdsRef.current.add(session.id);
           }
@@ -457,8 +427,8 @@ export function UserOutreachReceiver() {
         }}
         className={`civic-user-outreach-dialog m-auto flex-col rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl overflow-clip ${
           isRinging
-            ? "w-[min(672px,calc(100dvw-1.5rem))] max-h-[90dvh]"
-            : "w-[min(1080px,calc(100dvw-1.5rem))] sm:w-[min(1080px,calc(100dvw-2.5rem))] max-h-[92dvh] md:h-[min(760px,90dvh)]"
+            ? "w-[min(640px,calc(100dvw-1.5rem))] max-h-[90dvh]"
+            : "w-[min(780px,calc(100dvw-1.5rem))] sm:w-[min(780px,calc(100dvw-2.5rem))] max-h-[90dvh] md:h-[min(700px,88dvh)]"
         }`}
       >
         {session ? (
@@ -578,245 +548,220 @@ export function UserOutreachReceiver() {
               </div>
             ) : (
               <>
-                <div className="flex-1 min-h-0 overflow-y-auto md:overflow-clip overscroll-contain grid grid-cols-1 md:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.25fr)]">
-                  {/* Left: Transparent 3D Xiaochun Stage + Voice Button */}
-                  <div className="flex flex-col min-h-0 bg-gradient-to-b from-slate-50 via-blue-50/55 to-slate-100/80 border-b md:border-b-0 md:border-r border-slate-200/80">
-                    <div className="relative w-full h-[300px] sm:h-[340px] md:h-auto md:flex-1 md:min-h-0">
-                      <XiaochunStage
-                        ref={stageRef}
-                        variant="stage"
-                        scene="transparent"
-                        backdropTone="light"
-                        outfit="xiaochun_civic"
-                        lazy={false}
-                        width="100%"
-                        height="100%"
-                        title={isEcommerce ? "售后回访专员" : "12345 回访专员"}
-                        subtitle={
-                          session.taskType === "REOPEN_CALLBACK"
-                            ? "48h 满意度回访"
-                            : "要素核实通话"
-                        }
-                        caption={caption}
-                      />
-                    </div>
-
-                    <div className="p-3.5 sm:p-4 border-t border-slate-200/70 bg-white/85 backdrop-blur-sm shrink-0 space-y-2">
-                      <button
-                        ref={micButtonRef}
-                        type="button"
-                        disabled={sending || isCompleted}
-                        aria-pressed={asr.isRecording}
-                        onClick={() => {
-                          if (
-                            asr.isRecording ||
-                            asr.status === "initializing" ||
-                            asr.status === "downloading"
-                          ) {
-                            asr.stop();
-                          } else {
-                            stageRef.current?.stop();
-                            void asr.start();
-                          }
-                        }}
-                        className={`w-full min-h-[44px] px-3 py-2 rounded-xl text-xs font-semibold inline-flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-                          asr.isRecording
-                            ? "bg-rose-600 text-white hover:bg-rose-700"
-                            : "bg-blue-600 text-white hover:bg-blue-700"
+                <div className="flex-1 min-h-0 flex flex-col gap-4 p-4 sm:p-5 md:p-6 bg-white">
+                  <div
+                    role="log"
+                    aria-live="polite"
+                    tabIndex={0}
+                    aria-label="通话对话记录"
+                    className="flex-1 min-h-[240px] md:min-h-0 overflow-y-auto overscroll-contain [scrollbar-gutter:stable] rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                  >
+                    {session.turns.map((turn) => (
+                      <div
+                        key={turn.id}
+                        className={`flex flex-col ${
+                          turn.role === "citizen" ? "items-end" : "items-start"
                         }`}
                       >
-                        {asr.isRecording ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin shrink-0" aria-hidden="true" />
-                            <span>正在聆听，点击停止…</span>
-                          </>
-                        ) : asr.status === "initializing" || asr.status === "downloading" ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin shrink-0" aria-hidden="true" />
-                            <span>准备语音识别中…</span>
-                          </>
-                        ) : (
-                          <>
-                            <Mic className="w-4 h-4 shrink-0" aria-hidden="true" />
-                            <span>{isCompleted ? "通话已完成" : "点击语音回答"}</span>
-                          </>
-                        )}
-                      </button>
-
-                      {asr.error && (
-                        <p className="text-[11px] text-amber-700 w-full break-words">
-                          语音提示：{asr.error}（可用右侧文字输入或快捷回答）
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Right: Transcript + User Input */}
-                  <div className="min-w-0 min-h-0 flex flex-col gap-3.5 p-4 sm:p-5 md:p-6 bg-white">
-                    <div
-                      role="log"
-                      aria-live="polite"
-                      tabIndex={0}
-                      aria-label="通话对话记录"
-                      className="flex-1 min-h-[220px] md:min-h-0 overflow-y-auto overscroll-contain [scrollbar-gutter:stable] rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 sm:p-4 space-y-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
-                    >
-                      {session.turns.map((turn) => (
                         <div
-                          key={turn.id}
-                          className={`flex flex-col ${
-                            turn.role === "citizen" ? "items-end" : "items-start"
+                          className={`max-w-[90%] rounded-xl px-3.5 py-2.5 text-[13px] leading-relaxed break-words ${
+                            turn.role === "citizen"
+                              ? "bg-blue-600 text-white rounded-br-none"
+                              : "bg-white text-slate-800 border border-slate-200 rounded-bl-none shadow-2xs"
                           }`}
                         >
                           <div
-                            className={`max-w-[90%] rounded-xl px-3.5 py-2.5 text-[13px] leading-relaxed break-words ${
-                              turn.role === "citizen"
-                                ? "bg-blue-600 text-white rounded-br-none"
-                                : "bg-white text-slate-800 border border-slate-200 rounded-bl-none shadow-2xs"
+                            className={`text-[11px] mb-1 font-medium ${
+                              turn.role === "citizen" ? "text-blue-100" : "text-slate-500"
                             }`}
                           >
-                            <div
-                              className={`text-[11px] mb-1 font-medium ${
-                                turn.role === "citizen" ? "text-blue-100" : "text-slate-500"
+                            {turn.role === "agent" ? "AI 专员" : "我的回答"}
+                          </div>
+                          <div>{turn.text}</div>
+                        </div>
+                      </div>
+                    ))}
+                    {sending && (
+                      <div className="flex items-center gap-2 text-xs text-slate-500 py-1">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" aria-hidden="true" />
+                        <span>AI 专员正在记录并回复…</span>
+                      </div>
+                    )}
+                    <div ref={transcriptEndRef} />
+                  </div>
+
+                  {!isCompleted && (
+                    <>
+                      <div className="shrink-0 space-y-2">
+                        <div className="text-xs font-medium text-slate-600 flex items-center gap-1.5">
+                          <Sparkles className="w-3.5 h-3.5 text-blue-600" aria-hidden="true" />
+                          <span>快捷选项</span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          {quickReplies.map((qr) => (
+                            <button
+                              key={qr.label}
+                              type="button"
+                              disabled={sending || isCompleted}
+                              onClick={() => void submitReply(qr.text)}
+                              className={`text-left px-3 py-2.5 rounded-lg border text-xs transition-colors cursor-pointer disabled:opacity-50 min-h-[44px] ${
+                                qr.tone === "danger"
+                                  ? "bg-rose-50/70 border-rose-200 text-rose-800 hover:bg-rose-100/80"
+                                  : qr.tone === "success"
+                                    ? "bg-emerald-50/70 border-emerald-200 text-emerald-800 hover:bg-emerald-100/80"
+                                    : "bg-white border-slate-200 text-slate-700 hover:border-blue-300 hover:bg-blue-50/50"
                               }`}
                             >
-                              {turn.role === "agent" ? "AI 专员" : "我的回答"}
-                            </div>
-                            <div>{turn.text}</div>
-                          </div>
-                        </div>
-                      ))}
-                      {sending && (
-                        <div className="flex items-center gap-2 text-xs text-slate-500 py-1">
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" aria-hidden="true" />
-                          <span>AI 专员正在记录并回复…</span>
-                        </div>
-                      )}
-                      <div ref={transcriptEndRef} />
-                    </div>
-
-                    {!isCompleted && (
-                      <>
-                        <div className="shrink-0 space-y-2">
-                          <div className="text-xs font-medium text-slate-600 flex items-center gap-1.5">
-                            <Sparkles className="w-3.5 h-3.5 text-blue-600" aria-hidden="true" />
-                            <span>快捷回答选项</span>
-                          </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                            {quickReplies.map((qr) => (
-                              <button
-                                key={qr.label}
-                                type="button"
-                                disabled={sending || isCompleted}
-                                onClick={() => void submitReply(qr.text)}
-                                className={`text-left px-3 py-2.5 rounded-lg border text-xs transition-colors cursor-pointer disabled:opacity-50 min-h-[44px] ${
-                                  qr.tone === "danger"
-                                    ? "bg-rose-50/70 border-rose-200 text-rose-800 hover:bg-rose-100/80"
-                                    : qr.tone === "success"
-                                      ? "bg-emerald-50/70 border-emerald-200 text-emerald-800 hover:bg-emerald-100/80"
-                                      : "bg-white border-slate-200 text-slate-700 hover:border-blue-300 hover:bg-blue-50/50"
-                                }`}
-                              >
-                                <div className="font-semibold text-xs mb-0.5">{qr.label}</div>
-                                <div className="text-xs opacity-90 line-clamp-2 break-words">
-                                  “{qr.text}”
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        <form
-                          onSubmit={(e) => {
-                            e.preventDefault();
-                            const pendingText =
-                              asr.isRecording && asr.interimText.trim()
-                                ? appendRecognizedText(textInput, asr.interimText)
-                                : textInput;
-                            if (sending || isCompleted || !pendingText.trim()) return;
-                            void submitReply(pendingText);
-                          }}
-                          className="shrink-0 space-y-1.5"
-                        >
-                          <label htmlFor={inputId} className="block text-xs font-medium text-slate-600">
-                            我的语音 / 文字回答
-                          </label>
-                          <div className="flex items-center gap-2">
-                            <input
-                              ref={textInputRef}
-                              id={inputId}
-                              type="text"
-                              value={textInput}
-                              disabled={sending || isCompleted}
-                              onChange={(e) => setTextInput(e.target.value)}
-                              onCompositionEnd={(e) => {
-                                lastCompositionEndAtRef.current = e.timeStamp;
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                  e.preventDefault();
-                                  const recentCompositionEnd =
-                                    lastCompositionEndAtRef.current !== null &&
-                                    Math.abs(e.timeStamp - lastCompositionEndAtRef.current) < 50;
-                                  if (
-                                    e.nativeEvent.isComposing ||
-                                    e.keyCode === 229 ||
-                                    recentCompositionEnd
-                                  ) {
-                                    return;
-                                  }
-                                  e.currentTarget.form?.requestSubmit();
-                                }
-                              }}
-                              placeholder={
-                                asr.isRecording
-                                  ? asr.interimText
-                                    ? `实时转写：${asr.interimText}`
-                                    : "正在聆听，请直接说话…"
-                                  : isEcommerce
-                                    ? "请输入补充的商品/SKU、仓网或反馈…"
-                                    : "请输入具体路名门牌、商铺名称或问题解决情况…"
-                              }
-                              className="flex-1 min-w-0 min-h-[44px] px-3.5 rounded-lg border border-slate-200 bg-white text-base sm:text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
-                            />
-                            <button
-                              type="submit"
-                              disabled={
-                                sending ||
-                                isCompleted ||
-                                !(textInput.trim() || (asr.isRecording && asr.interimText.trim()))
-                              }
-                              aria-label="发送回答"
-                              className="btn btn--primary min-h-[44px] px-4 shrink-0 disabled:opacity-50"
-                            >
-                              <Send className="w-4 h-4 shrink-0" aria-hidden="true" />
-                              <span className="text-xs">发送</span>
+                              <div className="font-semibold text-xs mb-0.5">{qr.label}</div>
+                              <div className="text-xs opacity-90 line-clamp-2 break-words">
+                                “{qr.text}”
+                              </div>
                             </button>
-                          </div>
-                        </form>
-                      </>
-                    )}
-
-                    {isCompleted && (
-                      <div className="shrink-0 rounded-xl border border-emerald-200 bg-emerald-50/80 p-3.5 text-xs text-emerald-900 flex items-start gap-2">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" aria-hidden="true" />
-                        <div className="space-y-0.5">
-                          <div className="font-semibold">本次外呼核实已完成</div>
-                          <p className="text-xs text-emerald-800">
-                            感谢配合，您的回答已同步回写至对应工单与处理专班。
-                          </p>
+                          ))}
                         </div>
                       </div>
-                    )}
 
-                    {turnError && (
-                      <div
-                        role="alert"
-                        className="shrink-0 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700"
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const pendingText =
+                            asr.isRecording && asr.interimText.trim()
+                              ? appendRecognizedText(textInput, asr.interimText)
+                              : textInput;
+                          if (sending || isCompleted || !pendingText.trim()) return;
+                          void submitReply(pendingText);
+                        }}
+                        className="shrink-0 space-y-1.5"
                       >
-                        {turnError}
+                        <label htmlFor={inputId} className="block text-xs font-medium text-slate-600">
+                          我的语音 / 文字回答
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <button
+                            ref={micButtonRef}
+                            type="button"
+                            disabled={sending || isCompleted}
+                            aria-pressed={asr.isRecording}
+                            aria-label={
+                              asr.isRecording
+                                ? "停止语音回答"
+                                : asr.status === "initializing" || asr.status === "downloading"
+                                  ? "准备语音识别中"
+                                  : "点击语音回答"
+                            }
+                            title={asr.isRecording ? "正在聆听，点击停止" : "点击语音回答"}
+                            onClick={() => {
+                              if (
+                                asr.isRecording ||
+                                asr.status === "initializing" ||
+                                asr.status === "downloading"
+                              ) {
+                                asr.stop();
+                              } else {
+                                void asr.start();
+                              }
+                            }}
+                            className={`min-h-[44px] min-w-[44px] px-3 rounded-lg text-xs font-semibold inline-flex items-center justify-center gap-1.5 shrink-0 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                              asr.isRecording
+                                ? "bg-rose-600 text-white hover:bg-rose-700"
+                                : "border border-slate-200 bg-slate-50 text-slate-700 hover:border-blue-300 hover:bg-blue-50/60"
+                            }`}
+                          >
+                            {asr.isRecording ||
+                            asr.status === "initializing" ||
+                            asr.status === "downloading" ? (
+                              <Loader2 className="w-4 h-4 animate-spin shrink-0" aria-hidden="true" />
+                            ) : (
+                              <Mic className="w-4 h-4 shrink-0 text-blue-600" aria-hidden="true" />
+                            )}
+                            <span className="hidden sm:inline">
+                              {asr.isRecording
+                                ? "停止"
+                                : asr.status === "initializing" || asr.status === "downloading"
+                                  ? "准备中"
+                                  : "语音"}
+                            </span>
+                          </button>
+                          <input
+                            ref={textInputRef}
+                            id={inputId}
+                            type="text"
+                            value={textInput}
+                            disabled={sending || isCompleted}
+                            onChange={(e) => setTextInput(e.target.value)}
+                            onCompositionEnd={(e) => {
+                              lastCompositionEndAtRef.current = e.timeStamp;
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                const recentCompositionEnd =
+                                  lastCompositionEndAtRef.current !== null &&
+                                  Math.abs(e.timeStamp - lastCompositionEndAtRef.current) < 50;
+                                if (
+                                  e.nativeEvent.isComposing ||
+                                  e.keyCode === 229 ||
+                                  recentCompositionEnd
+                                ) {
+                                  return;
+                                }
+                                e.currentTarget.form?.requestSubmit();
+                              }
+                            }}
+                            placeholder={
+                              asr.isRecording
+                                ? asr.interimText
+                                  ? `实时转写：${asr.interimText}`
+                                  : "正在聆听，请直接说话…"
+                                : isEcommerce
+                                  ? "请输入补充的商品/SKU、仓网或反馈…"
+                                  : "请输入具体路名门牌、商铺名称或问题解决情况…"
+                            }
+                            className="flex-1 min-w-0 min-h-[44px] px-3.5 rounded-lg border border-slate-200 bg-white text-base sm:text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                          />
+                          <button
+                            type="submit"
+                            disabled={
+                              sending ||
+                              isCompleted ||
+                              !(textInput.trim() || (asr.isRecording && asr.interimText.trim()))
+                            }
+                            aria-label="发送回答"
+                            className="btn btn--primary min-h-[44px] px-4 shrink-0 disabled:opacity-50"
+                          >
+                            <Send className="w-4 h-4 shrink-0" aria-hidden="true" />
+                            <span className="text-xs">发送</span>
+                          </button>
+                        </div>
+                        {asr.error && (
+                          <p className="text-[11px] text-amber-700 break-words">
+                            语音提示：{asr.error}（可直接使用上方快捷选项或文字输入）
+                          </p>
+                        )}
+                      </form>
+                    </>
+                  )}
+
+                  {isCompleted && (
+                    <div className="shrink-0 rounded-xl border border-emerald-200 bg-emerald-50/80 p-3.5 text-xs text-emerald-900 flex items-start gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" aria-hidden="true" />
+                      <div className="space-y-0.5">
+                        <div className="font-semibold">本次外呼核实已完成</div>
+                        <p className="text-xs text-emerald-800">
+                          感谢配合，您的回答已同步回写至对应工单与处理专班。
+                        </p>
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
+
+                  {turnError && (
+                    <div
+                      role="alert"
+                      className="shrink-0 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700"
+                    >
+                      {turnError}
+                    </div>
+                  )}
                 </div>
 
                 {/* Footer */}
