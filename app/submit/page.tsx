@@ -1135,6 +1135,10 @@ export default function SubmitPage() {
       : isTianhe
         ? [
             {
+              title: "天河公园广场舞大喇叭扰民",
+              text: "我在天河公园附近的老广烧烤摊每晚9点后有人在广场大喇叭跳广场舞，吵的睡不着",
+            },
+            {
               title: "夜间烧烤油烟噪音扰民",
               text: "天河这边晚上老有烧烤油烟吵得睡不着",
             },
@@ -1144,6 +1148,10 @@ export default function SubmitPage() {
             },
           ]
         : [
+            {
+              title: "天河公园广场舞大喇叭扰民",
+              text: "我在天河公园附近的老广烧烤摊每晚9点后有人在广场大喇叭跳广场舞，吵的睡不着",
+            },
             {
               title: "夜间烧烤油烟噪音扰民",
               text: `${regionShort}这边晚上老有烧烤油烟吵得睡不着`,
