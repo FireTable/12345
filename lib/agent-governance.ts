@@ -1134,12 +1134,49 @@ function toTaskDto(row: Record<string, unknown>): AgentTaskDto {
   };
 }
 
+export function formatReportRiskLevel(raw?: string | null): string {
+  const upper = String(raw || "").trim().toUpperCase();
+  if (upper === "HIGH") return "高风险";
+  if (upper === "MEDIUM") return "中风险";
+  if (upper === "LOW") return "低风险";
+  return raw ? String(raw) : "低风险";
+}
+
+export function formatReportStatus(
+  raw?: string | null,
+  kind: "ticket" | "theme" = "ticket"
+): string {
+  const upper = String(raw || "").trim().toUpperCase().replace(/\s+/g, "_");
+  if (upper === "PENDING") return kind === "theme" ? "待处置" : "待派单";
+  if (upper === "DISPATCHED") return "已派单";
+  if (upper === "IN_PROGRESS" || upper === "PROCESSING") return "处理中";
+  if (upper === "RESOLVED" || upper === "FINISHED" || upper === "CLOSED") return "已办结";
+  if (upper === "REOPENED") return "重开核查中";
+  return raw ? String(raw) : kind === "theme" ? "待处置" : "待派单";
+}
+
+export function localizeLegacyReportMarkdown(markdown: string): string {
+  if (!markdown) return "";
+  return markdown
+    .replace(
+      /\|\s*(HIGH|MEDIUM|LOW)\s*\|\s*([\d,]+)\s*\|\s*(PENDING|DISPATCHED|IN[_\s]PROGRESS|PROCESSING|RESOLVED|FINISHED|CLOSED|REOPENED)\s*\|/gi,
+      (_m, risk: string, count: string, st: string) =>
+        `| ${formatReportRiskLevel(risk)} | ${count} | ${formatReportStatus(st, "theme")} |`
+    )
+    .replace(/风险\s+(HIGH|MEDIUM|LOW)\b/gi, (_m, risk: string) => `风险 ${formatReportRiskLevel(risk)}`)
+    .replace(
+      /当前状态：\s*(PENDING|DISPATCHED|IN[_\s]PROGRESS|PROCESSING|RESOLVED|FINISHED|CLOSED|REOPENED)\b/gi,
+      (_m, st: string) => `当前状态：${formatReportStatus(st, "ticket")}`
+    )
+    .replace(/\bPENDING\s+超期专题/g, "待处置超期专题");
+}
+
 function toReportDto(row: Record<string, unknown>): AgentReportDto {
   return {
     id: String(row.id || ""),
     reportDate: String(row.report_date || ""),
     title: String(row.title || ""),
-    markdown: String(row.markdown || ""),
+    markdown: localizeLegacyReportMarkdown(String(row.markdown || "")),
     statsJson: String(row.stats_json || "{}"),
     createdAt: asIso(row.created_at),
   };
@@ -3293,6 +3330,18 @@ const VoiceCallbackLlmSchema = z.object({
   reply: z.string().optional().default(""),
 });
 
+const OUTREACH_ASK_CONTACT_RE =
+  /联系方式|手机号|联系电话|手机号码|微信号|电子邮箱|留[个一下]*(?:电话|手机|号码|邮箱)/;
+const OUTREACH_QUESTION_RE = /[?？]|请问|方便提供|能否提供|还需要您提供|麻烦您再/;
+
+export function isInvalidOutreachReply(reply: string, completed: boolean): boolean {
+  const clean = (reply || "").trim();
+  if (!clean) return true;
+  if (OUTREACH_ASK_CONTACT_RE.test(clean)) return true;
+  if (completed && OUTREACH_QUESTION_RE.test(clean)) return true;
+  return false;
+}
+
 export async function processAgentVoiceTurn(input: {
   regionId: string;
   taskId: string;
@@ -3381,6 +3430,22 @@ export async function processAgentVoiceTurn(input: {
     let llmSubd = "";
     let llmReply = "";
 
+    const missingSlotLabels = [
+      !hasConfirmedAddress ? (isEcommerce ? "订单/仓网地点" : "具体路名门牌/地点") : null,
+      !hasConfirmedSubject ? (isEcommerce ? "SKU/涉事店铺" : "涉事主体/商铺/单位") : null,
+      !hasConfirmedSubdistrict ? (isEcommerce ? "购买渠道/仓网" : "所属镇街") : null,
+    ].filter((v): v is string => Boolean(v));
+
+    const knownContextText = [
+      `当前工单已具备信息（无需重复索要）：`,
+      `- 来电人联系方式：原工单已有（正在通话中，严禁索要电话/手机号/邮箱）`,
+      `- ${isEcommerce ? "购买渠道/仓网" : "所属镇街"}：${hasConfirmedSubdistrict ? existingSubd : "待补充"}`,
+      `- ${isEcommerce ? "订单/仓网地点" : "具体地点"}：${hasConfirmedAddress ? existingAddr : "待补充"}`,
+      `- ${isEcommerce ? "涉事商品/SKU" : "涉事主体"}：${hasConfirmedSubject ? existingSubj : "待补充"}`,
+      `- 本次待核实缺失要素：${missingSlotLabels.length > 0 ? missingSlotLabels.join("、") : "按口述补全"}`,
+      `对方本轮口述：${anonTranscript.text}`,
+    ].join("\n");
+
     const llmRes = await callSystemTwoJsonSafe(
       VoiceMissingInfoLlmSchema,
       [
@@ -3388,10 +3453,10 @@ export async function processAgentVoiceTurn(input: {
           role: "system",
           content:
             domainType === "ECOMMERCE_CS"
-              ? `你是售后核查专员。从客户口述中提取补充信息，返回严格 JSON：{ "address": "订单号或仓网地点", "canonicalSubject": "SKU编号或涉事商品/店铺", "subdistrict": "购买渠道或仓网", "reply": "1句礼貌确认或追问" }。可选渠道：${options.subdistricts.join("、")}。`
-              : `你是12345核查回访专员。从市民口述中提取补充要素，返回严格 JSON：{ "address": "具体路名门牌/地点", "canonicalSubject": "涉事商铺/单位名称", "subdistrict": "所属镇街", "reply": "1句礼貌确认或追问" }。可选镇街：${options.subdistricts.join("、")}。`,
+              ? `你是电商售后核查专员。原工单已记录买家联系方式（当前正在电话核实），严禁在 reply 中索要手机号或任何联系方式。请结合「已知信息」与「本次待核实缺失要素」，从客户本轮口述中提取补充信息，返回严格 JSON：{ "address": "订单号或仓网地点（未提及留空）", "canonicalSubject": "SKU编号或涉事商品/店铺（未提及留空）", "subdistrict": "购买渠道或仓网（未提及留空）", "reply": "1句中文回复" }。reply 规则：若已抽到所需补充信息，直接礼貌感谢并告知已记录将尽快处理，不要反问或提新问题；只有完全未获取到缺失要素时，才礼貌追问仍缺失的那几项（禁止索要联系方式）。可选渠道：${options.subdistricts.join("、")}。`
+              : `你是12345政务核查回访专员。原工单已记录市民联系方式（当前正在电话核实），严禁在 reply 中索要手机号、电话或任何联系方式。请结合「已知信息」与「本次待核实缺失要素」，从市民本轮口述中提取补充要素，返回严格 JSON：{ "address": "具体路名门牌/地点（未提及留空）", "canonicalSubject": "涉事主体/商铺/单位名称（未提及留空）", "subdistrict": "所属镇街（未提及留空）", "reply": "1句中文回复" }。reply 规则：若已抽到所需补充要素（如具体地点或涉事主体），直接礼貌感谢并告知已登记转办，不要反问或提出任何新问题；只有完全未获取到缺失要素时，才礼貌追问仍缺失的那几项（禁止索要联系方式）。可选镇街：${options.subdistricts.join("、")}。`,
         },
-        { role: "user", content: anonTranscript.text },
+        { role: "user", content: knownContextText },
       ],
       384,
       input.signal
@@ -3478,9 +3543,9 @@ export async function processAgentVoiceTurn(input: {
       invalidateCivicAggregates(input.regionId);
       broadcastDataRefresh(input.regionId);
 
-      const reply =
-        llmReply ||
-        `好的，感谢您的补充！我已经记录到${Object.values(patch).join(" · ")}，工单信息已补全并转入精准处置流程。`;
+      const reply = !isInvalidOutreachReply(llmReply, true)
+        ? llmReply
+        : `好的，感谢您的配合与补充！我已经记录到「${Object.values(patch).join(" · ")}」，工单信息已补全并转入精准处置流程。`;
 
       const reasoning = [
         `1. 隐私脱敏识别：已提取对方有效回答字段（${Object.keys(patch).join("、")}），并将工单置信度提升至 ≥ 88。`,
@@ -3508,11 +3573,11 @@ export async function processAgentVoiceTurn(input: {
 
     return {
       ok: true,
-      reply:
-        llmReply ||
-        (domainType === "ECOMMERCE_CS"
-          ? "抱歉暂未听清订单号或具体SKU编号，麻烦您再提供一下涉及的商品名称、SKU或购买渠道。"
-          : "抱歉暂未识别到具体路名门牌或涉事商铺名称，麻烦您再说明一下详细位置。"),
+      reply: !isInvalidOutreachReply(llmReply, false)
+        ? llmReply
+        : domainType === "ECOMMERCE_CS"
+          ? `抱歉暂未听清${stillMissing || "订单或商品信息"}，麻烦您再补充说明一下，谢谢。`
+          : `抱歉暂未识别到${stillMissing || "具体位置或涉事主体"}，麻烦您再说明一下，非常感谢。`,
       reasoning: `本轮用户回答未命中缺失关键槽位（仍缺少：${stillMissing || "核心要素"}），保留任务为未完成态并自动追问下一轮。`,
       completed: false,
       extractedPatch: {},
@@ -3530,7 +3595,7 @@ export async function processAgentVoiceTurn(input: {
       {
         role: "system",
         content:
-          '你是12345/售后满意度回访专员。判断对方回复属于未解决/复发负反馈(NEGATIVE)、满意办结(POSITIVE)还是未表态(UNCLEAR)，返回 JSON：{ "sentiment": "NEGATIVE|POSITIVE|UNCLEAR", "reply": "1句礼貌得体的回访应答" }。',
+          '你是12345/售后满意度回访专员。原工单已有来电人联系方式，严禁向对方索要电话、手机号或任何联系方式。判断对方回复属于未解决/复发负反馈(NEGATIVE)、满意办结(POSITIVE)还是未表态(UNCLEAR)，返回 JSON：{ "sentiment": "NEGATIVE|POSITIVE|UNCLEAR", "reply": "1句礼貌得体的回访应答；若已明确态度请直接感谢收尾，不要再提问" }。',
       },
       { role: "user", content: anonTranscript.text },
     ],
@@ -3689,9 +3754,9 @@ export async function processAgentVoiceTurn(input: {
 
     return {
       ok: true,
-      reply:
-        llmReply ||
-        "非常抱歉给您带来困扰！我已将此事项标记为疑似假闭环并立即重开督办，将安排专人复核整改并向您反馈。",
+      reply: !isInvalidOutreachReply(llmReply, true)
+        ? llmReply
+        : "非常抱歉给您带来困扰！我已将此事项标记为疑似假闭环并立即重开督办，将安排专人复核整改并向您反馈。",
       reasoning: [
         `1. 满意度语义研判：判定用户反馈为「未解决/负反馈（NEGATIVE）」。`,
         `2. 假闭环告警联动：已将关联${task.targetType === "THEME" ? "多频专题与代表工单" : "工单"}回退至 REOPENED（疑似假闭环）并记录审计日志。`,
@@ -3731,9 +3796,9 @@ export async function processAgentVoiceTurn(input: {
 
     return {
       ok: true,
-      reply:
-        llmReply ||
-        "感谢您的宝贵反馈！很高兴确认问题已经顺利解决，本次回访已完成归档，祝您生活愉快！",
+      reply: !isInvalidOutreachReply(llmReply, true)
+        ? llmReply
+        : "感谢您的宝贵反馈！很高兴确认问题已经顺利解决，本次回访已完成归档，祝您生活愉快！",
       reasoning: [
         `1. 满意度语义研判：判定用户反馈为「满意办结（POSITIVE）」。`,
         `2. 闭环归档：确认原处置结果真实有效，未触发假闭环重开，已写入回访归档日志并将任务置为 EXECUTED。`,
@@ -3748,9 +3813,9 @@ export async function processAgentVoiceTurn(input: {
 
   return {
     ok: true,
-    reply:
-      llmReply ||
-      "请问您此前反映的问题目前是否已经彻底解决？如果仍存在反复或敷衍办结的情况，请直接告诉我。",
+    reply: !isInvalidOutreachReply(llmReply, false)
+      ? llmReply
+      : "请问您此前反映的问题目前是否已经彻底解决？如果仍存在反复或敷衍办结的情况，请直接告诉我。",
     reasoning:
       "满意度语义研判暂为不明确（UNCLEAR），保持通话并继续礼貌追问问题是否真正解决。",
     sentiment: "UNCLEAR",
@@ -3873,7 +3938,7 @@ export async function generateAgentReport(regionId: string): Promise<{
       ? topThemes
           .map(
             (th, idx) =>
-              `| ${idx + 1} | ${escapeMd(maskFreeText(String(th.title || th.id)))} | ${escapeMd(String(th.category || "-"))} | ${th.risk_level || "LOW"} | ${fmtNum(th.ticket_count || 0)} | ${th.handling_status || "PENDING"} |`
+              `| ${idx + 1} | ${escapeMd(maskFreeText(String(th.title || th.id)))} | ${escapeMd(String(th.category || "-"))} | ${formatReportRiskLevel(th.risk_level as string | null)} | ${fmtNum(th.ticket_count || 0)} | ${formatReportStatus(th.handling_status as string | null, "theme")} |`
           )
           .join("\n")
       : "| - | 暂无多频聚集专题 | - | - | 0 | - |";
@@ -3887,17 +3952,17 @@ export async function generateAgentReport(regionId: string): Promise<{
               th.handling_owner as string | null
             );
             const cleanTitle = escapeMd(maskFreeText(String(th.title || th.id)));
-            return `- 「${cleanTitle}」（${fmtNum(Number(th.ticket_count || 0))} 件 / 风险 ${th.risk_level} / 牵头：${escapeMd(owner)}）`;
+            return `- 「${cleanTitle}」（${fmtNum(Number(th.ticket_count || 0))} 件 / ${formatReportRiskLevel(th.risk_level as string | null)} / 牵头：${escapeMd(owner)}）`;
           })
           .join("\n")
-      : "- 当前无积压 >= 5 件的 PENDING 超期专题。";
+      : "- 当前无积压 >= 5 件的待处置超期专题。";
 
   const fakeMd =
     fakeClosureItems.length > 0
       ? fakeClosureItems
           .map(
             (tk) =>
-              `- \`${tk.ticket_no}\` · ${escapeMd(maskFreeText(String(tk.title || tk.id)))}（${escapeMd(String(tk.subdistrict || "未标明"))} · 当前状态：${tk.status}）`
+              `- \`${tk.ticket_no}\` · ${escapeMd(maskFreeText(String(tk.title || tk.id)))}（${escapeMd(String(tk.subdistrict || "未标明"))} · 当前状态：${formatReportStatus(tk.status as string | null, "ticket")}）`
           )
           .join("\n")
       : "- 本周期暂未新增假闭环重开工单。";

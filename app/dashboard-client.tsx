@@ -419,16 +419,13 @@ export default function DashboardPage() {
               </div>
               <div
                 className="card__body"
-                style={
-                  hasGeoMap
-                    ? {
-                        padding: "8px 12px 4px",
-                        maxHeight: 416,
-                        overflowY: "auto",
-                        overscrollBehavior: "contain",
-                      }
-                    : { padding: "12px" }
-                }
+                style={{
+                  padding: hasGeoMap ? "8px 12px 4px" : "12px",
+                  maxHeight: 416,
+                  overflowY: "auto",
+                  overscrollBehavior: "contain",
+                  scrollbarGutter: "stable",
+                }}
               >
                 {hasGeoMap ? (
                   <>

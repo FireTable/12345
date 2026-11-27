@@ -1033,12 +1033,11 @@ function TicketsClientInner() {
                       <tr>
                         <th scope="col" className="min-w-[116px] whitespace-nowrap">工单号</th>
                         <th scope="col" className="min-w-[180px]">{isEcommerce ? "客诉标题" : "诉求标题"}</th>
-                        <th scope="col" className="min-w-[84px] whitespace-nowrap">{regionUnit}</th>
-                        <th scope="col" className="min-w-[104px] whitespace-nowrap">类型</th>
-                        <th scope="col" className="min-w-[72px] whitespace-nowrap">紧急度</th>
-                        <th scope="col" className="min-w-[98px] whitespace-nowrap">时间</th>
-                        <th scope="col" className="min-w-[76px] whitespace-nowrap">状态</th>
-                        <th scope="col" className="min-w-[144px] whitespace-nowrap text-right">操作</th>
+                        <th scope="col" className="min-w-[68px] whitespace-nowrap">{regionUnit}</th>
+                        <th scope="col" className="min-w-[120px] whitespace-nowrap">类型 / 紧急度</th>
+                        <th scope="col" className="min-w-[92px] whitespace-nowrap">时间</th>
+                        <th scope="col" className="min-w-[70px] whitespace-nowrap">状态</th>
+                        <th scope="col" className="min-w-[152px] whitespace-nowrap text-right">操作</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1097,31 +1096,37 @@ function TicketsClientInner() {
                               ) : null}
                             </div>
                           </td>
-                          <td data-label={regionUnit} className="col-region min-w-[84px] whitespace-nowrap">{r.region || "—"}</td>
-                          <td data-label="类型" className="col-cat min-w-[104px] whitespace-nowrap">
-                            {r.category ? (
+                          <td data-label={regionUnit} className="col-region min-w-[68px] whitespace-nowrap">{r.region || "—"}</td>
+                          <td data-label="类型 / 紧急度" className="col-cat min-w-[120px]">
+                            <div className="inline-flex items-center gap-1.5 flex-wrap">
+                              {r.category ? (
+                                <span
+                                  className={`badge-pill whitespace-nowrap ${catPill(r.category)}`}
+                                  style={categoryBadgeStyle(r.category)}
+                                >
+                                  {r.category}
+                                </span>
+                              ) : null}
                               <span
-                                className={`badge-pill whitespace-nowrap ${catPill(r.category)}`}
-                                style={categoryBadgeStyle(r.category)}
+                                className={`badge-pill whitespace-nowrap ${
+                                  r.urgency === "URGENT"
+                                    ? "badge-pill--danger"
+                                    : r.urgency === "MEDIUM"
+                                      ? "badge-pill--warning"
+                                      : "badge-pill--default"
+                                }`}
                               >
-                                {r.category}
+                                {urgencyLabel(r.urgency)}
                               </span>
-                            ) : (
-                              "—"
-                            )}
+                            </div>
                           </td>
-                          <td data-label="紧急度" className="col-urgency min-w-[72px] whitespace-nowrap">
-                            <span className={`badge-pill whitespace-nowrap ${r.urgency === "URGENT" ? "badge-pill--danger" : r.urgency === "MEDIUM" ? "badge-pill--warning" : "badge-pill--default"}`}>
-                              {urgencyLabel(r.urgency)}
-                            </span>
-                          </td>
-                          <td data-label="时间" className="col-time min-w-[98px] whitespace-nowrap tabular-nums">{r.createdAt}</td>
-                          <td data-label="状态" className="col-status min-w-[76px] whitespace-nowrap">
+                          <td data-label="时间" className="col-time min-w-[92px] whitespace-nowrap tabular-nums">{r.createdAt}</td>
+                          <td data-label="状态" className="col-status min-w-[70px] whitespace-nowrap">
                             <span className={`status-tag whitespace-nowrap status-tag--${statusTag(r.status)}`}>
                               {statusLabel(r.status)}
                             </span>
                           </td>
-                          <td data-label="操作" className="col-actions min-w-[144px] whitespace-nowrap text-right">
+                          <td data-label="操作" className="col-actions min-w-[152px] whitespace-nowrap text-right">
                             <div className="workorder-actions-wrap inline-flex items-center justify-end gap-2">
                               {isAdmin && r.missingSlots && r.missingSlots.length > 0 && (
                                 <button
@@ -1133,7 +1138,7 @@ function TicketsClientInner() {
                                   }}
                                   aria-label={`让 Agent 跟进工单 ${r.id}`}
                                   title={`一键让 Agent 外呼补全：${r.missingSlots.join("、")}`}
-                                  className="inline-flex items-center justify-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 min-h-[44px] sm:min-h-[30px] text-xs font-semibold text-amber-800 hover:bg-amber-100 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                  className="inline-flex items-center justify-center gap-1 shrink-0 whitespace-nowrap rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 min-h-[44px] sm:min-h-[30px] text-xs font-semibold text-amber-800 hover:bg-amber-100 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   {followUpPendingId === (r.ticketId || r.id) ? (
                                     <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" aria-hidden="true" />

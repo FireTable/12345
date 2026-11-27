@@ -183,7 +183,8 @@ ${formatRule}
 \`\`\`civic-action
 {"themeId":"THEME-1","themeTitle":"案卷标题","action":"DISPATCH","owner":"责任团队","eta":"YYYY-MM-DD","note":"处置说明"}
 \`\`\`
-引用工具返回的编号和数量。没有查到就说明没查到，不要编造。`;
+引用工具返回的编号和数量。没有查到就说明没查到，不要编造。
+输出规范：正文与 Markdown 表格中禁止直接暴露内部英文枚举（如 PENDING、DISPATCHED、IN_PROGRESS、RESOLVED、REOPENED、HIGH、MEDIUM、LOW、URGENT、NORMAL），一律使用中文业务名称（待派单/待处置、已派单、处理中、已办结、重开核查中、高风险、中风险、低风险、紧急、常规）。`;
   }
 
   const toolRule = allowTools
@@ -212,7 +213,8 @@ ${formatRule}
 \`\`\`civic-action
 {"themeId":"THEME-1","themeTitle":"主题标题","action":"DISPATCH","owner":"牵头部门","eta":"YYYY-MM-DD","note":"处置说明"}
 \`\`\`
-引用工具返回的编号和数量。没有查到就说明没查到，不要编造。`;
+引用工具返回的编号和数量。没有查到就说明没查到，不要编造。
+输出规范：正文与 Markdown 表格中禁止直接暴露内部英文枚举（如 PENDING、DISPATCHED、IN_PROGRESS、RESOLVED、REOPENED、HIGH、MEDIUM、LOW、URGENT、NORMAL），一律使用中文业务名称（待派单/待处置、已派单、处理中、已办结、重开核查中、高风险、中风险、低风险、紧急、常规）。`;
 }
 
 function stripThink(raw: string): string {
