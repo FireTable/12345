@@ -29,6 +29,7 @@ import sys
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -36,17 +37,20 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 DEFAULT_SESSION = "civic-colab-gpu"
 DEFAULT_GPU = "L4"
+DEFAULT_PUBLIC_HOST = "civic-colab.firetable.tech"
 GPU_CHOICES = ("L4", "T4", "A100", "H100", "G4")
-TUNNEL_CHOICES = ("cloudflared", "tailscale", "none")
+TUNNEL_CHOICES = ("auto", "named", "cloudflared", "tailscale", "none")
 BACKEND_CHOICES = ("ninfer", "vllm", "llama-cpp")
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LOCAL_SERVE_SCRIPT = Path(__file__).resolve().parent / "serve_colab.py"
 CACHE_DIR = Path.home() / ".cache" / "civic-colab"
+AGENTS_ENV_FILE = Path.home() / ".agents" / ".env"
 
 REMOTE_SERVE_PATH = "/content/serve_colab.py"
 REMOTE_START_SCRIPT = "/tmp/civic_colab_start.sh"
 REMOTE_ENV_FILE = "/tmp/civic_colab.env"
+REMOTE_SECRETS_FILE = "/tmp/civic_colab_secrets.env"
 REMOTE_LOG_FILE = "/tmp/civic_colab.log"
 REMOTE_CFG_FILE = "/tmp/civic_colab_cfg.json"
 REMOTE_PID_FILE = "/tmp/civic_colab.pid"
@@ -61,6 +65,66 @@ SESSION_LINE_RE = re.compile(r"^\[([^\]]+)\]\s+(\S+)\s*\|\s*(.+)$")
 CHINESE_CHAR_RE = re.compile(r"[\u4e00-\u9fff]")
 
 
+def _parse_env_file(path: Path) -> Dict[str, str]:
+    parsed: Dict[str, str] = {}
+    if not path.is_file():
+        return parsed
+    try:
+        raw_text = path.read_text(encoding="utf-8")
+    except OSError:
+        return parsed
+    for raw_line in raw_text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].strip()
+        if "=" not in line:
+            continue
+        key, val = line.split("=", 1)
+        key = key.strip()
+        val = val.strip()
+        if len(val) >= 2 and ((val[0] == '"' and val[-1] == '"') or (val[0] == "'" and val[-1] == "'")):
+            val = val[1:-1]
+        if key:
+            parsed[key] = val
+    return parsed
+
+
+def normalize_public_host(raw_host: Optional[str]) -> str:
+    cleaned = (raw_host or "").strip()
+    cleaned = re.sub(r"^https?://", "", cleaned, flags=re.IGNORECASE)
+    cleaned = cleaned.split("/", 1)[0].strip()
+    return cleaned or DEFAULT_PUBLIC_HOST
+
+
+def load_civic_colab_env() -> Dict[str, str]:
+    """在内存中按 环境变量 > 仓库 .env.local > 仓库 .env > ~/.agents/.env 优先级读取 Colab 隧道与鉴权配置（绝不打印原始密钥）。"""
+    env_layers = [
+        _parse_env_file(REPO_ROOT / ".env.local"),
+        _parse_env_file(REPO_ROOT / ".env"),
+        _parse_env_file(AGENTS_ENV_FILE),
+    ]
+
+    def _get(keys: Sequence[str], default: str = "") -> str:
+        for k in keys:
+            val = os.environ.get(k, "").strip()
+            if val:
+                return val
+        for layer in env_layers:
+            for k in keys:
+                val = layer.get(k, "").strip()
+                if val:
+                    return val
+        return default
+
+    return {
+        "tunnel_token": _get(("CIVIC_COLAB_TUNNEL_TOKEN", "COLAB_TUNNEL_TOKEN")),
+        "api_key": _get(("CIVIC_COLAB_API_KEY", "COLAB_API_KEY")),
+        "hostname": normalize_public_host(_get(("CIVIC_COLAB_HOSTNAME",), DEFAULT_PUBLIC_HOST)),
+    }
+
+
 def mask_token(token: Optional[str]) -> str:
     if not token:
         return "<none>"
@@ -69,12 +133,23 @@ def mask_token(token: Optional[str]) -> str:
     return f"****{token[-4:]}"
 
 
-def redact_text(text: str, known_token: Optional[str] = None) -> str:
+def redact_text(
+    text: str,
+    known_token: Optional[str] = None,
+    extra_secrets: Optional[Sequence[Optional[str]]] = None,
+) -> str:
     if not text:
         return text
     masked = text
+    secrets_to_mask: List[str] = []
     if known_token:
-        masked = masked.replace(known_token, mask_token(known_token))
+        secrets_to_mask.append(known_token)
+    if extra_secrets:
+        for item in extra_secrets:
+            if item and item not in secrets_to_mask:
+                secrets_to_mask.append(item)
+    for sec in secrets_to_mask:
+        masked = masked.replace(sec, mask_token(sec))
     masked = re.sub(
         r"(Bearer\s+)([A-Za-z0-9._~+/=-]{6,})",
         lambda m: f"{m.group(1)}{mask_token(m.group(2))}",
@@ -86,8 +161,13 @@ def redact_text(text: str, known_token: Optional[str] = None) -> str:
         masked,
     )
     masked = re.sub(
-        r"(COLAB_API_KEY=)([^\s\"']+)",
+        r"((?:CIVIC_)?COLAB_(?:API_KEY|TUNNEL_TOKEN)=)([^\s\"']+)",
         lambda m: f"{m.group(1)}{mask_token(m.group(2))}",
+        masked,
+    )
+    masked = re.sub(
+        r"(--token(?:=|\s+))([^\s\"']+)",
+        lambda m: f"{m.group(1)}<REDACTED>",
         masked,
     )
     return masked
@@ -320,7 +400,12 @@ else:
     return out
 
 
-def build_remote_start_script(args: argparse.Namespace) -> str:
+def build_remote_start_script(
+    args: argparse.Namespace,
+    *,
+    effective_tunnel: str,
+    public_host: str,
+) -> str:
     extra_py_pkgs: List[str] = []
     if args.llm_backend == "vllm":
         extra_py_pkgs.append("vllm")
@@ -332,7 +417,7 @@ def build_remote_start_script(args: argparse.Namespace) -> str:
         "-u",
         REMOTE_SERVE_PATH,
         "--tunnel",
-        args.tunnel,
+        effective_tunnel,
         "--llm-backend",
         args.llm_backend,
         "--startup-timeout",
@@ -340,6 +425,8 @@ def build_remote_start_script(args: argparse.Namespace) -> str:
         "--status-file",
         REMOTE_CFG_FILE,
     ]
+    if effective_tunnel == "named":
+        serve_cmd_parts.extend(["--public-host", public_host])
     if args.llm_model:
         serve_cmd_parts.extend(["--llm-model", args.llm_model])
     if args.max_concurrency is not None:
@@ -355,7 +442,7 @@ def build_remote_start_script(args: argparse.Namespace) -> str:
     extra_pkgs_json = json.dumps(extra_py_pkgs)
 
     cloudflared_block = ""
-    if args.tunnel == "cloudflared":
+    if effective_tunnel in ("cloudflared", "named"):
         cloudflared_block = """
 if ! command -v cloudflared >/dev/null 2>&1; then
   echo "[Bootstrap] Installing cloudflared quietly..."
@@ -382,6 +469,12 @@ export PYTHONUNBUFFERED=1
 if [ -f {shlex.quote(REMOTE_ENV_FILE)} ]; then
   set -a
   source {shlex.quote(REMOTE_ENV_FILE)}
+  set +a
+fi
+
+if [ -f {shlex.quote(REMOTE_SECRETS_FILE)} ]; then
+  set -a
+  source {shlex.quote(REMOTE_SECRETS_FILE)}
   set +a
 fi
 
@@ -436,15 +529,29 @@ exit "$RC"
 """
 
 
-def launch_remote_detached(session: str, token: str, start_script: str) -> int:
+def launch_remote_detached(
+    session: str,
+    token: str,
+    start_script: str,
+    *,
+    tunnel_token: Optional[str] = None,
+) -> int:
     env_content = (
-        f"COLAB_API_KEY={token}\n"
         "HF_HUB_DISABLE_XET=1\n"
         "HF_HUB_DISABLE_PROGRESS_BARS=1\n"
         "TQDM_DISABLE=1\n"
         "PYTHONUNBUFFERED=1\n"
     )
+    secret_lines = [
+        f"COLAB_API_KEY={shlex.quote(token)}",
+        f"CIVIC_COLAB_API_KEY={shlex.quote(token)}",
+    ]
+    if tunnel_token:
+        secret_lines.append(f"CIVIC_COLAB_TUNNEL_TOKEN={shlex.quote(tunnel_token)}")
+    secrets_content = "\n".join(secret_lines) + "\n"
+
     env_b64 = base64.b64encode(env_content.encode("utf-8")).decode("ascii")
+    secrets_b64 = base64.b64encode(secrets_content.encode("utf-8")).decode("ascii")
     script_b64 = base64.b64encode(start_script.encode("utf-8")).decode("ascii")
 
     out = colab_exec_marked(
@@ -453,17 +560,20 @@ def launch_remote_detached(session: str, token: str, start_script: str) -> int:
 import base64, os, subprocess
 from pathlib import Path
 
-for p in ({REMOTE_CFG_FILE!r}, {REMOTE_EXIT_FILE!r}, {REMOTE_PID_FILE!r}, {REMOTE_LOG_FILE!r}):
+for p in ({REMOTE_CFG_FILE!r}, {REMOTE_EXIT_FILE!r}, {REMOTE_PID_FILE!r}, {REMOTE_LOG_FILE!r}, {REMOTE_SECRETS_FILE!r}):
     try:
         os.unlink(p)
     except FileNotFoundError:
         pass
 
-env_path = Path({REMOTE_ENV_FILE!r})
-env_fd = os.open(str(env_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-with os.fdopen(env_fd, "wb") as fh:
-    fh.write(base64.b64decode({env_b64!r}))
-os.chmod(env_path, 0o600)
+def _write_0600(path_str: str, data_b64: str) -> None:
+    fd = os.open(path_str, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(base64.b64decode(data_b64))
+    os.chmod(path_str, 0o600)
+
+_write_0600({REMOTE_ENV_FILE!r}, {env_b64!r})
+_write_0600({REMOTE_SECRETS_FILE!r}, {secrets_b64!r})
 
 sh_path = Path({REMOTE_START_SCRIPT!r})
 sh_path.write_bytes(base64.b64decode({script_b64!r}))
@@ -489,10 +599,19 @@ print(f"SPAWNED_PID={{proc.pid}}")
     for line in out.splitlines():
         if line.startswith("SPAWNED_PID="):
             return int(line.split("=", 1)[1].strip())
-    raise RuntimeError(f"未能获取后台进程 PID:\n{redact_text(out, token)}")
+    raise RuntimeError(
+        f"未能获取后台进程 PID:\n{redact_text(out, token, extra_secrets=[tunnel_token])}"
+    )
 
 
-def poll_remote_startup(session: str, remote_pid: int, token: str, timeout_sec: int) -> None:
+def poll_remote_startup(
+    session: str,
+    remote_pid: int,
+    token: str,
+    timeout_sec: int,
+    *,
+    tunnel_token: Optional[str] = None,
+) -> None:
     deadline = time.monotonic() + timeout_sec
     log_offset = 0
     consecutive_errors = 0
@@ -561,7 +680,10 @@ print(json.dumps({{
         new_text = data.get("new_text") or ""
         if new_text:
             for line in new_text.splitlines():
-                print(f"  [remote] {redact_text(line, token)}", flush=True)
+                print(
+                    f"  [remote] {redact_text(line, token, extra_secrets=[tunnel_token])}",
+                    flush=True,
+                )
 
         if data.get("cfg_ready"):
             return
@@ -668,7 +790,7 @@ for pid in sorted(pids):
         except OSError:
             pass
 
-for p in ({REMOTE_CFG_FILE!r}, {REMOTE_PID_FILE!r}, {REMOTE_ENV_FILE!r}):
+for p in ({REMOTE_CFG_FILE!r}, {REMOTE_PID_FILE!r}, {REMOTE_ENV_FILE!r}, {REMOTE_SECRETS_FILE!r}):
     try:
         os.unlink(p)
     except FileNotFoundError:
@@ -712,10 +834,13 @@ def print_session_summary(
 ) -> None:
     token = str(cfg.get("token") or "")
     token_display = token if show_token else mask_token(token)
+    tunnel_mode = cfg.get("tunnel_mode") or cfg.get("tunnel")
     print("\n==================================================================", flush=True)
     print(f"🚀 Colab 会话 '{session}' 已就绪", flush=True)
     print("==================================================================", flush=True)
-    print(f"  • 推理后端  : {cfg.get('llm_backend')} | 隧道: {cfg.get('tunnel')}", flush=True)
+    print(f"  • 推理后端  : {cfg.get('llm_backend')} | 隧道: {tunnel_mode}", flush=True)
+    if cfg.get("public_host"):
+        print(f"  • 固定域名  : {cfg.get('public_host')}", flush=True)
     if cfg.get("llm_url"):
         print(f"  • LLM URL   : {cfg.get('llm_url')} (model={cfg.get('llm_model')})", flush=True)
     if cfg.get("embed_url"):
@@ -734,7 +859,10 @@ def http_json_request(
     payload: Optional[Dict[str, Any]] = None,
     timeout: float = 20.0,
 ) -> Tuple[int, Dict[str, Any]]:
-    headers: Dict[str, str] = {"Accept": "application/json"}
+    headers: Dict[str, str] = {
+        "Accept": "application/json",
+        "User-Agent": "CivicRadar-ColabCtl/1.0",
+    }
     data: Optional[bytes] = None
     if token:
         headers["Authorization"] = f"Bearer {token}"
@@ -760,6 +888,7 @@ def http_json_request(
 
 def assert_unauth_401(endpoint_v1: str, label: str, propagation_timeout: float = 20.0) -> None:
     target = f"{endpoint_v1.rstrip('/')}/models"
+    target_path = urllib.parse.urlparse(target).path or "/v1/models"
     deadline = time.monotonic() + propagation_timeout
     last_err: Optional[str] = None
 
@@ -767,7 +896,7 @@ def assert_unauth_401(endpoint_v1: str, label: str, propagation_timeout: float =
         try:
             status, body = http_json_request(target, method="GET", token=None, timeout=8.0)
             if status == 401:
-                print(f"  ✅ [{label}] 未鉴权 GET /v1/models -> HTTP 401", flush=True)
+                print(f"  ✅ [{label}] 未鉴权 GET {target_path} -> HTTP 401", flush=True)
                 return
             if status in (530, 502, 503):
                 last_err = f"HTTP {status}"
@@ -785,16 +914,17 @@ def assert_unauth_401(endpoint_v1: str, label: str, propagation_timeout: float =
 
 def assert_auth_models(endpoint_v1: str, token: str, expected_model: str, label: str) -> List[str]:
     target = f"{endpoint_v1.rstrip('/')}/models"
+    target_path = urllib.parse.urlparse(target).path or "/v1/models"
     status, body = http_json_request(target, method="GET", token=token, timeout=20.0)
     if status != 200:
-        raise AssertionError(f"[{label}] 鉴权 GET /v1/models 失败: HTTP {status} {body}")
+        raise AssertionError(f"[{label}] 鉴权 GET {target_path} 失败: HTTP {status} {body}")
     items = body.get("data")
     if not isinstance(items, list):
-        raise AssertionError(f"[{label}] /v1/models 返回格式异常: {body}")
+        raise AssertionError(f"[{label}] {target_path} 返回格式异常: {body}")
     model_ids = [str(item.get("id")) for item in items if isinstance(item, dict) and item.get("id")]
     if expected_model not in model_ids:
         raise AssertionError(f"[{label}] 未找到预期模型 '{expected_model}'，实际列表: {model_ids}")
-    print(f"  ✅ [{label}] 鉴权 GET /v1/models -> HTTP 200, models={model_ids}", flush=True)
+    print(f"  ✅ [{label}] 鉴权 GET {target_path} -> HTTP 200, models={model_ids}", flush=True)
     return model_ids
 
 
@@ -819,6 +949,7 @@ def assert_streaming_chat(endpoint_v1: str, token: str, model_id: str) -> None:
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
             "Accept": "text/event-stream",
+            "User-Agent": "CivicRadar-ColabCtl/1.0",
         },
         method="POST",
     )
@@ -890,13 +1021,14 @@ def assert_streaming_chat(endpoint_v1: str, token: str, model_id: str) -> None:
 
 def assert_embedding(endpoint_v1: str, token: str, embed_model: str) -> None:
     target = f"{endpoint_v1.rstrip('/')}/embeddings"
+    target_path = urllib.parse.urlparse(target).path or "/v1/embeddings"
     payload = {
         "model": embed_model,
         "input": "居民反映小区夜间施工噪音扰民问题",
     }
     status, body = http_json_request(target, method="POST", token=token, payload=payload, timeout=30.0)
     if status != 200:
-        raise AssertionError(f"[Embedding] POST /v1/embeddings 失败: HTTP {status} {body}")
+        raise AssertionError(f"[Embedding] POST {target_path} 失败: HTTP {status} {body}")
     data = body.get("data")
     if not isinstance(data, list) or not data:
         raise AssertionError(f"[Embedding] 返回 data 缺失: {body}")
@@ -909,7 +1041,7 @@ def assert_embedding(endpoint_v1: str, token: str, embed_model: str) -> None:
     norm = math.sqrt(sum(float(v) * float(v) for v in vec))
     if abs(norm - 1.0) > 1e-2:
         raise AssertionError(f"[Embedding] 向量未归一化: L2 norm={norm:.6f}")
-    print(f"  ✅ [Embedding] HTTP 200 | dim={len(vec)} | L2 norm={norm:.6f}", flush=True)
+    print(f"  ✅ [Embedding] POST {target_path} -> HTTP 200 | dim={len(vec)} | L2 norm={norm:.6f}", flush=True)
 
 
 def run_e2e_test(session: str) -> int:
@@ -947,6 +1079,7 @@ def run_e2e_test(session: str) -> int:
 
         llm_url = cfg.get("llm_url")
         embed_url = cfg.get("embed_url")
+        tunnel_mode = str(cfg.get("tunnel_mode") or cfg.get("tunnel") or "")
         llm_backend = str(cfg.get("llm_backend") or "ninfer")
         expected_llm_model = str(cfg.get("llm_model") or ("bonsai-2-27b" if llm_backend == "ninfer" else ""))
         expected_embed_model = str(cfg.get("embed_model") or "BAAI/bge-m3")
@@ -954,15 +1087,19 @@ def run_e2e_test(session: str) -> int:
         if not llm_url and not embed_url:
             raise RuntimeError("配置中 llm_url 与 embed_url 均为空。")
 
-        print(f"  • 目标会话: {session} | Token: {mask_token(token)}", flush=True)
+        prop_timeout = 45.0 if tunnel_mode == "named" else 20.0
+        print(
+            f"  • 目标会话: {session} | 隧道: {tunnel_mode or 'unknown'} | Token: {mask_token(token)}",
+            flush=True,
+        )
 
-        # 1) 未鉴权 GET /v1/models -> 401（含 Cloudflare Quick Tunnel 530/URLError 最长 20s 重试）
+        # 1) 未鉴权 GET /models -> 401（named 最长 45s / Quick Tunnel 最长 20s 边缘传播重试）
         if llm_url:
-            assert_unauth_401(llm_url, "LLM", propagation_timeout=20.0)
+            assert_unauth_401(llm_url, "LLM", propagation_timeout=prop_timeout)
         if embed_url:
-            assert_unauth_401(embed_url, "Embedding", propagation_timeout=20.0)
+            assert_unauth_401(embed_url, "Embedding", propagation_timeout=prop_timeout)
 
-        # 2) 鉴权 GET /v1/models -> 断言 bonsai-2-27b / BAAI/bge-m3
+        # 2) 鉴权 GET /models -> 断言 bonsai-2-27b / BAAI/bge-m3
         active_llm_model = expected_llm_model
         if llm_url:
             models = assert_auth_models(llm_url, token, expected_llm_model, "LLM")
@@ -974,7 +1111,7 @@ def run_e2e_test(session: str) -> int:
         if llm_url:
             assert_streaming_chat(llm_url, token, active_llm_model)
 
-        # 4) 鉴权 POST /v1/embeddings
+        # 4) 鉴权 POST /embeddings
         if embed_url:
             assert_embedding(embed_url, token, expected_embed_model)
 
@@ -998,6 +1135,22 @@ def cmd_up(args: argparse.Namespace) -> int:
         print(f"❌ 未找到 {LOCAL_SERVE_SCRIPT}", file=sys.stderr)
         return 1
 
+    env_cfg = load_civic_colab_env()
+    if args.tunnel == "auto":
+        effective_tunnel = "named" if env_cfg["tunnel_token"] else "cloudflared"
+    else:
+        effective_tunnel = args.tunnel
+    public_host = normalize_public_host(args.public_host or env_cfg["hostname"])
+    tunnel_token = env_cfg["tunnel_token"] if effective_tunnel == "named" else ""
+
+    if effective_tunnel == "named" and not tunnel_token:
+        print(
+            "❌ `--tunnel named` 需要配置 `CIVIC_COLAB_TUNNEL_TOKEN`（环境变量、仓库 .env.local / .env 或 ~/.agents/.env），"
+            "或改用 `--tunnel cloudflared`。",
+            file=sys.stderr,
+        )
+        return 1
+
     require_colab_cli()
     already_exists = session_exists(args.session)
     if already_exists and not args.reuse:
@@ -1011,7 +1164,15 @@ def cmd_up(args: argparse.Namespace) -> int:
     try:
         if not already_exists:
             manage_lifecycle = True
-            print(f"🚀 正在申请 Colab {args.gpu} 会话 '{args.session}' ...", flush=True)
+            tunnel_desc = (
+                f"named ({public_host})"
+                if effective_tunnel == "named"
+                else effective_tunnel
+            )
+            print(
+                f"🚀 正在申请 Colab {args.gpu} 会话 '{args.session}' (tunnel={tunnel_desc}) ...",
+                flush=True,
+            )
             try:
                 proc = run_colab_cmd(
                     ["new", "-s", args.session, "--gpu", args.gpu],
@@ -1040,7 +1201,10 @@ def cmd_up(args: argparse.Namespace) -> int:
                 reuse_ready = False
 
         cached = load_local_cache(args.session) if args.reuse else None
-        token = str((cached or {}).get("token") or "") or secrets.token_urlsafe(24)
+        if effective_tunnel == "named":
+            token = env_cfg["api_key"] or str((cached or {}).get("token") or "") or secrets.token_urlsafe(24)
+        else:
+            token = str((cached or {}).get("token") or "") or env_cfg["api_key"] or secrets.token_urlsafe(24)
 
         if not reuse_ready:
             print(f"📤 上传 {LOCAL_SERVE_SCRIPT.name} -> {REMOTE_SERVE_PATH} ...", flush=True)
@@ -1049,16 +1213,32 @@ def cmd_up(args: argparse.Namespace) -> int:
                 timeout=45,
                 retries=2,
             )
-            start_script = build_remote_start_script(args)
-            remote_pid = launch_remote_detached(args.session, token, start_script)
+            start_script = build_remote_start_script(
+                args,
+                effective_tunnel=effective_tunnel,
+                public_host=public_host,
+            )
+            remote_pid = launch_remote_detached(
+                args.session,
+                token,
+                start_script,
+                tunnel_token=tunnel_token or None,
+            )
             print(f"⏳ 已在后台启动服务 (pid={remote_pid})，开始轮询 {REMOTE_LOG_FILE} ...", flush=True)
-            poll_remote_startup(args.session, remote_pid, token, args.startup_timeout)
+            poll_remote_startup(
+                args.session,
+                remote_pid,
+                token,
+                args.startup_timeout,
+                tunnel_token=tunnel_token or None,
+            )
 
         cfg = download_remote_cfg(args.session)
         if not cfg or not cfg.get("ready"):
             raise RuntimeError("远端服务报告就绪，但未能读取有效的运行配置。")
 
         resolved_token = str(cfg.get("token") or token)
+        resolved_tunnel = str(cfg.get("tunnel_mode") or cfg.get("tunnel") or effective_tunnel)
         state_payload = {
             "session": args.session,
             "llm_url": cfg.get("llm_url"),
@@ -1067,7 +1247,9 @@ def cmd_up(args: argparse.Namespace) -> int:
             "llm_model": cfg.get("llm_model"),
             "embed_model": cfg.get("embed_model"),
             "llm_backend": cfg.get("llm_backend") or args.llm_backend,
-            "tunnel": cfg.get("tunnel") or args.tunnel,
+            "tunnel": resolved_tunnel,
+            "tunnel_mode": resolved_tunnel,
+            "public_host": cfg.get("public_host") or (public_host if resolved_tunnel == "named" else None),
             "updated_at": int(time.time()),
         }
         cache_file = save_local_cache(args.session, state_payload)
@@ -1115,6 +1297,10 @@ def cmd_status(args: argparse.Namespace) -> int:
     print("\n🌐 推理服务与隧道:")
     print(f"  • 服务就绪  : {'YES' if (alive and cfg and cfg.get('ready', True)) else 'NO'} (pid={pid})")
     if cfg:
+        tunnel_mode = cfg.get("tunnel_mode") or cfg.get("tunnel")
+        if tunnel_mode:
+            host_note = f" ({cfg.get('public_host')})" if cfg.get("public_host") else ""
+            print(f"  • 隧道模式  : {tunnel_mode}{host_note}")
         if cfg.get("llm_url"):
             print(f"  • LLM URL   : {cfg.get('llm_url')} (model={cfg.get('llm_model')})")
         if cfg.get("embed_url"):
@@ -1148,7 +1334,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p_up = sub.add_parser("up", help="启动 Colab GPU 会话、部署推理服务并建立隧道")
     p_up.add_argument("--gpu", type=str.upper, default=DEFAULT_GPU, choices=GPU_CHOICES, help="GPU 型号 (默认 L4)")
     p_up.add_argument("--session", default=DEFAULT_SESSION, help=f"Colab 会话名 (默认 {DEFAULT_SESSION})")
-    p_up.add_argument("--tunnel", default="cloudflared", choices=TUNNEL_CHOICES, help="隧道模式 (默认 cloudflared)")
+    p_up.add_argument(
+        "--tunnel",
+        default="auto",
+        choices=TUNNEL_CHOICES,
+        help="隧道模式 (默认 auto: 检测到 CIVIC_COLAB_TUNNEL_TOKEN 自动启用 named，否则回退 cloudflared)",
+    )
+    p_up.add_argument(
+        "--public-host",
+        default=None,
+        help=f"Named Tunnel 公网域名 (默认读取 CIVIC_COLAB_HOSTNAME 或 {DEFAULT_PUBLIC_HOST})",
+    )
     p_up.add_argument("--llm-backend", default="ninfer", choices=BACKEND_CHOICES, help="LLM 后端 (默认 ninfer)")
     p_up.add_argument("--llm-model", default=None, help="覆盖 System-2 模型路径或 HF repo:file")
     p_up.add_argument("--max-concurrency", type=int, default=None, help="ninfer 最大并发度")

@@ -120,9 +120,11 @@ CITIZEN_PASSWORD=<使用 openssl rand -hex 12 生成>
 ALLOWED_AGENT_HOSTS=12345.firetable.tech,ecom.firetable.tech
 AGENT_RATE_LIMIT_PER_MIN=20
 
-# ---------- System 2 与 Embedding 端点 (可选混合云 Tailscale / Colab，或由 /admin/regions 动态管理) ----------
-# SYSTEM_TWO_ENDPOINTS=http://<tailscale-ip>:8132/v1
-# EMBEDDING_ENDPOINTS=http://<tailscale-ip>:8133/v1
+# ---------- System 2 与 Embedding 端点 (可选固定 Colab Named Tunnel / Tailscale，或由 /admin/regions 动态管理) ----------
+# SYSTEM_TWO_ENDPOINTS=https://civic-colab.firetable.tech/v1
+# EMBEDDING_ENDPOINTS=https://civic-colab.firetable.tech/embed/v1
+# CIVIC_COLAB_HOSTNAME=civic-colab.firetable.tech
+# CIVIC_COLAB_API_KEY=<your-colab-bearer-token>
 
 # ---------- 云端回退与 AI 拓荒 (OpenAI 兼容接口) ----------
 OPENAI_API_KEY=<your-openai-compatible-api-key>
@@ -174,10 +176,11 @@ ssh root@<VPS_HOST> 'cd /opt/12345-stack && \
 除通过 `.env.vps` 挂载静态端点外，系统支持在 `/admin/regions` 的「动态算力节点池」在线纳管与探活多种异构节点（全栈默认模型统一对齐 **Ternary Bonsai 2.5 27B**，对外统一 `--model-id bonsai-2-27b`）：
 - **Apple Silicon Mac (`LOCAL`)**：通过 Tailscale 内网直连（`8132` / `8133`），运行 `Ternary-Bonsai-2.5-27B-PQ2_0-mtp.gguf`（MTP 投机解码，`~27–29 tok/s`）；本机提供便捷控制台 `pnpm civic`（`./scripts/civic-ctl.sh`）或前台双模型命令 `pnpm dev:models`；
 - **Windows RTX 3080 / Linux GPU (`LOCAL`)**：通过 `ninfer-serve` 运行 `Ternary-Bonsai-2.5-27B-PQ2_0-ninfer-v3.ninfer`（MTP 投机解码，32K+ 上下文），RTX 3080 建议开启 `--max-concurrency 2`；
-- **Google Colab GPU (`COLAB`)**：支持命令行一键编排按需开通与销毁：
-  - `pnpm colab:up`（一键拉起 L4 GPU + `bonsai-2-27b` + `BAAI/bge-m3` + Cloudflare 隧道，支持 `-- --gpu T4|L4|A100`、`-- --tunnel tailscale`、`-- --show-token`、`-- --session <name>`）
-  - `pnpm colab:status` / `pnpm colab:test`（在线巡检显存与 E2E 校验）
-  - `pnpm colab:stop` / `pnpm colab:verify`（停服销毁 VM 停止 CU 计费，或一键启动→E2E 校验→自动关停）
+- **Google Colab GPU (`COLAB`)**：支持命令行一键编排按需开通与销毁，并支持 **单域名 Cloudflare Named Tunnel 免复制挂载**：
+  - **单域名固定隧道（推荐，`--tunnel auto`）**：在本机环境变量、仓库 `.env.local` / `.env`（`gitignored`）或 `~/.agents/.env` 配置 `CIVIC_COLAB_TUNNEL_TOKEN`（及可选 `CIVIC_COLAB_API_KEY`、`CIVIC_COLAB_HOSTNAME`，默认 `civic-colab.firetable.tech`）后，`pnpm colab:up` 自动选用 `named` 模式，通过 `0600` 文件 `/tmp/civic_colab_secrets.env` 注入凭证，固定映射 `https://civic-colab.firetable.tech/v1`（`:8132` LLM）与 `https://civic-colab.firetable.tech/embed/v1`（`:8133` Embedding），配合 `.env.vps` 中的静态配置实现**零 URL / Token 复制粘贴**即插即用；未配置 Tunnel Token 时自动回退至 `cloudflared` Quick Tunnel；
+  - `pnpm colab:up`（一键拉起 L4 GPU + `bonsai-2-27b` + `BAAI/bge-m3` + 隧道，支持 `-- --gpu T4|L4|A100`、`-- --tunnel auto|named|cloudflared|tailscale`、`-- --public-host <host>`、`-- --show-token`、`-- --session <name>`）
+  - `pnpm colab:status` / `pnpm colab:test`（在线巡检显存与双域/单域名 E2E 校验）
+  - `pnpm colab:stop` / `pnpm colab:verify`（清理 VM 凭证并销毁 VM 停止 CU 计费，或一键启动→E2E 校验→自动关停）
 - **并发度调度 (`SYSTEM_TWO_CONCURRENCY`)**：当挂载支持并发的 `ninfer-serve` 后端时，可在 `.env.local` / `.env.vps` 中显式设置 `SYSTEM_TWO_CONCURRENCY`（例如 Windows RTX 3080 `--max-concurrency 2` 时设 `2`，Colab L4 / A100 节点设 `4`）；未设置时 `backend/model.ts` 自动按健康活跃节点数动态调度。
 - 本地/Colab 节点在线时优先使用零 Token 成本算力；探活超时或繁忙时在毫秒~2 秒级自动平滑降级至云端 API。
 

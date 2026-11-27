@@ -12,7 +12,9 @@
 2. 分别拉起两个 100% OpenAI 兼容且强制 Bearer Token 鉴权的推理服务:
    - System-2 认知大模型服务 (默认端口 8132): /v1/models, /v1/chat/completions
    - BAAI/bge-m3 向量嵌入服务 (默认端口 8133): /v1/models, /v1/embeddings (1024 维)
-3. 支持三种网络接入方式 (--tunnel):
+3. 支持四种网络接入方式 (--tunnel):
+   - named       : 使用 Cloudflare Named Tunnel (--token / CIVIC_COLAB_TUNNEL_TOKEN) 暴露固定单域名
+                   (默认 civic-colab.firetable.tech: /v1 -> 8132 LLM, /embed/v1 -> 8133 Embedding)
    - cloudflared : 自动为 8132 / 8133 建立 Cloudflare Quick Tunnel 并提取 HTTPS 公网地址
    - tailscale   : 检查本机 tailscale ip -4，输出内网加密互通地址
    - none        : 仅本地/局域网监听输出
@@ -22,6 +24,7 @@
 
 import argparse
 import asyncio
+from collections import deque
 import hashlib
 import hmac
 import json
@@ -45,6 +48,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 DEFAULT_LLM_PORT = 8132
 DEFAULT_EMBED_PORT = 8133
 DEFAULT_EMBED_MODEL = "BAAI/bge-m3"
+DEFAULT_PUBLIC_HOST = "civic-colab.firetable.tech"
 DEFAULT_NINFER_REPO = "WaveCut/Ternary-Bonsai-2.5-27B-PQ2_0-NInfer-v3"
 DEFAULT_NINFER_FILE = "Ternary-Bonsai-2.5-27B-PQ2_0-ninfer-v3.ninfer"
 DEFAULT_NINFER_ALIAS = "bonsai-2-27b"
@@ -341,10 +345,12 @@ def run_embed_server(
             )
 
     @app.get("/health")
+    @app.get("/embed/health")
     async def health() -> Dict[str, Any]:
         return {"status": "ok", "model": model_name, "device": resolved_device}
 
     @app.get("/v1/models")
+    @app.get("/embed/v1/models")
     async def list_models(
         authorization: Optional[str] = Header(default=None),
     ) -> Dict[str, Any]:
@@ -362,6 +368,7 @@ def run_embed_server(
         }
 
     @app.post("/v1/embeddings")
+    @app.post("/embed/v1/embeddings")
     async def create_embeddings(
         req: EmbeddingRequest,
         authorization: Optional[str] = Header(default=None),
@@ -1032,6 +1039,55 @@ def start_cloudflared_tunnel(
     return found_url[0] if found_url else None
 
 
+def start_named_cloudflared_tunnel(
+    pm: ProcessManager,
+    tunnel_token: str,
+    startup_grace_sec: float = 3.0,
+) -> Optional[subprocess.Popen[Any]]:
+    """启动 Cloudflare Named Tunnel (`cloudflared tunnel --no-autoupdate run --token ...`)。"""
+    cmd = ["cloudflared", "tunnel", "--no-autoupdate", "run", "--token", tunnel_token]
+    kwargs: Dict[str, Any] = {
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.STDOUT,
+        "text": True,
+        "bufsize": 1,
+    }
+    if os.name == "posix":
+        kwargs["start_new_session"] = True
+    proc = subprocess.Popen(cmd, **kwargs)
+    pm.add("cloudflared:named", proc)
+
+    recent_logs: deque[str] = deque(maxlen=20)
+
+    def _drain_output() -> None:
+        assert proc.stdout is not None
+        try:
+            for line in proc.stdout:
+                cleaned = line.rstrip()
+                if cleaned:
+                    if tunnel_token:
+                        cleaned = cleaned.replace(tunnel_token, "<REDACTED>")
+                    recent_logs.append(cleaned)
+        finally:
+            proc.stdout.close()
+
+    reader = threading.Thread(target=_drain_output, daemon=True)
+    reader.start()
+
+    deadline = time.monotonic() + startup_grace_sec
+    while time.monotonic() < deadline:
+        rc = proc.poll()
+        if rc is not None:
+            reader.join(timeout=1.0)
+            print(f"❌ cloudflared Named Tunnel 提前退出 (exit code={rc})。", file=sys.stderr, flush=True)
+            for tail in recent_logs:
+                print(f"  [cloudflared] {tail}", file=sys.stderr, flush=True)
+            return None
+        time.sleep(0.25)
+
+    return proc
+
+
 def _write_status_file(status_path: Path, payload: Dict[str, Any]) -> None:
     """以 0600 权限原子写入运行时状态 JSON 文件。"""
     status_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1056,10 +1112,13 @@ def verify_public_endpoint(url_v1: str, api_key: str, timeout_sec: int = 20) -> 
         try:
             req = urllib.request.Request(
                 target,
-                headers={"Authorization": f"Bearer {api_key}"},
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "User-Agent": "civic-colab-worker",
+                },
                 method="GET",
             )
-            with urllib.request.urlopen(req, timeout=3.0) as resp:
+            with urllib.request.urlopen(req, timeout=4.0) as resp:
                 if resp.status == 200:
                     return True
         except (urllib.error.URLError, TimeoutError, OSError):
@@ -1143,9 +1202,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--tunnel",
-        choices=["tailscale", "cloudflared", "none"],
+        choices=["tailscale", "cloudflared", "named", "none"],
         default="none",
-        help="公网/内网穿透模式 (tailscale | cloudflared | none)",
+        help="公网/内网穿透模式 (tailscale | cloudflared | named | none)",
+    )
+    parser.add_argument(
+        "--tunnel-token",
+        default=None,
+        help="Cloudflare Named Tunnel Token (未传时读取 CIVIC_COLAB_TUNNEL_TOKEN 或 COLAB_TUNNEL_TOKEN)",
+    )
+    parser.add_argument(
+        "--public-host",
+        default=None,
+        help=f"Named Tunnel 公网域名 (未传时读取 CIVIC_COLAB_HOSTNAME 或默认 {DEFAULT_PUBLIC_HOST})",
     )
     parser.add_argument(
         "--llm-backend",
@@ -1221,9 +1290,25 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     api_key = (
         args.api_key
+        or os.environ.get("CIVIC_COLAB_API_KEY", "").strip()
         or os.environ.get("COLAB_API_KEY", "").strip()
         or os.environ.get("API_KEY", "").strip()
         or secrets.token_urlsafe(24)
+    )
+    tunnel_token = (
+        (args.tunnel_token or "").strip()
+        or os.environ.get("CIVIC_COLAB_TUNNEL_TOKEN", "").strip()
+        or os.environ.get("COLAB_TUNNEL_TOKEN", "").strip()
+        or None
+    )
+    raw_public_host = (
+        (args.public_host or "").strip()
+        or os.environ.get("CIVIC_COLAB_HOSTNAME", "").strip()
+        or DEFAULT_PUBLIC_HOST
+    )
+    public_host = (
+        re.sub(r"^https?://", "", raw_public_host, flags=re.IGNORECASE).split("/", 1)[0].strip()
+        or DEFAULT_PUBLIC_HOST
     )
 
     using_default_model = args.llm_model is None
@@ -1287,7 +1372,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             f"  • Embedding: model={args.embed_model}, port={args.embed_port}, device={embed_device}",
             flush=True,
         )
-    print(f"  • 隧道模式 : {args.tunnel}", flush=True)
+    tunnel_note = f" ({public_host})" if args.tunnel == "named" else ""
+    print(f"  • 隧道模式 : {args.tunnel}{tunnel_note}", flush=True)
 
     if args.llm_backend == "ninfer" and not args.skip_llm and not args.dry_run and not rec.ninfer_supported:
         print(
@@ -1298,12 +1384,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 1
 
     # 隧道前置检查
-    if args.tunnel == "cloudflared" and not args.dry_run and not shutil.which("cloudflared"):
+    if args.tunnel in ("cloudflared", "named") and not args.dry_run and not shutil.which("cloudflared"):
         print(
             "\n❌ 未找到 `cloudflared` 可执行文件。\n"
             "请在 Colab 中安装:\n"
             "  wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb && "
             "dpkg -i cloudflared-linux-amd64.deb",
+            file=sys.stderr,
+        )
+        return 1
+
+    if args.tunnel == "named" and not args.dry_run and not tunnel_token:
+        print(
+            "\n❌ `--tunnel named` 需要传入 `--tunnel-token` 或设置环境变量 `CIVIC_COLAB_TUNNEL_TOKEN` / `COLAB_TUNNEL_TOKEN`。",
             file=sys.stderr,
         )
         return 1
@@ -1445,9 +1538,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.dry_run:
         print("\n[dry-run] 计划执行命令 (Token 已脱敏):")
         if not args.skip_embed:
-            print("  Embed:", " ".join("<REDACTED>" if i > 0 and embed_cmd[i - 1] == "--api-key" else a for i, a in enumerate(embed_cmd)))
+            print("  Embed :", " ".join("<REDACTED>" if i > 0 and embed_cmd[i - 1] == "--api-key" else a for i, a in enumerate(embed_cmd)))
         if not args.skip_llm:
-            print("  LLM  :", " ".join("<REDACTED>" if i > 0 and llm_cmd[i - 1] == "--api-key" else a for i, a in enumerate(llm_cmd)))
+            print("  LLM   :", " ".join("<REDACTED>" if i > 0 and llm_cmd[i - 1] == "--api-key" else a for i, a in enumerate(llm_cmd)))
+        if args.tunnel == "named":
+            tunnel_cmd = ["cloudflared", "tunnel", "--no-autoupdate", "run", "--token", tunnel_token or "<CIVIC_COLAB_TUNNEL_TOKEN>"]
+            print(
+                "  Tunnel:",
+                " ".join("<REDACTED>" if i > 0 and tunnel_cmd[i - 1] == "--token" else a for i, a in enumerate(tunnel_cmd)),
+                f"(llm=https://{public_host}/v1, embed=https://{public_host}/embed/v1)",
+            )
         return 0
 
     pm = ProcessManager()
@@ -1462,6 +1562,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
         embed_proc: Optional[subprocess.Popen[Any]] = None
         llm_proc: Optional[subprocess.Popen[Any]] = None
+        tunnel_proc: Optional[subprocess.Popen[Any]] = None
 
         # 先拉起 Embedding 服务再拉起 System-2 LLM，避免大显存预占后导致 bge-m3 空间不足
         if not args.skip_embed:
@@ -1495,7 +1596,31 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         llm_endpoint_v1: Optional[str] = None
         embed_endpoint_v1: Optional[str] = None
 
-        if args.tunnel == "cloudflared":
+        if args.tunnel == "named":
+            print(f"\n🌐 正在启动 Cloudflare Named Tunnel ({public_host})...", flush=True)
+            assert tunnel_token is not None
+            tunnel_proc = start_named_cloudflared_tunnel(pm, tunnel_token)
+            if not tunnel_proc:
+                return 1
+            if not args.skip_llm:
+                llm_endpoint_v1 = f"https://{public_host}/v1"
+                if verify_public_endpoint(llm_endpoint_v1, api_key, timeout_sec=45):
+                    print(f"  ✅ LLM 公网端点已就绪: {llm_endpoint_v1}", flush=True)
+                else:
+                    print(
+                        f"  ⚠️ LLM 公网端点在 45s 内尚未通过边缘探测 ({llm_endpoint_v1})，请稍后重试或检查 Tunnel 路由。",
+                        flush=True,
+                    )
+            if not args.skip_embed:
+                embed_endpoint_v1 = f"https://{public_host}/embed/v1"
+                if verify_public_endpoint(embed_endpoint_v1, api_key, timeout_sec=45):
+                    print(f"  ✅ Embed 公网端点已就绪: {embed_endpoint_v1}", flush=True)
+                else:
+                    print(
+                        f"  ⚠️ Embed 公网端点在 45s 内尚未通过边缘探测 ({embed_endpoint_v1})，请稍后重试或检查 Tunnel 路由。",
+                        flush=True,
+                    )
+        elif args.tunnel == "cloudflared":
             print("\n🌐 正在创建 Cloudflare Quick Tunnel...", flush=True)
             if not args.skip_llm:
                 base = start_cloudflared_tunnel(pm, "system-two", args.llm_port)
@@ -1533,6 +1658,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     "embed_model": args.embed_model if not args.skip_embed else None,
                     "llm_backend": args.llm_backend,
                     "tunnel": args.tunnel,
+                    "tunnel_mode": args.tunnel,
+                    "public_host": public_host if args.tunnel == "named" else None,
                     "token": api_key,
                     "pid": os.getpid(),
                     "pgid": os.getpgrp() if hasattr(os, "getpgrp") else os.getpid(),
@@ -1566,6 +1693,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             if llm_proc and llm_proc.poll() is not None:
                 print(
                     f"❌ [SystemTwo] 意外退出 (exit code={llm_proc.returncode})。",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                return 1
+            if tunnel_proc and tunnel_proc.poll() is not None:
+                print(
+                    f"❌ [Cloudflared] Named Tunnel 意外退出 (exit code={tunnel_proc.returncode})。",
                     file=sys.stderr,
                     flush=True,
                 )

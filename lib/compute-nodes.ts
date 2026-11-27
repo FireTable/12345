@@ -106,6 +106,31 @@ export function isLocalEndpoint(endpoint: string): boolean {
   }
 }
 
+export function isColabEndpoint(ep: string): boolean {
+  const cleaned = (ep || "").trim().replace(/^(?:cloud|local):/i, "").trim();
+  let parsed: URL;
+  try {
+    parsed = new URL(cleaned);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return false;
+  }
+  if (isLocalEndpoint(cleaned)) {
+    return false;
+  }
+  const host = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  const colabHostname = (process.env.CIVIC_COLAB_HOSTNAME || "civic-colab.firetable.tech")
+    .trim()
+    .toLowerCase();
+  return (
+    (colabHostname !== "" && host === colabHostname) ||
+    host.includes("colab") ||
+    host.includes("trycloudflare.com")
+  );
+}
+
 export function normalizeRole(raw?: string | null): ComputeNodeRole {
   const r = (raw || "").trim().toUpperCase();
   if (r === "EMBEDDING") return "EMBEDDING";
@@ -119,7 +144,7 @@ export function normalizeProvider(
   const p = (raw || "").trim().toUpperCase();
   if (p === "LOCAL" || p === "COLAB" || p === "CLOUD") return p;
   if (endpoint) {
-    if (/trycloudflare\.com|ngrok|colab/i.test(endpoint)) return "COLAB";
+    if (isColabEndpoint(endpoint) || /trycloudflare\.com|ngrok|colab/i.test(endpoint)) return "COLAB";
     if (isLocalEndpoint(endpoint)) return "LOCAL";
     return "CLOUD";
   }
@@ -245,6 +270,7 @@ export async function getComputeNodeById(id: string): Promise<ComputeNodeRecord 
 
 function getEnvNodes(): EnvComputeNodeDto[] {
   const out: EnvComputeNodeDto[] = [];
+  const colabMask = maskApiKey(process.env.CIVIC_COLAB_API_KEY);
   const s2Raw =
     process.env.SYSTEM_TWO_ENDPOINTS ||
     process.env.SYSTEM_TWO_ENDPOINT ||
@@ -256,16 +282,19 @@ function getEnvNodes(): EnvComputeNodeDto[] {
   const s2Mask = maskApiKey(process.env.OPENAI_API_KEY);
   s2List.forEach((ep, idx) => {
     const normalized = normalizeClientEndpoint(ep);
-    const isLocal = isLocalEndpoint(normalized);
+    const isColab = isColabEndpoint(normalized);
+    const isLocal = !isColab && isLocalEndpoint(normalized);
+    const provider: ComputeNodeProvider = isColab ? "COLAB" : isLocal ? "LOCAL" : "CLOUD";
+    const keyMask = isColab ? colabMask : isLocal ? { hasApiKey: false, apiKeyHint: null } : s2Mask;
     out.push({
       id: `env-s2-${idx + 1}`,
       name: `环境变量 System-2 #${idx + 1}`,
       role: "SYSTEM_TWO",
-      provider: isLocal ? "LOCAL" : "CLOUD",
+      provider,
       endpoint: normalized,
       model: process.env.OPENAI_MODEL || null,
-      hasApiKey: isLocal ? false : s2Mask.hasApiKey,
-      apiKeyHint: isLocal ? null : s2Mask.apiKeyHint,
+      hasApiKey: keyMask.hasApiKey,
+      apiKeyHint: keyMask.apiKeyHint,
       readOnly: true,
     });
   });
@@ -281,16 +310,19 @@ function getEnvNodes(): EnvComputeNodeDto[] {
   const embMask = maskApiKey(process.env.EMBEDDING_API_KEY || process.env.OPENAI_API_KEY);
   embList.forEach((ep, idx) => {
     const normalized = normalizeClientEndpoint(ep);
-    const isLocal = isLocalEndpoint(normalized);
+    const isColab = isColabEndpoint(normalized);
+    const isLocal = !isColab && isLocalEndpoint(normalized);
+    const provider: ComputeNodeProvider = isColab ? "COLAB" : isLocal ? "LOCAL" : "CLOUD";
+    const keyMask = isColab ? colabMask : isLocal ? { hasApiKey: false, apiKeyHint: null } : embMask;
     out.push({
       id: `env-emb-${idx + 1}`,
       name: `环境变量 Embedding #${idx + 1}`,
       role: "EMBEDDING",
-      provider: isLocal ? "LOCAL" : "CLOUD",
+      provider,
       endpoint: normalized,
       model: process.env.EMBEDDING_MODEL || "BAAI/bge-m3",
-      hasApiKey: isLocal ? false : embMask.hasApiKey,
-      apiKeyHint: isLocal ? null : embMask.apiKeyHint,
+      hasApiKey: keyMask.hasApiKey,
+      apiKeyHint: keyMask.apiKeyHint,
       readOnly: true,
     });
   });
@@ -313,9 +345,11 @@ export async function listComputeNodesForAdmin(): Promise<{
         const apiKey =
           env.provider === "LOCAL"
             ? null
-            : env.role === "EMBEDDING"
-              ? process.env.EMBEDDING_API_KEY || process.env.OPENAI_API_KEY || null
-              : process.env.OPENAI_API_KEY || null;
+            : env.provider === "COLAB"
+              ? process.env.CIVIC_COLAB_API_KEY?.trim() || null
+              : env.role === "EMBEDDING"
+                ? process.env.EMBEDDING_API_KEY || process.env.OPENAI_API_KEY || null
+                : process.env.OPENAI_API_KEY || null;
         const probe = await probeComputeEndpoint({
           endpoint: env.endpoint,
           apiKey,

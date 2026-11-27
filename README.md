@@ -353,7 +353,7 @@ pnpm dev
 | `pnpm dev:web` | **轻量启动**：仅启动 Next.js 本地开发服务（大模型走云端灾备或已挂载算力池） |
 | `pnpm dev` | **全栈启动**：并行拉起 System-2 本地大模型推理引擎 (8132) + Next.js (3000，含内嵌研判 worker) |
 | `pnpm dev:models` | **算力集群**：并行拉起 System-2 (8132) + Civic-Embed (8133)，支持通过 Tailscale 供 VPS 跨网调度 |
-| `pnpm colab:up` | **一键拉起 Colab GPU**：自动分配 L4 运行 `bonsai-2-27b` + `BAAI/bge-m3` 并建立 Cloudflare 隧道（支持 `-- --gpu T4\|L4\|A100`、`-- --tunnel tailscale`、`-- --show-token`、`-- --session <name>`） |
+| `pnpm colab:up` | **一键拉起 Colab GPU**：自动分配 L4 运行 `bonsai-2-27b` + `BAAI/bge-m3`；配置 `CIVIC_COLAB_TUNNEL_TOKEN` 时自动启用 `named` 单域名固定隧道（`https://civic-colab.firetable.tech/v1` + `/embed/v1`，零 URL/Token 复制粘贴），否则回退 Cloudflare Quick Tunnel（支持 `-- --gpu T4\|L4\|A100`、`-- --tunnel auto\|named\|cloudflared\|tailscale`、`-- --public-host <host>`、`-- --show-token`、`-- --session <name>`） |
 | `pnpm colab:status` | **Colab 算力状态**：巡检当前 Colab GPU 显存占用与公网/内网隧道端点连通性 |
 | `pnpm colab:test` | **Colab 端到端校验**：依次验证 401 鉴权拦截、`/v1/models` 200、流式对话及 1024 维向量嵌入 |
 | `pnpm colab:stop` | **关停并销毁 Colab VM**：优雅停服并销毁 Colab 运行时，立即停止计算单元（CU）计费 |

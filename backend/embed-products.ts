@@ -5,8 +5,9 @@ import {
   parseEndpointList,
   type EmbedProfile,
   type EmbedRequestOptions,
+  type ParsedEndpoint,
 } from "@civic/embed";
-import { isLocalEndpoint, listEnabledComputeNodes, normalizeProvider, type ComputeNodeProvider } from "@/lib/compute-nodes";
+import { isColabEndpoint, isLocalEndpoint, listEnabledComputeNodes, normalizeProvider, type ComputeNodeProvider } from "@/lib/compute-nodes";
 
 declare global {
   var __civic_embed_clients: Map<string, CivicEmbedClient> | undefined;
@@ -35,16 +36,19 @@ export function embedEndpointsFromEnv(): string {
 export async function resolveActiveEmbedEndpoints(): Promise<ActiveEmbedEndpointSpec[]> {
   const merged = new Map<string, ActiveEmbedEndpointSpec>();
   const envKey = (process.env.EMBEDDING_API_KEY || process.env.OPENAI_API_KEY || "").trim() || undefined;
+  const colabKey = (process.env.CIVIC_COLAB_API_KEY || "").trim() || undefined;
   const envModel = (process.env.EMBEDDING_MODEL || "BAAI/bge-m3").trim();
 
   for (const part of embedEndpointsFromEnv().split(",")) {
-    let ep = part.trim().replace(/^(?:cloud|local):/i, "").trim().replace(/\/+$/, "");
+    const ep = part.trim().replace(/^(?:cloud|local):/i, "").trim().replace(/\/+$/, "");
     if (!ep) continue;
+    const isColab = isColabEndpoint(ep);
+    const isLocal = !isColab && isLocalEndpoint(ep);
     merged.set(ep, {
       endpoint: ep,
-      apiKey: isLocalEndpoint(ep) ? undefined : envKey,
+      apiKey: isColab ? colabKey : isLocal ? undefined : envKey,
       model: envModel,
-      provider: isLocalEndpoint(ep) ? "LOCAL" : "CLOUD",
+      provider: isColab ? "COLAB" : isLocal ? "LOCAL" : "CLOUD",
       source: "ENV",
     });
   }
@@ -114,7 +118,20 @@ export interface SharedEmbedClientOptions {
   endpoints?: string | string[];
   profile?: EmbedProfile;
   apiKey?: string;
+  endpointApiKeys?: Record<string, string>;
   unhealthyCooldownMs?: number;
+}
+
+export function buildColabEndpointApiKeys(parsedEndpoints: ParsedEndpoint[]): Record<string, string> {
+  const colabKey = process.env.CIVIC_COLAB_API_KEY?.trim();
+  if (!colabKey) return {};
+  const out: Record<string, string> = {};
+  for (const ep of parsedEndpoints) {
+    if (isColabEndpoint(ep.baseUrl)) {
+      out[ep.baseUrl] = colabKey;
+    }
+  }
+  return out;
 }
 
 export function getSharedEmbedClient(options?: SharedEmbedClientOptions): CivicEmbedClient {
@@ -124,9 +141,15 @@ export function getSharedEmbedClient(options?: SharedEmbedClientOptions): CivicE
   const cooldown = options?.unhealthyCooldownMs ?? 30_000;
 
   const parsed = parseEndpointList(endpoints);
+  const endpointApiKeys = options?.endpointApiKeys ?? buildColabEndpointApiKeys(parsed);
   const endpointKey = parsed.map((e) => `${e.kind}:${e.baseUrl}`).join(",");
   const keyHash = createHash("sha256").update(apiKey).digest("hex").slice(0, 16);
-  const cacheKey = `${profile}|${cooldown}|${endpointKey}|${keyHash}`;
+  const endpointKeysSerialized = Object.keys(endpointApiKeys)
+    .sort()
+    .map((ep) => `${ep}=${endpointApiKeys[ep]}`)
+    .join("\n");
+  const endpointKeysHash = createHash("sha256").update(endpointKeysSerialized).digest("hex").slice(0, 16);
+  const cacheKey = `${profile}|${cooldown}|${endpointKey}|${keyHash}|${endpointKeysHash}`;
 
   const cache = (globalThis.__civic_embed_clients ??= new Map<string, CivicEmbedClient>());
   let client = cache.get(cacheKey);
@@ -135,6 +158,7 @@ export function getSharedEmbedClient(options?: SharedEmbedClientOptions): CivicE
       endpoints,
       profile,
       apiKey,
+      ...(Object.keys(endpointApiKeys).length > 0 ? { endpointApiKeys } : {}),
       unhealthyCooldownMs: cooldown,
     });
     cache.set(cacheKey, client);

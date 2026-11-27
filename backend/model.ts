@@ -282,18 +282,27 @@ export function getRerankModel(): RerankModel | null {
 // ==========================================
 import { SystemTwoEngine, type ClusterNodeSpec } from "@civic/system-two";
 import { LLM_TIMEOUTS } from "@/lib/tokens";
-import { listEnabledComputeNodes } from "@/lib/compute-nodes";
+import { isColabEndpoint, listEnabledComputeNodes } from "@/lib/compute-nodes";
 
 let systemTwoEnginePromise: Promise<SystemTwoEngine> | null = null;
 
 export async function buildSystemTwoNodeSpecs(): Promise<ClusterNodeSpec[]> {
   const envEndpoints = getSystemTwoEndpoints();
   const merged = new Map<string, ClusterNodeSpec>();
+  const colabApiKey = process.env.CIVIC_COLAB_API_KEY?.trim() || undefined;
 
   for (const raw of envEndpoints) {
     const ep = raw.trim().replace(/\/+$/, "");
     if (!ep) continue;
-    merged.set(ep, { endpoint: ep });
+    if (isColabEndpoint(ep)) {
+      merged.set(ep, {
+        endpoint: ep,
+        provider: "COLAB",
+        ...(colabApiKey ? { apiKey: colabApiKey } : {}),
+      });
+    } else {
+      merged.set(ep, { endpoint: ep });
+    }
   }
 
   try {

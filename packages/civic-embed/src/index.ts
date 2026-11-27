@@ -31,6 +31,7 @@ export interface EmbedClientOptions {
   /** bulk 每批 32，同时只发一个批次。online 每批 4。 */
   profile?: EmbedProfile;
   apiKey?: string;
+  endpointApiKeys?: Record<string, string>;
   fetchImpl?: typeof fetch;
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
   unhealthyCooldownMs?: number;
@@ -40,6 +41,7 @@ export interface EmbedClientOptions {
 interface EndpointNode {
   baseUrl: string;
   kind: EndpointKind;
+  apiKey?: string;
   inFlight: number;
   healthy: boolean;
   unhealthyAt?: number;
@@ -154,6 +156,7 @@ export class CivicEmbedClient {
     this.nodes = parsed.map((endpoint) => ({
       baseUrl: endpoint.baseUrl,
       kind: endpoint.kind,
+      apiKey: options.endpointApiKeys?.[endpoint.baseUrl],
       inFlight: 0,
       healthy: true,
     }));
@@ -308,7 +311,8 @@ export class CivicEmbedClient {
     }
 
     const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (this.apiKey) headers.Authorization = `Bearer ${this.apiKey}`;
+    const effectiveApiKey = (node.apiKey ?? this.apiKey).trim();
+    if (effectiveApiKey) headers.Authorization = `Bearer ${effectiveApiKey}`;
 
     try {
       const response = await this.fetchImpl(embeddingsUrl(node.baseUrl), {
