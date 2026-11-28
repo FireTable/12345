@@ -43,6 +43,12 @@ interface PresetData {
     subItems: string[];
     leadDepartment: string;
   }>;
+  colloquialAliases?: Array<{
+    alias: string;
+    canonical: string;
+    type: "TOWNSHIP" | "LOCATION" | "ENTITY" | "DEPARTMENT";
+    priority?: number;
+  }>;
 }
 
 async function seedVocabForSchema(schemaName: string, preset: PresetData, customSql?: postgres.Sql) {
@@ -56,7 +62,28 @@ async function seedVocabForSchema(schemaName: string, preset: PresetData, custom
     await tx`DELETE FROM vocabularies;`;
     await tx`DELETE FROM aliases;`;
 
-    // 2. 插入镇街
+    // 2. 插入特色俗名/错别字高精度映射（优先写入使其保留最高 priority 权重）
+    for (const c of preset.colloquialAliases || []) {
+      if (!c.alias || !c.canonical || c.alias === c.canonical) continue;
+      await tx`
+        INSERT INTO aliases (id, alias, canonical, type, source, usage_count)
+        VALUES (
+          ${`alias-${preset.id}-col-${c.alias}`.slice(0, 64)},
+          ${c.alias},
+          ${c.canonical},
+          ${c.type || "LOCATION"},
+          'PRESET',
+          ${c.priority ?? 50}
+        )
+        ON CONFLICT (alias) DO UPDATE SET
+          canonical = EXCLUDED.canonical,
+          type = EXCLUDED.type,
+          source = 'PRESET',
+          usage_count = EXCLUDED.usage_count;
+      `;
+    }
+
+    // 3. 插入镇街
     for (const t of preset.townships) {
       const townId = `town-${preset.id}-${t.name}`;
       await tx`
@@ -83,7 +110,7 @@ async function seedVocabForSchema(schemaName: string, preset: PresetData, custom
         await tx`
           INSERT INTO aliases (id, alias, canonical, type, source, usage_count)
           VALUES (
-            ${`alias-${preset.id}-${a}`},
+            ${`alias-${preset.id}-${a}`.slice(0, 64)},
             ${a},
             ${t.fullName},
             'TOWNSHIP',
@@ -98,7 +125,7 @@ async function seedVocabForSchema(schemaName: string, preset: PresetData, custom
         await tx`
           INSERT INTO aliases (id, alias, canonical, type, source, usage_count)
           VALUES (
-            ${`alias-${preset.id}-${lm}`},
+            ${`alias-${preset.id}-${lm}`.slice(0, 64)},
             ${lm},
             ${`${t.fullName}${lm}`},
             'LOCATION',

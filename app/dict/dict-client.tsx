@@ -250,7 +250,7 @@ export default function DictionaryManagementPage() {
 
   // 实时别名测试工具
   const [testText, setTestText] = useState(
-    "市民从岗顶IT商圈走到正佳商圈，反映天河路商圈夜间噪音扰民。"
+    "市民反映从地狱西坐车去洗村，路过侨医、天体和跑马场附近，夜间噪音扰民。"
   );
   const [normalizedTestResult, setNormalizedTestResult] = useState("");
 
@@ -440,7 +440,7 @@ export default function DictionaryManagementPage() {
     if (isRolePending || !isAdmin) return;
     if (!activeRegion?.id) return;
     const sample = activeRegion.id.includes("tianhe")
-      ? "市民从岗顶IT商圈走到正佳商圈，反映天河路商圈夜间噪音扰民。"
+      ? "市民反映从地狱西坐车去洗村，路过侨医、天体和跑马场附近，夜间噪音扰民。"
       : "市民在容奇大桥附近反映某商户违规经营，希望属地综合行政执法队介入。";
     setTestText(sample);
     void runTestReplace(sample);

@@ -11,6 +11,8 @@ import {
   type Node,
   type Edge,
   useReactFlow,
+  useNodesInitialized,
+  useStore,
   ReactFlowProvider,
   Panel,
 } from "@xyflow/react";
@@ -181,9 +183,13 @@ const edgeTypes = {
 function InnerPipelineCanvas({
   stateData,
   onRefresh,
+  isOpen = true,
+  resetVersion = 0,
 }: {
   stateData: PipelineStateResponse | null;
   onRefresh: () => void;
+  isOpen?: boolean;
+  resetVersion?: number;
 }) {
   const { fitView } = useReactFlow();
   const { activeRegion } = useRegion();
@@ -538,9 +544,13 @@ function InnerPipelineCanvas({
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const prevStorageKeyRef = useRef(storageKey);
 
-  // 关键：监听 initialNodes 数据变化时，智能保留用户在画布上已拖拽的实际物理位置，仅更新业务数据与状态！
+  // 关键：监听 initialNodes 数据变化时，智能保留用户在画布上已拖拽的实际物理位置与交互状态，仅更新业务数据与状态！
   useEffect(() => {
+    const regionChanged = prevStorageKeyRef.current !== storageKey;
+    prevStorageKeyRef.current = storageKey;
+
     setNodes((prevNodes) => {
       if (!prevNodes || prevNodes.length === 0) return initialNodes;
 
@@ -548,20 +558,16 @@ function InnerPipelineCanvas({
         const existing = prevNodes.find((p) => p.id === newNode.id);
         if (existing) {
           return {
-            ...newNode,
-            // 保留拖拽位置，以及已经量到的宽高。刷新时若丢掉 measured，
-            // React Flow 会把节点设成 visibility:hidden，尺寸没变时观察器不再回调，节点就一直不出现。
-            position: existing.position,
-            selected: existing.selected,
-            measured: existing.measured,
-            width: existing.width,
-            height: existing.height,
+            ...existing,
+            type: newNode.type,
+            data: newNode.data,
+            ...(regionChanged ? { position: newNode.position } : {}),
           };
         }
         return newNode;
       });
     });
-  }, [initialNodes, setNodes]);
+  }, [initialNodes, storageKey, setNodes]);
 
   // 同步边状态
   useEffect(() => {
@@ -587,6 +593,15 @@ function InnerPipelineCanvas({
   );
 
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fitViewRef = useRef(fitView);
+  fitViewRef.current = fitView;
+  const userInteractedViewportRef = useRef(false);
+  const initialFitStageRef = useRef<0 | 1 | 2>(0);
+  const prevResetVersionRef = useRef(resetVersion);
+
+  const nodesInitialized = useNodesInitialized();
+  const containerReady = useStore((s) => s.width > 0 && s.height > 0);
+  const hasStateData = Boolean(stateData);
 
   useEffect(() => {
     return () => {
@@ -611,6 +626,7 @@ function InnerPipelineCanvas({
         localStorage.removeItem(storageKey);
       } catch { }
     }
+    userInteractedViewportRef.current = false;
     setNodes((prevNodes) =>
       prevNodes.map((n) => ({
         ...n,
@@ -619,17 +635,43 @@ function InnerPipelineCanvas({
     );
     if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
     resetTimerRef.current = setTimeout(() => {
-      fitView({ padding: 0.12, duration: fitViewDuration() });
+      fitViewRef.current({ padding: 0.12, duration: fitViewDuration() });
     }, 50);
-  }, [storageKey, setNodes, fitView]);
+  }, [storageKey, setNodes]);
 
-  // 挂载初始自动居中
   useEffect(() => {
-    const timer = setTimeout(() => {
-      fitView({ padding: 0.12, duration: fitViewDuration() });
-    }, 150);
-    return () => clearTimeout(timer);
-  }, [fitView]);
+    if (resetVersion !== prevResetVersionRef.current) {
+      prevResetVersionRef.current = resetVersion;
+      handleResetLayout();
+    }
+  }, [resetVersion, handleResetLayout]);
+
+  // 单次初始化自适应居中：仅在首次挂载且用户未操作过视口时居中一次，之后数据更新或重开抽屉绝不再重置
+  useEffect(() => {
+    if (!isOpen || !containerReady || !nodesInitialized || userInteractedViewportRef.current) {
+      return;
+    }
+    const targetStage: 1 | 2 = hasStateData ? 2 : 1;
+    if (initialFitStageRef.current >= targetStage) {
+      return;
+    }
+
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        if (userInteractedViewportRef.current || initialFitStageRef.current >= targetStage) {
+          return;
+        }
+        initialFitStageRef.current = targetStage;
+        fitViewRef.current({ padding: 0.12, duration: 0 });
+      });
+    });
+
+    return () => {
+      cancelAnimationFrame(raf1);
+      if (raf2) cancelAnimationFrame(raf2);
+    };
+  }, [isOpen, containerReady, nodesInitialized, hasStateData]);
 
   return (
     <ReactFlow
@@ -637,6 +679,14 @@ function InnerPipelineCanvas({
       edges={edges}
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
+      onMoveStart={(event) => {
+        if (event) {
+          userInteractedViewportRef.current = true;
+        }
+      }}
+      onNodeDragStart={() => {
+        userInteractedViewportRef.current = true;
+      }}
       onNodeDragStop={handleNodeDragStop}
       nodeTypes={nodeTypes}
       edgeTypes={edgeTypes}
@@ -669,18 +719,27 @@ export function PipelineCanvas({
   stateData,
   onRefresh,
   pending = false,
+  isOpen = true,
+  resetVersion = 0,
 }: {
   stateData: PipelineStateResponse | null;
   onRefresh: () => void;
   /** 抽屉刚打开、还没有第一份快照。已有快照时刷新不再盖住画布。 */
   pending?: boolean;
+  isOpen?: boolean;
+  resetVersion?: number;
 }) {
   const showVeil = !stateData;
 
   return (
     <div className="workbench-canvas-container" aria-busy={pending}>
       <ReactFlowProvider>
-        <InnerPipelineCanvas stateData={stateData} onRefresh={onRefresh} />
+        <InnerPipelineCanvas
+          stateData={stateData}
+          onRefresh={onRefresh}
+          isOpen={isOpen}
+          resetVersion={resetVersion}
+        />
       </ReactFlowProvider>
       {showVeil ? (
         <div className="workbench-canvas-pending">

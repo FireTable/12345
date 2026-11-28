@@ -18,14 +18,14 @@
       "fullName": "冼村街道",
       "aliases": ["冼村", "冼村街道", "珠江新城核心区", "冼村片区", "西塔片区", "金穗路"],
       "communities": ["冼村社区", "金城社区", "金园社区", "潭骏社区"],
-      "landmarks": ["广州国际金融中心（西塔）", "K11购物艺术中心", "广州高德置地广场", "保利克洛维", "冼村地铁站", "妇儿中心地铁站"]
+      "landmarks": ["广州周大福金融中心（东塔）", "广州国际金融中心（西塔）", "K11购物艺术中心", "广州高德置地广场", "保利克洛维", "花城汇购物中心", "广州赛马场旧址", "冼村地铁站", "妇儿中心地铁站"]
     },
     {
       "name": "天河南",
       "fullName": "天河南街道",
       "aliases": ["天河南", "天河南街道", "天河路商圈", "体育西路", "天河城片区", "正佳商圈"],
-      "communities": ["体育西社区", "天河村社区", "育蕾社区", "广和社区", "天荣社区", "天河南社区"],
-      "landmarks": ["天河城", "正佳广场", "天环广场", "天河体育中心", "体育西路地铁站", "天河南地铁站", "时尚天河地下商场"]
+      "communities": ["体育西社区", "天河村社区", "育蕾社区", "广和社区", "天荣社区", "天河南社区", "六运小区"],
+      "landmarks": ["天河城", "正佳广场", "天环广场", "天河体育中心", "天河又一城", "维多利广场", "广百百货中怡店", "体育西路地铁站", "天河南地铁站", "时尚天河地下商场"]
     },
     {
       "name": "林和",
@@ -39,14 +39,14 @@
       "fullName": "石牌街道",
       "aliases": ["石牌", "石牌街道", "石牌村", "岗顶IT商圈", "暨大片区", "华师南门"],
       "communities": ["石牌村社区", "绿荷社区", "逢源社区", "南大社区", "暨大社区", "华师社区", "金田社区"],
-      "landmarks": ["岗顶太平洋数码城", "百脑汇电脑城", "太古汇", "暨南大学（石牌校区）", "华南师范大学（石牌校区）", "岗顶地铁站", "石牌桥地铁站"]
+      "landmarks": ["岗顶太平洋数码城", "百脑汇电脑城", "总统数码港", "太古汇", "万菱汇", "中山大学附属第三医院", "暨南大学附属第一医院（华侨医院）", "暨南大学（石牌校区）", "华南师范大学（石牌校区）", "岗顶地铁站", "石牌桥地铁站"]
     },
     {
       "name": "兴华",
       "fullName": "兴华街道",
       "aliases": ["兴华", "兴华街道", "燕塘片区", "广州大道北片区", "银河片区"],
       "communities": ["燕塘社区", "兴华社区", "金燕社区", "苏园社区", "伍仙桥社区"],
-      "landmarks": ["燕塘地铁站", "银河烈士陵园", "金燕大厦", "广州大道北商圈", "广东有线电视大楼"]
+      "landmarks": ["燕塘地铁站", "银河烈士陵园", "金燕大厦", "南部战区总医院（原157医院）", "瘦狗岭路段", "广州大道北商圈", "广东有线电视大楼"]
     },
     {
       "name": "沙河",
@@ -65,9 +65,9 @@
     {
       "name": "员村",
       "fullName": "员村街道",
-      "aliases": ["员村", "员村街道", "红专厂片区", "员村二横路", "美林天地商圈"],
+      "aliases": ["员村", "员村街道", "红专厂片区", "员村二横路", "金融城起步区"],
       "communities": ["新街社区", "二横路社区", "三横路社区", "四横路社区", "娟麻社区"],
-      "landmarks": ["员村工人文化宫", "美林M·LIVE天地（山姆会员店）", "红专厂创意园旧址", "员村地铁站", "天河区中医医院"]
+      "landmarks": ["员村工人文化宫", "中山大学附属第六医院", "红专厂创意园旧址", "员村地铁站", "天河区中医医院"]
     },
     {
       "name": "车陂",
@@ -79,9 +79,9 @@
     {
       "name": "棠下",
       "fullName": "棠下街道",
-      "aliases": ["棠下", "棠下街道", "棠下村", "科韵路软件园", "棠东片区"],
-      "communities": ["棠下村第一社区", "棠下村第二社区", "棠东社区", "祥龙社区", "丰乐社区"],
-      "landmarks": ["天河软件园棠下园区", "科韵路信息港", "棠东地铁站", "棠下涌生态景观带", "天河区人民法院"]
+      "aliases": ["棠下", "棠下街道", "棠下村", "科韵路软件园", "棠东片区", "华景片区", "上社片区"],
+      "communities": ["棠下村第一社区", "棠下村第二社区", "棠东社区", "华景社区", "祥龙社区", "丰乐社区", "上社村"],
+      "landmarks": ["天河软件园棠下园区", "科韵路信息港", "华景新城", "骏景花园", "棠东地铁站", "棠下涌生态景观带", "天河区人民法院"]
     },
     {
       "name": "天园",
@@ -95,14 +95,14 @@
       "fullName": "元岗街道",
       "aliases": ["元岗", "元岗街道", "天河客运站片区", "元岗汽配城", "下元岗"],
       "communities": ["元岗社区", "南兴社区", "天河客运站社区"],
-      "landmarks": ["天河客运站", "天河客运站地铁站", "元岗汽配城", "智汇PARK创意园", "远洋天骄广场"]
+      "landmarks": ["天河客运站", "天河客运站地铁站", "广东技术师范大学", "元岗汽配城", "智汇PARK创意园", "远洋天骄广场"]
     },
     {
       "name": "长兴",
       "fullName": "长兴街道",
       "aliases": ["长兴", "长兴街道", "长湴片区", "华南植物园片区", "长兴路"],
-      "communities": ["长湴社区", "长兴社区", "兴科社区", "科艺社区"],
-      "landmarks": ["华南国家植物园", "植物园地铁站", "长湴地铁站", "长湴公园", "天河儿童公园"]
+      "communities": ["长湴社区", "岑村社区", "长兴社区", "兴科社区", "科艺社区"],
+      "landmarks": ["华南国家植物园", "岑村车管所", "植物园地铁站", "长湴地铁站", "长湴公园", "天河儿童公园"]
     },
     {
       "name": "龙洞",
@@ -116,7 +116,7 @@
       "fullName": "凤凰街道",
       "aliases": ["凤凰", "凤凰街道", "柯木塱片区", "天河湿地公园", "凤凰山片区"],
       "communities": ["柯木塱社区", "渔沙坦社区", "凤凰社区"],
-      "landmarks": ["天河湿地公园", "凤凰山森林公园", "柯木塱地铁站", "华南农业大学教学科研基地", "广汕二路商圈"]
+      "landmarks": ["天河湿地公园", "凤凰山森林公园", "火炉山森林公园", "柯木塱地铁站", "华南农业大学教学科研基地", "广汕二路商圈"]
     },
     {
       "name": "新塘",
@@ -142,9 +142,9 @@
     {
       "name": "前进",
       "fullName": "前进街道",
-      "aliases": ["前进", "前进街道", "东圃大马路", "汇彩路片区", "金融城东区"],
+      "aliases": ["前进", "前进街道", "东圃大马路", "汇彩路片区", "金融城东区", "美林天地商圈", "牛奶厂片区"],
       "communities": ["石溪社区", "前隆社区", "羊城社区", "桃园社区"],
-      "landmarks": ["东圃大马路商业街", "天河城百货（东圃店）", "东圃地铁站", "汇彩路商圈", "广州国际金融城东区"]
+      "landmarks": ["东圃大马路商业街", "美林M·LIVE天地（山姆会员店）", "天河城百货（东圃店）", "东圃地铁站", "汇彩路商圈", "广州国际金融城东区"]
     },
     {
       "name": "沙东",
@@ -240,5 +240,90 @@
       "subItems": ["消防通道堵塞", "电动车违规充电", "燃气与危化品安全", "高空坠物"],
       "leadDepartment": "应急管理局 / 消防救援大队 / 派出所"
     }
+  ],
+  "colloquialAliases": [
+    { "alias": "地狱西", "canonical": "天河南街道体育西路地铁站", "type": "LOCATION", "priority": 100 },
+    { "alias": "天体", "canonical": "天河南街道天河体育中心", "type": "LOCATION", "priority": 99 },
+    { "alias": "六运", "canonical": "天河南街道六运小区", "type": "LOCATION", "priority": 98 },
+    { "alias": "宏城", "canonical": "天河南街道天环广场（原宏城广场）", "type": "LOCATION", "priority": 97 },
+    { "alias": "跑马场", "canonical": "冼村街道广州赛马场旧址", "type": "LOCATION", "priority": 96 },
+    { "alias": "牛奶厂", "canonical": "前进街道奥体牛奶厂片区", "type": "LOCATION", "priority": 95 },
+    { "alias": "洗村", "canonical": "冼村街道", "type": "TOWNSHIP", "priority": 94 },
+    { "alias": "长班", "canonical": "长兴街道长湴社区", "type": "LOCATION", "priority": 93 },
+    { "alias": "车坡", "canonical": "车陂街道", "type": "TOWNSHIP", "priority": 92 },
+    { "alias": "侨医", "canonical": "石牌街道暨南大学附属第一医院", "type": "LOCATION", "priority": 91 },
+    { "alias": "东塔", "canonical": "冼村街道广州周大福金融中心（东塔）", "type": "LOCATION", "priority": 90 },
+    { "alias": "西塔", "canonical": "冼村街道广州国际金融中心（西塔）", "type": "LOCATION", "priority": 89 },
+    { "alias": "珠城", "canonical": "冼村街道珠江新城核心区", "type": "LOCATION", "priority": 88 },
+    { "alias": "龙眼洞", "canonical": "龙洞街道", "type": "TOWNSHIP", "priority": 87 },
+    { "alias": "瘦狗岭", "canonical": "兴华街道瘦狗岭路段", "type": "LOCATION", "priority": 86 },
+    { "alias": "岑村考场", "canonical": "长兴街道岑村车管所", "type": "LOCATION", "priority": 85 },
+    { "alias": "体育西", "canonical": "天河南街道体育西路地铁站", "type": "LOCATION", "priority": 84 },
+    { "alias": "六运小区", "canonical": "天河南街道六运小区", "type": "LOCATION", "priority": 83 },
+    { "alias": "宏城广场", "canonical": "天河南街道天环广场（原宏城广场）", "type": "LOCATION", "priority": 82 },
+    { "alias": "天环", "canonical": "天河南街道天环广场", "type": "LOCATION", "priority": 81 },
+    { "alias": "正佳", "canonical": "天河南街道正佳广场", "type": "LOCATION", "priority": 80 },
+    { "alias": "马场", "canonical": "冼村街道广州赛马场旧址", "type": "LOCATION", "priority": 79 },
+    { "alias": "牛奶厂板块", "canonical": "前进街道奥体牛奶厂片区", "type": "LOCATION", "priority": 78 },
+    { "alias": "中山三院", "canonical": "石牌街道中山大学附属第三医院", "type": "LOCATION", "priority": 77 },
+    { "alias": "中大三院", "canonical": "石牌街道中山大学附属第三医院", "type": "LOCATION", "priority": 76 },
+    { "alias": "华侨医院", "canonical": "石牌街道暨南大学附属第一医院（华侨医院）", "type": "LOCATION", "priority": 75 },
+    { "alias": "中山六院", "canonical": "员村街道中山大学附属第六医院", "type": "LOCATION", "priority": 74 },
+    { "alias": "中六", "canonical": "员村街道中山大学附属第六医院", "type": "LOCATION", "priority": 73 },
+    { "alias": "一五七医院", "canonical": "兴华街道南部战区总医院（原157医院）", "type": "LOCATION", "priority": 72 },
+    { "alias": "157医院", "canonical": "兴华街道南部战区总医院（原157医院）", "type": "LOCATION", "priority": 71 },
+    { "alias": "天客站", "canonical": "元岗街道天河客运站", "type": "LOCATION", "priority": 70 },
+    { "alias": "火车东站", "canonical": "林和街道广州东站", "type": "LOCATION", "priority": 69 },
+    { "alias": "华快", "canonical": "华南快速干线", "type": "LOCATION", "priority": 68 },
+    { "alias": "小新塘", "canonical": "新塘街道", "type": "TOWNSHIP", "priority": 67 },
+    { "alias": "红专厂", "canonical": "员村街道红专厂创意园旧址", "type": "LOCATION", "priority": 66 },
+    { "alias": "金融城", "canonical": "员村街道广州国际金融城", "type": "LOCATION", "priority": 65 },
+    { "alias": "美林天地", "canonical": "前进街道美林M·LIVE天地（山姆会员店）", "type": "LOCATION", "priority": 64 },
+    { "alias": "山姆", "canonical": "前进街道美林M·LIVE天地（山姆会员店）", "type": "LOCATION", "priority": 63 },
+    { "alias": "IGC", "canonical": "猎德街道IGC天汇广场", "type": "LOCATION", "priority": 62 },
+    { "alias": "天汇广场", "canonical": "猎德街道IGC天汇广场", "type": "LOCATION", "priority": 62 },
+    { "alias": "兴盛路", "canonical": "猎德街道兴盛路风情街", "type": "LOCATION", "priority": 61 },
+    { "alias": "花城汇", "canonical": "冼村街道花城汇购物中心", "type": "LOCATION", "priority": 61 },
+    { "alias": "K11", "canonical": "冼村街道K11购物艺术中心", "type": "LOCATION", "priority": 60 },
+    { "alias": "高德置地", "canonical": "冼村街道广州高德置地广场", "type": "LOCATION", "priority": 60 },
+    { "alias": "天河又一城", "canonical": "天河南街道天河又一城", "type": "LOCATION", "priority": 59 },
+    { "alias": "时尚天河", "canonical": "天河南街道时尚天河地下商场", "type": "LOCATION", "priority": 59 },
+    { "alias": "广百中怡", "canonical": "天河南街道广百百货中怡店", "type": "LOCATION", "priority": 59 },
+    { "alias": "维多利", "canonical": "天河南街道维多利广场", "type": "LOCATION", "priority": 58 },
+    { "alias": "VT101", "canonical": "天河南街道维多利广场", "type": "LOCATION", "priority": 58 },
+    { "alias": "东方宝泰", "canonical": "林和街道东方宝泰购物广场", "type": "LOCATION", "priority": 58 },
+    { "alias": "宝泰", "canonical": "林和街道东方宝泰购物广场", "type": "LOCATION", "priority": 58 },
+    { "alias": "总统数码港", "canonical": "石牌街道总统数码港", "type": "LOCATION", "priority": 57 },
+    { "alias": "太平洋电脑城", "canonical": "石牌街道岗顶太平洋数码城", "type": "LOCATION", "priority": 57 },
+    { "alias": "奥体", "canonical": "黄村街道广东奥林匹克体育中心", "type": "LOCATION", "priority": 57 },
+    { "alias": "华景", "canonical": "棠下街道华景新城", "type": "LOCATION", "priority": 56 },
+    { "alias": "骏景", "canonical": "棠下街道骏景花园", "type": "LOCATION", "priority": 56 },
+    { "alias": "上社", "canonical": "棠下街道上社村", "type": "LOCATION", "priority": 56 },
+    { "alias": "粤垦", "canonical": "兴华街道粤垦路片区", "type": "LOCATION", "priority": 55 },
+    { "alias": "车陂涌", "canonical": "车陂街道车陂涌沿线", "type": "LOCATION", "priority": 55 },
+    { "alias": "广氮", "canonical": "车陂街道广氮社区", "type": "LOCATION", "priority": 55 },
+    { "alias": "火炉山", "canonical": "凤凰街道火炉山森林公园", "type": "LOCATION", "priority": 55 },
+    { "alias": "华工", "canonical": "五山街道华南理工大学（五山校区）", "type": "LOCATION", "priority": 54 },
+    { "alias": "华农", "canonical": "五山街道华南农业大学", "type": "LOCATION", "priority": 54 },
+    { "alias": "华师", "canonical": "石牌街道华南师范大学（石牌校区）", "type": "LOCATION", "priority": 54 },
+    { "alias": "暨大", "canonical": "石牌街道暨南大学（石牌校区）", "type": "LOCATION", "priority": 54 },
+    { "alias": "广工龙洞", "canonical": "龙洞街道广东工业大学（龙洞校区）", "type": "LOCATION", "priority": 53 },
+    { "alias": "广金", "canonical": "龙洞街道广东金融学院", "type": "LOCATION", "priority": 53 },
+    { "alias": "广技师", "canonical": "元岗街道广东技术师范大学", "type": "LOCATION", "priority": 53 },
+    { "alias": "岑村", "canonical": "长兴街道岑村社区", "type": "LOCATION", "priority": 52 },
+    { "alias": "柯木朗", "canonical": "凤凰街道柯木塱社区", "type": "LOCATION", "priority": 52 },
+    { "alias": "科木朗", "canonical": "凤凰街道柯木塱社区", "type": "LOCATION", "priority": 51 },
+    { "alias": "长办", "canonical": "长兴街道长湴社区", "type": "LOCATION", "priority": 51 },
+    { "alias": "长伴", "canonical": "长兴街道长湴社区", "type": "LOCATION", "priority": 51 },
+    { "alias": "车皮", "canonical": "车陂街道", "type": "TOWNSHIP", "priority": 51 },
+    { "alias": "车杯", "canonical": "车陂街道", "type": "TOWNSHIP", "priority": 51 },
+    { "alias": "东浦", "canonical": "前进街道东圃", "type": "LOCATION", "priority": 50 },
+    { "alias": "塘下", "canonical": "棠下街道", "type": "TOWNSHIP", "priority": 50 },
+    { "alias": "棠夏", "canonical": "棠下街道", "type": "TOWNSHIP", "priority": 50 },
+    { "alias": "猎得", "canonical": "猎德街道", "type": "TOWNSHIP", "priority": 50 },
+    { "alias": "元冈", "canonical": "元岗街道", "type": "TOWNSHIP", "priority": 50 },
+    { "alias": "源岗", "canonical": "元岗街道", "type": "TOWNSHIP", "priority": 50 },
+    { "alias": "木陂", "canonical": "新塘街道沐陂社区", "type": "LOCATION", "priority": 50 },
+    { "alias": "木坡", "canonical": "新塘街道沐陂社区", "type": "LOCATION", "priority": 50 }
   ]
 }

@@ -79,6 +79,13 @@ export async function getRegionAliasMap(regionIdOrSchema?: string | null): Promi
           }
         }
       }
+      for (const c of vocab.colloquialAliases || []) {
+        if (c.alias && c.canonical && c.alias !== c.canonical) {
+          if (!hadDbRows || !map.has(c.alias)) {
+            map.set(c.alias, c.canonical);
+          }
+        }
+      }
       if (!hadDbRows) {
         for (const d of vocab.departments) {
           if (d.name && d.name !== d.fullName) {
@@ -112,46 +119,103 @@ export function resolveEntityAlias(rawName?: string | null, customMap?: Map<stri
 }
 
 /**
- * 全文别名替换预处理：在文本入模或抽取前，对文本内包含的已知别名进行自动规范化替换
+ * 全文别名替换预处理：单遍最长优先正则替换，避免嵌套二次改写与路名后缀误伤
  */
-const sortedAliasCache = new WeakMap<Map<string, string>, { size: number; aliases: string[] }>();
+const compiledMatcherCache = new WeakMap<
+  Map<string, string>,
+  { size: number; regex: RegExp | null; canonicalGuards: Set<string> }
+>();
 
-function sortedAliasKeys(activeMap: Map<string, string>): string[] {
-  const cached = sortedAliasCache.get(activeMap);
-  // registerAlias 只增不删。键集合没变时，长度相同，排序结果可以复用。
-  if (cached && cached.size === activeMap.size) return cached.aliases;
-  const aliases = Array.from(activeMap.keys()).sort((a, b) => b.length - a.length);
-  sortedAliasCache.set(activeMap, { size: activeMap.size, aliases });
-  return aliases;
+const TOWNSHIP_FOLLOW_PROTECT_RE =
+  /^[街道镇路大道桥涌村站东南西北一二三四五六七八九公园医院广场大厦市场城学所局院]/;
+
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function getCompiledMatcher(activeMap: Map<string, string>): {
+  regex: RegExp | null;
+  canonicalGuards: Set<string>;
+} {
+  const cached = compiledMatcherCache.get(activeMap);
+  if (cached && cached.size === activeMap.size) {
+    return cached;
+  }
+
+  const aliases = Array.from(activeMap.keys()).filter((a) => {
+    if (a.length < 2) return false;
+    const c = activeMap.get(a);
+    return Boolean(c && c !== a);
+  });
+
+  if (aliases.length === 0) {
+    const empty = { size: activeMap.size, regex: null, canonicalGuards: new Set<string>() };
+    compiledMatcherCache.set(activeMap, empty);
+    return empty;
+  }
+
+  const canonicalGuards = new Set<string>();
+  for (const canonical of activeMap.values()) {
+    if (canonical && canonical.length >= 2 && !activeMap.has(canonical)) {
+      canonicalGuards.add(canonical);
+    }
+  }
+
+  // 同时纳入标准全称与别名做单遍最长匹配；命中已有标准全称时直接原样保留，保障幂等与括号内部不被二次切分
+  const allTokens = Array.from(new Set([...canonicalGuards, ...aliases])).sort(
+    (a, b) => b.length - a.length
+  );
+  const regex = new RegExp(allTokens.map(escapeRegExp).join("|"), "g");
+  const entry = { size: activeMap.size, regex, canonicalGuards };
+  compiledMatcherCache.set(activeMap, entry);
+  return entry;
 }
 
 export function normalizeAliasesInText(text?: string | null, customMap?: Map<string, string>): string {
   if (!text) return "";
-  let result = text;
   const activeMap = customMap || runtimeAliasMap;
+  const { regex, canonicalGuards } = getCompiledMatcher(activeMap);
+  if (!regex) return text;
 
-  // 按别名长度从长到短排序，优先匹配最长/最具体别名
-  const sortedAliases = sortedAliasKeys(activeMap);
+  let result = text.replace(regex, (matched, offset: number, source: string) => {
+    if (canonicalGuards.has(matched)) {
+      return matched;
+    }
 
-  for (const alias of sortedAliases) {
-    if (alias.length >= 2 && result.includes(alias)) {
-      const canonical = activeMap.get(alias)!;
-      if (alias === canonical) continue;
+    const canonical = activeMap.get(matched);
+    if (!canonical || matched === canonical) {
+      return matched;
+    }
 
-      if (canonical.startsWith(alias) && (canonical.endsWith("街道") || canonical.endsWith("镇"))) {
-        const suffix = canonical.endsWith("街道") ? "街道" : "镇";
-        const re = new RegExp(`${alias}(?!${suffix})`, "g");
-        result = result.replace(re, canonical);
-      } else {
-        result = result.split(alias).join(canonical);
+    // 幂等保护：前面已带完整街道/规范前缀时不重复拼接
+    if (canonical.endsWith(matched) && canonical.length > matched.length) {
+      const prefix = canonical.slice(0, canonical.length - matched.length);
+      if (offset >= prefix.length && source.slice(offset - prefix.length, offset) === prefix) {
+        return matched;
       }
     }
-  }
 
-  // 清洗意外产生的叠字后缀
+    // 已完整匹配规范全称时不重复展开
+    if (canonical.startsWith(matched) && source.startsWith(canonical, offset)) {
+      return matched;
+    }
+
+    // 短镇街名紧邻道路/桥梁/河涌/站点等专名后缀时跳过，避免把 "元岗路" 误改成 "元岗街道路"
+    if (canonical.startsWith(matched) && (canonical.endsWith("街道") || canonical.endsWith("镇"))) {
+      const nextChar = source[offset + matched.length] || "";
+      if (nextChar && TOWNSHIP_FOLLOW_PROTECT_RE.test(nextChar)) {
+        return matched;
+      }
+    }
+
+    return canonical;
+  });
+
+  // 清洗叠字与重复街道后缀
   result = result
     .replace(/街道街道/g, "街道")
-    .replace(/镇镇/g, "镇");
+    .replace(/镇镇/g, "镇")
+    .replace(/([\u4e00-\u9fa5]{2,4}街道)\1+/g, "$1");
 
   return result;
 }

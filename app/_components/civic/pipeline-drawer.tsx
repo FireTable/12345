@@ -32,10 +32,9 @@ export function PipelineDrawer() {
   const [pipelineData, setPipelineData] = useState<PipelineStateResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [hasOpened, setHasOpened] = useState(false);
+  const [resetVersion, setResetVersion] = useState(0);
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const bodyRef = useRef<HTMLDivElement>(null);
   const pressedOutsideRef = useRef(false);
-  const fitScheduledRef = useRef(false);
 
   const fetchState = useCallback(async () => {
     if (!isAdmin) return;
@@ -103,35 +102,9 @@ export function PipelineDrawer() {
 
   const isRunning = (pipelineData?.taskProgress?.status || "").toUpperCase() === "RUNNING";
 
-  const triggerCanvasFitView = useCallback(() => {
-    const dialog = dialogRef.current;
-    if (!dialog?.open) return;
-    const fitBtn = dialog.querySelector<HTMLButtonElement>(".react-flow__controls-fitview");
-    if (fitBtn) {
-      fitBtn.click();
-    }
-  }, []);
-
-  const scheduleFitView = useCallback(() => {
-    if (fitScheduledRef.current) return;
-    fitScheduledRef.current = true;
-    requestAnimationFrame(() => {
-      fitScheduledRef.current = false;
-      triggerCanvasFitView();
-    });
-  }, [triggerCanvasFitView]);
-
   const handleResetLayout = useCallback(() => {
-    const dialog = dialogRef.current;
-    const panelResetBtn = dialog?.querySelector<HTMLButtonElement>(
-      ".react-flow__panel.top.right button"
-    );
-    if (panelResetBtn) {
-      panelResetBtn.click();
-    }
-    setTimeout(triggerCanvasFitView, 80);
-    setTimeout(triggerCanvasFitView, 240);
-  }, [triggerCanvasFitView]);
+    setResetVersion((v) => v + 1);
+  }, []);
 
   // 原生 <dialog>.showModal() 提供顶层、inert、焦点围栏、Esc 退出与焦点回返；
   // 背景滚动隔离交给 tokens.css / components.css 中的 overscroll-behavior: contain，不修改 body.style.overflow。
@@ -143,51 +116,10 @@ export function PipelineDrawer() {
       if (!dialog.open) {
         dialog.showModal();
       }
-      const rafId = requestAnimationFrame(() => {
-        requestAnimationFrame(triggerCanvasFitView);
-      });
-      const t1 = setTimeout(triggerCanvasFitView, 180);
-      const t2 = setTimeout(triggerCanvasFitView, 420);
-
-      const bodyEl = bodyRef.current;
-      let resizeObserver: ResizeObserver | null = null;
-      let mutationObserver: MutationObserver | null = null;
-      if (bodyEl) {
-        resizeObserver = new ResizeObserver(() => {
-          scheduleFitView();
-        });
-        resizeObserver.observe(bodyEl);
-
-        mutationObserver = new MutationObserver(() => {
-          if (bodyEl.querySelector(".react-flow__controls-fitview") && bodyEl.querySelector(".react-flow__node")) {
-            scheduleFitView();
-          }
-        });
-        mutationObserver.observe(bodyEl, { childList: true, subtree: true });
-      }
-
-      return () => {
-        cancelAnimationFrame(rafId);
-        clearTimeout(t1);
-        clearTimeout(t2);
-        resizeObserver?.disconnect();
-        mutationObserver?.disconnect();
-      };
     } else if (dialog.open) {
       dialog.close();
     }
-  }, [isAdmin, pipelineDrawerOpen, triggerCanvasFitView, scheduleFitView]);
-
-  const hasPipelineData = Boolean(pipelineData);
-  useEffect(() => {
-    if (!isAdmin || !pipelineDrawerOpen || !hasPipelineData) return;
-    const rafId = requestAnimationFrame(triggerCanvasFitView);
-    const t = setTimeout(triggerCanvasFitView, 140);
-    return () => {
-      cancelAnimationFrame(rafId);
-      clearTimeout(t);
-    };
-  }, [isAdmin, pipelineDrawerOpen, hasPipelineData, triggerCanvasFitView]);
+  }, [isAdmin, pipelineDrawerOpen]);
 
   // Safari 等尚未支持 <dialog closedby="any"> 的浏览器降级为坐标点外点击关闭（按压与抬起均在面板外）
   const isPointerOutsideDialog = (e: React.PointerEvent<HTMLDialogElement>, dialog: HTMLDialogElement) => {
@@ -300,9 +232,15 @@ export function PipelineDrawer() {
         </div>
       </header>
 
-      <div ref={bodyRef} className="pipeline-drawer__body">
+      <div className="pipeline-drawer__body">
         {(pipelineDrawerOpen || hasOpened) && (
-          <PipelineCanvas stateData={pipelineData} onRefresh={fetchState} pending={loading && !pipelineData} />
+          <PipelineCanvas
+            stateData={pipelineData}
+            onRefresh={fetchState}
+            pending={loading && !pipelineData}
+            isOpen={pipelineDrawerOpen}
+            resetVersion={resetVersion}
+          />
         )}
       </div>
 

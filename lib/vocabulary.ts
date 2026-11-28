@@ -18,6 +18,13 @@ export interface TownshipInfo {
   landmarks: string[]; // 知名地标 / 园区 / 重点商圈 / 交通枢纽
 }
 
+export interface ColloquialAliasEntry {
+  alias: string;
+  canonical: string;
+  type: "TOWNSHIP" | "LOCATION" | "ENTITY" | "DEPARTMENT";
+  priority?: number;
+}
+
 export interface DepartmentInfo {
   code: string;
   name: string;
@@ -39,6 +46,7 @@ export interface RegionVocabulary {
   townships: TownshipInfo[];
   departments: DepartmentInfo[];
   categories: CategoryInfo[];
+  colloquialAliases?: ColloquialAliasEntry[];
 }
 
 /** 官方分类名。比较和赋值走这些键。 */
@@ -141,6 +149,7 @@ export function loadPresetVocabulary(regionId: string = "shunde"): RegionVocabul
         townships: parsed.townships || [],
         departments: parsed.departments || [],
         categories: parsed.categories || STANDARD_CATEGORIES,
+        colloquialAliases: parsed.colloquialAliases || [],
       };
     }
   } catch (err) {

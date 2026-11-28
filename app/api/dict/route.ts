@@ -8,12 +8,19 @@ import { resolveRequestRegionId } from "@/lib/tenant/request-region";
 import { apiSuccess, apiError, ApiCode } from "@/lib/api-codes";
 import { requireAdmin } from "@/lib/auth/rbac";
 
-function aliasListRank(row: { alias: string; canonical: string; type: string; source: string }): number {
+function aliasListRank(row: {
+  alias: string;
+  canonical: string;
+  type: string;
+  source: string;
+  usageCount?: number | null;
+}): number {
   const canon = row.canonical || "";
+  if (row.source === "PRESET" && (row.usageCount ?? 0) >= 50) return -1;
+  if (row.source === "MANUAL") return 0;
   const town = row.type === "TOWNSHIP" || row.source === "PRESET" || /(?:街道|镇)$/.test(canon);
-  if (town && canon.length <= 8 && (row.alias || "").length <= 12) return 0;
-  if (town) return 1;
-  if (row.source === "MANUAL") return 2;
+  if (town && canon.length <= 8 && (row.alias || "").length <= 12) return 1;
+  if (town) return 2;
   if (row.source === "AI_MINED" && canon.length > 16) return 4;
   return 3;
 }
@@ -60,6 +67,7 @@ export async function GET(req: NextRequest) {
     aliases.sort(
       (a, b) =>
         aliasListRank(a) - aliasListRank(b) ||
+        (b.usageCount ?? 0) - (a.usageCount ?? 0) ||
         a.alias.length - b.alias.length ||
         a.alias.localeCompare(b.alias, "zh-CN"),
     );
